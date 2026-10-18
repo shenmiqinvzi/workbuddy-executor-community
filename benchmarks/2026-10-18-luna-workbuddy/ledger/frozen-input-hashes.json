@@ -1,0 +1,78 @@
+[
+  {
+    "path": "fixtures/fix/java/src/Discount.java",
+    "sha256": "c62f603582dc63de8cf022a9e32a99d37176e5cad220b1e70e04fa5dc0a005de"
+  },
+  {
+    "path": "fixtures/fix/java/test/DiscountTest.java",
+    "sha256": "f2d99ecbb64d226d9d69c7897598f63e9923e2174509b65583f786a65ed0c490"
+  },
+  {
+    "path": "fixtures/fix/js/src/rank.js",
+    "sha256": "848cb022e945dcbae25bda9edc6ee40ff7a8163bf9c534353e84f018117fe203"
+  },
+  {
+    "path": "fixtures/fix/js/test/rank.test.js",
+    "sha256": "d7e09e80a780b93cf1a4566766d3633f22faf579a41c86fc1773a666979caf1a"
+  },
+  {
+    "path": "fixtures/research/gaps/src/parse.js",
+    "sha256": "eb78f51d25f7ea197652fe1ecda2f5b92fa4dcb89b8634e7f15a02afd1b66f24"
+  },
+  {
+    "path": "fixtures/research/gaps/test/parse.test.js",
+    "sha256": "1773eae76b4cbc1581b6cf58063ae73be1e32ccfe44841d88ac823b2b915d56b"
+  },
+  {
+    "path": "fixtures/research/release/notes/api.md",
+    "sha256": "507f3f32ba75d455971c2896177574a9f7038a1e33f557f49cc33f32c9f05938"
+  },
+  {
+    "path": "fixtures/research/release/notes/ops.md",
+    "sha256": "60bfd7cd27f19828c6e2a305de6ce43d568fce45cd3a80f62c0fef41c236800c"
+  },
+  {
+    "path": "fixtures/research/release/notes/ui.md",
+    "sha256": "c187c4feba040c0bb85e4617ca1ceaf0cd06adfb356c0de58898ee6acc4c4b62"
+  },
+  {
+    "path": "fixtures/small/inventory/inventory.csv",
+    "sha256": "0c3ca80b8d29947db134adb39a78812cc4e8fc3953a902478f043f5a10730e52"
+  },
+  {
+    "path": "fixtures/small/inventory/README.md",
+    "sha256": "234877a6eeca88e9a96552d7ce0e4a4aa0e100e4d7860fab0d1c05e7461ea6d5"
+  },
+  {
+    "path": "fixtures/small/package/PACKAGE.md",
+    "sha256": "6762614e02fb1e36380eb1b6251f8cac9148f55ddd1220a37d0e2238a5a31215"
+  },
+  {
+    "path": "fixtures/small/package/src/hello.js",
+    "sha256": "5e39b3fff9234c7b1b3a8cb5caf35cceaa66e71abd210edfb0d5bbf51cf3874d"
+  },
+  {
+    "path": "tasks/F1.md",
+    "sha256": "89c1a041394e80e61b4111804babf82e38a36b6e3a366f3be453d2647295f5e9"
+  },
+  {
+    "path": "tasks/F2.md",
+    "sha256": "4454f66d7d537dac935851c1496e6392e26b6f838927b0a225e1dbe13a116354"
+  },
+  {
+    "path": "tasks/R1.md",
+    "sha256": "f879e6ff8e606b8c9514940d5421007cc7f8a6e31fafc5eae06e96fc390eb015"
+  },
+  {
+    "path": "tasks/R2.md",
+    "sha256": "c125aeff9b75cb07c5a3f013afae63d434bebfbf292900d884af4e8379b13527"
+  },
+  {
+    "path": "tasks/S1.md",
+    "sha256": "1ff6781ed832551c121a5d6227b2d83cfd25acc5b4f1f895dc26fb4069a367d5"
+  },
+  {
+    "path": "tasks/S2.md",
+    "sha256": "1b2ebe8ff231fb8d46deaf413c78acafdd3cac4b1518cba5b46aab36c4636973"
+  }
+]

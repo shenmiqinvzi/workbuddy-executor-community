@@ -1,0 +1,52 @@
+{
+  "run": "S2-direct",
+  "pair": "S2",
+  "condition": "GPT-6 Luna direct",
+  "taskHash": "1b2ebe8ff231fb8d46deaf413c78acafdd3cac4b1518cba5b46aab36c4636973",
+  "workspace": "runs/S2-direct",
+  "startUTC": "2026-10-18T06:43:30Z",
+  "endUTC": "2026-10-18T06:44:36Z",
+  "totalSeconds": 66,
+  "timingQuality": "Observed by coordinator immediately before isolated Luna subagent invocation and after independent final verification.",
+  "directExecutor": "GPT-6 Luna isolated subagent",
+  "firstPass": {
+    "contentCheckPass": true,
+    "scopeCheckPass": true,
+    "overallAcceptance": true,
+    "agentReportedVerifierExitCode": 0
+  },
+  "final": {
+    "contentCheckPass": true,
+    "scopeCheckPass": true,
+    "readmeHashMatches": true,
+    "taskHashMatches": true,
+    "overallAcceptance": true,
+    "parentCheckerExitCode": 0
+  },
+  "externalReworkRounds": 0,
+  "userInterventions": 0,
+  "codexWorkBuddySupervisionCalls": "NA (direct arm; not a WorkBuddy task)",
+  "directToolCallCount": "NA",
+  "directToolReturnBytes": "NA",
+  "tokenCounts": "NA",
+  "activeReasoningSeconds": "NA",
+  "independentChecks": [
+    {
+      "command": "tools/verify.ps1 -Task S2 -Workspace runs/S2-direct",
+      "exitCode": 0,
+      "stdoutBytes": 69
+    },
+    {
+      "scope": "Final file list exactly .study/task.md, README.md, inventory.csv; README and task hashes match frozen inputs."
+    }
+  ],
+  "contextIsolation": "Minor disclosed leakage: executor ran git status --short from nested run directory and saw unrelated ledger path names only; report states it did not open contents or write outside inventory.csv.",
+  "checkerSha": "5c67459bf3e150f2c7c3b9d11e61bb25eede60356ca01dab13cddd5be67c09b0",
+  "notes": [
+    "Frozen S2 task text and baseline hashes unchanged.",
+    "No auxiliary files in run workspace.",
+    "No direct-arm tool telemetry exposed; NA is used rather than zero."
+  ],
+  "strictPairTimeComparable": false,
+  "externalRecoveryRounds": 0
+}

@@ -1,0 +1,8 @@
+# Placeholder paths only. Adjust for the actual machine; do not upload the real .env.
+WORKBUDDY_BACKEND=desktop-queue
+WORKBUDDY_NODE_BIN=F:/node.exe
+WORKBUDDY_CLI_ELECTRON=F:/WorkBuddy/WorkBuddyAI/WorkBuddyAI.exe
+WORKBUDDY_CONFIG_DIR=C:/Users/YOUR_USER/.workbuddy-ai
+WORKBUDDY_REQUIRED_FREE_MODEL=deepseek-v4.1-flash
+WORKBUDDY_MAX_TASK_ATTEMPTS=3
+WORKBUDDY_CLAIM_TIMEOUT_SECONDS=180

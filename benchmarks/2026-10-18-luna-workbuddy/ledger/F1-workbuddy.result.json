@@ -1,0 +1,177 @@
+{
+  "run": "F1-workbuddy",
+  "pair": "F1",
+  "condition": "GPT-6 Luna supervising one free WorkBuddy",
+  "taskId": "study-F1-workbuddy",
+  "taskHash": "89c1a041394e80e61b4111804babf82e38a36b6e3a366f3be453d2647295f5e9",
+  "sessionId": "session-F1-workbuddy",
+  "attempt1": "attempt-F1-workbuddy-1",
+  "runtimeSource": "desktop_queue",
+  "model": "deepseek-v4.1-flash",
+  "creditsAtDispatch": "x0.00",
+  "startUTC": "2026-10-18T06:47:24Z",
+  "endUTC": "2026-10-18T06:57:13Z",
+  "durationToBlockSeconds": 179,
+  "timingQuality": "Total clock includes queueing, blocked wait, screenshot/user troubleshooting, official cancellation reconciliation, model recheck, and rejected continue attempt; end is coordinator decision endpoint, not successful completion.",
+  "blockedObservedUTC": "2026-10-18T06:50:23.753Z",
+  "blockReason": "WorkBuddy requires native permission or input; later officially cancelled for native-stop reconciliation",
+  "nativeStopConfirmed": true,
+  "firstPass": {
+    "overallAcceptance": false,
+    "contentCheckPass": "NA",
+    "scopeCheckPass": "NA",
+    "reason": "No worker final report; task became blocked then cancelled before an independent artifact review."
+  },
+  "final": {
+    "overallAcceptance": false,
+    "contentCheckPass": "NA",
+    "scopeCheckPass": "NA",
+    "reason": "Official cancellation confirmed and task could not be continued; no final report/artifact acceptance."
+  },
+  "externalReworkRounds": 0,
+  "codexInitiatedRecoveryEvents": 1,
+  "userInterventions": 1,
+  "gatewayCallCount": 12,
+  "gatewayCalls": [
+    {
+      "tool": "workbuddy_list_models",
+      "callerStartUTC": "2026-10-18T06:47:46Z",
+      "exitCode": 0,
+      "callerReturnUTC": "2026-10-18T06:47:54Z",
+      "combinedCliOutputBytes": 3126,
+      "stdoutBytes": "NA",
+      "stderrBytes": "NA (merged with stdout in capture)"
+    },
+    {
+      "tool": "workbuddy_ensure_workspace",
+      "callerStartUTC": "2026-10-18T06:48:14Z",
+      "exitCode": 0,
+      "callerReturnUTC": "2026-10-18T06:48:26Z",
+      "combinedCliOutputBytes": 1066,
+      "stdoutBytes": "NA",
+      "stderrBytes": "NA (merged with stdout in capture)"
+    },
+    {
+      "tool": "workbuddy_send_task",
+      "callerStartUTC": "2026-10-18T06:48:42Z",
+      "exitCode": 0,
+      "callerReturnUTC": "2026-10-18T06:48:52Z",
+      "combinedCliOutputBytes": 1353,
+      "stdoutBytes": "NA",
+      "stderrBytes": "NA (merged with stdout in capture)"
+    },
+    {
+      "tool": "workbuddy_wait",
+      "callerStartUTC": "2026-10-18T06:49:09Z",
+      "exitCode": 0,
+      "callerReturnUTC": "2026-10-18T06:49:13Z",
+      "combinedCliOutputBytes": 2467,
+      "stdoutBytes": "NA",
+      "stderrBytes": "NA (merged with stdout in capture)"
+    },
+    {
+      "tool": "workbuddy_wait",
+      "exitCode": 0,
+      "callerReturnUTC": "NA",
+      "note": "Outer cell resumed before final stdout was visible; caller return not safely aligned. Gateway observedAt is recorded.",
+      "callerStartUTC": "2026-10-18T06:49:31Z",
+      "combinedCliOutputBytes": 2456,
+      "stdoutBytes": "NA",
+      "stderrBytes": "NA (merged with stdout in capture)"
+    },
+    {
+      "tool": "workbuddy_get_task",
+      "callerStartUTC": "2026-10-18T06:50:45Z",
+      "exitCode": 0,
+      "callerReturnUTC": "2026-10-18T06:50:50Z",
+      "combinedCliOutputBytes": 5150,
+      "stdoutBytes": "NA",
+      "stderrBytes": "NA (merged with stdout in capture)"
+    },
+    {
+      "tool": "workbuddy_get_messages",
+      "callerStartUTC": "2026-10-18T06:53:38Z",
+      "callerReturnUTC": "2026-10-18T06:53:44Z",
+      "stdoutBytes": "NA",
+      "stderrBytes": "NA (merged with stdout in capture)",
+      "combinedCliOutputBytes": 3964,
+      "exitCode": 0
+    },
+    {
+      "tool": "workbuddy_get_task",
+      "callerStartUTC": "2026-10-18T06:54:13Z",
+      "callerReturnUTC": "2026-10-18T06:54:19Z",
+      "stdoutBytes": "NA",
+      "stderrBytes": "NA (merged with stdout in capture)",
+      "combinedCliOutputBytes": 5150,
+      "exitCode": 0,
+      "note": "Read-only state check after parent relayed native UI screenshot; task still waiting_input and remoteStopped=false."
+    },
+    {
+      "tool": "workbuddy_cancel_task",
+      "callerStartUTC": "2026-10-18T06:55:23Z",
+      "callerReturnUTC": "2026-10-18T06:55:31Z",
+      "stdoutBytes": "NA",
+      "stderrBytes": "NA (merged with stdout in capture)",
+      "combinedCliOutputBytes": 2543,
+      "exitCode": 0
+    },
+    {
+      "tool": "workbuddy_wait",
+      "callerStartUTC": "2026-10-18T06:55:50Z",
+      "callerReturnUTC": "2026-10-18T06:55:54Z",
+      "stdoutBytes": "NA",
+      "stderrBytes": "NA (merged with stdout in capture)",
+      "combinedCliOutputBytes": 2032,
+      "exitCode": 0
+    },
+    {
+      "tool": "workbuddy_list_models",
+      "callerStartUTC": "2026-10-18T06:56:14Z",
+      "callerReturnUTC": "2026-10-18T06:56:20Z",
+      "stdoutBytes": "NA",
+      "stderrBytes": "NA (merged with stdout in capture)",
+      "combinedCliOutputBytes": 3127,
+      "exitCode": 0
+    },
+    {
+      "tool": "workbuddy_continue_task",
+      "callerStartUTC": "2026-10-18T06:56:40Z",
+      "callerReturnUTC": "2026-10-18T06:56:44Z",
+      "stdoutBytes": "NA",
+      "stderrBytes": "NA (merged with stdout in capture)",
+      "combinedCliOutputBytes": 277,
+      "exitCode": 1,
+      "note": "Gateway rejected continued cancelled task; no replacement task was created."
+    }
+  ],
+  "mcpWireBytes": "NA",
+  "tokenCounts": "NA",
+  "activeReasoningSeconds": "NA",
+  "notes": [
+    "First WorkBuddy pass was claimed then blocked before a final deliverable; operational first-pass acceptance is false and content/scope are NA.",
+    "Parent-relayed UI showed a user-cancelled label, while gateway originally remained waiting_input. Cancellation was used only to reconcile native stop; native_idle_verified confirmed remote stop. Who cancelled in UI is unknown.",
+    "Parent-agent recovery misjudgment led to one continue_task attempt after official cancellation; gateway rejected it because cancelled tasks cannot continue. No replacement task was dispatched.",
+    "Total runtime includes waiting, screenshot troubleshooting, cancel confirmation and the rejected continuation attempt; not comparable to a normal completion run.",
+    "PowerShell merged stdout/stderr capture; 32,711 combined CLI text bytes are not pure stdout or MCP wire bytes."
+  ],
+  "combinedCliOutputBytes": 32711,
+  "successfulGatewayCliStdoutBytes": "NA (PowerShell merged stdout/stderr capture)",
+  "outputCaptureMode": "PowerShell *> combined stdout/stderr text files; byte counts are combined CLI text-file length, not pure stdout or MCP wire bytes.",
+  "userInterventionStatus": "One screenshot troubleshooting episode occurred; who cancelled in native UI is unknown.",
+  "localLauncherPreflightErrors": 1,
+  "failedOrIncompleteGatewayInvocations": 1,
+  "reportedNativeUiLabel": "Parent relayed screenshot displays “cancelled 4m29s / user cancelled”; attribution is not independently established and conflicts with gateway execution state, which still reports waiting_input, cancellationRequested=false, remoteStopped=false.",
+  "externalRecoveryRounds": 1,
+  "recoveryAttemptErrors": 1,
+  "recoveryAndInterventionNotes": "One external screenshot troubleshooting episode (cancel operator unknown). Official stop reconciliation succeeded. A parent-agent recovery attempt to continue a cancelled task was rejected by gateway; no replacement task was dispatched.",
+  "taskFinalState": "cancelled",
+  "totalSeconds": 589,
+  "durationToConfirmedNativeStopSeconds": 487.281,
+  "stopConfirmedUTC": "2026-10-18T06:55:31.281Z",
+  "attemptedRejectedContinuation": 1,
+  "successfulGatewayCallCount": 11,
+  "failedGatewayInvocations": 1,
+  "recoveryEvent": "Parent-agent authorized one stop reconciliation; after native_idle_verified, a parent-agent attempted continue_task, which was rejected because cancelled tasks cannot continue. This was a supervision recovery mistake, not a Luna error; no worker rework feedback was delivered.",
+  "strictPairTimeComparable": false
+}

@@ -1,0 +1,140 @@
+{
+  "run": "S2-workbuddy",
+  "pair": "S2",
+  "condition": "GPT-6 Luna supervising one free WorkBuddy",
+  "taskId": "study-S2-workbuddy",
+  "taskHash": "1b2ebe8ff231fb8d46deaf413c78acafdd3cac4b1518cba5b46aab36c4636973",
+  "sessionId": "session-S2-workbuddy",
+  "attempt1": "attempt-S2-workbuddy-1",
+  "attemptFinal": "attempt-S2-workbuddy-final",
+  "runtimeSource": "desktop_queue",
+  "model": "deepseek-v4.1-flash",
+  "creditsAtDispatch": "x0.00",
+  "startUTC": "2026-10-18T06:35:18.1667668Z",
+  "endUTC": "2026-10-18T06:42:09.141Z",
+  "totalSeconds": 410.974,
+  "timingQuality": "Clock observed; includes queueing, all waits, independent verification, one cleanup rework, and acceptance.",
+  "queueSeconds": 17.033,
+  "firstPass": {
+    "contentCheckPass": true,
+    "scopeCheckPass": false,
+    "readmeHashMatches": true,
+    "overallAcceptance": false,
+    "failure": "Extra .workbuddy-ai/memory/2026-10-18.md (512 bytes; origin unknown)."
+  },
+  "final": {
+    "contentCheckPass": true,
+    "scopeCheckPass": true,
+    "readmeHashMatches": true,
+    "taskHashMatches": true,
+    "overallAcceptance": true,
+    "acceptanceRecordedUTC": "2026-10-18T06:42:09.141Z"
+  },
+  "externalReworkRounds": 1,
+  "reworkKind": "Extra memory-file cleanup only; not CSV content defect.",
+  "unexpectedMemory": {
+    "origin": "Native session Write tool explicitly created the exact path; whether app automatic-memory behavior triggered it is unknown.",
+    "bytes": 512,
+    "sha256": "a2dc3331717b922e913a64ff096a82c1ab4627a26073382ab138279a7502bb60",
+    "workerReported": "Worker said it created the file; not independently established.",
+    "evidence": "local-only, excluded from git",
+    "nativeWriteEvidence": {
+      "evidence": "Filtered native session JSONL function_call name and file_path only; no reasoning/content exposed.",
+      "tool": "Write",
+      "timestampUnixMs": 1792305427199
+    }
+  },
+  "gatewayCallCount": 14,
+  "gatewayCalls": [
+    {
+      "tool": "workbuddy_list_models",
+      "stdoutBytes": 2795
+    },
+    {
+      "tool": "workbuddy_ensure_workspace",
+      "stdoutBytes": 1041
+    },
+    {
+      "tool": "workbuddy_send_task",
+      "stdoutBytes": 1319
+    },
+    {
+      "tool": "workbuddy_wait",
+      "stdoutBytes": 2029
+    },
+    {
+      "tool": "workbuddy_wait",
+      "stdoutBytes": 2232
+    },
+    {
+      "tool": "workbuddy_wait",
+      "stdoutBytes": 3788
+    },
+    {
+      "tool": "workbuddy_wait",
+      "stdoutBytes": 2397
+    },
+    {
+      "tool": "workbuddy_continue_task",
+      "stdoutBytes": 1320
+    },
+    {
+      "tool": "workbuddy_wait",
+      "stdoutBytes": 2182
+    },
+    {
+      "tool": "workbuddy_wait",
+      "stdoutBytes": 2233
+    },
+    {
+      "tool": "workbuddy_wait",
+      "stdoutBytes": 1627
+    },
+    {
+      "tool": "workbuddy_wait",
+      "stdoutBytes": 4588
+    },
+    {
+      "tool": "workbuddy_wait",
+      "stdoutBytes": 2559
+    },
+    {
+      "tool": "workbuddy_accept_task",
+      "stdoutBytes": 4991
+    }
+  ],
+  "successfulGatewayCliStdoutBytes": 35101,
+  "localCheckerRuns": [
+    {
+      "contentCheckPass": true,
+      "stdoutBytes": 69,
+      "exitCode": 0
+    },
+    {
+      "contentCheckPass": true,
+      "stdoutBytes": 69,
+      "exitCode": 0
+    }
+  ],
+  "mcpWireBytes": "NA",
+  "tokenCounts": "NA",
+  "activeReasoningSeconds": "NA",
+  "userInterventions": 0,
+  "codexInitiatedReworkRounds": 1,
+  "gatewayInternalRetryCount": "NA",
+  "notes": [
+    "S2 WorkBuddy-first ordering was preserved.",
+    "First-pass content passed; scope failed only on an extra memory file. Final scope and content both pass.",
+    "The current default WorkBuddy environment exhibits the extra file; no settings were changed.",
+    "Caller-level start/return timestamps per gateway call were not captured; response stdout lengths are raw file lengths.",
+    "initialDispatchToFinalNativeStopSeconds is measured from initial send_task caller start (2026-10-18T06:35:51.883Z) to final native stop observedAt (2026-10-18T06:40:29.977Z); it spans first pass and cleanup rework."
+  ],
+  "firstAttemptNativeStopUTC": "2026-10-18T06:37:13.111Z",
+  "finalAttemptNativeStopUTC": "2026-10-18T06:40:29.977Z",
+  "firstAttemptDispatchToNativeStopSeconds": 81.228,
+  "finalAttemptDispatchToNativeStopSeconds": 141.492,
+  "endpointTimeBasis": "Native stop times are server wait.observedAt; acceptance end is server reviewedAt. Individual caller invocation/return instants were not captured.",
+  "initialDispatchToFinalNativeStopSeconds": 278.094,
+  "strictPairTimeComparable": false,
+  "externalRecoveryRounds": 0
+}

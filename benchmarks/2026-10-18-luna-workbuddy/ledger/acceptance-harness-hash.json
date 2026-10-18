@@ -1,0 +1,7 @@
+{
+  "verificationScript": "tools/verify.ps1",
+  "sha256": "5c67459bf3e150f2c7c3b9d11e61bb25eede60356ca01dab13cddd5be67c09b0",
+  "frozenAtUtc": "2026-10-18T06:29:35.5307459Z",
+  "observedAnyRunOutputBeforeFreeze": true,
+  "amendment": "S1-direct output was reported before this checker freeze. Preserve S1 as originally observed and use the original task acceptance plus this amended independent checker in its review; do not claim strict blinding."
+}

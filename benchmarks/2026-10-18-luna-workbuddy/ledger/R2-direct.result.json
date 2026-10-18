@@ -1,0 +1,75 @@
+{
+  "run": "R2-direct",
+  "pair": "R2",
+  "condition": "GPT-6 Luna direct",
+  "taskHash": "c125aeff9b75cb07c5a3f013afae63d434bebfbf292900d884af4e8379b13527",
+  "workspace": "runs/R2-direct",
+  "startUTC": "2026-10-18T09:16:10.6448047Z",
+  "endUTC": "2026-10-18T09:17:19.2875326Z",
+  "totalSeconds": 68.643,
+  "childReportedStartUTC": "2026-10-18T09:16:26.137Z",
+  "childReportedEndUTC": "2026-10-18T09:16:55.559Z",
+  "timingQuality": "Coordinator clock recorded immediately before isolated GPT-6 Luna spawn; end after independent parent semantic, citation, hash and scope verification. Child-reported timestamps are retained separately.",
+  "strictPairTimeComparable": true,
+  "directExecutor": "GPT-6 Luna isolated subagent",
+  "reasoningSetting": "Inherited default; prior direct-run records do not expose active reasoning time; activeReasoningSeconds=NA",
+  "firstPass": {
+    "contentCheckPass": true,
+    "scopeCheckPass": true,
+    "overallAcceptance": true
+  },
+  "final": {
+    "contentCheckPass": true,
+    "scopeCheckPass": true,
+    "overallAcceptance": true,
+    "checkerExitCode": 0,
+    "taskHashMatches": true,
+    "protectedSourceHashMatches": true,
+    "protectedTestHashMatches": true,
+    "checkerSha": "5c67459bf3e150f2c7c3b9d11e61bb25eede60356ca01dab13cddd5be67c09b0",
+    "finalFiles": [
+      ".study/task.md",
+      "src/parse.js",
+      "test/parse.test.js",
+      "TEST-GAPS.md"
+    ]
+  },
+  "externalReworkRounds": 0,
+  "externalRecoveryRounds": 0,
+  "userInterventions": 0,
+  "codexInitiatedRecoveryEvents": 0,
+  "directToolCallCount": "NA",
+  "directToolReturnBytes": "NA",
+  "gatewayCallCount": "NA (direct condition)",
+  "successfulGatewayStdoutBytes": "NA",
+  "mcpWireBytes": "NA",
+  "tokenCounts": "NA",
+  "activeReasoningSeconds": "NA",
+  "changedFiles": [
+    "TEST-GAPS.md"
+  ],
+  "protectedHashes": {
+    "src/parse.js": "eb78f51d25f7ea197652fe1ecda2f5b92fa4dcb89b8634e7f15a02afd1b66f24",
+    "test/parse.test.js": "1773eae76b4cbc1581b6cf58063ae73be1e32ccfe44841d88ac823b2b915d56b"
+  },
+  "independentVerifier": {
+    "command": "tools/verify.ps1 -Task R2 -Workspace runs/R2-direct",
+    "exitCode": 0,
+    "stdoutBytes": 138,
+    "checkerFalseNegative": false,
+    "manualSemanticReview": "Three distinct boundary/error input cases, exact refs checked against source/test."
+  },
+  "semanticReview": {
+    "gap1": "parseCount fractional input: src/parse.js:3 TypeError guard; test/parse.test.js:4-5 do not exercise fractional input",
+    "gap2": "parseCount nonnumeric text: src/parse.js:2-3 conversion/TypeError; test/parse.test.js:4-5 only integer string and negative integer",
+    "gap3": "firstNonEmpty no-match null fallback: src/parse.js:8; test/parse.test.js:6 only hit",
+    "manualReviewer": "Coordinator independent review",
+    "allThreeDistinctAndActionable": true,
+    "allReferencesExistAndSupport": true
+  },
+  "notes": [
+    "Fresh isolated GPT-6 Luna child had no inherited task context and did not inspect WorkBuddy results.",
+    "Only authorized TEST-GAPS.md was created; source/test fixtures and frozen task hash match.",
+    "No WorkBuddy supervision data exists for this direct run; telemetry stays NA rather than zero."
+  ]
+}

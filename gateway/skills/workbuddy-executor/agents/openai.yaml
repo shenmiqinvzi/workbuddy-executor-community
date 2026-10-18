@@ -1,0 +1,9 @@
+interface:
+  display_name: "WorkBuddy 执行官"
+  short_description: "通过 Windows 队列调用国际版 WorkBuddy 免费模型，支持开发、测试、验收和返工"
+  default_prompt: "使用 $workbuddy-executor，通过桌面队列让国际版 WorkBuddy 使用已确认的免费模型执行我的任务，核对真实成果并按需返工。"
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "workbuddy"
+      description: "已在本机注册的 WorkBuddy Desktop Bridge MCP"

@@ -1,0 +1,90 @@
+{
+  "format": 1,
+  "verifiedOn": "2026-10-18",
+  "release": "reliability-20261018.1",
+  "codeHash": "a365d16723bdf840028364df3c1b4c11471dc74dd12874ecd1abbaeed5025118",
+  "finding": "Sandbox execution-policy visibility differs from the normal user; no production executor defect reproduced",
+  "approvedModel": {
+    "id": "deepseek-v4.1-flash",
+    "credits": "x0.00",
+    "paidFallbackUsed": false
+  },
+  "policies": {
+    "normalHost": {
+      "currentUser": "RemoteSigned",
+      "effective": "RemoteSigned"
+    },
+    "sandbox": {
+      "currentUser": "Undefined",
+      "effective": "Restricted"
+    },
+    "changed": false
+  },
+  "coreRegression": {
+    "total": 122,
+    "passed": 116,
+    "failed": 0,
+    "skipped": 6
+  },
+  "packagingRegression": {
+    "passed": 8,
+    "failed": 0
+  },
+  "publicationRegression": {
+    "total": 139,
+    "passed": 133,
+    "failed": 0,
+    "skipped": 6,
+    "concurrency": 2
+  },
+  "hostJobRegression": {
+    "files": [
+      "test/bounded-command.test.ts",
+      "test/command-cleanup.test.ts"
+    ],
+    "passed": 9,
+    "failed": 0,
+    "skipped": 0,
+    "assertions": "Normal exit, timeout and cancellation create real descendants; ESRCH is required for exited PIDs; nested Job cleanup passes"
+  },
+  "native": {
+    "passed": true,
+    "runtimeSource": "desktop_queue",
+    "state": "accepted",
+    "remoteStopped": true,
+    "samples": {
+      "normal": {
+        "exitCode": 0,
+        "reason": "exit",
+        "stdoutMarkerVerified": true,
+        "cleanupConfirmed": true,
+        "ownership": "windows_job_object",
+        "durationMs": 3042
+      },
+      "timeout": {
+        "exitCode": 124,
+        "reason": "timeout",
+        "timeoutSeconds": 2,
+        "cleanupConfirmed": true,
+        "ownership": "windows_job_object",
+        "durationMs": 4681
+      }
+    },
+    "independentInspection": {
+      "commandAndCwdMatched": true,
+      "currentSourceHashesMatched": true,
+      "exitedPidsConfirmedByESRCH": 3,
+      "processesTerminatedByCodex": 0,
+      "workerValidationReferencesSaved": false,
+      "rawRecordsInspected": true
+    }
+  },
+  "runtimeCodeChangedForPolicyIssue": false,
+  "efficiencyComparison": "not_run",
+  "redactions": [
+    "machine-specific raw evidence paths",
+    "task, attempt and session identifiers",
+    "process identifiers",
+    "private raw logs and worker reports"
+  ]
+}

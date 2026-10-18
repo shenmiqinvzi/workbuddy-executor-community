@@ -1,0 +1,62 @@
+{
+  "run": "F2-direct",
+  "pair": "F2",
+  "condition": "GPT-6 Luna direct",
+  "taskHash": "4454f66d7d537dac935851c1496e6392e26b6f838927b0a225e1dbe13a116354",
+  "workspace": "runs/F2-direct",
+  "startUTC": "2026-10-18T07:09:15Z",
+  "endUTC": "2026-10-18T07:10:31Z",
+  "totalSeconds": 76,
+  "timingQuality": "Coordinator start immediately before isolated Luna direct invocation; end after independent final verification.",
+  "directExecutor": "GPT-6 Luna isolated subagent",
+  "firstPass": {
+    "contentCheckPass": true,
+    "scopeCheckPass": true,
+    "overallAcceptance": true,
+    "agentReportedTestCommand": "node --test test/rank.test.js",
+    "agentReportedExitCode": 0,
+    "agentReportedTests": 4
+  },
+  "final": {
+    "contentCheckPass": true,
+    "scopeCheckPass": true,
+    "taskHashMatches": true,
+    "overallAcceptance": true,
+    "parentCheckerExitCode": 0,
+    "checkerSha": "5c67459bf3e150f2c7c3b9d11e61bb25eede60356ca01dab13cddd5be67c09b0"
+  },
+  "independentVerifier": {
+    "command": "tools/verify.ps1 -Task F2 -Workspace runs/F2-direct",
+    "exitCode": 0,
+    "stdoutBytes": 463
+  },
+  "externalReworkRounds": 0,
+  "reworkKind": "none",
+  "userInterventions": 0,
+  "directToolCallCount": "NA",
+  "directToolReturnBytes": "NA",
+  "codexWorkBuddySupervisionCalls": "NA (direct condition)",
+  "tokenCounts": "NA",
+  "activeReasoningSeconds": "NA",
+  "changedFiles": [
+    "src/rank.js",
+    "test/rank.test.js"
+  ],
+  "finalScopeFileList": [
+    ".study/task.md",
+    "src/rank.js",
+    "test/rank.test.js"
+  ],
+  "modifiedFileHashes": {
+    "src/rank.js": "96aa1d254edd63c671418146693596fdfc7bd79d7c1b8b64458aded679f0ee68",
+    "test/rank.test.js": "33630594768dd59e2591ed0cb0e19bc485a87b1ba81a618afe902e290d1d3f7c"
+  },
+  "protectedTaskHashMatches": true,
+  "notes": [
+    "Isolated GPT-6 Luna direct context; no WorkBuddy use.",
+    "Child reported four dependency-free Node tests passing; shared independent checker reran those four worker tests plus the separate frozen contract harness.",
+    "Final scope list contains only frozen task file and two authorized files."
+  ],
+  "strictPairTimeComparable": true,
+  "externalRecoveryRounds": 0
+}

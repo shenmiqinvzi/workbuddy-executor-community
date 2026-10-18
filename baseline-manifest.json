@@ -1,0 +1,21 @@
+{
+  "baseline": "2026-10-15-before-token-optimization",
+  "files": [
+    {
+      "path": "SKILL.md",
+      "sha256": "05FE35B8EDF9A6C1994C477395F97498310090080B0B4AF6DEABD2091FC110A5"
+    },
+    {
+      "path": "agents/openai.yaml",
+      "sha256": "B86F6CF3B6BFF1FEFD45BF86EB26F5A19317BC50EF83D7B6C4FA419D86D70F3B"
+    },
+    {
+      "path": "references/setup.md",
+      "sha256": "3EE97A6FCAF2101930E44464742799EF2A6F357817B44B277341E92EDC6D7379"
+    },
+    {
+      "path": "references/agent-hub.md",
+      "sha256": "CBF1C1FBB54A97FC552AD7818F43B74221855552F0E58A654E28B82694CD5196"
+    }
+  ]
+}

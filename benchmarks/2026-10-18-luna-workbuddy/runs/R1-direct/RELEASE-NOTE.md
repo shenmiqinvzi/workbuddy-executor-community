@@ -1,0 +1,3 @@
+- Idempotent GET requests are retried once after a transient 503 (`api.md`).
+- Container image builds record their source revision as an OCI label (`ops.md`).
+- The settings page displays a saved indicator after successful profile updates (`ui.md`).

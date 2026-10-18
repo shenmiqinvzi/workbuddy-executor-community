@@ -1,0 +1,189 @@
+{
+  "run": "R2-workbuddy",
+  "pair": "R2",
+  "condition": "GPT-6 Luna supervising one free WorkBuddy",
+  "taskId": "study-R2-workbuddy",
+  "taskHash": "c125aeff9b75cb07c5a3f013afae63d434bebfbf292900d884af4e8379b13527",
+  "sessionId": "session-R2-workbuddy",
+  "attempt1": "attempt-R2-workbuddy-1",
+  "attempt2": "attempt-R2-workbuddy-2",
+  "attemptFinal": "attempt-R2-workbuddy-2",
+  "runtimeSource": "desktop_queue",
+  "model": "deepseek-v4.1-flash",
+  "creditsAtDispatch": "x0.00",
+  "startUTC": "2026-10-18T09:08:38.4957600Z",
+  "endUTC": "2026-10-18T09:15:48.8957621Z",
+  "totalSeconds": 430.4,
+  "timingQuality": "Coordinator clock started before list_models and ended after independent acceptance; includes queueing, worker wait, reviewer formatting rework, and parent verification; this is wall elapsed time, not active supervision time.",
+  "strictPairTimeComparable": true,
+  "taskFinalState": "accepted",
+  "firstPass": {
+    "contentCheckPass": true,
+    "scopeCheckPass": true,
+    "overallAcceptance": true,
+    "automatedCheckerExitCode": 1,
+    "automatedCheckerFailure": "False negative: frozen checker required exactly three Markdown list bullets, while original task only required exactly three actionable gaps; first file had three gap sections with supporting sub-bullets."
+  },
+  "final": {
+    "contentCheckPass": true,
+    "scopeCheckPass": true,
+    "overallAcceptance": true,
+    "checkerExitCode": 0,
+    "taskHashMatches": true,
+    "protectedSourceHashMatches": true,
+    "protectedTestHashMatches": true,
+    "nativeStopConfirmed": true,
+    "nativeStopConfirmedUTC": "2026-10-18T09:14:30.773Z",
+    "reviewedAt": "2026-10-18T09:15:48.836Z",
+    "finalFiles": [
+      ".study/task.md",
+      "src/parse.js",
+      "test/parse.test.js",
+      "TEST-GAPS.md"
+    ]
+  },
+  "externalReworkRounds": 1,
+  "externalRecoveryRounds": 0,
+  "reworkKind": "One unnecessary formatting continuation triggered by the checker false negative; it did not address a worker content/scope defect.",
+  "userInterventions": 0,
+  "codexInitiatedRecoveryEvents": 0,
+  "gatewayCallCount": 12,
+  "successfulGatewayCallCount": 12,
+  "failedGatewayInvocations": 0,
+  "gatewayCalls": [
+    {
+      "tool": "workbuddy_list_models",
+      "stdoutBytes": 2978,
+      "stderrBytes": 0,
+      "exitCode": 0
+    },
+    {
+      "tool": "workbuddy_ensure_workspace",
+      "stdoutBytes": 1040,
+      "stderrBytes": 0,
+      "exitCode": 0
+    },
+    {
+      "tool": "workbuddy_send_task",
+      "stdoutBytes": 1320,
+      "stderrBytes": 0,
+      "exitCode": 0
+    },
+    {
+      "tool": "workbuddy_wait",
+      "stdoutBytes": 2396,
+      "stderrBytes": 0,
+      "exitCode": 0,
+      "eventSeq": 0,
+      "attempt": 1
+    },
+    {
+      "tool": "workbuddy_wait",
+      "stdoutBytes": 1627,
+      "stderrBytes": 0,
+      "exitCode": 0,
+      "eventSeq": 2,
+      "attempt": 1
+    },
+    {
+      "tool": "workbuddy_wait",
+      "stdoutBytes": 4553,
+      "stderrBytes": 0,
+      "exitCode": 0,
+      "eventSeq": 2,
+      "attempt": 1
+    },
+    {
+      "tool": "workbuddy_wait",
+      "stdoutBytes": 2396,
+      "stderrBytes": 0,
+      "exitCode": 0,
+      "eventSeq": 3,
+      "attempt": 1
+    },
+    {
+      "tool": "workbuddy_list_models",
+      "stdoutBytes": 2979,
+      "stderrBytes": 0,
+      "exitCode": 0
+    },
+    {
+      "tool": "workbuddy_continue_task",
+      "stdoutBytes": 1320,
+      "stderrBytes": 0,
+      "exitCode": 0,
+      "attempt": 2
+    },
+    {
+      "tool": "workbuddy_wait",
+      "stdoutBytes": 4897,
+      "stderrBytes": 0,
+      "exitCode": 0,
+      "eventSeq": 0,
+      "attempt": 2
+    },
+    {
+      "tool": "workbuddy_wait",
+      "stdoutBytes": 2397,
+      "stderrBytes": 0,
+      "exitCode": 0,
+      "eventSeq": 3,
+      "attempt": 2
+    },
+    {
+      "tool": "workbuddy_accept_task",
+      "stdoutBytes": 5578,
+      "stderrBytes": 0,
+      "exitCode": 0
+    }
+  ],
+  "successfulGatewayStdoutBytes": 33481,
+  "gatewayStderrBytes": 0,
+  "mcpWireBytes": "NA",
+  "outputCaptureMode": "CLI stdout files with stderr captured separately; not MCP wire bytes",
+  "tokenCounts": "NA",
+  "activeReasoningSeconds": "NA",
+  "gatewayInternalRetryCount": "NA",
+  "localCheckerRuns": [
+    {
+      "command": "tools/verify.ps1 -Task R2 -Workspace runs/R2-workbuddy",
+      "phase": "firstPass",
+      "exitCode": 1,
+      "reason": "checker required exactly three Markdown bullets",
+      "stdoutBytes": "NA",
+      "stdoutCapture": "Not separately captured; first exit/error appeared in console output."
+    },
+    {
+      "command": "tools/verify.ps1 -Task R2 -Workspace runs/R2-workbuddy",
+      "phase": "final",
+      "exitCode": 0,
+      "stdoutBytes": 138
+    }
+  ],
+  "firstPassNativeWritePayload": {
+    "path": "ledger/R2-workbuddy-first-native-write-payload.local.md",
+    "sha256": "a6664b5eb69619e9c1f916b57a03020282ee4c0696ffec8703030769f0321bc7",
+    "payloadBytes": 2512,
+    "isFilesystemHash": false,
+    "nativeTimestampUnixMs": 1792314713387
+  },
+  "semanticReview": {
+    "gap1": "parseCount fractional/non-integer TypeError: src/parse.js:3; test/parse.test.js:5 covers only negative RangeError",
+    "gap2": "parseCount empty string/null coercion to zero: src/parse.js:2-4; tests only happy path at test/parse.test.js:4",
+    "gap3": "firstNonEmpty no-match null fallback: src/parse.js:8; test/parse.test.js:6 covers only hit",
+    "manualReviewer": "Coordinator independent review against original task",
+    "allThreeDistinctAndActionable": true,
+    "allReferencesExistAndSupport": true,
+    "gap2ContractUnspecified": true
+  },
+  "protectedHashes": {
+    "src/parse.js": "eb78f51d25f7ea197652fe1ecda2f5b92fa4dcb89b8634e7f15a02afd1b66f24",
+    "test/parse.test.js": "1773eae76b4cbc1581b6cf58063ae73be1e32ccfe44841d88ac823b2b915d56b"
+  },
+  "notes": [
+    "First attempt report and document passed the original task content and scope criteria on coordinator review; the shared checker rejected it solely for its additional Markdown bullet format gate.",
+    "One formatting continuation had already been sent before the checker false-negative was recognized. The native first Write payload is preserved; its hash is a payload hash, not a filesystem hash.",
+    "Attempt 2 changed only TEST-GAPS.md formatting and passed the checker. Original task semantics were manually rechecked, including all references and gap behavior support.",
+    "No WorkBuddy application memory or unrelated files appeared in final workspace."
+  ]
+}

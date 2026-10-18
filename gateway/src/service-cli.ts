@@ -1,0 +1,292 @@
+import { runtimeVersion } from "./runtime-version.js";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import crypto from "node:crypto";
+import { spawn, spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { parseArgs } from "node:util";
+import { loadConfig, type Config } from "./config.js";
+import { loadDotEnv } from "./env.js";
+import { TaskStore } from "./task-store.js";
+import { readDesktopSession } from "./desktop-runtime.js";
+import { runsDirectory, writePrivateJson } from "./run-journal.js";
+import { pumpWorkspaceWorkers, recoverExpiredAttempt, readServiceRegistration, registeredServiceConfig, serviceRegistrationPath, validateServiceRegistration, type NativeDesktopTrigger, type ServiceRegistration } from "./persistent-service.js";
+import { WorkspaceWorkers, readWorkspaceWorkers } from "./workspace-workers.js";
+
+const DEBUG_ENV = "WORKBUDDY_REMOTE_DEBUGGING_PORT";
+const WINDOWS = process.platform === "win32";
+function isAlive(pid: number): boolean { try { process.kill(pid, 0); return true; } catch { return false; } }
+loadDotEnv();
+interface CommandResult { status: number; stdout: string; stderr?: string }
+export type LaunchctlRunner = (args: string[]) => CommandResult;
+const launchctl: LaunchctlRunner = (args) => {
+  const result = spawnSync("/bin/launchctl", args, { encoding: "utf8", timeout: 15_000 });
+  return { status: result.status ?? 1, stdout: result.stdout ?? "", stderr: result.error?.message ?? result.stderr ?? "" };
+};
+
+function xml(value: string): string { return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&apos;"); }
+function labelFor(projectDir: string): string { return `com.codex.workbuddy-service.${crypto.createHash("sha256").update(projectDir).digest("hex").slice(0, 12)}`; }
+function environmentValue(run: LaunchctlRunner): { present: boolean; value?: string } {
+  const result = run(["getenv", DEBUG_ENV]);
+  return result.status === 0 ? { present: true, value: result.stdout.replace(/\r?\n$/, "") } : { present: false };
+}
+function checked(run: LaunchctlRunner, args: string[]): void {
+  const result = run(args);
+  if (result.status !== 0) throw new Error(`launchctl ${args[0]} failed: ${result.stderr?.trim() || `exit ${result.status}`}`);
+}
+function restoreEnvironment(run: LaunchctlRunner, previous: { present: boolean; value?: string }): void {
+  checked(run, previous.present ? ["setenv", DEBUG_ENV, previous.value ?? ""] : ["unsetenv", DEBUG_ENV]);
+}
+
+export function launchdPlist(registration: ServiceRegistration, configFile: string): string {
+  validateServiceRegistration(registration);
+  if (!registration.launchdLabel) throw new Error("A launchd service label is required");
+  const logs = path.join(registration.projectDir, "data", "service-logs");
+  const args = [registration.nodeBin, path.join(registration.projectDir, "dist", "service-cli.js"), "run", "--config", configFile];
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict>\n<key>Label</key><string>${xml(registration.launchdLabel)}</string>\n<key>ProgramArguments</key><array>${args.map((arg) => `<string>${xml(arg)}</string>`).join("")}</array>\n<key>WorkingDirectory</key><string>${xml(registration.projectDir)}</string>\n<key>RunAtLoad</key><true/>\n<key>KeepAlive</key><true/>\n<key>ThrottleInterval</key><integer>10</integer>\n<key>ProcessType</key><string>Background</string>\n<key>EnvironmentVariables</key><dict><key>${DEBUG_ENV}</key><string>${registration.cdpPort}</string></dict>\n<key>StandardOutPath</key><string>${xml(path.join(logs, "stdout.log"))}</string>\n<key>StandardErrorPath</key><string>${xml(path.join(logs, "stderr.log"))}</string>\n</dict></plist>\n`;
+}
+
+export interface InstallServiceOptions {
+  config: Config;
+  sessionId: string;
+  workspace: string;
+  projectDir: string;
+  nodeBin?: string;
+  cdpPort: number;
+  intervalMs?: number;
+  /** Explicit test/platform injection; production uses the actual macOS account. */
+  platform?: NodeJS.Platform;
+  homeDir?: string;
+  uid?: number;
+}
+
+export function installService(options: InstallServiceOptions, run: LaunchctlRunner = launchctl): { ok: true; registration: ServiceRegistration; configFile: string; restartWorkBuddyRequired: boolean } {
+  const platform = options.platform ?? process.platform;
+  if (platform === "win32") return installServiceWindows(options);
+  if (platform !== "darwin") throw new Error("Persistent desktop service installation requires macOS launchd");
+  const projectDir = fs.realpathSync(options.projectDir);
+  // Keep the native session's path spelling (macOS /var may alias /private/var).
+  const workspace = path.resolve(options.workspace);
+  if (!fs.statSync(workspace).isDirectory()) throw new Error("The worker workspace must be a directory");
+  const nodeBin = fs.realpathSync(options.nodeBin ?? process.execPath);
+  if (!fs.statSync(nodeBin).isFile()) throw new Error("The service Node executable was not found");
+  if (!fs.existsSync(path.join(projectDir, "dist", "service-cli.js"))) throw new Error("Build the project before installing its persistent service");
+  const evidence = readDesktopSession(options.config.workbuddyConfigDir, options.sessionId);
+  if (!evidence.registered) throw new Error(evidence.reason ?? "The dedicated WorkBuddy desktop session is not registered");
+  if (evidence.cwd && path.resolve(evidence.cwd) !== workspace) throw new Error("The selected WorkBuddy desktop session uses another workspace");
+  const configFile = serviceRegistrationPath(projectDir);
+  const existing = readServiceRegistration(configFile);
+  const currentEnv = environmentValue(run);
+  const previousEnv = existing?.launchctlEnvPrevious && currentEnv.present && currentEnv.value === String(existing.cdpPort) ? existing.launchctlEnvPrevious : currentEnv;
+  const label = labelFor(projectDir);
+  const homeDir = options.homeDir ?? process.env.HOME;
+  if (!homeDir || !path.isAbsolute(homeDir)) throw new Error("An absolute macOS user home is required");
+  const uid = options.uid ?? process.getuid?.();
+  if (uid === undefined) throw new Error("The macOS user ID was not found");
+  const plistPath = path.join(homeDir, "Library", "LaunchAgents", `${label}.plist`);
+  const previousPlist = fs.existsSync(plistPath) ? fs.readFileSync(plistPath, "utf8") : undefined;
+  const registration: ServiceRegistration = {
+    version: 1, sessionId: options.sessionId, workspace, projectDir, nodeBin, cdpPort: options.cdpPort,
+    dbFile: options.config.dbFile, runsDir: runsDirectory(options.config), workbuddyConfigDir: options.config.workbuddyConfigDir, cliElectronPath: options.config.cliElectronPath,
+    intervalMs: options.intervalMs ?? 1500, installedAt: new Date().toISOString(), launchdLabel: label, plistPath, launchctlEnvPrevious: previousEnv,
+  };
+  validateServiceRegistration(registration);
+  fs.mkdirSync(path.dirname(plistPath), { recursive: true });
+  const logs = path.join(projectDir, "data", "service-logs");
+  fs.mkdirSync(logs, { recursive: true, mode: 0o700 });
+  for (const name of ["stdout.log", "stderr.log"]) {
+    const file = path.join(logs, name);
+    fs.closeSync(fs.openSync(file, "a", 0o600));
+    fs.chmodSync(file, 0o600);
+  }
+  writePrivateJson(configFile, registration);
+  fs.writeFileSync(plistPath, launchdPlist(registration, configFile), { mode: 0o600 });
+  fs.chmodSync(plistPath, 0o600);
+  const domain = `gui/${uid}`;
+  const previouslyLoaded = existing ? run(["print", `${domain}/${label}`]).status === 0 : false;
+  try {
+    checked(run, ["setenv", DEBUG_ENV, String(registration.cdpPort)]);
+    // An absent prior instance returns nonzero; bootstrap is the authoritative result.
+    run(["bootout", `${domain}/${label}`]);
+    checked(run, ["bootstrap", domain, plistPath]);
+  } catch (error) {
+    try { restoreEnvironment(run, currentEnv); } catch { /* Saved registration retains the recovery information. */ }
+    if (existing) writePrivateJson(configFile, existing);
+    else fs.rmSync(configFile, { force: true });
+    if (previousPlist !== undefined) {
+      fs.writeFileSync(plistPath, previousPlist, { mode: 0o600 });
+      if (previouslyLoaded) run(["bootstrap", domain, plistPath]);
+    } else fs.rmSync(plistPath, { force: true });
+    throw error;
+  }
+  return { ok: true, registration, configFile, restartWorkBuddyRequired: !currentEnv.present || currentEnv.value !== String(registration.cdpPort) };
+}
+
+/** Logon entry that restarts the supervising service after a reboot or sign-in. */
+function windowsStartupEntry(projectDir: string): string {
+  const appData = process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming");
+  const label = `codex-workbuddy-service-${crypto.createHash("sha256").update(projectDir).digest("hex").slice(0, 12)}`;
+  return path.join(appData, "Microsoft", "Windows", "Start Menu", "Programs", "Startup", `${label}.vbs`);
+}
+
+function startWindowsService(registration: ServiceRegistration, configFile: string): void {
+  const child = spawn(registration.nodeBin, [path.join(registration.projectDir, "dist", "service-cli.js"), "run", "--config", configFile], {
+    cwd: registration.projectDir, detached: true, stdio: "ignore", windowsHide: true,
+  });
+  child.on("error", () => undefined);
+  child.unref();
+}
+
+/**
+ * Windows has no launchd. The same supervision loop runs as a detached Node
+ * process, started now and re-started at logon through the Startup folder.
+ */
+export function installServiceWindows(options: InstallServiceOptions): { ok: true; registration: ServiceRegistration; configFile: string; restartWorkBuddyRequired: boolean } {
+  const projectDir = fs.realpathSync(options.projectDir);
+  const workspace = path.resolve(options.workspace);
+  if (!fs.statSync(workspace).isDirectory()) throw new Error("The worker workspace must be a directory");
+  const nodeBin = fs.realpathSync(options.nodeBin ?? process.execPath);
+  if (!fs.statSync(nodeBin).isFile()) throw new Error("The service Node executable was not found");
+  if (!fs.existsSync(path.join(projectDir, "dist", "service-cli.js"))) throw new Error("Build the project before installing its persistent service");
+  const evidence = readDesktopSession(options.config.workbuddyConfigDir, options.sessionId);
+  if (!evidence.registered) throw new Error(evidence.reason ?? "The dedicated WorkBuddy desktop session is not registered");
+  if (evidence.cwd && path.resolve(evidence.cwd) !== workspace) throw new Error("The selected WorkBuddy desktop session uses another workspace");
+  const configFile = serviceRegistrationPath(projectDir);
+  const registration: ServiceRegistration = {
+    version: 1, sessionId: options.sessionId, workspace, projectDir, nodeBin, cdpPort: options.cdpPort,
+    dbFile: options.config.dbFile, runsDir: runsDirectory(options.config), workbuddyConfigDir: options.config.workbuddyConfigDir, cliElectronPath: options.config.cliElectronPath,
+    intervalMs: options.intervalMs ?? 1500, installedAt: new Date().toISOString(),
+  };
+  validateServiceRegistration(registration);
+  fs.mkdirSync(path.join(projectDir, "data", "service-logs"), { recursive: true });
+  writePrivateJson(configFile, registration);
+  const entry = windowsStartupEntry(projectDir);
+  fs.mkdirSync(path.dirname(entry), { recursive: true });
+  const quoteVbs = (value: string) => value.replaceAll('"', '""');
+  const command = `"${nodeBin}" "${path.join(projectDir, "dist", "service-cli.js")}" run --config "${configFile}"`;
+  fs.writeFileSync(entry, `Set shell = CreateObject("WScript.Shell")\r\nshell.CurrentDirectory = "${quoteVbs(projectDir)}"\r\nshell.Run "${quoteVbs(command)}", 0, False\r\n`, "utf8");
+  startWindowsService(registration, configFile);
+  return { ok: true, registration, configFile, restartWorkBuddyRequired: false };
+}
+
+export function serviceStatus(configFile: string, run: LaunchctlRunner = launchctl, uid = process.getuid?.()): Record<string, unknown> {
+  const registration = readServiceRegistration(configFile);
+  if (!registration) return { ok: true, installed: false, configFile };
+  const native = readDesktopSession(registration.workbuddyConfigDir, registration.sessionId);
+  const stateFile = path.join(registration.projectDir, "data", "persistent-service-status.json");
+  let state: { pid?: number; updatedAt?: string; status?: string } | undefined;
+  try { state = JSON.parse(fs.readFileSync(stateFile, "utf8")); } catch { state = undefined; }
+  const status = registration.launchdLabel && uid !== undefined ? run(["print", `gui/${uid}/${registration.launchdLabel}`]) : undefined;
+  const workers=readWorkspaceWorkers(registeredServiceConfig(loadConfig(),registration),registration).map(worker=>({...worker,desktopRegistered:readDesktopSession(registration.workbuddyConfigDir,worker.sessionId).registered}));
+  // macOS proves liveness through launchd; the Windows service records its own pid.
+  const serviceAlive = typeof state?.pid === "number" && state.pid > 0 && isAlive(state.pid);
+  return { ok: true, installed: registration.launchdLabel ? Boolean(registration.plistPath && fs.existsSync(registration.plistPath)) : Boolean(registration.sessionId && fs.existsSync(configFile)), launchdLoaded: registration.launchdLabel ? status?.status === 0 : serviceAlive, configFile, sessionId: registration.sessionId, workspace: registration.workspace, cdpPort: registration.cdpPort, desktopRegistered: workers.some(worker=>worker.state==='ready'&&worker.desktopRegistered), defaultDesktopRegistered:native.registered, workers, state };
+}
+
+export function uninstallService(configFile: string, run: LaunchctlRunner = launchctl, uid = process.getuid?.()): Record<string, unknown> {
+  const registration = readServiceRegistration(configFile);
+  if (!registration) return { ok: true, installed: false, configFile };
+  if (registration.launchdLabel && uid !== undefined) {
+    const target = `gui/${uid}/${registration.launchdLabel}`;
+    const result = run(["bootout", target]);
+    if (result.status !== 0 && run(["print", target]).status === 0) throw new Error("The persistent service could not be unloaded; its registration was preserved");
+  }
+  if (!registration.launchdLabel && WINDOWS) {
+    const stateFile = path.join(registration.projectDir, "data", "persistent-service-status.json");
+    try {
+      const state = JSON.parse(fs.readFileSync(stateFile, "utf8")) as { pid?: number };
+      if (typeof state.pid === "number" && state.pid > 0 && isAlive(state.pid)) spawnSync("taskkill", ["/PID", String(state.pid)], { timeout: 10_000, windowsHide: true });
+    } catch { /* A missing or unreadable status file just means there is nothing to stop. */ }
+    fs.rmSync(windowsStartupEntry(registration.projectDir), { force: true });
+  }
+  const current = environmentValue(run);
+  let environmentRestored = false;
+  // Do not overwrite a later environment change made outside this installation.
+  if (registration.launchctlEnvPrevious && current.present && current.value === String(registration.cdpPort)) {
+    restoreEnvironment(run, registration.launchctlEnvPrevious);
+    environmentRestored = true;
+  }
+  if (registration.plistPath) fs.rmSync(registration.plistPath, { force: true });
+  fs.rmSync(configFile, { force: true });
+  fs.rmSync(path.join(registration.projectDir, "data", "persistent-service-status.json"), { force: true });
+  return { ok: true, installed: false, environmentRestored, taskHistoryPreserved: true, configFile };
+}
+
+async function runService(configFile: string): Promise<void> {
+  const registration = readServiceRegistration(configFile);
+  if (!registration) throw new Error("Persistent service registration is missing; run install first");
+  const config = registeredServiceConfig(loadConfig(), registration);
+  // launchd carries the debug switch into new WorkBuddy launches on macOS; on
+  // Windows the trigger passes it to the process it starts itself.
+  if (process.platform === "darwin") checked(launchctl, ["setenv", DEBUG_ENV, String(registration.cdpPort)]);
+  // Dynamic factory keeps the service testable without importing native/CDP machinery.
+  const module = await import(new URL("./native-desktop-trigger.js", import.meta.url).href) as { createNativeDesktopTrigger?: (config: Config, options: { cdpPort: number }) => NativeDesktopTrigger | Promise<NativeDesktopTrigger> };
+  if (typeof module.createNativeDesktopTrigger !== "function") throw new Error("The native desktop trigger factory is unavailable; rebuild the complete project");
+  const trigger = await module.createNativeDesktopTrigger(config, { cdpPort: registration.cdpPort });
+  const store = new TaskStore(config.dbFile);
+  const stateFile = path.join(registration.projectDir, "data", "persistent-service-status.json");
+  let stopping = false;
+  let stopDelay: (() => void) | undefined;
+  const stop = () => { stopping = true; stopDelay?.(); };
+  process.once("SIGTERM", stop);
+  process.once("SIGINT", stop);
+  try {
+    while (!stopping) {
+      const result = await pumpWorkspaceWorkers(config, registration, trigger, store);
+      writePrivateJson(stateFile, { pid: process.pid, runtime: runtimeVersion, ...result, updatedAt: new Date().toISOString() });
+      if (!stopping) await new Promise<void>((resolve) => {
+        const timer = setTimeout(() => { stopDelay = undefined; resolve(); }, registration.intervalMs ?? 1500);
+        stopDelay = () => { clearTimeout(timer); stopDelay = undefined; resolve(); };
+      });
+    }
+  } finally {
+    store.close();
+    const closable = trigger as NativeDesktopTrigger & { close?: () => void | Promise<void> };
+    await closable.close?.();
+    process.removeListener("SIGTERM", stop);
+    process.removeListener("SIGINT", stop);
+  }
+}
+
+async function main(): Promise<void> {
+  const parsed = parseArgs({ allowPositionals: true, options: {
+    config: { type: "string" }, "session-id": { type: "string" }, workspace: { type: "string" }, "project-dir": { type: "string" }, "node-bin": { type: "string" }, "cdp-port": { type: "string" }, "interval-ms": { type: "string" },
+    "task-id": { type: "string" }, "attempt-id": { type: "string" }, reason: { type: "string" },
+  } });
+  const [action] = parsed.positionals;
+  const projectDir = path.resolve(parsed.values["project-dir"] ?? path.dirname(path.dirname(fileURLToPath(import.meta.url))));
+  const configFile = parsed.values.config ? path.resolve(parsed.values.config) : serviceRegistrationPath(projectDir);
+  const required = (name: "session-id" | "workspace") => { const value = parsed.values[name]; if (!value) throw new Error(`Missing --${name}`); return value; };
+  let result: unknown;
+  if (action === "install") {
+    if (configFile !== serviceRegistrationPath(projectDir)) throw new Error("Installation registration must remain under the project's data directory");
+    result = installService({ config: loadConfig(), projectDir, sessionId: required("session-id"), workspace: required("workspace"), nodeBin: parsed.values["node-bin"], cdpPort: Number(parsed.values["cdp-port"] ?? process.env[DEBUG_ENV] ?? "18491"), intervalMs: parsed.values["interval-ms"] ? Number(parsed.values["interval-ms"]) : undefined });
+  } else if (action === "status") result = serviceStatus(configFile);
+  else if (action === "uninstall") result = uninstallService(configFile);
+  else if (action === "run") { await runService(configFile); return; }
+  else if (action === "recover") {
+    const registration = readServiceRegistration(configFile);
+    if (!registration) throw new Error("Persistent service registration is missing");
+    const taskId = parsed.values["task-id"], attemptId = parsed.values["attempt-id"], reason = parsed.values.reason;
+    if (!taskId || !attemptId || !reason) throw new Error("recover requires --task-id, --attempt-id and --reason after inspecting the native failure");
+    const config = registeredServiceConfig(loadConfig(), registration);
+    const { NativeDesktopRpcTrigger } = await import("./native-desktop-trigger.js");
+    // Recovery must not restart the app or change native session state to obtain proof.
+    const trigger = new NativeDesktopRpcTrigger(config, registration.cdpPort, false);
+    const store=new TaskStore(config.dbFile);
+    const sessionId=store.get(taskId)?.sessionId;
+    store.close();
+    const worker=readWorkspaceWorkers(config,registration).find(worker=>worker.sessionId===sessionId);
+    if(!worker)throw new Error("The task's native worker is not enrolled in this service");
+    try { result = await recoverExpiredAttempt(config, {...registration,sessionId:worker.sessionId,workspace:worker.workspace}, trigger, { taskId, attemptId, reason }); }
+    finally { trigger.close(); }
+  }
+  else throw new Error("Use install --session-id ID --workspace PATH [--cdp-port PORT], status, uninstall, run, or recover --task-id ID --attempt-id ID --reason TEXT");
+  console.log(JSON.stringify(result));
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  try { await main(); }
+  catch (error) { console.error(JSON.stringify({ ok: false, error: error instanceof Error ? error.message : String(error) })); process.exitCode = 1; }
+}

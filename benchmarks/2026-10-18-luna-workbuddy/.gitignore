@@ -1,0 +1,7 @@
+# Host-specific execution evidence is intentionally not published.
+*.stdout.txt
+*.stderr.txt
+*.exit.txt
+.workbuddy-ai/
+build/
+*.class

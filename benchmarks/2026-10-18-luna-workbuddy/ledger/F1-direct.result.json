@@ -1,0 +1,44 @@
+{
+  "run": "F1-direct",
+  "pair": "F1",
+  "condition": "GPT-6 Luna direct",
+  "taskHash": "89c1a041394e80e61b4111804babf82e38a36b6e3a366f3be453d2647295f5e9",
+  "startUTC": "2026-10-18T06:45:23Z",
+  "endUTC": "2026-10-18T06:46:52Z",
+  "totalSeconds": 89,
+  "timingQuality": "Coordinator clock: start recorded immediately before isolated direct execution; end recorded after independent coordinator acceptance. Child report completion is separately recorded.",
+  "childReportedCompletionUTC": "2026-10-18T06:46:08Z",
+  "contentCheckPass": true,
+  "scopeCheckPass": true,
+  "overallAcceptance": true,
+  "independentVerifierExitCode": 0,
+  "independentVerifierStdoutBytes": 58,
+  "changedFiles": [
+    "src/Discount.java",
+    "test/DiscountTest.java"
+  ],
+  "changedFileSha256": {
+    "test/DiscountTest.java": "96cc0ce08b5b63567b27f4a65f484a7e1fe0ad2e3693f2d438b2c479af7c7026",
+    "src/Discount.java": "79fb1d23d779b1d140bf38ea652972b64aec08d5811278a4e726a877e5d64eda"
+  },
+  "protectedFixtureHashesMatch": true,
+  "externalReworkRounds": 0,
+  "reworkKind": "none",
+  "userInterventions": 0,
+  "codexInitiatedRecoveryEvents": 0,
+  "gatewayCallCount": "NA (direct-arm gateway usage not observed)",
+  "directToolTelemetry": "NA",
+  "tokenCounts": "NA",
+  "activeReasoningSeconds": "NA",
+  "notes": [
+    "Isolated GPT-6 Luna context; no WorkBuddy tools used.",
+    "Original F1 task requires five cases; independent frozen checker additionally ran dependency-free Java five-case contract harness."
+  ],
+  "firstPass": {
+    "contentCheckPass": true,
+    "scopeCheckPass": true,
+    "overallAcceptance": true
+  },
+  "strictPairTimeComparable": false,
+  "externalRecoveryRounds": 0
+}

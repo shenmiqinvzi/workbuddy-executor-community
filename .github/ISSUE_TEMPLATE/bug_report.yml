@@ -1,0 +1,32 @@
+name: 问题反馈
+description: 提供可复现的故障，帮助改进可靠性和使用体验
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: 请勿上传凭据、完整会话、私下聊天、个人分工或未脱敏的业务日志。安全问题请先私下联系仓库所有者。
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境与版本
+      description: 操作系统、Node/WorkBuddy 版本、仓库提交；不需要个人账号或真实会话 ID。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      description: 尽量提供合成的最小案例。
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: 预期与实际行为
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 脱敏证据与已尝试的方法
+      description: 截图也需检查用户名、路径、侧边栏标题及账号信息。

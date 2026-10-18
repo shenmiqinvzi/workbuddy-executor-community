@@ -1,0 +1,46 @@
+{
+  "generatedUTC": "2026-10-18T09:22:57.708Z",
+  "runConditions": 12,
+  "frozenInputCount": 19,
+  "frozenInputHashMismatches": 0,
+  "acceptanceCheckerSha256": "5c67459bf3e150f2c7c3b9d11e61bb25eede60356ca01dab13cddd5be67c09b0",
+  "timedConditions": 11,
+  "maxTimeArithmeticResidualSeconds": 0.0010000000000331966,
+  "finalAccepted": 10,
+  "finalFailedOrBlocked": 2,
+  "firstPass": {
+    "pass": 6,
+    "fail": 5,
+    "unknown": 1,
+    "directKnownPass": 5,
+    "directKnown": 5
+  },
+  "strictTimeComparablePairs": [
+    {
+      "pair": "F2",
+      "seconds": {
+        "F2-direct": 76,
+        "F2-workbuddy": 457
+      }
+    },
+    {
+      "pair": "R2",
+      "seconds": {
+        "R2-direct": 68.643,
+        "R2-workbuddy": 430.4
+      }
+    }
+  ],
+  "workbuddyGateway": {
+    "invocations": 82,
+    "successful": 78,
+    "nonzeroOrIncomplete": 4,
+    "knownCapturedCliOutputBytesLowerBound": 221520,
+    "mcpWireBytes": "NA",
+    "tokenCounts": "NA",
+    "activeReasoningSeconds": "NA"
+  },
+  "parentIndependentScopeReview": "10 accepted workspaces confirmed in-scope",
+  "userInterventionEpisodes": 2,
+  "externalReworkRoundsKnown": 5
+}

@@ -1,0 +1,135 @@
+{
+  "run": "S1-workbuddy",
+  "pair": "S1",
+  "condition": "Luna supervising one free WorkBuddy",
+  "taskId": "study-S1-workbuddy",
+  "sessionId": "session-S1-workbuddy",
+  "attempt1": "attempt-S1-workbuddy-1",
+  "attemptFinal": "attempt-S1-workbuddy-final",
+  "runtimeSource": "desktop_queue",
+  "model": "deepseek-v4.1-flash",
+  "creditsAtDispatch": "x0.00",
+  "startUTC": "2026-10-18T06:28:39.3763691Z",
+  "endUTC": "2026-10-18T06:35:00.419Z",
+  "totalSeconds": 381.043,
+  "timingQuality": "Observed but contaminated: interval includes failed/incomplete query recovery and shared checker amendment during this resumed S1 run; exclude from strict paired time ratio.",
+  "queueSeconds": 38.102,
+  "workbuddyReportReceivedUTC": "2026-10-18T06:32:17.786Z",
+  "nativeStopConfirmedUTC": "2026-10-18T06:32:35.19Z",
+  "firstPass": {
+    "contentCheckPass": true,
+    "scopeCheckPass": false,
+    "overallAcceptance": false,
+    "failure": "An extra .workbuddy-ai/memory/2026-10-18.md appeared in run workspace."
+  },
+  "final": {
+    "contentCheckPass": true,
+    "scopeCheckPass": true,
+    "overallAcceptance": true,
+    "acceptanceRecordedUTC": "2026-10-18T06:35:00.419Z"
+  },
+  "reworkRounds": 1,
+  "reworkKind": "Extra memory-file cleanup only; not a package-content defect.",
+  "unexpectedMemory": {
+    "origin": "Native session Write tool explicitly created the exact path; whether app automatic-memory behavior triggered it is unknown.",
+    "workerReported": "Created by this session",
+    "bytes": 432,
+    "sha256": "d428056611c7ae803d7ca20a96048d09e779c39f48588517e3e170c420b5de22",
+    "evidence": "local-only, excluded from git",
+    "nativeWriteEvidence": {
+      "evidence": "Filtered native session JSONL function_call name and file_path only; no reasoning/content exposed.",
+      "tool": "Write",
+      "timestampUnixMs": 1792305148711
+    }
+  },
+  "gatewayCallCount": 13,
+  "gatewayCalls": [
+    {
+      "stdoutBytes": 2794,
+      "tool": "workbuddy_list_models"
+    },
+    {
+      "stdoutBytes": 1042,
+      "tool": "workbuddy_ensure_workspace"
+    },
+    {
+      "stdoutBytes": 1320,
+      "tool": "workbuddy_send_task"
+    },
+    {
+      "stdoutBytes": 2181,
+      "tool": "workbuddy_wait"
+    },
+    {
+      "stdoutBytes": 2398,
+      "tool": "workbuddy_wait"
+    },
+    {
+      "stdoutBytes": 3437,
+      "tool": "workbuddy_wait"
+    },
+    {
+      "stdoutBytes": 2395,
+      "tool": "workbuddy_wait"
+    },
+    {
+      "stdoutBytes": 1319,
+      "tool": "workbuddy_continue_task"
+    },
+    {
+      "stdoutBytes": 2029,
+      "tool": "workbuddy_wait"
+    },
+    {
+      "stdoutBytes": 2233,
+      "tool": "workbuddy_wait"
+    },
+    {
+      "stdoutBytes": 4313,
+      "tool": "workbuddy_wait"
+    },
+    {
+      "stdoutBytes": 2395,
+      "tool": "workbuddy_wait"
+    },
+    {
+      "stdoutBytes": 4769,
+      "tool": "workbuddy_accept_task"
+    }
+  ],
+  "successfulGatewayCliStdoutBytes": 32625,
+  "failedOrIncompleteInvocationCount": 3,
+  "unmeasuredFailedResponseBytes": "NA",
+  "mcpWireBytes": "NA",
+  "tokenCounts": "NA",
+  "activeReasoningSeconds": "NA",
+  "userInterventions": 0,
+  "codexInitiatedReworkRounds": 1,
+  "taskHash": "1ff6781ed832551c121a5d6227b2d83cfd25acc5b4f1f895dc26fb4069a367d5",
+  "checkerSha": "5c67459bf3e150f2c7c3b9d11e61bb25eede60356ca01dab13cddd5be67c09b0",
+  "independentCheck": {
+    "exitCode": 0,
+    "contentCheckPass": true,
+    "scopeCheckPass": true,
+    "protectedSourceHashMatches": true
+  },
+  "notes": [
+    "S1-direct output was already reported before checker freeze and is not blinded; the legacy false ledger bit was corrected to true.",
+    "The old S1-direct run has no reliable start/end clock.",
+    "No claim of strict pair-level comparability for time.",
+    "First-pass overall acceptance is failed by scope; the content itself passed."
+  ],
+  "firstAttemptNativeStopUTC": "2026-10-18T06:32:35.19Z",
+  "finalAttemptNativeStopUTC": "2026-10-18T06:34:35.319Z",
+  "firstAttemptDispatchToNativeStopSeconds": 62.865,
+  "finalAttemptDispatchToNativeStopSeconds": 83.404,
+  "initialDispatchToFinalNativeStopSeconds": 182.994,
+  "codexInitiatedRecoveryEvents": [
+    "The initial list_models result was empty; a same-file retry encountered a file lock, then an invalid-argument invocation failed; the permitted model check subsequently succeeded.",
+    "One continue_task round was initiated for the out-of-scope memory file."
+  ],
+  "gatewayInternalRetryCount": "NA (not exposed by launcher)",
+  "endpointTimeBasis": "Run end is server reviewedAt/accept time; native stop times are server wait.observedAt; CLI caller return instants are not separately measured.",
+  "strictPairTimeComparable": false,
+  "externalRecoveryRounds": 1
+}

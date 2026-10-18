@@ -1,0 +1,21 @@
+name: 功能建议
+description: 提出一个有明确场景的功能或改进
+title: "[Feature] "
+body:
+  - type: textarea
+    id: scenario
+    attributes:
+      label: 使用场景与当前困难
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: 期望结果与验收方式
+    validations:
+      required: true
+  - type: textarea
+    id: approach
+    attributes:
+      label: 可选实现思路、替代方案与参与意愿
+      description: 不必先有实现方案；请勿附内部资料或个人排期。

@@ -1,0 +1,8 @@
+{
+  "writeCount": 2,
+  "payloadBytes": 2512,
+  "provenance": "First filtered native function_call Write for TEST-GAPS.md; not an observed filesystem byte hash. Reasoning and unrelated records were not read out.",
+  "payloadSha256": "a6664b5eb69619e9c1f916b57a03020282ee4c0696ffec8703030769f0321bc7",
+  "filePath": "<study-root>/runs/R2-workbuddy/TEST-GAPS.md",
+  "nativeTimestamp": 1792314713387
+}

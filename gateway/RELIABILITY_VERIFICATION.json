@@ -1,0 +1,33 @@
+{
+  "format": 1,
+  "verifiedOn": "2026-10-16",
+  "timezone": "Asia/Shanghai",
+  "scope": "desktop-queue reliability repairs and bounded live acceptance",
+  "environment": {"node": "24.19.0", "typescript": "5.9.2", "platform": "Windows"},
+  "affectedModuleTests": {"total": 131, "passed": 125, "failed": 0, "skipped": 6, "fullHistoricalSuiteClaimed": false},
+  "skillStructureValidation": "passed",
+  "liveAcceptance": {
+    "model": "deepseek-v4.1-flash",
+    "catalogCredits": "x0.00",
+    "runtimeSource": "desktop_queue",
+    "acceptedTasks": 2,
+    "consecutiveSuccessfulNativeRoundsAfterRepair": 3,
+    "independentlyRerunFunctionalTests": {"passed": 10, "failed": 0},
+    "sameTaskSameSessionRework": true,
+    "nativeStopVerifiedBeforeReworkAndAcceptance": true,
+    "authenticatedReports": true,
+    "docBytesBeforeAndAfter": [101, 113],
+    "functionalArtifactsUnchangedDuringDocRework": true,
+    "originalFailedAttemptsPreserved": true,
+    "paidFallbackUsed": false
+  },
+  "localDeployment": {"distinctTargetFilesHashVerified": 51, "hashFailures": 0, "credentialsAndRuntimeStoresExcludedFromDeployment": true},
+  "publication": {"rawRuntimeEvidenceIncluded": false, "realTaskAndSessionRecordsIncluded": false, "testIdsAreFictionalFixtures": true},
+  "limits": [
+    "Provider-side 502/read ECONNRESET remains external; it is recognized rather than retried indefinitely.",
+    "Small-task acceptance does not establish complex long-running project success.",
+    "Fresh-machine restore, OS restart and login recovery were not exercised.",
+    "The current chat used fresh official client processes; long-lived MCP processes load new modules after Codex restarts."
+  ],
+  "latestVerification": "RELIABILITY_VERIFICATION_2026-10-17.json"
+}

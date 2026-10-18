@@ -1,0 +1,71 @@
+{
+  "run": "R1-direct",
+  "pair": "R1",
+  "condition": "GPT-6 Luna direct",
+  "taskHash": "f879e6ff8e606b8c9514940d5421007cc7f8a6e31fafc5eae06e96fc390eb015",
+  "workspace": "runs/R1-direct",
+  "startUTC": "2026-10-18T15:11:48+08:00",
+  "endUTC": "2026-10-18T15:12:19.8541477+08:00",
+  "totalSeconds": 31.854,
+  "timingQuality": "Child-reported invocation start; coordinator end after frozen checker, semantic review and input/scope hash verification. This is an observed child-start-to-parent-accept interval, not a coordinator-before-spawn total.",
+  "strictPairTimeComparable": false,
+  "directExecutor": "GPT-6 Luna isolated subagent",
+  "firstPass": {
+    "contentCheckPass": true,
+    "overallAcceptance": true,
+    "scopeCheckPass": true
+  },
+  "final": {
+    "checkerSha": "5c67459bf3e150f2c7c3b9d11e61bb25eede60356ca01dab13cddd5be67c09b0",
+    "scopeCheckPass": true,
+    "taskHashMatches": true,
+    "protectedInputsMatch": true,
+    "overallAcceptance": true,
+    "contentCheckPass": true,
+    "parentCheckerExitCode": 0
+  },
+  "independentVerifier": {
+    "stdoutBytes": 127,
+    "command": "tools/verify.ps1 -Task R1 -Workspace runs/R1-direct",
+    "exitCode": 0,
+    "scope": "Manual final workspace inventory plus exact protected input hashes."
+  },
+  "semanticReview": {
+    "eachBulletHasExactFilename": true,
+    "notesUnchanged": true,
+    "areas": [
+      "API retry",
+      "OCI source revision label",
+      "settings saved indicator"
+    ],
+    "bulletCount": 3,
+    "unsupportedDateOrStatusClaim": false
+  },
+  "externalReworkRounds": 0,
+  "userInterventions": 0,
+  "codexWorkBuddySupervisionCalls": "NA (direct arm)",
+  "directToolCallCount": "NA",
+  "directToolReturnBytes": "NA",
+  "tokenCounts": "NA",
+  "activeReasoningSeconds": "NA",
+  "changedFiles": [
+    "RELEASE-NOTE.md"
+  ],
+  "finalScopeFileList": [
+    ".study/task.md",
+    "RELEASE-NOTE.md",
+    "notes/api.md",
+    "notes/ops.md",
+    "notes/ui.md"
+  ],
+  "protectedHashes": {
+    "notes/api.md": "507f3f32ba75d455971c2896177574a9f7038a1e33f557f49cc33f32c9f05938",
+    "notes/ops.md": "60bfd7cd27f19828c6e2a305de6ce43d568fce45cd3a80f62c0fef41c236800c",
+    "notes/ui.md": "c187c4feba040c0bb85e4617ca1ceaf0cd06adfb356c0de58898ee6acc4c4b62"
+  },
+  "notes": [
+    "R1 original task terms govern; checker amendment limits automation to structure and is supplemented by manual claim support review.",
+    "No WorkBuddy use. Direct-arm telemetry is unavailable and recorded NA."
+  ],
+  "externalRecoveryRounds": 0
+}

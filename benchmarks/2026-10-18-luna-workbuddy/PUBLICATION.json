@@ -1,0 +1,16 @@
+{
+  "sourceSnapshotCommit": "400968a",
+  "sourceSnapshotDescription": "Local completed study; not a commit in this repository history",
+  "runConditions": 12,
+  "frozenInputCount": 19,
+  "runArtifactCount": 42,
+  "identityPolicy": "Stable public aliases; host paths replaced with placeholders",
+  "excluded": [
+    "raw CLI logs",
+    "dispatch arguments",
+    "native session history",
+    "application memory contents",
+    "compiled outputs",
+    "interim snapshots"
+  ]
+}

@@ -1,0 +1,2 @@
+# Preserve snapshot bytes and SHA-256 evidence across Git checkouts.
+* -text whitespace=cr-at-eol

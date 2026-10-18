@@ -1,0 +1,37 @@
+{
+  "run": "S1-direct",
+  "pair": "S1",
+  "condition": "GPT-6 Luna direct",
+  "taskHash": "1ff6781ed832551c121a5d6227b2d83cfd25acc5b4f1f895dc26fb4069a367d5",
+  "startUTC": "NA",
+  "endUTC": "NA",
+  "totalSeconds": "NA",
+  "timingQuality": "Legacy execution has no reliable timestamps; do not reconstruct.",
+  "firstPassOverallAcceptance": "NA",
+  "finalContentCheckPass": true,
+  "finalScopeCheckPass": true,
+  "finalIndependentCheck": {
+    "checkerExitCode": 0,
+    "protectedSourceHashMatches": true,
+    "actualFiles": [
+      ".study/task.md",
+      "PACKAGE.md",
+      "src/hello.js"
+    ]
+  },
+  "checkerSha": "5c67459bf3e150f2c7c3b9d11e61bb25eede60356ca01dab13cddd5be67c09b0",
+  "acceptedUnder": "Original tasks/S1.md plus revised shared checker; output checked after revision.",
+  "supervisoryGatewayCalls": "NA",
+  "supervisoryCliStdoutBytes": "NA",
+  "tokens": "NA",
+  "activeReasoningSeconds": "NA",
+  "notes": [
+    "S1 output reported before common acceptance checker freeze; corrected ledger explicitly marks this.",
+    "No direct-condition tool telemetry or reliable clock; no zero substitution.",
+    "Independent review run occurs outside the original direct execution clock."
+  ],
+  "strictPairTimeComparable": false,
+  "externalReworkRounds": "NA",
+  "externalRecoveryRounds": "NA",
+  "userInterventions": "NA"
+}

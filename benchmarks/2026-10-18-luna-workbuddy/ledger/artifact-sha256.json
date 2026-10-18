@@ -1,0 +1,221 @@
+{
+  "generatedUTC": "2026-10-18T09:22:16.315Z",
+  "runWorkspaceCount": 12,
+  "artifactCount": 42,
+  "exclusions": [
+    ".workbuddy-ai/ directories and contents (local application memory evidence not committed)",
+    "build/ and compiled .class files"
+  ],
+  "artifacts": [
+    {
+      "path": "F1-direct/.study/task.md",
+      "bytes": 546,
+      "sha256": "89c1a041394e80e61b4111804babf82e38a36b6e3a366f3be453d2647295f5e9"
+    },
+    {
+      "path": "F1-direct/src/Discount.java",
+      "bytes": 333,
+      "sha256": "79fb1d23d779b1d140bf38ea652972b64aec08d5811278a4e726a877e5d64eda"
+    },
+    {
+      "path": "F1-direct/test/DiscountTest.java",
+      "bytes": 686,
+      "sha256": "96cc0ce08b5b63567b27f4a65f484a7e1fe0ad2e3693f2d438b2c479af7c7026"
+    },
+    {
+      "path": "F1-workbuddy/.study/task.md",
+      "bytes": 546,
+      "sha256": "89c1a041394e80e61b4111804babf82e38a36b6e3a366f3be453d2647295f5e9"
+    },
+    {
+      "path": "F1-workbuddy/src/Discount.java",
+      "bytes": 982,
+      "sha256": "97fb09c3b4a04b7ed05946cea21873bad832b9ff10550639f3e8576e2f3fd5fb"
+    },
+    {
+      "path": "F1-workbuddy/test/DiscountTest.java",
+      "bytes": 2206,
+      "sha256": "f45d29ceab4913b534e49ec3e8a5a931044d99022a44d1f4f22cb33ee4aebcfc"
+    },
+    {
+      "path": "F2-direct/.study/task.md",
+      "bytes": 492,
+      "sha256": "4454f66d7d537dac935851c1496e6392e26b6f838927b0a225e1dbe13a116354"
+    },
+    {
+      "path": "F2-direct/src/rank.js",
+      "bytes": 334,
+      "sha256": "96aa1d254edd63c671418146693596fdfc7bd79d7c1b8b64458aded679f0ee68"
+    },
+    {
+      "path": "F2-direct/test/rank.test.js",
+      "bytes": 1047,
+      "sha256": "33630594768dd59e2591ed0cb0e19bc485a87b1ba81a618afe902e290d1d3f7c"
+    },
+    {
+      "path": "F2-workbuddy/.study/task.md",
+      "bytes": 492,
+      "sha256": "4454f66d7d537dac935851c1496e6392e26b6f838927b0a225e1dbe13a116354"
+    },
+    {
+      "path": "F2-workbuddy/src/rank.js",
+      "bytes": 1235,
+      "sha256": "8fe39eccad2e73c80b5839c83d4c59a529a612dcabda6cbc3a1dfee62bcd4a6f"
+    },
+    {
+      "path": "F2-workbuddy/test/rank.test.js",
+      "bytes": 2156,
+      "sha256": "b16922681f5db93cbb37a1a018e84ff32b91dd472ab765eb628271fa34575b2f"
+    },
+    {
+      "path": "R1-direct/.study/task.md",
+      "bytes": 446,
+      "sha256": "f879e6ff8e606b8c9514940d5421007cc7f8a6e31fafc5eae06e96fc390eb015"
+    },
+    {
+      "path": "R1-direct/notes/api.md",
+      "bytes": 75,
+      "sha256": "507f3f32ba75d455971c2896177574a9f7038a1e33f557f49cc33f32c9f05938"
+    },
+    {
+      "path": "R1-direct/notes/ops.md",
+      "bytes": 104,
+      "sha256": "60bfd7cd27f19828c6e2a305de6ce43d568fce45cd3a80f62c0fef41c236800c"
+    },
+    {
+      "path": "R1-direct/notes/ui.md",
+      "bytes": 76,
+      "sha256": "c187c4feba040c0bb85e4617ca1ceaf0cd06adfb356c0de58898ee6acc4c4b62"
+    },
+    {
+      "path": "R1-direct/RELEASE-NOTE.md",
+      "bytes": 251,
+      "sha256": "fb0c8281bba461e4d94c7437b26b03eec798e1eeee129b70a74913f169bc450b"
+    },
+    {
+      "path": "R1-workbuddy/.study/task.md",
+      "bytes": 446,
+      "sha256": "f879e6ff8e606b8c9514940d5421007cc7f8a6e31fafc5eae06e96fc390eb015"
+    },
+    {
+      "path": "R1-workbuddy/notes/api.md",
+      "bytes": 75,
+      "sha256": "507f3f32ba75d455971c2896177574a9f7038a1e33f557f49cc33f32c9f05938"
+    },
+    {
+      "path": "R1-workbuddy/notes/ops.md",
+      "bytes": 104,
+      "sha256": "60bfd7cd27f19828c6e2a305de6ce43d568fce45cd3a80f62c0fef41c236800c"
+    },
+    {
+      "path": "R1-workbuddy/notes/ui.md",
+      "bytes": 76,
+      "sha256": "c187c4feba040c0bb85e4617ca1ceaf0cd06adfb356c0de58898ee6acc4c4b62"
+    },
+    {
+      "path": "R1-workbuddy/RELEASE-NOTE.md",
+      "bytes": 780,
+      "sha256": "1603d274d6062443a27cc74637501e38f1d5d8ca10750305f825a44335c21900"
+    },
+    {
+      "path": "R2-direct/.study/task.md",
+      "bytes": 437,
+      "sha256": "c125aeff9b75cb07c5a3f013afae63d434bebfbf292900d884af4e8379b13527"
+    },
+    {
+      "path": "R2-direct/src/parse.js",
+      "bytes": 362,
+      "sha256": "eb78f51d25f7ea197652fe1ecda2f5b92fa4dcb89b8634e7f15a02afd1b66f24"
+    },
+    {
+      "path": "R2-direct/TEST-GAPS.md",
+      "bytes": 963,
+      "sha256": "e2a2954e218f0fc244fd86a31a353eb195e6cf1915f59901e7857ea5baa251b4"
+    },
+    {
+      "path": "R2-direct/test/parse.test.js",
+      "bytes": 427,
+      "sha256": "1773eae76b4cbc1581b6cf58063ae73be1e32ccfe44841d88ac823b2b915d56b"
+    },
+    {
+      "path": "R2-workbuddy/.study/task.md",
+      "bytes": 437,
+      "sha256": "c125aeff9b75cb07c5a3f013afae63d434bebfbf292900d884af4e8379b13527"
+    },
+    {
+      "path": "R2-workbuddy/src/parse.js",
+      "bytes": 362,
+      "sha256": "eb78f51d25f7ea197652fe1ecda2f5b92fa4dcb89b8634e7f15a02afd1b66f24"
+    },
+    {
+      "path": "R2-workbuddy/TEST-GAPS.md",
+      "bytes": 2381,
+      "sha256": "826b39cd594da31e48c3e8b49c497017700d6d85d192acc5422dd4d5e29f929a"
+    },
+    {
+      "path": "R2-workbuddy/test/parse.test.js",
+      "bytes": 427,
+      "sha256": "1773eae76b4cbc1581b6cf58063ae73be1e32ccfe44841d88ac823b2b915d56b"
+    },
+    {
+      "path": "S1-direct/.study/task.md",
+      "bytes": 493,
+      "sha256": "1ff6781ed832551c121a5d6227b2d83cfd25acc5b4f1f895dc26fb4069a367d5"
+    },
+    {
+      "path": "S1-direct/PACKAGE.md",
+      "bytes": 112,
+      "sha256": "e6d0093b76cd53ed47b0ec70720af49c06a74def327a932c853c29148491873e"
+    },
+    {
+      "path": "S1-direct/src/hello.js",
+      "bytes": 22,
+      "sha256": "5e39b3fff9234c7b1b3a8cb5caf35cceaa66e71abd210edfb0d5bbf51cf3874d"
+    },
+    {
+      "path": "S1-workbuddy/.study/task.md",
+      "bytes": 493,
+      "sha256": "1ff6781ed832551c121a5d6227b2d83cfd25acc5b4f1f895dc26fb4069a367d5"
+    },
+    {
+      "path": "S1-workbuddy/PACKAGE.md",
+      "bytes": 107,
+      "sha256": "0301711e89a0a216ebd86163c4cafec2c6f63d941ad065090dd30e7e11488d24"
+    },
+    {
+      "path": "S1-workbuddy/src/hello.js",
+      "bytes": 22,
+      "sha256": "5e39b3fff9234c7b1b3a8cb5caf35cceaa66e71abd210edfb0d5bbf51cf3874d"
+    },
+    {
+      "path": "S2-direct/.study/task.md",
+      "bytes": 420,
+      "sha256": "1b2ebe8ff231fb8d46deaf413c78acafdd3cac4b1518cba5b46aab36c4636973"
+    },
+    {
+      "path": "S2-direct/inventory.csv",
+      "bytes": 73,
+      "sha256": "72e4126246b973c0fef51a12869f3c35e7c4698e20e0184b75e1c54cad386380"
+    },
+    {
+      "path": "S2-direct/README.md",
+      "bytes": 42,
+      "sha256": "234877a6eeca88e9a96552d7ce0e4a4aa0e100e4d7860fab0d1c05e7461ea6d5"
+    },
+    {
+      "path": "S2-workbuddy/.study/task.md",
+      "bytes": 420,
+      "sha256": "1b2ebe8ff231fb8d46deaf413c78acafdd3cac4b1518cba5b46aab36c4636973"
+    },
+    {
+      "path": "S2-workbuddy/inventory.csv",
+      "bytes": 69,
+      "sha256": "dd9330b28df074b233ae1f4d783bd7c8fc1cc3358e69a4a69454cf90afe33cbb"
+    },
+    {
+      "path": "S2-workbuddy/README.md",
+      "bytes": 42,
+      "sha256": "234877a6eeca88e9a96552d7ce0e4a4aa0e100e4d7860fab0d1c05e7461ea6d5"
+    }
+  ]
+}

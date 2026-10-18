@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 贡献指南与参与方式
+    url: https://github.com/shenmiqinvzi/workbuddy-executor-community/blob/main/CONTRIBUTING.md
+    about: 开发准备、认领、验证与 PR 审查流程
+  - name: 公开路线图
+    url: https://github.com/shenmiqinvzi/workbuddy-executor-community/blob/main/ROADMAP.md
+    about: 查看阶段目标，欢迎补充使用场景和设计建议

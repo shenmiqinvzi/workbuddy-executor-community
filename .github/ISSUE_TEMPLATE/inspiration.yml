@@ -1,0 +1,17 @@
+name: 灵感与使用场景
+description: 分享尚未成形的想法，不要求技术方案或开发承诺
+title: "[Idea] "
+body:
+  - type: markdown
+    attributes:
+      value: 欢迎提出想法、使用体验和不同方向。说明场景即可，无需认领任务；涉及私人资料时请先脱敏。
+  - type: textarea
+    id: idea
+    attributes:
+      label: 你的想法或遇到的场景
+    validations:
+      required: true
+  - type: textarea
+    id: value
+    attributes:
+      label: 它能帮助谁、改善什么

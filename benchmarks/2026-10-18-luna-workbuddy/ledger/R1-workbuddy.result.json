@@ -1,0 +1,228 @@
+{
+  "run": "R1-workbuddy",
+  "pair": "R1",
+  "condition": "GPT-6 Luna supervising one free WorkBuddy",
+  "taskId": "study-R1-workbuddy",
+  "taskHash": "f879e6ff8e606b8c9514940d5421007cc7f8a6e31fafc5eae06e96fc390eb015",
+  "sessionId": "session-R1-workbuddy",
+  "attempt1": "attempt-R1-workbuddy-1",
+  "attempt2": "attempt-R1-workbuddy-2",
+  "attemptFinal": "attempt-R1-workbuddy-2",
+  "runtimeSource": "desktop_queue",
+  "model": "deepseek-v4.1-flash",
+  "creditsAtDispatch": "x0.00",
+  "startUTC": "2026-10-18T07:13:06.8702272Z",
+  "blockedObservedUTC": "2026-10-18T07:17:36.238Z",
+  "endUTC": "2026-10-18T09:06:28.1196681+00:00",
+  "durationToBlockSeconds": 269.368,
+  "totalSeconds": 6801.249,
+  "strictPairTimeComparable": false,
+  "timingQuality": "Terminal observation after long pause: start before first list_models; end after official deadline/block report and coordinator final workspace checks. Total includes nearly two hours awaiting user response and post-deadline interval; not active supervision time.",
+  "taskFinalState": "blocked",
+  "firstPass": {
+    "contentCheckPass": true,
+    "scopeCheckPass": false,
+    "overallAcceptance": false,
+    "failure": "Only observed scope failure: extra .workbuddy-ai/memory/2026-10-18.md; first content check passed."
+  },
+  "final": {
+    "scopeCheckPass": false,
+    "checkerExitCode": 0,
+    "taskHashMatches": true,
+    "reason": "Post-timeout artifact inspection: release note content passes, but unauthorized memory file remains. The task is blocked after its deadline and has no needs_review completion report; no acceptance was submitted.",
+    "overallAcceptance": false,
+    "contentCheckPass": true,
+    "protectedNotesHashMatches": true,
+    "memoryFileStillPresent": true
+  },
+  "externalReworkRounds": 1,
+  "externalRecoveryRounds": 0,
+  "reworkKind": "Scope-only memory file removal requested in attempt2; command outcome not yet observed.",
+  "requiredUserInterventionEpisodes": 1,
+  "actualUserInterventionStatus": "One episode resolved: user explicitly authorized the single-file deletion after the attempt2 absolute deadline had already expired. Exact response UTC was not separately captured; permission did not extend the task deadline.",
+  "userInterventions": 1,
+  "codexInitiatedRecoveryEvents": 0,
+  "gatewayCallCount": 15,
+  "successfulGatewayCallCount": 15,
+  "failedGatewayInvocations": 0,
+  "gatewayCalls": [
+    {
+      "stdoutBytes": 2979,
+      "exitCode": 0,
+      "stderrBytes": 0,
+      "tool": "workbuddy_list_models"
+    },
+    {
+      "stdoutBytes": 1042,
+      "exitCode": 0,
+      "stderrBytes": 0,
+      "tool": "workbuddy_ensure_workspace"
+    },
+    {
+      "stdoutBytes": 1320,
+      "exitCode": 0,
+      "stderrBytes": 0,
+      "tool": "workbuddy_send_task"
+    },
+    {
+      "stdoutBytes": 2182,
+      "stderrBytes": 0,
+      "tool": "workbuddy_wait",
+      "exitCode": 0,
+      "eventSeq": 1,
+      "attempt": 1
+    },
+    {
+      "stdoutBytes": 2233,
+      "stderrBytes": 0,
+      "tool": "workbuddy_wait",
+      "exitCode": 0,
+      "eventSeq": 2,
+      "attempt": 1
+    },
+    {
+      "stdoutBytes": 4283,
+      "stderrBytes": 0,
+      "tool": "workbuddy_wait",
+      "exitCode": 0,
+      "eventSeq": 3,
+      "attempt": 1
+    },
+    {
+      "stdoutBytes": 2400,
+      "stderrBytes": 0,
+      "tool": "workbuddy_wait",
+      "exitCode": 0,
+      "eventSeq": 4,
+      "attempt": 1
+    },
+    {
+      "stdoutBytes": 8928,
+      "detail": "full",
+      "exitCode": 0,
+      "stderrBytes": 0,
+      "tool": "workbuddy_get_task"
+    },
+    {
+      "purpose": "before attempt 2",
+      "stdoutBytes": 2979,
+      "exitCode": 0,
+      "stderrBytes": 0,
+      "tool": "workbuddy_list_models"
+    },
+    {
+      "attempt": 2,
+      "stdoutBytes": 1319,
+      "exitCode": 0,
+      "stderrBytes": 0,
+      "tool": "workbuddy_continue_task"
+    },
+    {
+      "stdoutBytes": 2029,
+      "stderrBytes": 0,
+      "tool": "workbuddy_wait",
+      "exitCode": 0,
+      "eventSeq": 1,
+      "attempt": 2
+    },
+    {
+      "stdoutBytes": 2233,
+      "stderrBytes": 0,
+      "tool": "workbuddy_wait",
+      "exitCode": 0,
+      "eventSeq": 2,
+      "attempt": 2
+    },
+    {
+      "stdoutBytes": 2391,
+      "stderrBytes": 0,
+      "tool": "workbuddy_wait",
+      "exitCode": 0,
+      "eventSeq": 3,
+      "attempt": 2
+    },
+    {
+      "purpose": "read-only blocker detail",
+      "stdoutBytes": 3806,
+      "exitCode": 0,
+      "stderrBytes": 0,
+      "tool": "workbuddy_get_messages"
+    },
+    {
+      "purpose": "resume after explicit user authorization; confirmed attempt2 deadline exceeded, native stop and blocked result",
+      "tool": "workbuddy_get_task",
+      "stderrBytes": 0,
+      "exitCode": 0,
+      "stdoutBytes": 9686
+    }
+  ],
+  "successfulGatewayStdoutBytes": 49810,
+  "gatewayStderrBytes": 0,
+  "mcpWireBytes": "NA",
+  "tokenCounts": "NA",
+  "activeReasoningSeconds": "NA",
+  "gatewayInternalRetryCount": "NA",
+  "localCheckerRuns": [
+    {
+      "stdoutBytes": 127,
+      "contentCheckPass": true,
+      "exitCode": 0,
+      "scopeCheckPass": false,
+      "phase": "attempt1"
+    }
+  ],
+  "unexpectedMemory": {
+    "sha256": "1c93912ec98681f3fd6b892ce53e4ae3b60077a311b82c84af9f491f49fd0ddc",
+    "path": ".workbuddy-ai/memory/2026-10-18.md",
+    "origin": "Native session Write tool explicitly created the exact path; whether app automatic-memory behavior triggered it is unknown.",
+    "evidence": "Original content copied to local-only ignored ledger evidence before cleanup request.",
+    "bytes": 695,
+    "workerReported": "No statement about this file in report",
+    "nativeWriteEvidence": {
+      "evidence": "Filtered native session JSONL function_call name and file_path only; no reasoning/content exposed.",
+      "tool": "Write",
+      "timestampUnixMs": 1792307705331
+    }
+  },
+  "checkerSha": "5c67459bf3e150f2c7c3b9d11e61bb25eede60356ca01dab13cddd5be67c09b0",
+  "notes": [
+    "Original task wording controls acceptance; attempt1 release note passed content review, including the fourth uncertainty bullet and source citation.",
+    "Attempt1 scope failed solely on unexpected memory path. Native JSONL filtered to Write function name, timestamp, and exact file_path confirms the native session tool call wrote it; the causal trigger is unknown.",
+    "Original memory content and exact hash preserved locally before the scope-only continue.",
+    "Attempt2 later exceeded its 07:27:00.281Z deadline, returned blocked with no verified result, and was officially stopped with remoteStopped=true at 07:27:01.685Z. After user authorization, independent inspection confirmed the memory file still exists; do not accept or replace this sample.",
+    "One required user UI clarification episode is resolved by explicit authorization; because it arrived after deadline, it did not resume this task."
+  ],
+  "attempt2DispatchUTC": "2026-10-18T07:16:59.5949723Z",
+  "semanticReview": {
+    "uncertaintyBullets": 1,
+    "citations": [
+      "notes/api.md",
+      "notes/ops.md",
+      "notes/ui.md"
+    ],
+    "unsupportedReleaseDateOrStatus": false,
+    "changeBullets": 3,
+    "allBulletsCiteExactSourceFilename": true,
+    "notesUnchanged": true,
+    "allThreeChangeAreasCovered": true,
+    "manualReviewer": "Coordinator independent review",
+    "totalBullets": 4
+  },
+  "deadlineUTC": "2026-10-18T07:27:00.2810000+00:00",
+  "deadlineToTerminalObservationSeconds": 5967.839,
+  "finalVerifier": {
+    "scopeCheck": "false: extra .workbuddy-ai/memory/2026-10-18.md remains (695 bytes).",
+    "semanticReview": "3 change bullets plus 1 uncertainty bullet; all cite exact filenames, all areas represented, no unsupported date/status claim.",
+    "stdoutBytes": 127,
+    "command": "tools/verify.ps1 -Task R1 -Workspace runs/R1-workbuddy",
+    "exitCode": 0
+  },
+  "userInterventionWaitSeconds": "NA (exact user response time unavailable; totalSeconds includes the pause)",
+  "nativeStopConfirmedUTC": "2026-10-18T07:27:01.685Z",
+  "deadlineReport": {
+    "message": "The desktop queue task deadline passed without a verified result. Inspect the original WorkBuddy conversation before rework; no automatic resend occurred.",
+    "status": "blocked",
+    "eventSeq": 4,
+    "createdAt": "2026-10-18T07:27:00.396Z"
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "checkedAt": "2026-10-15T06:21:02.812Z",
+  "packageVersion": "0.7.0",
+  "snapshotFilesVerified": 215,
+  "recentRepairFilesVerified": 28,
+  "rebuiltRuntimeFilesMatched": 74,
+  "configuredMcpPointsToVerifiedInstallation": true,
+  "latestRuntimeFileWrite": "2026-10-15T03:58:03.439Z",
+  "processes": [
+    {
+      "entry": "server.js",
+      "startedAfterCurrentBuild": true
+    },
+    {
+      "entry": "service-cli.js",
+      "startedAfterCurrentBuild": true
+    },
+    {
+      "entry": "server.js",
+      "startedAfterCurrentBuild": true
+    }
+  ],
+  "supervisor": {
+    "running": true,
+    "heartbeatFresh": true,
+    "status": "no_task"
+  },
+  "queuedOrWorkingTasks": 0,
+  "reloadRequired": false,
+  "modelRequestsSentByAudit": 0,
+  "nativeBridge": {
+    "state": "offline",
+    "freePolicyInMemoryVerified": false
+  },
+  "verificationLimits": [
+    "Process entry paths and start times plus matching runtime file hashes establish version consistency; no arbitrary process-memory inspection was used.",
+    "Native desktop was offline during the separate passive bridge check; live renderer policy and a new business run were not tested.",
+    "No machine reboot or login-startup recovery was exercised."
+  ],
+  "publication": {
+    "redactedOn": "2026-10-18",
+    "removed": [
+      "local process identifiers",
+      "exact process start timestamps",
+      "registered workspace count"
+    ],
+    "note": "Verification conclusions retained; original local runtime metadata is not published."
+  }
+}

@@ -1,0 +1,212 @@
+{
+  "run": "F2-workbuddy",
+  "pair": "F2",
+  "condition": "GPT-6 Luna supervising one free WorkBuddy",
+  "taskId": "study-F2-workbuddy",
+  "taskHash": "4454f66d7d537dac935851c1496e6392e26b6f838927b0a225e1dbe13a116354",
+  "sessionId": "session-F2-workbuddy",
+  "attempt1": "attempt-F2-workbuddy-1",
+  "attemptFinal": "attempt-F2-workbuddy-final",
+  "runtimeSource": "desktop_queue",
+  "model": "deepseek-v4.1-flash",
+  "creditsAtDispatch": "x0.00",
+  "startUTC": "2026-10-18T06:59:25Z",
+  "endUTC": "2026-10-18T07:07:02Z",
+  "totalSeconds": 457,
+  "timingQuality": "Coordinator clock starts before first list_models caller and ends when official acceptance call returned; includes queueing, verification, one cleanup rework, waits and accept. Server reviewedAt retained separately.",
+  "serverReviewedAt": "2026-10-18T07:07:02.407Z",
+  "queueSeconds": 24.57,
+  "attempt1ReportUTC": "2026-10-18T07:02:06.178Z",
+  "firstAttemptNativeStopUTC": "2026-10-18T07:02:27.137Z",
+  "attempt2DispatchUTC": "2026-10-18T07:03:59.376Z",
+  "finalAttemptNativeStopUTC": "2026-10-18T07:05:27.301Z",
+  "initialDispatchToFinalNativeStopSeconds": 278.941,
+  "checkerSha": "5c67459bf3e150f2c7c3b9d11e61bb25eede60356ca01dab13cddd5be67c09b0",
+  "firstPass": {
+    "contentCheckPass": true,
+    "scopeCheckPass": false,
+    "overallAcceptance": false,
+    "failure": "Extra .workbuddy-ai/memory/2026-10-18.md (930 bytes; source unknown)."
+  },
+  "final": {
+    "contentCheckPass": true,
+    "scopeCheckPass": true,
+    "taskHashMatches": true,
+    "overallAcceptance": true,
+    "callerAcceptedUTC": "2026-10-18T07:07:02Z",
+    "serverReviewedAt": "2026-10-18T07:07:02.407Z"
+  },
+  "externalReworkRounds": 1,
+  "reworkKind": "Scope-only removal of extra memory file; worker code and tests unchanged.",
+  "unexpectedMemory": {
+    "origin": "Native session Write tool explicitly created the exact path; whether app automatic-memory behavior triggered it is unknown.",
+    "bytes": 930,
+    "sha256": "fbd867f90b12143d714ec74313804bf65ea1d4c31a24d85ce6a8e68164fe5d95",
+    "workerReported": "No statement about this file in report.",
+    "evidence": "local-only, exact ignore rule; original content preserved.",
+    "nativeWriteEvidence": {
+      "evidence": "Filtered native session JSONL function_call name and file_path only; no reasoning/content exposed.",
+      "tool": "Write",
+      "timestampUnixMs": 1792306939398
+    }
+  },
+  "gatewayCallCount": 13,
+  "gatewayCalls": [
+    {
+      "tool": "workbuddy_list_models",
+      "callerStartUTC": "2026-10-18T06:59:42Z",
+      "callerReturnUTC": "2026-10-18T06:59:48Z",
+      "stdoutBytes": 2979,
+      "stderrBytes": 0,
+      "exitCode": 0
+    },
+    {
+      "tool": "workbuddy_ensure_workspace",
+      "callerStartUTC": "2026-10-18T06:59:58Z",
+      "callerReturnUTC": "2026-10-18T07:00:24Z",
+      "stdoutBytes": 1042,
+      "stderrBytes": 0,
+      "exitCode": 0
+    },
+    {
+      "tool": "workbuddy_send_task",
+      "callerStartUTC": "2026-10-18T07:00:41Z",
+      "callerReturnUTC": "2026-10-18T07:00:48Z",
+      "stdoutBytes": 1320,
+      "stderrBytes": 0,
+      "exitCode": 0
+    },
+    {
+      "tool": "workbuddy_wait",
+      "callerStartUTC": "2026-10-18T07:01:09Z",
+      "callerReturnUTC": "2026-10-18T07:01:14Z",
+      "stdoutBytes": 2398,
+      "stderrBytes": 0,
+      "exitCode": 0,
+      "attempt": 1
+    },
+    {
+      "tool": "workbuddy_wait",
+      "callerStartUTC": "2026-10-18T07:01:36Z",
+      "callerReturnUTC": "2026-10-18T07:01:39Z",
+      "stdoutBytes": 2927,
+      "stderrBytes": 0,
+      "exitCode": 0,
+      "attempt": 1
+    },
+    {
+      "tool": "workbuddy_wait",
+      "callerStartUTC": "2026-10-18T07:02:00Z",
+      "callerReturnUTC": "2026-10-18T07:02:06Z",
+      "stdoutBytes": 4472,
+      "stderrBytes": 0,
+      "exitCode": 0,
+      "attempt": 1
+    },
+    {
+      "tool": "workbuddy_wait",
+      "callerStartUTC": "2026-10-18T07:02:24Z",
+      "callerReturnUTC": "2026-10-18T07:02:28Z",
+      "stdoutBytes": 2978,
+      "stderrBytes": 0,
+      "exitCode": 0,
+      "attempt": 1
+    },
+    {
+      "tool": "workbuddy_list_models",
+      "callerStartUTC": "2026-10-18T07:03:32Z",
+      "callerReturnUTC": "2026-10-18T07:03:38Z",
+      "stdoutBytes": 2978,
+      "stderrBytes": 0,
+      "exitCode": 0,
+      "purpose": "before original task rework"
+    },
+    {
+      "tool": "workbuddy_continue_task",
+      "callerStartUTC": "2026-10-18T07:03:56Z",
+      "callerReturnUTC": "2026-10-18T07:03:59Z",
+      "stdoutBytes": 1320,
+      "stderrBytes": 0,
+      "exitCode": 0,
+      "attempt": 2
+    },
+    {
+      "tool": "workbuddy_wait",
+      "callerStartUTC": "2026-10-18T07:04:15Z",
+      "callerReturnUTC": "2026-10-18T07:04:19Z",
+      "stdoutBytes": 2397,
+      "stderrBytes": 0,
+      "exitCode": 0,
+      "attempt": 2
+    },
+    {
+      "tool": "workbuddy_wait",
+      "callerStartUTC": "2026-10-18T07:04:35Z",
+      "callerReturnUTC": "2026-10-18T07:05:19Z",
+      "stdoutBytes": 4777,
+      "stderrBytes": 0,
+      "exitCode": 0,
+      "attempt": 2
+    },
+    {
+      "tool": "workbuddy_wait",
+      "callerStartUTC": "2026-10-18T07:05:39Z",
+      "callerReturnUTC": "2026-10-18T07:05:43Z",
+      "stdoutBytes": 2661,
+      "stderrBytes": 0,
+      "exitCode": 0,
+      "attempt": 2
+    },
+    {
+      "tool": "workbuddy_accept_task",
+      "callerStartUTC": "2026-10-18T07:06:58Z",
+      "callerReturnUTC": "2026-10-18T07:07:02Z",
+      "stdoutBytes": 5543,
+      "stderrBytes": 0,
+      "exitCode": 0,
+      "attempt": 2
+    }
+  ],
+  "successfulGatewayStdoutBytes": 37792,
+  "gatewayStderrBytes": 0,
+  "localCheckerRuns": [
+    {
+      "phase": "first",
+      "exitCode": 0,
+      "stdoutBytes": 606,
+      "contentCheckPass": true
+    },
+    {
+      "phase": "final",
+      "exitCode": 0,
+      "stdoutBytes": 607,
+      "contentCheckPass": true
+    }
+  ],
+  "finalScopeFileList": [
+    ".study/task.md",
+    "src/rank.js",
+    "test/rank.test.js"
+  ],
+  "protectedTaskHashMatches": true,
+  "modifiedFileHashes": {
+    "src/rank.js": "8fe39eccad2e73c80b5839c83d4c59a529a612dcabda6cbc3a1dfee62bcd4a6f",
+    "test/rank.test.js": "b16922681f5db93cbb37a1a018e84ff32b91dd472ab765eb628271fa34575b2f"
+  },
+  "mcpWireBytes": "NA",
+  "tokenCounts": "NA",
+  "activeReasoningSeconds": "NA",
+  "userInterventions": 0,
+  "codexInitiatedRecoveryEvents": 1,
+  "gatewayInternalRetryCount": "NA",
+  "endpointTimeBasis": "endUTC is coordinator caller-return after accept_task; server reviewedAt is 2026-10-18T07:07:02.407Z; native stops use wait.observedAt.",
+  "notes": [
+    "First attempt content passed, scope failed solely due the new memory file. Its native Write tool created the path; trigger remains unknown.",
+    "A single external cleanup rework removed only the exact extra file after realpath containment checks; empty directories were left in place and no memory settings were changed.",
+    "Final workspace file list contains only the frozen task file and two authorized source/test files.",
+    "Worker reported node --test test/rank.test.js exit 0 and six passing tests; coordinator independently reran shared checker, including independent contract harness, exit 0.",
+    "Model and gateway code hash were checked immediately before dispatch and before continue_task."
+  ],
+  "strictPairTimeComparable": true,
+  "externalRecoveryRounds": 0
+}

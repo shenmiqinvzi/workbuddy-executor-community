@@ -1,0 +1,122 @@
+{
+  "format": 1,
+  "verifiedOn": "2026-10-17",
+  "release": "reliability-20261017.2",
+  "codeHash": "aea0b34401aba775a5a302c9b12688e4efd498d06425dd7874e879ff49e84ec1",
+  "approvedModel": {
+    "id": "deepseek-v4.1-flash",
+    "credits": "x0.00",
+    "paidFallbackUsed": false
+  },
+  "windowsApplicableRegression": {
+    "total": 227,
+    "passed": 221,
+    "failed": 0,
+    "skipped": 6,
+    "concurrency": 2
+  },
+  "skillValidation": "passed",
+  "liveAcceptance": {
+    "normalAuthenticatedResultAccepted": true,
+    "normalSameTaskSameSessionReworkRounds": 1,
+    "busyNativeCancellationConfirmed": true,
+    "duplicateCancelNativeIssues": 1,
+    "deadlineAttemptsPreserved": 2,
+    "finalDeadlineStoppedAutomatically": true,
+    "nodeHangExitCode": 124,
+    "chromeHangExitCode": 124,
+    "ownedCleanupConfirmed": true,
+    "nativeDisconnectionInjection": "real unreachable loopback endpoint while a real task was busy; unavailable, no success",
+    "stopApiFailure": "automated injected adapter failure only",
+    "normalLongSampleSeconds": 70,
+    "sentinelIdleWithZeroUserMessages": true,
+    "codexSubmittedWorkerSuccessReports": 0
+  },
+  "supervision": {
+    "instrumentationScope": "Controlled live harness MCP calls only; excludes implementation tools, source review and filesystem evidence reads. Direct fault probes are separate. No token counts or comparison baseline.",
+    "mcpCalls": 68,
+    "mcpReturnBytes": 280832,
+    "mcpElapsedIncludingWaitMs": 646237,
+    "directNativeFaultProbes": 1,
+    "workerReportBytes": [
+      1478,
+      1751
+    ],
+    "phases": [
+      {
+        "phase": "normal-initial",
+        "attempt": 1,
+        "state": "needs_review",
+        "remoteStopped": true,
+        "executionSeconds": 196.254,
+        "deadlineStopDelaySeconds": null,
+        "workerReportBytes": 1478
+      },
+      {
+        "phase": "normal-rework",
+        "attempt": 2,
+        "state": "needs_review",
+        "remoteStopped": true,
+        "executionSeconds": 85.922,
+        "deadlineStopDelaySeconds": null,
+        "workerReportBytes": 1751
+      },
+      {
+        "phase": "active-cancel",
+        "attempt": 1,
+        "state": "cancelled",
+        "remoteStopped": true,
+        "executionSeconds": 39.637,
+        "deadlineStopDelaySeconds": null,
+        "workerReportBytes": 0
+      },
+      {
+        "phase": "deadline-initial",
+        "attempt": 1,
+        "state": "blocked",
+        "remoteStopped": true,
+        "executionSeconds": 257.127,
+        "deadlineStopDelaySeconds": 187.057,
+        "workerReportBytes": 0
+      },
+      {
+        "phase": "deadline-recheck",
+        "attempt": 2,
+        "state": "blocked",
+        "remoteStopped": true,
+        "executionSeconds": 78.002,
+        "deadlineStopDelaySeconds": 7.944,
+        "workerReportBytes": 0
+      }
+    ],
+    "manualInterventions": {
+      "total": 2,
+      "details": [
+        "Corrected acceptance harness stop-wait origin (task start had been mistaken for cancel start).",
+        "Invoked the fixed official supervisor once on the original blocked deadline attempt before final deployment; no native manual stop and no worker report submission."
+      ]
+    },
+    "manualNativeStops": 0,
+    "manualTestProcessKills": 0,
+    "plannedNormalReworkRounds": 1,
+    "sameTaskDeadlineVerificationRounds": 1,
+    "codexSubmittedWorkerSuccessReports": 0
+  },
+  "runtime": {
+    "freshMcpAndServiceCodeHashesMatch": true,
+    "originalChatMcpReloaded": false,
+    "verificationUsedFreshOfficialMcpProcesses": true
+  },
+  "limits": [
+    "Unix-socket Harness and POSIX launcher tests remain outside Windows scope; baseline failures were measured and preserved.",
+    "No provider outage, native-app crash, reboot, fresh-machine restore or real account workflow was exercised.",
+    "The original chat MCP still has old modules; use the official fresh launcher or reconnect before dispatching.",
+    "Report reserve and bounded commands cannot make a model submit a report; missing reports remain blocked.",
+    "A genuinely unavailable stop API, missing native ownership or unprovable cleanup still requires native UI/operator inspection."
+  ],
+  "publication": {
+    "privateRuntimeStoresAndCredentialsIncluded": false,
+    "rawTaskAndSessionMapsIncluded": false,
+    "costSavingsClaimed": false
+  }
+}
