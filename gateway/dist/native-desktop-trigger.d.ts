@@ -49,6 +49,14 @@ export declare class NativeDesktopRpcTrigger implements NativeDesktopTrigger {
         sessionId: string;
         model: string;
     }>;
+    /** Inspect an existing bridge without installing/configuring it or launching the app. */
+    diagnoseReadOnly(): Promise<{
+        bridgeReady: boolean;
+        models?: Array<{
+            id: string;
+            credits?: unknown;
+        }>;
+    }>;
     createWorker(workspace: string, sessionId: string, title?: string): Promise<{
         sessionId: string;
         workspace: string;

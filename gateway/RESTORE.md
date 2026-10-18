@@ -1,6 +1,8 @@
 # 修复版网关快照与恢复
 
-本目录保存更新至2026-10-18的网关快照，包含 Windows 适配、模型就绪/领取竞态、回报、只读查询、原生停止证据、请求冲突检查和验收验证复核。`package.json` 沿用上游版本0.7.0；准确版本以本仓库提交和 `SNAPSHOT_MANIFEST.json` 文件哈希为准。历史基线标签保持不变。
+新部署优先使用 [Windows 安装指南](docs/INSTALL_WINDOWS.md)；源码快照用 verify-snapshot，完整发布 ZIP 用 scripts/verify-release.mjs 核对。
+
+本目录保存更新至2026-10-18的网关快照，包含 Windows 适配、模型就绪/领取竞态、回报、只读查询、原生停止证据、请求冲突检查和验收验证复核。社区部署版本为0.7.1，在上游0.7.0与可靠性修复基础上维护；准确版本以本仓库提交和 `SNAPSHOT_MANIFEST.json` 文件哈希为准。历史基线标签保持不变。
 
 ## 保存内容
 
@@ -24,4 +26,4 @@
 
 2026-10-16已实测功能开发、回报、停止确认、独立验收和正常同任务返工；未执行新机器完整恢复安装、系统重启或重新登录测试。平台502仍属于外部服务故障，不能通过切换收费模型或无限重派掩盖。
 
-当前可靠性版本为 `reliability-20261018.1`，最新保障清单见 `docs/workbuddy-executor-audit.md`，原生Windows复验见 `docs/windows-job-verification.json`；2026-10-17验收文件保留为历史记录。恢复必须带上 `scripts/bounded-job.ps1`、command-cleanup/bounded-command模块与全部技能参考文件，包括新的 `references/dispatch.md`；使用health的runtime比对实际启动进程，不能只比较磁盘。Windows复验使用 `node --import ./test/support/typescript-loader.mjs --test --test-concurrency=2` 并选择适用测试；Unix socket Harness与POSIX启动器不在本机通过范围。沙箱因策略拒绝PowerShell脚本时，在批准的正常本机上下文运行Job相关测试，不降低系统策略。
+可靠性基线为 `reliability-20261018.1`，本分支构建标识为 `portability-20261018.1`；现有运行进程不会自动升级。最新保障清单见 `docs/workbuddy-executor-audit.md`，原生Windows复验见 `docs/windows-job-verification.json`；2026-10-17验收文件保留为历史记录。恢复必须带上 `scripts/bounded-job.ps1`、command-cleanup/bounded-command模块与全部技能参考文件，包括新的 `references/dispatch.md`；使用health的runtime比对实际启动进程，不能只比较磁盘。Windows复验使用 `node --import ./test/support/typescript-loader.mjs --test --test-concurrency=2` 并选择适用测试；Unix socket Harness与POSIX启动器不在本机通过范围。沙箱因策略拒绝PowerShell脚本时，在批准的正常本机上下文运行Job相关测试，不降低系统策略。

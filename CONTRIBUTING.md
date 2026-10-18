@@ -30,7 +30,7 @@ npm run build
 
 本仓库公开，欢迎直接 fork；新参与者无需先获得仓库写权限。外部贡献者从自己的 fork 开分支，协作者从仓库分支开 PR。配置参考 `gateway/WINDOWS_ENV.example`；真实 `.env`、运行数据和业务工作区放在本机，不能提交。
 
-快照核验在修改/构建前运行；开发后源码和 dist 变化可能让旧清单不再匹配，这是需要集成更新的事实，不通过伪造哈希处理。现有完整安装的限制见 [恢复说明](gateway/RESTORE.md)；跨机器安装仍待验证，不能把 build 通过当作原生链路可用。
+快照核验在修改/构建前运行；开发后源码和 dist 变化可能让旧清单不再匹配，这是需要集成更新的事实，不通过伪造哈希处理。实际部署使用 [Windows 安装指南](gateway/docs/INSTALL_WINDOWS.md)与 [独立验收](gateway/docs/DEPLOYMENT_ACCEPTANCE.md)；跨机器真实结果仍待取得，不能把 build 通过当作原生链路可用。
 
 ## 验证改动
 

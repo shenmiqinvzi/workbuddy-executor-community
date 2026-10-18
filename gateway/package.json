@@ -1,6 +1,6 @@
 {
   "name": "codex-workbuddy-gateway",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "private": true,
   "description": "Local Agent Hub with HTTP, MCP, SDK, CLI and a workbench; WorkBuddy executor and existing Harness bridge.",
   "type": "module",
@@ -15,13 +15,15 @@
     "auth": "node dist/auth.js",
     "dev": "tsx src/server.ts",
     "test": "tsx --test test/**/*.test.ts",
-    "doctor": "node dist/doctor.js",
+    "doctor": "node scripts/doctor.mjs",
     "package": "node scripts/package.mjs",
     "skill:install": "node scripts/install-skill.mjs",
     "deepseek:start": "node dist/deepseek-server.js",
     "deepseek:skill:install": "node scripts/install-deepseek-skill.mjs",
     "deepseek:plugin:install": "node scripts/install-deepseek-plugin.mjs",
-    "deepseek:plugin:test": "node --test deepseek-plugin/test/*.test.mjs"
+    "deepseek:plugin:test": "node --test deepseek-plugin/test/*.test.mjs",
+    "setup": "node scripts/setup.mjs",
+    "deployment:check": "node scripts/deployment-check.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.21.0",

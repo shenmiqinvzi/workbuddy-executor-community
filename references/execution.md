@@ -8,10 +8,10 @@
 
 ## 有界验证
 
-测试和浏览器样本使用领取契约的 `exec --claim-file ... --command-file ...`。command-file 为 UTF-8 JSON：
+测试和浏览器样本使用领取契约的 `exec --claim-file ... --command-file ...`。command-file 为 UTF-8 JSON，executable 使用本次安装的真实 Node 路径，下面只是占位示例：
 
 ```json
-{"executable":"F:/node.exe","args":["--test","sample.test.mjs"],"cwd":"E:/example","timeoutSeconds":60,"inputs":["sample.mjs"]}
+{"executable":"C:/Program Files/nodejs/node.exe","args":["--test","sample.test.mjs"],"cwd":"E:/example","timeoutSeconds":60,"inputs":["sample.mjs"]}
 ```
 
 按实际运行时间设上限，不统一把长任务裁成短任务。外层上限不能替代样本内部正确退出条件；浏览器样本自身也要设置页面等待/观察时限并关闭自建资源。exec 会限制到本轮 reportBy，报告预留期不再开命令。

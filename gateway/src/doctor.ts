@@ -1,52 +1,79 @@
 import fs from "node:fs";
-import { loadConfig } from "./config.js";
-import { WorkBuddyClient } from "./workbuddy-client.js";
-import { loadDotEnv } from "./env.js";
+import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { discoverDesktopPaths, supportedNode, type DiscoveryOptions } from "./deployment-paths.js";
+import { loadDotEnv, PROJECT_ROOT } from "./env.js";
+import { loadConfig, type Config } from "./config.js";
+import { runtimeVersion } from "./runtime-version.js";
 
-// This command intentionally sends no prompt, changes no desktop setting and
-// prints no token, cookie, private workspace or session-file path.
-loadDotEnv();
-const config = loadConfig();
-const [major = 0, minor = 0] = process.versions.node.split(".").map(Number);
-const nodeSupported = major > 22 || (major === 22 && minor >= 5);
-const macOS = process.platform === "darwin";
-const applicationPresent = fs.existsSync(config.cliElectronPath);
-const desktopRoute = ["desktop-acp", "desktop-queue"].includes(config.backend);
-const checks = { nodeSupported, macOS, applicationPresent, desktopRoute };
-const nextSteps: string[] = [];
-let online = false;
-let ready = false;
-let connectionStatus = "not_checked";
-
-if (!nodeSupported) nextSteps.push("Install Node.js 22.5 or later, then build the project again.");
-if (!macOS) nextSteps.push("This desktop setup is documented for macOS; verify platform support before continuing.");
-if (!applicationPresent) nextSteps.push("Install WorkBuddy or configure WORKBUDDY_CLI_ELECTRON for its local application.");
-if (!desktopRoute) nextSteps.push("Set WORKBUDDY_BACKEND=desktop-queue in the project .env and restart the MCP server.");
-
-if (nodeSupported && macOS && applicationPresent && desktopRoute) {
+export const APPROVED_FREE_MODEL = "deepseek-v4.1-flash";
+export function checkNativeSchema(directory: string | undefined): boolean {
+  if (!directory) return false;
+  let db: DatabaseSync | undefined;
   try {
-    const result = await new WorkBuddyClient({ ...config, requestTimeoutMs: Math.min(config.requestTimeoutMs, 10_000) }).health();
-    online = result.online;
-    ready = result.ready === true;
-    connectionStatus = online ? (ready ? "desktop_ready" : "connectable_unverified_desktop") : "offline";
-    if (!online) nextSteps.push(config.backend === "desktop-queue" ? "Bootstrap the dedicated native WorkBuddy conversation to run bin/workbuddy-worker claim, then retry while it is waiting." : "Keep WorkBuddy logged in and open the intended desktop conversation, then retry this diagnostic.");
-    else if (!ready) nextSteps.push("Verify that the intended interactive session is registered in WorkBuddy desktop before dispatching a task.");
-  } catch {
-    connectionStatus = "probe_failed";
-    nextSteps.push("Retry with WorkBuddy running; inspect the local MCP health response for the connection error without sharing credentials.");
-  }
+    db = new DatabaseSync(path.join(directory, "workbuddy.db"), { readOnly: true });
+    const columns = new Set(db.prepare("PRAGMA table_info(sessions)").all().map(row => row.name));
+    return ["id", "cwd", "is_playground", "deleted_at"].every(name => columns.has(name));
+  } catch { return false; } finally { db?.close(); }
 }
-
-console.log(JSON.stringify({
-  ok: nodeSupported && macOS && applicationPresent && desktopRoute && online && ready,
-  backend: config.backend,
-  checks,
-  online,
-  ready,
-  connectionStatus,
-  taskSent: false,
-  videoAcceptance: "pending_user_verification",
-  nextSteps,
-  note: "A successful health probe only confirms current connectivity, not task execution or video acceptance.",
-}, null, 2));
-process.exitCode = nodeSupported && macOS && applicationPresent && desktopRoute && online && ready ? 0 : 1;
+function existsFile(filename?: string) { try { return Boolean(filename && fs.statSync(filename).isFile()); } catch { return false; } }
+export async function diagnose(options: DiscoveryOptions & { root?: string; live?: boolean; port?: number; probe?: () => Promise<{ bridgeReady: boolean; models?: Array<{id:string;credits?:unknown}> }> } = {}) {
+  const root = options.root ?? PROJECT_ROOT, env = options.env ?? process.env;
+  const discovery = discoverDesktopPaths(options);
+  const checks = {
+    nodeSupported: supportedNode(), platformSupported: (options.platform ?? process.platform) === "win32",
+    buildPresent: existsFile(path.join(root, "dist", "server.js")),
+    applicationPresent: existsFile(discovery.executable.value),
+    configSchemaCompatible: checkNativeSchema(discovery.config.value),
+    desktopRoute: (env.WORKBUDDY_BACKEND ?? "desktop-queue") === "desktop-queue",
+    freePolicyEnabled: env.WORKBUDDY_REQUIRED_FREE_MODEL === APPROVED_FREE_MODEL,
+  };
+  const localSetupReady = Object.values(checks).every(Boolean);
+  const nextSteps: string[] = [];
+  if (!checks.nodeSupported) nextSteps.push("Install Node.js >=22.13.0.");
+  if (!checks.platformSupported) nextSteps.push("This community deployment release targets Windows; other platforms are not verified.");
+  if (!checks.buildPresent) nextSteps.push("Run npm ci and npm run build in the gateway directory.");
+  if (!checks.applicationPresent) nextSteps.push("Install/open WorkBuddy, or set WORKBUDDY_CLI_ELECTRON to its absolute executable path.");
+  if (!checks.configSchemaCompatible) nextSteps.push("Open WorkBuddy once; set WORKBUDDY_CONFIG_DIR to its data directory. The sessions schema must be compatible.");
+  if (!checks.desktopRoute || !checks.freePolicyEnabled) nextSteps.push("Use setup plan/install; preserve existing .env and explicitly resolve backend/free-model conflicts.");
+  let connection: "not_checked" | "unavailable" | "bridge_missing" | "verified" = "not_checked";
+  let modelPolicy: "not_checked" | "unknown" | "verified" | "blocked" = "not_checked";
+  if (options.live && localSetupReady) {
+    connection = "unavailable"; modelPolicy = "unknown";
+    try {
+      const probe = options.probe ?? (async () => {
+        const { NativeDesktopRpcTrigger } = await import("./native-desktop-trigger.js");
+        const config: Config = { ...loadConfig(), cliElectronPath: discovery.executable.value!, workbuddyConfigDir: discovery.config.value! };
+        let port = options.port ?? 18491;
+        if (!options.port && config.serviceConfigFile && fs.existsSync(config.serviceConfigFile)) {
+          const registration = JSON.parse(fs.readFileSync(config.serviceConfigFile, "utf8"));
+          if (Number.isInteger(registration.cdpPort)) port = registration.cdpPort;
+        }
+        const observer = new NativeDesktopRpcTrigger(config, port, false);
+        try { return await observer.diagnoseReadOnly(); } finally { observer.close(); }
+      });
+      const result = await probe();
+      connection = result.bridgeReady ? "verified" : "bridge_missing";
+      const selected = result.models?.find(model => model.id === APPROVED_FREE_MODEL);
+      if (result.bridgeReady) modelPolicy = selected && /^x0(?:\.0+)?(?: credits)?$/i.test(String(selected.credits ?? "").trim()) ? "verified" : selected?.credits === undefined && selected ? "unknown" : "blocked";
+    } catch { /* Never print private native errors, accounts, paths or history. */ }
+    if (connection !== "verified") nextSteps.push("Open WorkBuddy and complete the documented first connection. Diagnosis never starts/restarts the app or installs its native bridge.");
+    if (modelPolicy !== "verified") nextSteps.push("Confirm the approved model is currently available at x0.00 in WorkBuddy; no paid fallback.");
+  }
+  return {
+    ok: localSetupReady && (!options.live || (connection === "verified" && modelPolicy === "verified")),
+    readOnly: true, mode: options.live ? "live_observation" : "local", runtime: {packageVersion:runtimeVersion.packageVersion,release:runtimeVersion.release,codeHash:runtimeVersion.codeHash}, checks, localSetupReady,
+    discovery: { application: discovery.executable.source, config: discovery.config.source },
+    connection, modelPolicy, login: "unknown", quota: "unknown", taskExecutionVerified: false, taskSent: false, nextSteps,
+  };
+}
+export async function runDoctor(args = process.argv.slice(2)) {
+  if (args.some(arg => arg !== "--live")) throw new Error("Usage: node scripts/doctor.mjs [--live]");
+  loadDotEnv();
+  const result = await diagnose({ live: args.includes("--live") });
+  console.log(JSON.stringify(result, null, 2));
+  process.exitCode = result.ok ? 0 : 1;
+}
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(PROJECT_ROOT, "dist", "doctor.js")) {
+  runDoctor().catch(() => { console.error("Diagnosis failed; inspect local configuration without sharing private data."); process.exitCode = 1; });
+}

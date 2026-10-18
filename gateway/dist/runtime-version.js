@@ -8,5 +8,5 @@ function files(dir) { return fs.readdirSync(dir, { withFileTypes: true }).flatMa
 const hash = crypto.createHash("sha256");
 for (const file of files(root))
     hash.update(path.relative(root, file).replaceAll("\\", "/")).update(fs.readFileSync(file));
-export const runtimeVersion = Object.freeze({ release: "reliability-20261018.1", pid: process.pid, startedAt: new Date().toISOString(), codeHash: hash.digest("hex") });
+export const runtimeVersion = Object.freeze({ release: "portability-20261018.1", packageVersion: JSON.parse(fs.readFileSync(path.join(root, "..", "package.json"), "utf8")).version, pid: process.pid, startedAt: new Date().toISOString(), codeHash: hash.digest("hex") });
 //# sourceMappingURL=runtime-version.js.map

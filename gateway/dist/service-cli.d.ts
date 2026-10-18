@@ -37,5 +37,6 @@ export declare function installServiceWindows(options: InstallServiceOptions): {
     restartWorkBuddyRequired: boolean;
 };
 export declare function serviceStatus(configFile: string, run?: LaunchctlRunner, uid?: number | undefined): Record<string, unknown>;
+export declare function verifyServiceProcess(registration: ServiceRegistration, configFile: string, pid: number, table?: import("./native-process.js").NativeProcess[]): void;
 export declare function uninstallService(configFile: string, run?: LaunchctlRunner, uid?: number | undefined): Record<string, unknown>;
 export {};

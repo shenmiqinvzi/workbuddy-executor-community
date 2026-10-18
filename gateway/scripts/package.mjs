@@ -3,12 +3,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
+import { zipDirectory } from "./zip.mjs";
 
-const execute = promisify(execFile);
-const ROOT_FILES = new Set(["README.md", ".gitignore", ".env.example", "package.json", "package-lock.json", "tsconfig.json", "LICENSE"]);
+const ROOT_FILES = new Set(["README.md", ".gitignore", ".env.example", "package.json", "package-lock.json", "tsconfig.json", "LICENSE", "WINDOWS_ENV.example", "RESTORE.md"]);
 const SKILLS = new Map([
   ["workbuddy-executor", ["skills/workbuddy-executor/SKILL.md", "skills/workbuddy-executor/agents/openai.yaml", "skills/workbuddy-executor/references/setup.md", "skills/workbuddy-executor/references/execution.md", "skills/workbuddy-executor/references/dispatch.md", "skills/workbuddy-executor/references/agent-hub.md"]],
   ["deepseek-executor", ["skills/deepseek-executor/SKILL.md", "skills/deepseek-executor/references/setup.md"]],
@@ -18,12 +16,15 @@ const PLUGIN_FILES = ["index.mjs", "adapter.mjs", "events.mjs", "transport.mjs",
 const REQUIRED_FILES = ["README.md", ".env.example", "package.json", "package-lock.json", "tsconfig.json", "src/server.ts", "dist/server.js", "bin/workbuddy-gateway", "bin/workbuddy-worker", "dist/desktop-worker-cli.js", "bin/workbuddy-service", "src/persistent-service.ts", "src/service-cli.ts", "src/native-desktop-trigger.ts", "dist/persistent-service.js", "dist/service-cli.js", "dist/native-desktop-trigger.js", "docs/QUEUE_WORKER.md", "scripts/install-skill.mjs", "bin/deepseek-gateway", "src/deepseek-server.ts", "dist/deepseek-server.js", "src/deepseek-client.ts", "src/deepseek-store.ts", "src/deepseek-coordinator.ts", "src/deepseek-evidence.ts", "dist/deepseek-client.js", "dist/deepseek-store.js", "dist/deepseek-coordinator.js", "dist/deepseek-evidence.js", "scripts/install-deepseek-skill.mjs", "scripts/install-deepseek-plugin.mjs", "scripts/deepseek-call.mjs", "docs/DEEPSEEK.md", ...SKILL_FILES, ...PLUGIN_FILES];
 REQUIRED_FILES.push("scripts/bounded-job.ps1", "bin/agent-hub", "bin/agent-hub-mcp", "scripts/agent-hub-call.mjs", "docs/AGENT_HUB.md", "docs/AGENT_HUB_DESIGN.md",
   ...["contracts", "store", "workbuddy", "engine", "http", "client", "ui", "cli", "mcp"].flatMap(name => [`src/platform/${name}.ts`, `dist/platform/${name}.js`, `dist/platform/${name}.d.ts`]));
+const DEPLOYMENT_FILES = ["WINDOWS_ENV.example","RESTORE.md","scripts/zip.mjs","scripts/verify-release.mjs","scripts/setup.mjs","scripts/doctor.mjs","scripts/deployment-check.mjs","scripts/workbuddy-inspect.mjs","bin/workbuddy-gateway.cmd","docs/INSTALL_WINDOWS.md","docs/DEPLOYMENT_ACCEPTANCE.md","test/support/typescript-loader.mjs","test/support/read-zip.mjs",
+  ...["deployment-paths","deployment-safety","deployment-acceptance","setup","doctor","inspect-task"].flatMap(name=>[`src/${name}.ts`,`dist/${name}.js`])];
+REQUIRED_FILES.push(...DEPLOYMENT_FILES);
 const DIRECTORY_RULES = new Map([
   ["src", /\.ts$/],
   ["test", /\.test\.ts$/],
-  ["docs", /^(?:video-explanation|FAILURE_REVIEW|USER_ACCEPTANCE|CODEX_WORKFLOW|QUEUE_WORKER|DEEPSEEK|AGENT_HUB_DESIGN|AGENT_HUB|RELEASE_NOTES)\.md$/],
-  ["scripts", /^(?:bounded-job\.ps1$|(?:package|install-skill|install-deepseek-skill|install-deepseek-plugin|deepseek-call|workbuddy-call|agent-hub-call)\.mjs$)/],
-  ["bin", /^(?:workbuddy-(?:gateway|cli|doctor|worker|service)|deepseek-gateway|agent-hub(?:-mcp)?)$/],
+  ["docs", /^(?:INSTALL_WINDOWS|DEPLOYMENT_ACCEPTANCE|video-explanation|FAILURE_REVIEW|USER_ACCEPTANCE|CODEX_WORKFLOW|QUEUE_WORKER|DEEPSEEK|AGENT_HUB_DESIGN|AGENT_HUB|RELEASE_NOTES)\.md$/],
+  ["scripts", /^(?:bounded-job\.ps1$|(?:zip|verify-release|setup|doctor|deployment-check|package|install-skill|install-deepseek-skill|install-deepseek-plugin|deepseek-call|workbuddy-call|workbuddy-inspect|agent-hub-call)\.mjs$)/],
+  ["bin", /^(?:workbuddy-(?:gateway|cli|doctor|worker|service)(?:\.cmd)?|deepseek-gateway|agent-hub(?:-mcp)?)$/],
   ["dist", /\.(?:js|js\.map|d\.ts)$/],
   ["skills", /^(?:SKILL\.md|openai\.yaml|setup\.md)$/],
   ["deepseek-plugin", /./],
@@ -33,6 +34,7 @@ const PRIVATE_DIRS = new Set(["data", "outputs", "node_modules", "work", "logs",
 function allowed(relative) {
   const segments = relative.split("/");
   if (segments.some((segment) => PRIVATE_DIRS.has(segment))) return false;
+  if (relative === "test/support/typescript-loader.mjs" || relative === "test/support/read-zip.mjs") return true;
   if (segments.length === 1) return ROOT_FILES.has(relative);
   if (segments[0] === "skills") return SKILL_FILES.includes(relative);
   if (segments[0] === "deepseek-plugin") return PLUGIN_FILES.includes(relative);
@@ -66,7 +68,7 @@ export async function createSkillPackage(sourceDir, outputDir, version, skillNam
       await fs.mkdir(path.dirname(target), { recursive: true });
       await fs.writeFile(target, content, { mode: 0o644 });
     }
-    await execute("zip", ["-q", "-r", "-X", archive, skillName], { cwd: stage });
+    await zipDirectory(path.join(stage,skillName),archive,skillName);
     const digest = crypto.createHash("sha256").update(await fs.readFile(archive)).digest("hex");
     await fs.writeFile(checksum, `${digest}  ${path.basename(archive)}\n`, { flag: "wx" });
     return { archive, checksum, files: skillFiles.length, sha256: digest };
@@ -106,7 +108,7 @@ function assertSafeContent(relative, content) {
   if (/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/.test(content)) {
     throw new Error(`Private key in release file: ${relative}`);
   }
-  if (/\/Users\/(?!example(?:\/|\b)|YOUR_NAME(?:\/|\b))[A-Za-z0-9._-]+\//.test(content) || /\/private\/var\/folders\//.test(content)) {
+  if (/\/Users\/(?!example(?:\/|\b)|YOUR_(?:NAME|USER|USERNAME)(?:\/|\b))[A-Za-z0-9._-]+\//i.test(content) || /\/private\/var\/folders\//.test(content)) {
     throw new Error(`Private machine path in release file: ${relative}`);
   }
   if (relative === ".env.example") {
@@ -145,7 +147,7 @@ export async function createPackage(sourceDir, outputDir, version) {
     }
     const manifest = `${JSON.stringify({ project: "codex-workbuddy-gateway", version, videoAcceptance: "pending_user_verification", files: entries }, null, 2)}\n`;
     await fs.writeFile(path.join(stage, releaseName, "RELEASE_MANIFEST.json"), manifest);
-    await execute("zip", ["-q", "-r", "-X", archive, releaseName], { cwd: stage });
+    await zipDirectory(stage,archive);
     const digest = crypto.createHash("sha256").update(await fs.readFile(archive)).digest("hex");
     await fs.writeFile(manifestPath, manifest, { flag: "wx" });
     await fs.writeFile(checksumPath, `${digest}  ${path.basename(archive)}\n`, { flag: "wx" });

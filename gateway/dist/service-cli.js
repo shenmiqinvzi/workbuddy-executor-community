@@ -1,5 +1,7 @@
 import { runtimeVersion } from "./runtime-version.js";
 import fs from "node:fs";
+import { assertTaskRecordsStopped } from "./deployment-safety.js";
+import { windowsProcessTable, sameExecutable } from "./native-process.js";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -196,10 +198,17 @@ export function serviceStatus(configFile, run = launchctl, uid = process.getuid?
     const serviceAlive = typeof state?.pid === "number" && state.pid > 0 && isAlive(state.pid);
     return { ok: true, installed: registration.launchdLabel ? Boolean(registration.plistPath && fs.existsSync(registration.plistPath)) : Boolean(registration.sessionId && fs.existsSync(configFile)), launchdLoaded: registration.launchdLabel ? status?.status === 0 : serviceAlive, configFile, sessionId: registration.sessionId, workspace: registration.workspace, cdpPort: registration.cdpPort, desktopRegistered: workers.some(worker => worker.state === 'ready' && worker.desktopRegistered), defaultDesktopRegistered: native.registered, workers, state };
 }
+export function verifyServiceProcess(registration, configFile, pid, table = windowsProcessTable()) {
+    const process = table.find(item => item.pid === pid);
+    const command = process?.commandLine?.replaceAll("\\", "/").toLowerCase() ?? "";
+    if (!sameExecutable(process?.exe, registration.nodeBin) || !command.includes(path.join(registration.projectDir, "dist", "service-cli.js").replaceAll("\\", "/").toLowerCase()) || !command.includes(path.resolve(configFile).replaceAll("\\", "/").toLowerCase()))
+        throw new Error("Stored service PID ownership is unconfirmed; no process was stopped.");
+}
 export function uninstallService(configFile, run = launchctl, uid = process.getuid?.()) {
     const registration = readServiceRegistration(configFile);
     if (!registration)
         return { ok: true, installed: false, configFile };
+    assertTaskRecordsStopped(registration.dbFile, registration.runsDir);
     if (registration.launchdLabel && uid !== undefined) {
         const target = `gui/${uid}/${registration.launchdLabel}`;
         const result = run(["bootout", target]);
@@ -208,12 +217,15 @@ export function uninstallService(configFile, run = launchctl, uid = process.getu
     }
     if (!registration.launchdLabel && WINDOWS) {
         const stateFile = path.join(registration.projectDir, "data", "persistent-service-status.json");
-        try {
+        if (fs.existsSync(stateFile)) {
             const state = JSON.parse(fs.readFileSync(stateFile, "utf8"));
-            if (typeof state.pid === "number" && state.pid > 0 && isAlive(state.pid))
-                spawnSync("taskkill", ["/PID", String(state.pid)], { timeout: 10_000, windowsHide: true });
+            if (typeof state.pid === "number" && state.pid > 0 && isAlive(state.pid)) {
+                verifyServiceProcess(registration, configFile, state.pid);
+                const stopped = spawnSync("taskkill", ["/PID", String(state.pid)], { timeout: 10000, windowsHide: true });
+                if (stopped.status !== 0)
+                    throw new Error("Persistent service did not stop; registration preserved.");
+            }
         }
-        catch { /* A missing or unreadable status file just means there is nothing to stop. */ }
         fs.rmSync(windowsStartupEntry(registration.projectDir), { force: true });
     }
     const current = environmentValue(run);

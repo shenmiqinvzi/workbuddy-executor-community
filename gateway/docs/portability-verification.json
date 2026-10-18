@@ -1,0 +1,58 @@
+{
+  "verifiedOn": "2026-10-18",
+  "release": {
+    "files": 279,
+    "sha256": "1d67fc35a09f408d23a83dc491506a43e8e0bd4de785ae7bd17b0978910e400a",
+    "zipCrcCheckedBy": "Python zipfile",
+    "allManifestHashesVerified": true
+  },
+  "packageVersion": "0.7.1",
+  "environment": {
+    "platform": "Windows",
+    "node": "24.19.0"
+  },
+  "regression": {
+    "total": 145,
+    "passed": 139,
+    "skipped": 6,
+    "failed": 0,
+    "skippedScope": "macOS lifecycle fixtures",
+    "fullHistoricalSuiteClaimed": false
+  },
+  "deploymentBehaviorTests": {
+    "total": 12,
+    "passed": 12,
+    "failed": 0
+  },
+  "skillValidation": {
+    "root": "passed",
+    "bundled": "passed"
+  },
+  "isolatedInstall": {
+    "differentWorkingDirectory": true,
+    "unicodeAndSpacePaths": true,
+    "planWritesNothing": true,
+    "repeatedInstallUnchanged": true,
+    "doctorLocalPassed": true,
+    "stdioMcpConnected": true,
+    "mcpReportedVersion": "0.7.1",
+    "dispatchedTasks": 0,
+    "upgradePassed": true,
+    "uninstallPassed": true,
+    "configAndHistoryPreserved": true,
+    "nativeApplicationWasFixture": true,
+    "nativeAppLaunched": false,
+    "realCodexConfigModified": false
+  },
+  "secondPhysicalMachine": {
+    "status": "pending",
+    "nativeBusinessTaskVerified": false,
+    "manualReconnectVerified": false
+  },
+  "limits": [
+    "Isolated installer/MCP fixtures do not establish real WorkBuddy execution on another computer.",
+    "Login/quota remain unknown in diagnosis; offline acceptance reports use saved evidence only.",
+    "No production gateway or existing MCP connection was upgraded.",
+    "Private install records, logs, app memory and task identities are excluded."
+  ]
+}
