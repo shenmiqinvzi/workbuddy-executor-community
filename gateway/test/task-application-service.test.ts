@@ -87,4 +87,7 @@ test("separate entry point services agree and never offer review actions before 
   firstStore.updateAttempt("one", attemptId, { state: "cancelled" });
   assert.equal(second.statusView(second.requireTask("one")).displayState, "cancelled");
   assert.deepEqual(second.statusView(second.requireTask("one")).allowedActions, []);
+  client.snapshot = { ...client.snapshot, nativeStoppedAt: undefined, nativeStopSource: undefined };
+  assert.equal(second.statusView(second.requireTask("one")).displayState, "waiting_stop");
+  assert.deepEqual(second.statusView(second.requireTask("one")).allowedActions, []);
 });

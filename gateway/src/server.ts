@@ -80,7 +80,7 @@ server.tool("workbuddy_wait", "Wait up to 55 seconds for progress or a terminal/
   const before = tasks.requireTask(taskId);
   const deadline = Date.now() + timeoutSeconds * 1000;
   let task = await tasks.sync(taskId);
-  const pending = () => ["queued", "working"].includes(task.state) || (!tasks.executionStatus(taskId).remoteStopped && (task.state === "needs_review" || ["cancelled","blocked"].includes(task.state) && tasks.executionStatus(taskId).cancellationRequested));
+  const pending = () => ["queued", "working"].includes(task.state) || (!tasks.executionStatus(taskId).remoteStopped && (task.state === "needs_review" || task.state === "cancelled" || (task.state === "blocked" && tasks.executionStatus(taskId).cancellationRequested)));
   while (pending() && task.lastMessageId === before.lastMessageId && Date.now() < deadline) {
     await new Promise<void>((resolve) => setTimeout(resolve, Math.min(500, deadline - Date.now())));
     task = await tasks.sync(taskId);
