@@ -899,8 +899,8 @@
     },
     {
       "path": "docs/DEPLOYMENT_ACCEPTANCE.md",
-      "sha256": "0de5c1272dc679eac58fa73af774fe113111046729f25fc4f822166e2973b2f8",
-      "bytes": 4016
+      "sha256": "42c558a9aec8309728dcec566834b218cdc402c5a8ad2beb015cb170062abbf6",
+      "bytes": 4200
     },
     {
       "path": "docs/FAILURE_REVIEW.md",
