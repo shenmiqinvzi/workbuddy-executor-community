@@ -43,4 +43,4 @@ jobs:
             if ($source -cne $bundled) { throw "Executor skill copy differs: $file" }
           }
       - name: Deployment, packaging and execution regressions
-        run: node --import ./test/support/typescript-loader.mjs --test test/deployment.test.ts test/package.test.ts test/persistent-service.test.ts test/native-desktop-trigger.test.ts test/workspace-workers.test.ts test/inspect-task.test.ts test/task-store.test.ts test/coordinator.test.ts test/queue-reliability.test.ts test/reliability-v2.test.ts test/bounded-command.test.ts test/command-cleanup.test.ts test/native-process.test.ts
+        run: node --import ./test/support/typescript-loader.mjs --test test/deployment.test.ts test/package.test.ts test/persistent-service.test.ts test/native-desktop-trigger.test.ts test/workspace-workers.test.ts test/inspect-task.test.ts test/task-store.test.ts test/coordinator.test.ts test/queue-reliability.test.ts test/reliability-v2.test.ts test/bounded-command.test.ts test/command-cleanup.test.ts test/native-process.test.ts test/brief-result.test.ts test/task-application-service.test.ts

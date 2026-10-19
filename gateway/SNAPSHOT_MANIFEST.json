@@ -1,9 +1,9 @@
 {
   "format": 1,
-  "capturedAt": "2026-10-19T02:15:57.161630Z",
+  "capturedAt": "2026-10-19T03:10:43.285Z",
   "upstream": "https://github.com/dudu555-djiao/codex-workbuddy-gateway",
   "upstreamCommit": "fbaaa2ef6d6cb59f48b953a1f27058202a81553f",
-  "snapshot": "2026-10-18-community-portable-windows-setup",
+  "snapshot": "2026-10-19-community-shared-task-service",
   "packageVersion": "0.7.1",
   "exclusions": [
     ".git",
@@ -15,7 +15,7 @@
     "this manifest itself and the historical RUNTIME_BASELINE.json"
   ],
   "notes": [
-    "Community source and compiler output for portability-20261018.1; existing installations are not automatically upgraded.",
+    "Community source and compiler output for the shared task service; existing installations are not automatically upgraded.",
     "Root and bundled executor skill references are synchronized and use portable deployment guidance.",
     "Private environment, installation records, app memory, task stores and original logs are excluded.",
     "Frozen historical benchmark results remain unchanged; installation fixtures do not establish second-machine native execution.",
@@ -209,13 +209,13 @@
     },
     {
       "path": "dist/brief-result.js",
-      "sha256": "64494633a5a67478891f6b19bffba6373b652c12027f2a361c357460d561c8c8",
-      "bytes": 5192
+      "sha256": "4e870fa83319eea5d11dccc13bf9567fb7012f1bec969422af8445239b12f7b0",
+      "bytes": 5221
     },
     {
       "path": "dist/brief-result.js.map",
-      "sha256": "5edf1fe8216cd025795a76669f1756fca621ae30557588bbdbc95c684d355725",
-      "bytes": 5618
+      "sha256": "3a846c260619b277df40272500b7e43b5c0138f1b73eb36f202d95b4c70c17b4",
+      "bytes": 5639
     },
     {
       "path": "dist/command-cleanup.d.ts",
@@ -249,18 +249,18 @@
     },
     {
       "path": "dist/coordinator.d.ts",
-      "sha256": "cbe7975dec6cf13c61322a96bc5d03497ff24683173dac09e81b5afa4ab62c4b",
-      "bytes": 6821
+      "sha256": "9b2f11587cce463f68d821ecbadc9cb740acc7fc15cb5fd6667e9d940de937d5",
+      "bytes": 7066
     },
     {
       "path": "dist/coordinator.js",
-      "sha256": "64d24a80d6d7b54d7b53e087cef1d8b56f2f05913cb2eb81f78e6185ef0cb1fb",
-      "bytes": 20382
+      "sha256": "67d5ef5adbde838b394a4ae8f685eb3877a7a61cd883048da3c812d7f0003c6a",
+      "bytes": 20747
     },
     {
       "path": "dist/coordinator.js.map",
-      "sha256": "56090ac771e0adde7645c76d051d0baf486dc6c1a88f5adba8e1582261ed6044",
-      "bytes": 17959
+      "sha256": "8057638744562c5cc4cdcc818d2e8d36bb803787d75413a80220192fe6169ed6",
+      "bytes": 18236
     },
     {
       "path": "dist/deepseek-client.d.ts",
@@ -749,13 +749,13 @@
     },
     {
       "path": "dist/server.js",
-      "sha256": "13472a6333e40ebd4105accd17d131b05d600d58932d29d578d87b69a6a82691",
-      "bytes": 15087
+      "sha256": "c0b0ae25813db9336c456c901ba50364d1a634c3e181bbf5451da151a1b5cca1",
+      "bytes": 15325
     },
     {
       "path": "dist/server.js.map",
-      "sha256": "071b8627f122ca5b1381776b9b110ca10fac33c13c669464c9b074257354af30",
-      "bytes": 13805
+      "sha256": "2c918aae8080e286eeea69945e32516f7bc6884e7551b7ca37be4b3dc33e3180",
+      "bytes": 14145
     },
     {
       "path": "dist/service-cli.d.ts",
@@ -786,6 +786,21 @@
       "path": "dist/setup.js.map",
       "sha256": "32c6592b6cb3fb9e0742bb44e66ad8301e179fc009138b400af0a9c0200dc9ab",
       "bytes": 14921
+    },
+    {
+      "path": "dist/task-application-service.d.ts",
+      "sha256": "80a7fd07b48062d3e87a2d2f1f3f645e6e538e6ada653d7709889908b7535d68",
+      "bytes": 7028
+    },
+    {
+      "path": "dist/task-application-service.js",
+      "sha256": "480196106986bb7a6b116320b38fc899b40d15c0be9f5a1d08eca53550dd825c",
+      "bytes": 3669
+    },
+    {
+      "path": "dist/task-application-service.js.map",
+      "sha256": "9ac9adc6b4324b308a279313d0bf2afb08f3ed029bdd3fffb049d2cefa1278d5",
+      "bytes": 3517
     },
     {
       "path": "dist/task-store.d.ts",
@@ -1109,8 +1124,8 @@
     },
     {
       "path": "src/brief-result.ts",
-      "sha256": "8c9546f5086902796cab632300fd0a439f3a137ea2844839c739e8fe162ac5d0",
-      "bytes": 5625
+      "sha256": "3cce0328516e0bce64b761b7c37f66541d4489a316de30290d1d6828cd974593",
+      "bytes": 5654
     },
     {
       "path": "src/command-cleanup.ts",
@@ -1124,8 +1139,8 @@
     },
     {
       "path": "src/coordinator.ts",
-      "sha256": "bf921df0f3a2eeff9b97fb9a6f5f6ef5e52b47cf8552cc9b08e24ea4241f1c39",
-      "bytes": 19874
+      "sha256": "2ebd907566da4b32c8584099ed41ba72841149e27cc8186852ad73f6092e8245",
+      "bytes": 20218
     },
     {
       "path": "src/deepseek-client.ts",
@@ -1289,8 +1304,8 @@
     },
     {
       "path": "src/server.ts",
-      "sha256": "b3a1aa64ddb9548424a6b3d872b4432eef08fd18f9ac4d8bafd9d982e92a6aae",
-      "bytes": 15137
+      "sha256": "81092ca828b690eff6c89b6d25208170a9b93223c424ebda1af68348028365f7",
+      "bytes": 15376
     },
     {
       "path": "src/service-cli.ts",
@@ -1301,6 +1316,11 @@
       "path": "src/setup.ts",
       "sha256": "4beb895ffec4eaa6aeeb5a2fcbe4a13ae450925754ed268a3e64e7c5a40b6ba3",
       "bytes": 14986
+    },
+    {
+      "path": "src/task-application-service.ts",
+      "sha256": "d0b4cfa2dd80705f942d506c7e9ae569f3f95552e57ae1c5aac7d242a612e457",
+      "bytes": 4170
     },
     {
       "path": "src/task-store.ts",
@@ -1344,8 +1364,8 @@
     },
     {
       "path": "test/brief-result.test.ts",
-      "sha256": "c1d8a3610e63fcfb86b4d0606b992b9ded9b5d69359ad2bd7a417426e90bbaff",
-      "bytes": 15365
+      "sha256": "161279d7b57c6f58a7ac69942716d2092a74fdc99156bb98038d2ca94fbe0e4f",
+      "bytes": 15597
     },
     {
       "path": "test/command-cleanup.test.ts",
@@ -1451,6 +1471,11 @@
       "path": "test/support/typescript-loader.mjs",
       "sha256": "075d8663b89163ead5e0bdb28e343da523bc7d8a123176197b55b27545845986",
       "bytes": 1218
+    },
+    {
+      "path": "test/task-application-service.test.ts",
+      "sha256": "074ea093975ad40e343561086c63f034a2868e4c1ba477454e352f2fdbe2bfd2",
+      "bytes": 5654
     },
     {
       "path": "test/task-store.test.ts",

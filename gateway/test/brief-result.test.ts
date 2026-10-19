@@ -169,6 +169,8 @@ test("MCP schemas expose optional brief and full still retrieves complete durabl
   assert.equal(explicitFull.messages.length, 100);
   const compact = await call("workbuddy_get_task", { taskId: stored.taskId, detail: "brief", sinceEventSeq:0 });
   assert.equal(compact.task.attemptId, stored.attemptId);
+  assert.equal(compact.statusView.taskId, stored.taskId);
+  assert.deepEqual(compact.statusView.allowedActions, []);
   assert.equal(compact.task.latestReport.reportTruncated, true);
   assert.deepEqual(compact.task.artifacts, stored.artifacts);
   assert.ok(JSON.stringify(compact).length < JSON.stringify(explicitFull).length / 100);
@@ -184,7 +186,9 @@ test("MCP schemas expose optional brief and full still retrieves complete durabl
   const listed = await call("workbuddy_list_tasks", { detail: "brief" });
   assert.equal(listed.tasks[0].taskId, stored.taskId);
   assert.equal("objective" in listed.tasks[0], false);
-  const duplicate = await call("workbuddy_send_task", { taskId: stored.taskId, objective: "Never dispatched duplicate", detail: "brief" });
+  assert.equal(listed.statusViews[0].taskId, stored.taskId);
+  assert.deepEqual(listed.statusViews[0].allowedActions, []);
+  const duplicate = await call("workbuddy_send_task", { taskId: stored.taskId, objective: stored.objective, detail: "brief" });
   assert.equal(duplicate.created, false);
   assert.equal("objective" in duplicate.task, false);
   const health = await call("workbuddy_health", { detail: "brief" });

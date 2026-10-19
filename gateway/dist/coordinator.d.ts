@@ -69,6 +69,7 @@ export declare class TaskCoordinator {
         state: string;
         remoteStopped: boolean;
         cancellationRequested?: undefined;
+        reportDigestPresent?: undefined;
         stopReason?: undefined;
         observedAt?: undefined;
         deadline?: undefined;
@@ -81,6 +82,7 @@ export declare class TaskCoordinator {
         state: string;
         remoteStopped: boolean;
         cancellationRequested: boolean;
+        reportDigestPresent: boolean;
         stopReason: string | undefined;
         observedAt: string;
         deadline: string | undefined;
@@ -112,6 +114,7 @@ export declare class TaskCoordinator {
         state: string;
         remoteStopped: boolean;
         cancellationRequested?: undefined;
+        reportDigestPresent?: undefined;
         stopReason?: undefined;
         observedAt?: undefined;
         deadline?: undefined;
@@ -129,6 +132,7 @@ export declare class TaskCoordinator {
         state: string;
         remoteStopped: boolean;
         cancellationRequested: boolean;
+        reportDigestPresent: boolean;
         stopReason: string | undefined;
         observedAt: string;
         deadline: string | undefined;
@@ -167,6 +171,7 @@ export declare class TaskCoordinator {
             state: string;
             remoteStopped: boolean;
             cancellationRequested?: undefined;
+            reportDigestPresent?: undefined;
             stopReason?: undefined;
             observedAt?: undefined;
             deadline?: undefined;
@@ -179,6 +184,7 @@ export declare class TaskCoordinator {
             state: string;
             remoteStopped: boolean;
             cancellationRequested: boolean;
+            reportDigestPresent: boolean;
             stopReason: string | undefined;
             observedAt: string;
             deadline: string | undefined;
