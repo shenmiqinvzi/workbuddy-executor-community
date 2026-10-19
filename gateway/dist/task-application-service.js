@@ -11,6 +11,7 @@ export class TaskApplicationService {
     accept(...args) { return this.coordinator.accept(...args); }
     cancel(...args) { return this.coordinator.cancel(...args); }
     respond(...args) { return this.coordinator.respond(...args); }
+    reconcileReport(input) { return this.coordinator.reconcileReport(input); }
     sync(taskId, limit) { return this.coordinator.sync(taskId, limit); }
     requireTask(taskId) { return this.coordinator.requireTask(taskId); }
     executionStatus(taskId) { return this.coordinator.executionStatus(taskId); }
@@ -33,7 +34,7 @@ export class TaskApplicationService {
             displayState = "waiting_input";
         else if (review)
             displayState = stopped ? "needs_review" : "waiting_stop";
-        else if (execution.cancellationRequested)
+        else if (execution.cancellationRequested || execution.state === "stop_unconfirmed")
             displayState = "waiting_stop";
         else if (stopped && (task.state === "queued" || task.state === "working"))
             displayState = "unknown";

@@ -34,6 +34,7 @@ const PRIVATE_DIRS = new Set(["data", "outputs", "node_modules", "work", "logs",
 function allowed(relative) {
   const segments = relative.split("/");
   if (segments.some((segment) => PRIVATE_DIRS.has(segment))) return false;
+  if (relative === "docs/native-stop-verification.json") return true;
   if (relative === "test/support/typescript-loader.mjs" || relative === "test/support/read-zip.mjs") return true;
   if (segments.length === 1) return ROOT_FILES.has(relative);
   if (segments[0] === "skills") return SKILL_FILES.includes(relative);

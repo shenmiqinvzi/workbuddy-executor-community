@@ -21,6 +21,7 @@ const networkError = { role: 'assistant', status: 'incomplete', content: [{type:
 test('correlates a native provider failure with the exact wake instead of losing it as missing output', t => {
   const dir = history(t, [prompt, networkError]);
   assert.match(readNativeTurnFailure(dir, sessionId, wake)!.error, /502.*ECONNRESET/);
+  assert.equal(readNativeTurnFailure(dir, sessionId, wake)!.phase, 'native_history');
 });
 test('ignores errors belonging to an older wake in the same native conversation', t => {
   const dir = history(t, [{...prompt, content:[{type:'input_text', text:'[CODEX_QUEUE_WAKE wake-run-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa]'}]}, networkError]);

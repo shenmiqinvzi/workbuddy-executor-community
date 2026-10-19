@@ -12,7 +12,7 @@ const WINDOWS = process.platform === "win32";
 export const RENDERER_BRIDGE = String.raw `(async function(){
   const requestedFreeModel="";
   const previous=globalThis.__codexNativeQueueBridgeV2;
-  if(previous?.revision===7&&previous.policyRevision===1&&previous.stopRevision===1){
+  if(previous?.revision===7&&previous.policyRevision===1&&previous.stopRevision===2&&previous.failureRevision===1){
     previous.configurePolicy(requestedFreeModel);
     return true;
   }
@@ -74,7 +74,7 @@ export const RENDERER_BRIDGE = String.raw `(async function(){
     if(!Array.isArray(active))throw Error('Incompatible native activity response');
     const session=await rpc('session:get',[sid]);
     if(!session||!session.cwd)throw Error('Native worker session was not found');
-    const observation={workspace:session.cwd,...failures.has(sid)?{failure:failures.get(sid)}:{}};
+    const observation={workspace:session.cwd,...lastUser.has(sid)?{latestWakeId:lastUser.get(sid)??null}:{},...Number.isFinite(session.lastBackendActivityAt)?{activityAt:session.lastBackendActivityAt}:{},...failures.has(sid)?{failure:failures.get(sid)}:{}};
     if(legacy){
       const prior=await legacy.inspect(sid);
       if(prior.state!=='idle')return prior;
@@ -82,7 +82,14 @@ export const RENDERER_BRIDGE = String.raw `(async function(){
     }
     const waiting=session.pendingInputKind||(session.pendingPermissions?.length)||(session.pendingQuestions?.length)||(session.pendingElicitations?.length);
     if(waiting)return {...observation,state:'waiting_input',reason:'WorkBuddy requires native permission or input'};
-    if(outgoing.has(sid)||active.some(s=>(s.sessionId||s.id)===sid||s.cwd===session.cwd)||session.isProcessing||session.stopRequested||session.hasActiveTeamMembers||session.hasActiveToolCalls)return {...observation,state:'busy',reason:'Native WorkBuddy session is active'};
+    // Native terminal status can mask hasActiveToolCalls. Retain unfinished
+    // calls from the raw view history rather than trusting the derived flag.
+    const tools=new Map();
+    for(const event of session.eventHistory||[]){const u=event?.update;if(u&&['tool_call','tool_call_update'].includes(u.sessionUpdate)&&typeof u.toolCallId==='string')tools.set(u.toolCallId,typeof u.status==='string'?u.status:tools.get(u.toolCallId)||'pending');}
+    const unfinishedTools=[...tools.values()].some(status=>!['completed','failed','cancelled'].includes(status));
+    const team=session.teamRuntime;
+    const unfinishedTeam=team&&(team.hasActiveMembers||team.teamTrulyIdle===false||(team.teamActive===true&&team.teamTrulyIdle!==true));
+    if(outgoing.has(sid)||active.some(s=>(s.sessionId||s.id)===sid||samePath(s.cwd,session.cwd))||session.isProcessing||session.stopRequested||session.hasActiveTeamMembers||session.hasActiveToolCalls||unfinishedTools||unfinishedTeam||session.hasRunningBackgroundTasks||session.hasActiveChildAgents)return {...observation,state:'busy',reason:'Native WorkBuddy session is active'};
     if(!['completed','failed','cancelled','idle','stopped','pending','terminated'].includes(String(session.status).toLowerCase()))return {...observation,state:'busy',reason:'Native state is not confirmed idle: '+String(session.status)};
     return {...observation,state:'idle'};
   };
@@ -140,7 +147,7 @@ export const RENDERER_BRIDGE = String.raw `(async function(){
     // The reservation remains held during loading and model configuration.
     try{if(model)await applyModel(sid,model);if(freeModel&&model!==freeModel)throw Error('Free-only policy changed before dispatch');}catch(error){outgoing.delete(sid);return {accepted:false,error:error.message};}
     const meta={'codebuddy.ai':{requestId:wakeId,userMessageId:wakeId,messageRequestId:wakeId,emitSyntheticUserPromptLive:true}};
-    rpc('session:sendMessage',[sid,[{type:'text',text:prompt}],meta],0).then(()=>outgoing.delete(sid),error=>{operation.error=error.message;failures.set(sid,{wakeId,error:String(error.message).slice(0,2000),observedAt:new Date().toISOString()});outgoing.delete(sid);});
+    rpc('session:sendMessage',[sid,[{type:'text',text:prompt}],meta],0).then(()=>outgoing.delete(sid),error=>{operation.error=error.message;failures.set(sid,{wakeId,error:String(error.message).slice(0,2000),observedAt:new Date().toISOString(),phase:'session:sendMessage'});outgoing.delete(sid);});
     const deadline=Date.now()+8000;
     while(Date.now()<deadline){
       if(markers.get(sid)?.has(wakeId))return {accepted:true,receipt:wakeId};
@@ -173,7 +180,7 @@ export const RENDERER_BRIDGE = String.raw `(async function(){
     if(result?.error||result?.success===false)throw Error('Native cancellation rejected');
     return {requested:true,sessionId:sid,wakeId};
   };
-  globalThis.__codexNativeQueueBridgeV2={revision:7,policyRevision:1,stopRevision:1,get freeModel(){return freeModel;},configurePolicy,inspect,findWake,wakeIdle,createWorker,listModels,setModel,cancelAttempt,close:()=>{mc.port1.close();legacy?.close?.();}};
+  globalThis.__codexNativeQueueBridgeV2={revision:7,policyRevision:1,stopRevision:2,failureRevision:1,get freeModel(){return freeModel;},configurePolicy,inspect,findWake,wakeIdle,createWorker,listModels,setModel,cancelAttempt,close:()=>{mc.port1.close();legacy?.close?.();}};
   return true;
   })();
   globalThis.__codexNativeQueueBridgeInstall=installation;
@@ -501,7 +508,8 @@ export class NativeDesktopRpcTrigger {
             return this.observer.inspect(sessionId);
         }
         try {
-            return await this.call("inspect", [sessionId]);
+            const observation = await this.call("inspect", [sessionId]);
+            return { ...observation, latestWakeId: latestNativeWake(this.config.workbuddyConfigDir, sessionId) ?? null };
         }
         catch (error) {
             return { state: "offline", reason: error instanceof Error ? error.message : String(error) };

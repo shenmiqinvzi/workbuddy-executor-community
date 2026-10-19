@@ -2,7 +2,7 @@
 
 让 Codex 与桌面 WorkBuddy 协作完成本地开发任务：Codex 明确范围、监督并独立验收，WorkBuddy 负责适合委派的实现、测试和资料整理。
 
-**欢迎共创。** 你可以贡献代码、分享使用场景、提出功能灵感、反馈问题，或帮助改进文档与测试。尚未成熟的想法也欢迎讨论，参与讨论不需要承诺开发。
+本项目由仓库维护者独立开发和维护，当前产品目标仅为 Windows。欢迎通过 Issue 提供场景和问题，也可提交 PR；路线、实现与合并由维护者决定，不设置共同负责人或固定开发分工。
 
 项目正在整理开放协作入口；统一开源许可证尚待明确，来源与授权事实见 [授权和许可说明](AUTHORIZATION.md)。本仓库是面向社区的公开版本。
 
@@ -20,7 +20,7 @@
 
 使用技能从 [SKILL.md](SKILL.md) 开始；完整正常流程见 [派工示例](references/dispatch.md)，部署和故障恢复见 [连接说明](references/setup.md)。示例中的本机路径须按实际安装调整。
 
-新部署者从 [Windows 安装指南](gateway/docs/INSTALL_WINDOWS.md) 开始，使用配置探测、只读诊断和可重复安装流程。安装后按 [独立部署验收](gateway/docs/DEPLOYMENT_ACCEPTANCE.md)检查。参与开发请先读 [贡献指南](CONTRIBUTING.md)，历史快照恢复见 [gateway/RESTORE.md](gateway/RESTORE.md)。实际配置、登录和运行数据由使用者在本机维护。
+新部署者从 [Windows 安装指南](gateway/docs/INSTALL_WINDOWS.md) 开始，使用配置探测、只读诊断和可重复安装流程。跨机器结果另按 [第二台 Windows 实机验收](gateway/docs/DEPLOYMENT_ACCEPTANCE.md)记录。参与开发请先读 [贡献指南](CONTRIBUTING.md)，历史快照恢复见 [gateway/RESTORE.md](gateway/RESTORE.md)。实际配置、登录和运行数据由使用者在本机维护。
 
 | 内容 | 入口 |
 |---|---|
@@ -31,7 +31,7 @@
 | 版本行为验收标准 | [验收场景](docs/ACCEPTANCE.md) |
 | 已有修复与验证历史 | [更新记录](CHANGELOG.md) |
 
-设计中的本地面板、统一接口和自动指标等 vNext 目标尚待实现；文档存在不代表能力已部署。公开路线图不包含个人分工、投入时间或内部排期。
+共享任务服务的基础兼容层已接入 MCP，提供保守的任务状态和允许操作视图，并保留原生错误、报告恢复与停止核验规则。本次分支整合通过自动回归后仍须单独部署和真实桌面验收；此前主分支的本机样本不能代替本分支验收。完整 vNext 契约、本地 HTTP/面板和自动指标尚待实现。公开路线图不包含个人分工、投入时间或内部排期。
 
 ## 验证与已知限制
 
@@ -47,4 +47,4 @@
 
 网关基于 [dudu555-djiao/codex-workbuddy-gateway](https://github.com/dudu555-djiao/codex-workbuddy-gateway) 维护；维护者已与上游原作者沟通取得授权。详细来源、私下授权记录的公开边界及当前许可状态见 [AUTHORIZATION.md](AUTHORIZATION.md)。上游署名与现有第三方声明保留。
 
-欢迎通过 Issue、PR 和独立复现参与，共创流程见 [CONTRIBUTING.md](CONTRIBUTING.md)。请勿提交凭据、私密聊天、真实会话数据库、业务日志或个人开发安排。
+反馈和提交方式见 [CONTRIBUTING.md](CONTRIBUTING.md)。请勿提交凭据、私密聊天、真实会话数据库、业务日志或个人开发安排。

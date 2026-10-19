@@ -22,6 +22,7 @@ export class TaskApplicationService {
   accept(...args: Parameters<TaskCoordinator["accept"]>) { return this.coordinator.accept(...args); }
   cancel(...args: Parameters<TaskCoordinator["cancel"]>) { return this.coordinator.cancel(...args); }
   respond(...args: Parameters<TaskCoordinator["respond"]>) { return this.coordinator.respond(...args); }
+  reconcileReport(input: Parameters<TaskCoordinator["reconcileReport"]>[0]) { return this.coordinator.reconcileReport(input); }
   sync(taskId: string, limit?: number) { return this.coordinator.sync(taskId, limit); }
   requireTask(taskId: string) { return this.coordinator.requireTask(taskId); }
   executionStatus(taskId: string) { return this.coordinator.executionStatus(taskId); }
@@ -41,7 +42,7 @@ export class TaskApplicationService {
     else if (terminal) displayState = stopped ? cancelled ? "cancelled" : "failed" : "waiting_stop";
     else if (execution.state === "waiting_input") displayState = "waiting_input";
     else if (review) displayState = stopped ? "needs_review" : "waiting_stop";
-    else if (execution.cancellationRequested) displayState = "waiting_stop";
+    else if (execution.cancellationRequested || execution.state === "stop_unconfirmed") displayState = "waiting_stop";
     else if (stopped && (task.state === "queued" || task.state === "working")) displayState = "unknown";
     else if (execution.state === "session_offline" || execution.state === "unknown") displayState = "unknown";
     else if (task.state === "queued") displayState = "queued";

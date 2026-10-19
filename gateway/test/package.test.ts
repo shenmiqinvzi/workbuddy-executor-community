@@ -34,6 +34,7 @@ async function fixture() {
     "docs/QUEUE_WORKER.md": "# Queue\n",
     "docs/USER_ACCEPTANCE.md": "# Pending\n",
     "docs/CODEX_WORKFLOW.md": "# Supervision\n",
+    "docs/native-stop-verification.json": '{"scope":"Synthetic public validation fixture"}\n',
     "scripts/bounded-job.ps1": "# owned job runner fixture\n",
     "scripts/package.mjs": "// Fixture packaging source\n",
     "scripts/install-skill.mjs": "// Fixture installer\n",
@@ -93,6 +94,7 @@ test("release archive uses a file allowlist and hashes every included file", asy
   const value = await fixture();
   try {
     const selected = await collectReleaseFiles(value.source);
+    assert.ok(selected.includes("docs/native-stop-verification.json"), "the public validation summary linked by the install guide belongs in the archive");
     assert.ok(selected.includes("src/server.ts"));
     for(const name of ["WINDOWS_ENV.example","scripts/setup.mjs","scripts/doctor.mjs","scripts/deployment-check.mjs","scripts/zip.mjs","bin/workbuddy-gateway.cmd","docs/INSTALL_WINDOWS.md","docs/DEPLOYMENT_ACCEPTANCE.md"])assert.ok(selected.includes(name),name);
     assert.ok(selected.includes(".env.example"));

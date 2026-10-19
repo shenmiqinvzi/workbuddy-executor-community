@@ -9,7 +9,7 @@ import { TaskStore, type StoredTask, type TaskReport, type TaskState, type TaskU
 import { WorkBuddyClient, messageText } from "./workbuddy-client.js";
 import { RunJournal, runsDirectory, hasNativeStopEvidence } from "./run-journal.js";
 import { readServiceRegistration } from "./persistent-service.js";
-import { PersistentDesktopService } from "./persistent-service.js";
+import { PersistentDesktopService, reconcileReportedAttempt, registeredServiceConfig } from "./persistent-service.js";
 import { NativeDesktopRpcTrigger } from "./native-desktop-trigger.js";
 import { verifyValidationEvidence } from "./worker-result.js";
 
@@ -18,7 +18,8 @@ export interface SendTaskInput {
   timeoutSeconds?: number; sessionId?: string; model?: string; sessionMode?: "existing" | "new";
 }
 export class TaskCoordinator {
-  constructor(private readonly config: Config, readonly store: TaskStore, private readonly client: WorkBuddyClient, private readonly resolveWorkspace = ensureWorkspace) {}
+  constructor(private readonly config: Config, readonly store: TaskStore, private readonly client: WorkBuddyClient,
+    private readonly resolveWorkspace: (config: Config, input: { workspace: string; sessionId?: string; title?: string; model?: string; workerKey?: string }) => Promise<{ workspace: string; sessionId: string }> = ensureWorkspace) {}
   private requireDesktop(): void {
     if (!["desktop-acp", "desktop-queue"].includes(this.config.backend)) throw new Error("Desktop supervision requires WORKBUDDY_BACKEND=desktop-queue or desktop-acp. CLI and hidden gateway execution do not prove execution in your WorkBuddy desktop conversation.");
   }
@@ -94,6 +95,13 @@ export class TaskCoordinator {
       if (typeof meta.eventSeq === "number") patch.lastEventSeq = meta.eventSeq;
       if (typeof meta.sessionId === "string") patch.sessionId = meta.sessionId;
       if (typeof meta.runtimeSource === "string") patch.runtimeSource = meta.runtimeSource;
+      if (meta.type === "status" && meta.reportPreserved === true && task.attemptId) {
+        const snapshot = this.client.runSnapshot(task.attemptId);
+        if (snapshot?.status !== "needs_review" || !snapshot.reportDigest || !snapshot.postReportFailure ||
+            snapshot.taskId !== task.taskId || snapshot.sessionId !== task.sessionId || snapshot.runtimeSource !== "desktop_queue" || !snapshot.text?.trim()) throw Error("Preserved report does not match the authenticated task attempt");
+        patch.state = "needs_review"; patch.blockingReason = null;
+        patch.report = parseReport(snapshot.text); patch.artifacts = snapshot.artifacts ?? [];
+      }
       if (meta.status === "waiting_input") { patch.state = "blocked"; patch.blockingReason = messageText(message); }
       else if (meta.status === "working" || meta.status === "queued") { patch.state = meta.status; patch.blockingReason = null; }
       if (meta.type === "result" || message.role === "assistant") {
@@ -167,12 +175,27 @@ export class TaskCoordinator {
     const remoteStopped = (snapshot.driver === "desktop-queue" || task.runtimeSource === "desktop_queue" ? hasNativeStopEvidence(snapshot) : Boolean(snapshot.stopReason)) && ["needs_review", "blocked", "failed", "cancelled"].includes(snapshot.status);
     const cancellationRequested = task.attemptId ? new RunJournal(runsDirectory(this.config), task.attemptId).cancellationRequested() : false;
     return {
-      state: remoteStopped ? "stopped" : cancellationRequested ? "stop_unconfirmed" : snapshot.nativeHealth?.state === "offline" ? "session_offline" : snapshot.waitingInput ? "waiting_input" : snapshot.reportDigest ? "report_received" : snapshot.status,
+      state: remoteStopped ? "stopped" : cancellationRequested || snapshot.nativeFailure ? "stop_unconfirmed" : snapshot.nativeHealth?.state === "offline" ? "session_offline" : snapshot.waitingInput ? "waiting_input" : snapshot.reportDigest ? "report_received" : snapshot.status,
       remoteStopped, cancellationRequested, reportDigestPresent: Boolean(snapshot.reportDigest), stopReason: snapshot.stopReason, observedAt: snapshot.nativeStoppedAt ?? snapshot.updatedAt,
       deadline: snapshot.deadline, claimDeadline: snapshot.claimDeadline,
       reportBy: snapshot.reportBy, progress: snapshot.progress, stopControl: snapshot.stopControl,
-      nativeHealth:snapshot.nativeHealth,
+      nativeHealth:snapshot.nativeHealth, nativeRateLimit:snapshot.nativeRateLimit, postReportFailure:snapshot.postReportFailure,
+      nativeStopCheck:snapshot.nativeStopCheck,
     };
+  }
+  async reconcileReport(input: {taskId:string;attemptId:string;reason:string}) {
+    this.requireDesktop();
+    const task = this.requireTask(input.taskId);
+    if (task.attemptId !== input.attemptId || !task.sessionId || !task.workspace) throw Error("Use the current task attempt and original session/workspace for reconciliation");
+    const registration = readServiceRegistration(this.config.serviceConfigFile ?? path.join(path.dirname(this.config.dbFile), "persistent-service.json"));
+    if (!registration) throw Error("No managed native service registration is available for bounded reconciliation");
+    if (path.resolve(registration.dbFile) !== path.resolve(this.config.dbFile)) throw Error("The native service belongs to another task database; report reconciliation refused");
+    const bound = registeredServiceConfig(this.config, registration);
+    const trigger = new NativeDesktopRpcTrigger(bound, registration.cdpPort, false);
+    try {
+      const result = await reconcileReportedAttempt(this.config,{...registration,sessionId:task.sessionId,workspace:task.workspace},trigger,input);
+      return {...result,task:await this.sync(task.taskId),execution:this.executionStatus(task.taskId)};
+    } finally {trigger.close();}
   }
   async cancel(taskId: string, reason?: string) {
     const task = this.requireTask(taskId);

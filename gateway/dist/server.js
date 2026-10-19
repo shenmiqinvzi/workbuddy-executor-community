@@ -75,7 +75,12 @@ server.tool("workbuddy_wait", "Wait up to 55 seconds for progress or a terminal/
     const before = tasks.requireTask(taskId);
     const deadline = Date.now() + timeoutSeconds * 1000;
     let task = await tasks.sync(taskId);
-    const pending = () => ["queued", "working"].includes(task.state) || (!tasks.executionStatus(taskId).remoteStopped && (task.state === "needs_review" || task.state === "cancelled" || (task.state === "blocked" && tasks.executionStatus(taskId).cancellationRequested)));
+    const pending = () => {
+        const execution = tasks.executionStatus(taskId);
+        return ["queued", "working"].includes(task.state) || (!execution.remoteStopped &&
+            (task.state === "needs_review" || task.state === "cancelled" ||
+                (task.state === "blocked" && (execution.cancellationRequested || execution.state === "stop_unconfirmed"))));
+    };
     while (pending() && task.lastMessageId === before.lastMessageId && Date.now() < deadline) {
         await new Promise((resolve) => setTimeout(resolve, Math.min(500, deadline - Date.now())));
         task = await tasks.sync(taskId);
@@ -95,6 +100,9 @@ server.tool("workbuddy_get_messages", "Synchronize and read current-attempt prog
 server.tool("workbuddy_continue_task", "Send specific review feedback to the same verified desktop session. Original objective, constraints and checks remain in force. Refuses an overlapping prompt or switching sessions.", {
     taskId, feedback: z.string().min(1).max(10_000), acceptanceCommands: z.array(z.string()).max(30).optional(), timeoutSeconds: timeout, model: z.string().min(1).optional(), detail,
 }, ({ detail, ...input }) => guard(() => tasks.continue(input), detail));
+server.tool("workbuddy_reconcile_report", "Restore an existing authenticated, on-time worker report for review when a later native error overwrote it. Requires the current attempt, verified native idle and original turn ownership. Does not dispatch a task or accept a result.", {
+    taskId, attemptId: z.string().regex(/^run-[a-f0-9-]{36}$/), reason: z.string().trim().min(1).max(2000), detail,
+}, ({ detail, ...input }) => guard(() => tasks.reconcileReport(input), detail));
 server.tool("workbuddy_respond_task", "Respond to an active WorkBuddy permission or form request. Only offered single-action permission choices are accepted; never grants permanent access. Use submit with content for elicitation.", {
     taskId, decision: z.enum(["allow_once", "reject_once", "cancel", "submit"]), content: z.record(z.unknown()).optional(),
 }, ({ taskId, decision, content }) => guard(async () => tasks.respond(taskId, decision, content)));

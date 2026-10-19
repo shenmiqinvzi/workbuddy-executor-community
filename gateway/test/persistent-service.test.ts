@@ -9,8 +9,8 @@ import { TaskStore } from "../src/task-store.js";
 import { TaskCoordinator } from "../src/coordinator.js";
 import { WorkBuddyClient } from "../src/workbuddy-client.js";
 import { DesktopQueue } from "../src/desktop-queue.js";
-import { RunJournal, writePrivateJson } from "../src/run-journal.js";
-import { PersistentDesktopService, recoverExpiredAttempt, readServiceRegistration, serviceRegistrationPath, type NativeDesktopTrigger, type NativeObservation, type ServiceRegistration, type WakeIntent } from "../src/persistent-service.js";
+import { RunJournal, writePrivateJson, hasNativeStopEvidence } from "../src/run-journal.js";
+import { PersistentDesktopService, recoverExpiredAttempt, reconcileReportedAttempt, readServiceRegistration, serviceRegistrationPath, type NativeDesktopTrigger, type NativeObservation, type ServiceRegistration, type WakeIntent } from "../src/persistent-service.js";
 import { installService, launchdPlist, serviceStatus, uninstallService, type LaunchctlRunner } from "../src/service-cli.js";
 
 class FakeTrigger implements NativeDesktopTrigger {
@@ -22,7 +22,8 @@ class FakeTrigger implements NativeDesktopTrigger {
   wakes: Array<{ sessionId: string; wakeId: string; prompt: string; model?:string }> = [];
   beforeSubmit?: () => void | Promise<void>;
   failure?: NativeObservation["failure"];
-  async inspect() { this.inspections++; return { state: this.state, workspace: this.workspace, failure: this.failure }; }
+  cancelAttempt?: NativeDesktopTrigger["cancelAttempt"];
+  async inspect() { this.inspections++; return { state: this.state, workspace: this.workspace, failure: this.failure, latestWakeId:this.wakes.at(-1)?.wakeId }; }
   async setModel(sessionId: string, model: string) { return { sessionId, model }; }
   async wakeIdle(sessionId: string, wakeId: string, prompt: string, model?:string) {
     this.wakes.push({ sessionId, wakeId, prompt, model });
@@ -64,16 +65,76 @@ test("a claimed turn's native 500 becomes blocked promptly, without resending or
   if (claim.status !== "task") throw new Error("Expected claim");
   const artifact = path.join(f.dir, "preserved.css"); fs.writeFileSync(artifact, "actual worker output");
   f.trigger.failure = { wakeId: f.trigger.wakes[0]!.wakeId, error: "500 internal server error", observedAt: new Date().toISOString() };
-  assert.equal((await f.service().pump()).status, "native_blocked");
+  assert.equal((await f.service().pump()).status, "stop_unconfirmed");
   const task = await f.coordinator.sync(claim.taskId);
   assert.equal(task.state, "blocked");
   assert.match(task.blockingReason!, /500/);
-  assert.equal(journal.snapshot()?.stopReason, "native_failure_verified");
+  assert.equal(journal.snapshot()?.stopReason, undefined);
+  assert.equal(f.coordinator.executionStatus(claim.taskId).remoteStopped, false);
   assert.equal(fs.readFileSync(artifact, "utf8"), "actual worker output");
   assert.throws(() => f.queue.report({ ...claim, status: "completed", text: "late result", artifacts: [] }), /no longer active/);
   await f.service().pump();
   assert.equal(f.trigger.wakes.length, 1);
   assert.equal(journal.events(0, Infinity).some(event => event.metadata?.status === "needs_review"), false);
+});
+
+test("a native 429 exposes timing but cannot prove stop without a native stop adapter", async t => {
+  const f = fixture(t); const journal = await f.send();
+  await f.service().pump();
+  const claim = await f.queue.claim(f.registration.sessionId, 0);
+  if (claim.status !== "task") throw new Error("Expected claim");
+  const observedAt = new Date().toISOString();
+  f.trigger.failure = { wakeId: f.trigger.wakes[0]!.wakeId, error: "429 too many requests; Retry-After: 60", observedAt, phase: "session:sendMessage" };
+  assert.equal((await f.service().pump()).status, "stop_unconfirmed");
+  const task = await f.coordinator.sync(claim.taskId);
+  assert.equal(task.state, "blocked");
+  assert.match(task.blockingReason!, /rate limited \(HTTP 429\)/);
+  assert.deepEqual(f.coordinator.executionStatus(claim.taskId).nativeRateLimit,
+    { kind: "rate_limited", statusCode: 429, phase: "session:sendMessage", retryAfterSeconds: 60, observedAt });
+  assert.equal(f.coordinator.executionStatus(claim.taskId).remoteStopped, false);
+  assert.equal(f.coordinator.executionStatus(claim.taskId).state, "stop_unconfirmed");
+  assert.equal(journal.snapshot()?.reportDigest, undefined);
+  await f.service().pump();
+  assert.equal(f.trigger.wakes.length, 1);
+  assert.equal(journal.events(0, Infinity).filter(event => event.type === "result").length, 1);
+});
+
+test("a later native 429 preserves the authenticated report and still waits for native idle", async t => {
+  const f = fixture(t); const journal = await f.send(); await f.service().pump();
+  f.trigger.cancelAttempt = async () => {};
+  const claim = await f.queue.claim(f.registration.sessionId, 0);
+  if (claim.status !== "task") throw Error("Expected claim");
+  const text = "Actual completed worker report";
+  f.queue.report({...claim,status:"completed",text,artifacts:[]});
+  const reportedAt = journal.events(0,Infinity).find(event=>event.metadata?.status === "needs_review")!.createdAt;
+  f.trigger.failure = {wakeId:f.trigger.wakes[0]!.wakeId,error:"429 too many requests",observedAt:new Date(Date.parse(reportedAt)+1).toISOString()};
+  f.trigger.state = "busy";
+  await f.service().pump();
+  assert.equal(journal.snapshot()?.status,"needs_review");
+  assert.equal(f.coordinator.executionStatus(claim.taskId).remoteStopped,false);
+  await assert.rejects(()=>f.coordinator.accept(claim.taskId,"review",["fixture evidence"]),/not been confirmed stopped/);
+  f.trigger.state = "idle";
+  await f.service().pump();
+  const task = await f.coordinator.sync(claim.taskId);
+  assert.equal(task.state,"needs_review");
+  assert.equal(task.report?.rawText,text);
+  assert.equal(task.blockingReason,undefined);
+  assert.equal(f.coordinator.executionStatus(claim.taskId).remoteStopped,true);
+  assert.equal(f.coordinator.executionStatus(claim.taskId).postReportFailure?.reportReceivedAt,reportedAt);
+  assert.equal(f.trigger.wakes.length,1);
+  assert.equal(journal.events(0,Infinity).filter(event=>event.type === "result").length,1);
+});
+
+test("an error preceding the authenticated report remains blocked", async t => {
+  const f = fixture(t); const journal = await f.send(); await f.service().pump();
+  const claim = await f.queue.claim(f.registration.sessionId,0);
+  if (claim.status !== "task") throw Error("Expected claim");
+  f.queue.report({...claim,status:"completed",text:"report after the error",artifacts:[]});
+  const wake = JSON.parse(fs.readFileSync(path.join(journal.dir,"wake.json"),"utf8"));
+  f.trigger.failure = {wakeId:f.trigger.wakes[0]!.wakeId,error:"429",observedAt:wake.createdAt};
+  await f.service().pump();
+  assert.equal(journal.snapshot()?.status,"blocked");
+  assert.equal(journal.snapshot()?.postReportFailure,undefined);
 });
 
 test("a native failure cannot confirm stop while the original session remains busy", async t => {
@@ -82,10 +143,11 @@ test("a native failure cannot confirm stop while the original session remains bu
   if (claim.status !== "task") throw new Error("Expected claim");
   f.trigger.state = "busy";
   f.trigger.failure = { wakeId: f.trigger.wakes[0]!.wakeId, error: "500", observedAt: new Date().toISOString() };
-  assert.equal((await f.service().pump()).status, "native_blocked");
+  assert.equal((await f.service().pump()).status, "stop_unconfirmed");
   assert.equal(journal.snapshot()?.stopReason, undefined);
   await assert.rejects(() => f.coordinator.continue({ taskId: claim.taskId, feedback: "overlapping retry" }), /not been confirmed stopped/);
   f.trigger.state = "idle";
+  f.trigger.cancelAttempt = async () => {};
   await f.service().pump();
   assert.equal(journal.snapshot()?.stopReason, "native_failure_verified");
   assert.equal(f.trigger.wakes.length, 1);
@@ -109,6 +171,122 @@ test("unrelated failures never block a claimed attempt; native permission wait i
   assert.equal((await f.coordinator.sync(claim.taskId)).state, "working");
   assert.equal(journal.snapshot()?.error, undefined);
   assert.equal(f.trigger.wakes.length, 1);
+});
+
+test("429 followed by a transient idle never releases the attempt, even if the native error disappears after reconnect", async t => {
+  const f = fixture(t); const journal = await f.send(); await f.service().pump();
+  const claim = await f.queue.claim(f.registration.sessionId,0);
+  if (claim.status !== "task") throw Error("Expected claim");
+  const failure = {wakeId:f.trigger.wakes[0]!.wakeId,error:"429 too many requests",observedAt:new Date().toISOString()};
+  f.queue.observeNative(claim.attemptId,{state:"idle",workspace:f.dir,failure});
+  assert.equal(f.coordinator.executionStatus(claim.taskId).remoteStopped,false);
+  assert.equal(hasNativeStopEvidence({...journal.snapshot()!,stopReason:"native_failure_verified",nativeStoppedAt:new Date().toISOString(),nativeStopSource:"native_idle"}),false);
+  // Simulate a renderer/service reconnect losing its in-memory error map.
+  f.trigger.failure = undefined;
+  assert.equal((await f.service().pump()).status,"stop_unconfirmed");
+  assert.equal(journal.snapshot()?.nativeFailure?.wakeId,failure.wakeId);
+  f.trigger.state = "busy";
+  assert.equal((await f.service().pump()).status,"stop_unconfirmed");
+  f.trigger.state = "idle";
+  assert.equal((await f.service().pump()).status,"stop_unconfirmed");
+  await assert.rejects(()=>f.coordinator.continue({taskId:claim.taskId,feedback:"overlap"}),/not been confirmed stopped/);
+  const second = await f.send("must-not-overlap");
+  assert.match(second.snapshot()?.error ?? "",/unresolved/);
+  assert.equal(f.trigger.wakes.length,1);
+});
+
+test("failed turn stop requires one exact cancellation acknowledgement and stable idle observations", async t => {
+  const f = fixture(t); const journal = await f.send(); await f.service().pump();
+  const claim = await f.queue.claim(f.registration.sessionId,0);
+  if (claim.status !== "task") throw Error("Expected claim");
+  let cancellations = 0;
+  f.trigger.failure = {wakeId:f.trigger.wakes[0]!.wakeId,error:"429",observedAt:new Date().toISOString()};
+  f.trigger.cancelAttempt = async (sid,wake,workspace) => {
+    cancellations++;
+    assert.equal(sid,claim.sessionId); assert.equal(wake,f.trigger.wakes[0]!.wakeId); assert.equal(workspace,f.dir);
+    assert.equal(f.coordinator.executionStatus(claim.taskId).remoteStopped,false,"idle before native acknowledgement is not proof");
+    assert.ok(journal.snapshot()?.stopControl?.issuedAt,"issue marker must precede the native request");
+    assert.equal(journal.snapshot()?.stopControl?.acknowledgedAt,undefined);
+  };
+  assert.equal((await f.service().pump()).status,"native_blocked");
+  assert.equal(f.coordinator.executionStatus(claim.taskId).remoteStopped,true);
+  const snapshot = journal.snapshot()!;
+  assert.ok(snapshot.stopControl?.acknowledgedAt);
+  assert.ok(snapshot.nativeStopCheck!.observations >= 2);
+  assert.ok(Date.parse(snapshot.nativeStopCheck!.checkedAt)-Date.parse(snapshot.nativeStopCheck!.since) >= 1000);
+  assert.equal(snapshot.nativeFailure?.error,"429");
+  for (const change of [
+    {stopControl:{...snapshot.stopControl!,acknowledgedAt:"invalid"}},
+    {nativeStopCheck:{...snapshot.nativeStopCheck!,observations:1}},
+    {nativeStopCheck:{...snapshot.nativeStopCheck!,since:snapshot.nativeStopCheck!.checkedAt}},
+  ]) assert.equal(hasNativeStopEvidence({...snapshot,...change}),false);
+  await f.service().pump();
+  assert.equal(cancellations,1); assert.equal(f.trigger.wakes.length,1);
+  assert.equal((await f.coordinator.sync(claim.taskId)).state,"blocked","confirmed stop does not manufacture success");
+});
+
+test("lost cancellation acknowledgement stays unconfirmed after restart and is never replayed", async t => {
+  const f = fixture(t); const journal = await f.send(); await f.service().pump();
+  const claim = await f.queue.claim(f.registration.sessionId,0);
+  if (claim.status !== "task") throw Error("Expected claim");
+  f.trigger.failure = {wakeId:f.trigger.wakes[0]!.wakeId,error:"429",observedAt:new Date().toISOString()};
+  let cancellations = 0;
+  f.trigger.cancelAttempt = async () => {cancellations++; throw Error("connection lost after native cancellation");};
+  assert.equal((await f.service().pump()).status,"stop_unconfirmed");
+  assert.equal(journal.snapshot()?.stopControl?.acknowledgedAt,undefined);
+  // A fresh service object must use the durable issue marker, not issue again.
+  assert.equal((await f.service().pump()).status,"stop_unconfirmed");
+  assert.equal(cancellations,1); assert.equal(f.trigger.wakes.length,1);
+  assert.equal(f.coordinator.executionStatus(claim.taskId).remoteStopped,false);
+});
+
+test("activity or busy state between post-cancel idle observations resets the failed turn stop check", async t => {
+  const f = fixture(t); const journal = await f.send(); await f.service().pump();
+  const claim = await f.queue.claim(f.registration.sessionId,0);
+  if (claim.status !== "task") throw Error("Expected claim");
+  const failure = {wakeId:f.trigger.wakes[0]!.wakeId,error:"429",observedAt:new Date().toISOString()};
+  f.queue.observeNative(claim.attemptId,{state:"idle",workspace:f.dir,failure});
+  const acknowledgedAt = new Date().toISOString();
+  f.queue.updateStopControl(claim.attemptId,{state:"requested",requestedAt:acknowledgedAt,issuedAt:acknowledgedAt,acknowledgedAt});
+  const old = new Date(Date.now()-2000).toISOString();
+  journal.save({...journal.snapshot()!,nativeStopCheck:{since:old,checkedAt:old,observations:1,activityAt:10}});
+  f.queue.observeNative(claim.attemptId,{state:"idle",workspace:f.dir,activityAt:11,latestWakeId:failure.wakeId});
+  assert.equal(journal.snapshot()?.nativeStopCheck?.observations,1,"new backend activity restarts the check");
+  assert.equal(f.coordinator.executionStatus(claim.taskId).remoteStopped,false);
+  f.queue.observeNative(claim.attemptId,{state:"busy",workspace:f.dir,activityAt:11});
+  assert.equal(journal.snapshot()?.nativeStopCheck,undefined);
+  f.queue.observeNative(claim.attemptId,{state:"idle",workspace:f.dir,activityAt:11,latestWakeId:failure.wakeId});
+  assert.equal(journal.snapshot()?.nativeStopCheck?.observations,1);
+  f.queue.recordNativeHealth(claim.attemptId,{state:"offline"});
+  assert.equal(journal.snapshot()?.nativeStopCheck,undefined,"disconnection breaks continuous idle proof");
+});
+
+test("one-time expired recovery cannot bypass an unconfirmed failed turn", async t => {
+  const f = fixture(t); const journal = await f.send(); await f.service().pump();
+  const claim = await f.queue.claim(f.registration.sessionId,0);
+  if (claim.status !== "task") throw Error("Expected claim");
+  f.queue.observeNative(claim.attemptId,{state:"idle",workspace:f.dir,failure:{wakeId:f.trigger.wakes[0]!.wakeId,error:"429",observedAt:new Date().toISOString()}});
+  await f.coordinator.sync(claim.taskId);
+  journal.save({...journal.snapshot()!,deadline:new Date(Date.now()-1).toISOString()});
+  await assert.rejects(()=>recoverExpiredAttempt(f.config,f.registration,f.trigger,{taskId:claim.taskId,attemptId:claim.attemptId,reason:"idle is not enough"}),/cannot bypass/);
+  assert.equal(f.coordinator.executionStatus(claim.taskId).remoteStopped,false);
+  assert.equal(f.trigger.wakes.length,1);
+});
+
+test("post-cancel inspection detects a new native turn instead of reusing the pre-cancel idle", async t => {
+  const f = fixture(t); const journal = await f.send(); await f.service().pump();
+  const claim = await f.queue.claim(f.registration.sessionId,0);
+  if (claim.status !== "task") throw Error("Expected claim");
+  f.trigger.failure = {wakeId:f.trigger.wakes[0]!.wakeId,error:"429",observedAt:new Date().toISOString()};
+  let cancellations = 0;
+  f.trigger.cancelAttempt = async () => {
+    cancellations++;
+    f.trigger.inspect = async () => ({state:"idle",workspace:f.dir,latestWakeId:null});
+  };
+  assert.equal((await f.service().pump()).status,"stop_unconfirmed");
+  assert.match(journal.snapshot()?.stopControl?.error ?? "",/turn changed or is unknown/);
+  assert.equal(f.coordinator.executionStatus(claim.taskId).remoteStopped,false);
+  assert.equal(cancellations,1); assert.equal(f.trigger.wakes.length,1);
 });
 
 test("idle without a worker report blocks after a propagation window and never implies success", async t => {
@@ -160,9 +338,9 @@ test("offline claimed attempts still expire without another wake or native resta
 test("native 500 before claim is exposed without waiting for the task deadline", async t => {
   const f = fixture(t); const journal = await f.send(); await f.service().pump();
   f.trigger.failure = { wakeId: f.trigger.wakes[0]!.wakeId, error: "500 before claim", observedAt: new Date().toISOString() };
-  assert.equal((await f.service().pump()).status, "native_blocked");
+  assert.equal((await f.service().pump()).status, "stop_unconfirmed");
   assert.equal((await f.coordinator.sync("transport-fixture")).state, "blocked");
-  assert.equal(journal.snapshot()?.stopReason, "native_failure_verified");
+  assert.equal(journal.snapshot()?.stopReason, undefined);
   assert.equal((await f.queue.claim(f.registration.sessionId, 0)).status, "retry");
   assert.equal(f.trigger.wakes.length, 1);
 });
@@ -215,17 +393,19 @@ test('native model rejection blocks the task before any claim and permits a corr
   assert.equal((await f.coordinator.continue({taskId:'invalid-model',feedback:'use available model',model:'fast'})).ok,true);
 });
 
-function fixture(t: { after: (fn: () => void) => void }) {
+function fixture(t: { after: (fn: () => void) => void }, sessionId = "worker-session") {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "workbuddy-persistent-unit-"));
   const config: Config = { ...loadConfig(), backend: "desktop-queue", dbFile: path.join(dir, "data", "tasks.sqlite"), runsDir: path.join(dir, "data", "runs"), workbuddyConfigDir: dir };
   const native = new DatabaseSync(path.join(dir, "workbuddy.db"));
   native.exec("CREATE TABLE sessions(id TEXT PRIMARY KEY, cwd TEXT, is_playground INTEGER, deleted_at INTEGER)");
-  native.prepare("INSERT INTO sessions VALUES (?, ?, 1, NULL)").run("worker-session", dir);
+  native.prepare("INSERT INTO sessions VALUES (?, ?, 1, NULL)").run(sessionId, dir);
   native.close();
   const store = new TaskStore(config.dbFile);
-  const coordinator = new TaskCoordinator(config, store, new WorkBuddyClient(config));
+  // Unit tests must not resolve through a real WorkBuddy desktop process.
+  const coordinator = new TaskCoordinator(config, store, new WorkBuddyClient(config),
+    async (_config, input) => ({ workspace: input.workspace, sessionId: input.sessionId ?? sessionId }));
   const queue = new DesktopQueue(config, () => ({ desktopPid: process.pid }));
-  const registration: ServiceRegistration = { version: 1, sessionId: "worker-session", workspace: dir, projectDir: dir, nodeBin: process.execPath, cdpPort: 9333, dbFile: config.dbFile, runsDir: config.runsDir!, workbuddyConfigDir: dir, cliElectronPath: config.cliElectronPath, intervalMs: 500 };
+  const registration: ServiceRegistration = { version: 1, sessionId, workspace: dir, projectDir: dir, nodeBin: process.execPath, cdpPort: 9333, dbFile: config.dbFile, runsDir: config.runsDir!, workbuddyConfigDir: dir, cliElectronPath: config.cliElectronPath, intervalMs: 500 };
   const trigger = new FakeTrigger();
   trigger.workspace = dir;
   const service = () => new PersistentDesktopService(config, registration, trigger, store);
@@ -236,6 +416,88 @@ function fixture(t: { after: (fn: () => void) => void }) {
   t.after(() => { store.close(); fs.rmSync(dir, { recursive: true, force: true }); });
   return { dir, config, store, coordinator, queue, registration, trigger, service, send };
 }
+
+async function overwrittenReport(t: {after(fn:()=>void):void}) {
+  const f = fixture(t,"11111111-1111-4111-8111-111111111111");
+  const journal = await f.send(); await f.service().pump();
+  const claim = await f.queue.claim(f.registration.sessionId,0);
+  if (claim.status !== "task") throw Error("Expected claim");
+  const text = "Authenticated report that predates the later native 429";
+  f.queue.report({...claim,status:"completed",text,artifacts:[]});
+  const reportEvent = journal.events(0,Infinity).find(event=>event.metadata?.status === "needs_review")!;
+  const wake = JSON.parse(fs.readFileSync(path.join(journal.dir,"wake.json"),"utf8"));
+  const failure = {wakeId:wake.wakeId,error:"429 too many requests",observedAt:new Date(Date.parse(reportEvent.createdAt)+1).toISOString()};
+  f.trigger.failure = failure;
+  journal.save({...journal.snapshot()!,status:"blocked",error:failure.error,stopReason:"native_failure_verified",nativeStoppedAt:new Date().toISOString(),nativeStopSource:"native_idle"});
+  journal.append("result","TASK_STATUS: blocked\n429 too many requests",{status:"blocked",blockedReason:failure.error,sessionId:claim.sessionId,runtimeSource:"desktop_queue"});
+  await f.coordinator.sync(claim.taskId);
+  const project = path.join(f.dir,"projects","fixture"); fs.mkdirSync(project,{recursive:true});
+  const historyFile = path.join(project,`${claim.sessionId}.jsonl`);
+  fs.writeFileSync(historyFile,JSON.stringify({type:"message",sessionId:claim.sessionId,role:"user",content:[{text:`[CODEX_QUEUE_WAKE ${wake.wakeId}]`} ]})+"\n");
+  return {...f,journal,claim,historyFile,text,input:{taskId:claim.taskId,attemptId:claim.attemptId,reason:"Reconcile the existing authenticated report after the observed later native error"}};
+}
+
+test("bounded reconciliation restores the original report for review without dispatching or accepting", async t => {
+  const f = await overwrittenReport(t);
+  assert.equal(f.store.get(f.claim.taskId)?.state,"blocked");
+  const result = await reconcileReportedAttempt(f.config,f.registration,f.trigger,f.input);
+  assert.equal(result.taskCompleted,false);
+  const task = await f.coordinator.sync(f.claim.taskId);
+  assert.equal(task.state,"needs_review"); assert.equal(task.report?.rawText,f.text);
+  assert.equal(task.attemptId,f.claim.attemptId); assert.equal(task.attempt,1);
+  assert.equal(f.coordinator.executionStatus(task.taskId).remoteStopped,true);
+  await assert.rejects(()=>f.coordinator.accept(task.taskId,"review",[]),/concrete evidence/);
+  assert.equal(f.trigger.wakes.length,1);
+  assert.equal(f.journal.events(0,Infinity).filter(event=>event.type === "result").length,2,"both original report and failure remain in history");
+  const count = f.journal.events(0,Infinity).length;
+  assert.equal((await reconcileReportedAttempt(f.config,f.registration,f.trigger,f.input)).alreadyReconciled,true);
+  assert.equal(f.journal.events(0,Infinity).length,count);
+});
+
+test("report reconciliation refuses invalid report, cancellation, wrong ownership and unresolved commands", async t => {
+  const changes: Array<(f:Awaited<ReturnType<typeof overwrittenReport>>)=>void> = [
+    f=>f.journal.save({...f.journal.snapshot()!,text:"tampered report"}),
+    f=>f.journal.save({...f.journal.snapshot()!,reportDigest:undefined}),
+    f=>f.journal.cancel("operator"),
+    f=>{f.trigger.state="busy";},
+    f=>{f.trigger.state="offline";},
+    f=>{f.trigger.workspace=path.join(f.dir,"another-workspace");},
+    f=>{f.trigger.failure!.observedAt=f.journal.events(0,Infinity).find(e=>e.metadata?.status === "needs_review")!.createdAt;},
+    f=>fs.appendFileSync(f.historyFile,JSON.stringify({type:"message",sessionId:f.claim.sessionId,role:"user",content:[{text:"another native turn"}]})+"\n"),
+    f=>{const dir=path.join(f.journal.dir,"commands");fs.mkdirSync(dir);fs.writeFileSync(path.join(dir,"22222222-2222-4222-8222-222222222222.json"),JSON.stringify({endedAt:new Date().toISOString(),cleanupConfirmed:false}));},
+    f=>f.journal.save({...f.journal.snapshot()!,deadline:"2000-01-01T00:00:00.000Z"}),
+    f=>f.journal.save({...f.journal.snapshot()!,stopReason:"end_turn",nativeStoppedAt:undefined,nativeStopSource:undefined}),
+    f=>f.journal.save({...f.journal.snapshot()!,nativeFailure:f.trigger.failure}),
+  ];
+  for (const change of changes) {
+    const f = await overwrittenReport(t); change(f);
+    await assert.rejects(()=>reconcileReportedAttempt(f.config,f.registration,f.trigger,f.input));
+    assert.equal(f.journal.snapshot()?.status,"blocked");
+    assert.equal(f.trigger.wakes.length,1);
+  }
+});
+
+test("reconciliation repairs a crash between snapshot preservation and its audit event", async t => {
+  const f = await overwrittenReport(t);
+  await reconcileReportedAttempt(f.config,f.registration,f.trigger,f.input);
+  const file = path.join(f.journal.dir,"events.jsonl");
+  const original = f.journal.events(0,Infinity).filter(event=>event.metadata?.reportPreserved !== true);
+  fs.writeFileSync(file,original.map(event=>JSON.stringify(event)).join("\n")+"\n");
+  assert.equal(f.store.get(f.claim.taskId)?.state,"blocked");
+  await reconcileReportedAttempt(f.config,f.registration,f.trigger,f.input);
+  assert.equal((await f.coordinator.sync(f.claim.taskId)).state,"needs_review");
+  assert.equal(f.journal.events(0,Infinity).filter(event=>event.metadata?.reportPreserved === true).length,1);
+  assert.equal(f.trigger.wakes.length,1);
+});
+
+test("coordinator refuses report reconciliation through another installation's database", async t => {
+  const f = await overwrittenReport(t);
+  f.config.serviceConfigFile = serviceRegistrationPath(f.dir);
+  writePrivateJson(f.config.serviceConfigFile,{...f.registration,dbFile:path.join(f.dir,"another-installation.sqlite")});
+  await assert.rejects(()=>f.coordinator.reconcileReport(f.input),/another task database/);
+  assert.equal(f.journal.snapshot()?.status,"blocked");
+  assert.equal(f.trigger.wakes.length,1);
+});
 
 test('the native helper can claim immediately during wake, before a submission receipt returns', async t => {
   const f = fixture(t);

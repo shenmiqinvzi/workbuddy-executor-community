@@ -1,4 +1,3 @@
-import { ensureWorkspace } from "./workspace-manager.js";
 import type { Config } from "./config.js";
 import { TaskStore, type StoredTask, type TaskReport } from "./task-store.js";
 import { WorkBuddyClient } from "./workbuddy-client.js";
@@ -18,7 +17,16 @@ export declare class TaskCoordinator {
     readonly store: TaskStore;
     private readonly client;
     private readonly resolveWorkspace;
-    constructor(config: Config, store: TaskStore, client: WorkBuddyClient, resolveWorkspace?: typeof ensureWorkspace);
+    constructor(config: Config, store: TaskStore, client: WorkBuddyClient, resolveWorkspace?: (config: Config, input: {
+        workspace: string;
+        sessionId?: string;
+        title?: string;
+        model?: string;
+        workerKey?: string;
+    }) => Promise<{
+        workspace: string;
+        sessionId: string;
+    }>);
     private requireDesktop;
     send(input: SendTaskInput): Promise<{
         ok: boolean;
@@ -78,6 +86,9 @@ export declare class TaskCoordinator {
         progress?: undefined;
         stopControl?: undefined;
         nativeHealth?: undefined;
+        nativeRateLimit?: undefined;
+        postReportFailure?: undefined;
+        nativeStopCheck?: undefined;
     } | {
         state: string;
         remoteStopped: boolean;
@@ -99,6 +110,7 @@ export declare class TaskCoordinator {
         stopControl: {
             requestedAt: string;
             issuedAt?: string;
+            acknowledgedAt?: string;
             checkedAt?: string;
             error?: string;
             state: "requested" | "stop_unconfirmed" | "stopped";
@@ -108,7 +120,95 @@ export declare class TaskCoordinator {
             observedAt: string;
             reason?: string;
         } | undefined;
+        nativeRateLimit: import("./native-turn-failure.js").NativeRateLimit | undefined;
+        postReportFailure: {
+            error: string;
+            observedAt: string;
+            reportReceivedAt: string;
+            phase?: "session:sendMessage" | "native_history";
+        } | undefined;
+        nativeStopCheck: {
+            since: string;
+            checkedAt: string;
+            observations: number;
+            activityAt?: number;
+        } | undefined;
     };
+    reconcileReport(input: {
+        taskId: string;
+        attemptId: string;
+        reason: string;
+    }): Promise<{
+        task: StoredTask;
+        execution: {
+            state: string;
+            remoteStopped: boolean;
+            cancellationRequested?: undefined;
+            reportDigestPresent?: undefined;
+            stopReason?: undefined;
+            observedAt?: undefined;
+            deadline?: undefined;
+            claimDeadline?: undefined;
+            reportBy?: undefined;
+            progress?: undefined;
+            stopControl?: undefined;
+            nativeHealth?: undefined;
+            nativeRateLimit?: undefined;
+            postReportFailure?: undefined;
+            nativeStopCheck?: undefined;
+        } | {
+            state: string;
+            remoteStopped: boolean;
+            cancellationRequested: boolean;
+            reportDigestPresent: boolean;
+            stopReason: string | undefined;
+            observedAt: string;
+            deadline: string | undefined;
+            claimDeadline: string | undefined;
+            reportBy: string | undefined;
+            progress: {
+                stage: string;
+                completed: string;
+                running: string;
+                blocker: string;
+                lastMeaningfulAt: string;
+                reportedAt: string;
+            } | undefined;
+            stopControl: {
+                requestedAt: string;
+                issuedAt?: string;
+                acknowledgedAt?: string;
+                checkedAt?: string;
+                error?: string;
+                state: "requested" | "stop_unconfirmed" | "stopped";
+            } | undefined;
+            nativeHealth: {
+                state: string;
+                observedAt: string;
+                reason?: string;
+            } | undefined;
+            nativeRateLimit: import("./native-turn-failure.js").NativeRateLimit | undefined;
+            postReportFailure: {
+                error: string;
+                observedAt: string;
+                reportReceivedAt: string;
+                phase?: "session:sendMessage" | "native_history";
+            } | undefined;
+            nativeStopCheck: {
+                since: string;
+                checkedAt: string;
+                observations: number;
+                activityAt?: number;
+            } | undefined;
+        };
+        taskId: string;
+        attemptId: string;
+        state: string;
+        next: string;
+        ok: boolean;
+        alreadyReconciled: boolean;
+        taskCompleted: boolean;
+    }>;
     cancel(taskId: string, reason?: string): Promise<{
         message: string;
         state: string;
@@ -123,6 +223,9 @@ export declare class TaskCoordinator {
         progress?: undefined;
         stopControl?: undefined;
         nativeHealth?: undefined;
+        nativeRateLimit?: undefined;
+        postReportFailure?: undefined;
+        nativeStopCheck?: undefined;
         ok: boolean;
         task: StoredTask;
         executionState?: undefined;
@@ -149,6 +252,7 @@ export declare class TaskCoordinator {
         stopControl: {
             requestedAt: string;
             issuedAt?: string;
+            acknowledgedAt?: string;
             checkedAt?: string;
             error?: string;
             state: "requested" | "stop_unconfirmed" | "stopped";
@@ -157,6 +261,19 @@ export declare class TaskCoordinator {
             state: string;
             observedAt: string;
             reason?: string;
+        } | undefined;
+        nativeRateLimit: import("./native-turn-failure.js").NativeRateLimit | undefined;
+        postReportFailure: {
+            error: string;
+            observedAt: string;
+            reportReceivedAt: string;
+            phase?: "session:sendMessage" | "native_history";
+        } | undefined;
+        nativeStopCheck: {
+            since: string;
+            checkedAt: string;
+            observations: number;
+            activityAt?: number;
         } | undefined;
         ok: boolean;
         task: StoredTask;
@@ -180,6 +297,9 @@ export declare class TaskCoordinator {
             progress?: undefined;
             stopControl?: undefined;
             nativeHealth?: undefined;
+            nativeRateLimit?: undefined;
+            postReportFailure?: undefined;
+            nativeStopCheck?: undefined;
         } | {
             state: string;
             remoteStopped: boolean;
@@ -201,6 +321,7 @@ export declare class TaskCoordinator {
             stopControl: {
                 requestedAt: string;
                 issuedAt?: string;
+                acknowledgedAt?: string;
                 checkedAt?: string;
                 error?: string;
                 state: "requested" | "stop_unconfirmed" | "stopped";
@@ -209,6 +330,19 @@ export declare class TaskCoordinator {
                 state: string;
                 observedAt: string;
                 reason?: string;
+            } | undefined;
+            nativeRateLimit: import("./native-turn-failure.js").NativeRateLimit | undefined;
+            postReportFailure: {
+                error: string;
+                observedAt: string;
+                reportReceivedAt: string;
+                phase?: "session:sendMessage" | "native_history";
+            } | undefined;
+            nativeStopCheck: {
+                since: string;
+                checkedAt: string;
+                observations: number;
+                activityAt?: number;
             } | undefined;
         };
         task: StoredTask;

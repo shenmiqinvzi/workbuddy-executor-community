@@ -14,6 +14,7 @@ class SnapshotClient extends WorkBuddyClient {
   snapshot?: RunSnapshot;
   sent = 0;
   override runSnapshot() { return this.snapshot; }
+  override async messages() { return []; }
   override async sendMessage(...args: Parameters<WorkBuddyClient["sendMessage"]>) {
     this.sent++;
     const options = args[4]!;
@@ -39,7 +40,7 @@ test("two service instances reuse one task identity and dispatch only once", asy
   assert.equal(client.sent, 1);
 });
 
-test("separate entry point services agree and never offer review actions before matching stop proof", t => {
+test("separate entry point services agree and never offer review actions before matching stop proof", async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "workbuddy-task-service-"));
   const config = { ...loadConfig(), backend: "desktop-queue" as const, dbFile: path.join(dir, "tasks.sqlite"), runsDir: path.join(dir, "runs") };
   const firstStore = new TaskStore(config.dbFile);
@@ -84,6 +85,19 @@ test("separate entry point services agree and never offer review actions before 
   assert.deepEqual(view.allowedActions, ["rework", "accept"]);
   assert.deepEqual(view, second.statusView(second.requireTask("one")));
 
+  const reportedSnapshot = client.snapshot;
+  firstStore.updateAttempt("one", attemptId, { state: "blocked" });
+  client.snapshot = { ...client.snapshot, status: "blocked", nativeStoppedAt: new Date().toISOString(), nativeStopSource: "native_idle",
+    nativeFailure: { wakeId: `wake-${attemptId}`, error: "429 too many requests", observedAt: new Date().toISOString() } };
+  const failedTurn = first.statusView(first.requireTask("one"));
+  assert.equal(failedTurn.displayState, "waiting_stop", "a native failure plus one idle observation cannot release the shared task view");
+  assert.equal(failedTurn.remoteStopped, false);
+  assert.deepEqual(failedTurn.allowedActions, []);
+  assert.deepEqual(failedTurn, second.statusView(second.requireTask("one")));
+  await assert.rejects(() => first.continue({ taskId: "one", feedback: "overlap" }), /not been confirmed stopped/);
+  assert.equal(client.sent, 0);
+
+  client.snapshot = reportedSnapshot;
   firstStore.updateAttempt("one", attemptId, { state: "cancelled" });
   assert.equal(second.statusView(second.requireTask("one")).displayState, "cancelled");
   assert.deepEqual(second.statusView(second.requireTask("one")).allowedActions, []);

@@ -62,6 +62,9 @@ export declare class TaskApplicationService {
         progress?: undefined;
         stopControl?: undefined;
         nativeHealth?: undefined;
+        nativeRateLimit?: undefined;
+        postReportFailure?: undefined;
+        nativeStopCheck?: undefined;
         ok: boolean;
         task: StoredTask;
         executionState?: undefined;
@@ -88,6 +91,7 @@ export declare class TaskApplicationService {
         stopControl: {
             requestedAt: string;
             issuedAt?: string;
+            acknowledgedAt?: string;
             checkedAt?: string;
             error?: string;
             state: "requested" | "stop_unconfirmed" | "stopped";
@@ -96,6 +100,19 @@ export declare class TaskApplicationService {
             state: string;
             observedAt: string;
             reason?: string;
+        } | undefined;
+        nativeRateLimit: import("./native-turn-failure.js").NativeRateLimit | undefined;
+        postReportFailure: {
+            error: string;
+            observedAt: string;
+            reportReceivedAt: string;
+            phase?: "session:sendMessage" | "native_history";
+        } | undefined;
+        nativeStopCheck: {
+            since: string;
+            checkedAt: string;
+            observations: number;
+            activityAt?: number;
         } | undefined;
         ok: boolean;
         task: StoredTask;
@@ -119,6 +136,9 @@ export declare class TaskApplicationService {
             progress?: undefined;
             stopControl?: undefined;
             nativeHealth?: undefined;
+            nativeRateLimit?: undefined;
+            postReportFailure?: undefined;
+            nativeStopCheck?: undefined;
         } | {
             state: string;
             remoteStopped: boolean;
@@ -140,6 +160,7 @@ export declare class TaskApplicationService {
             stopControl: {
                 requestedAt: string;
                 issuedAt?: string;
+                acknowledgedAt?: string;
                 checkedAt?: string;
                 error?: string;
                 state: "requested" | "stop_unconfirmed" | "stopped";
@@ -149,6 +170,19 @@ export declare class TaskApplicationService {
                 observedAt: string;
                 reason?: string;
             } | undefined;
+            nativeRateLimit: import("./native-turn-failure.js").NativeRateLimit | undefined;
+            postReportFailure: {
+                error: string;
+                observedAt: string;
+                reportReceivedAt: string;
+                phase?: "session:sendMessage" | "native_history";
+            } | undefined;
+            nativeStopCheck: {
+                since: string;
+                checkedAt: string;
+                observations: number;
+                activityAt?: number;
+            } | undefined;
         };
         task: StoredTask;
     }>;
@@ -157,6 +191,77 @@ export declare class TaskApplicationService {
         taskId: string;
         message: string;
     };
+    reconcileReport(input: Parameters<TaskCoordinator["reconcileReport"]>[0]): Promise<{
+        task: StoredTask;
+        execution: {
+            state: string;
+            remoteStopped: boolean;
+            cancellationRequested?: undefined;
+            reportDigestPresent?: undefined;
+            stopReason?: undefined;
+            observedAt?: undefined;
+            deadline?: undefined;
+            claimDeadline?: undefined;
+            reportBy?: undefined;
+            progress?: undefined;
+            stopControl?: undefined;
+            nativeHealth?: undefined;
+            nativeRateLimit?: undefined;
+            postReportFailure?: undefined;
+            nativeStopCheck?: undefined;
+        } | {
+            state: string;
+            remoteStopped: boolean;
+            cancellationRequested: boolean;
+            reportDigestPresent: boolean;
+            stopReason: string | undefined;
+            observedAt: string;
+            deadline: string | undefined;
+            claimDeadline: string | undefined;
+            reportBy: string | undefined;
+            progress: {
+                stage: string;
+                completed: string;
+                running: string;
+                blocker: string;
+                lastMeaningfulAt: string;
+                reportedAt: string;
+            } | undefined;
+            stopControl: {
+                requestedAt: string;
+                issuedAt?: string;
+                acknowledgedAt?: string;
+                checkedAt?: string;
+                error?: string;
+                state: "requested" | "stop_unconfirmed" | "stopped";
+            } | undefined;
+            nativeHealth: {
+                state: string;
+                observedAt: string;
+                reason?: string;
+            } | undefined;
+            nativeRateLimit: import("./native-turn-failure.js").NativeRateLimit | undefined;
+            postReportFailure: {
+                error: string;
+                observedAt: string;
+                reportReceivedAt: string;
+                phase?: "session:sendMessage" | "native_history";
+            } | undefined;
+            nativeStopCheck: {
+                since: string;
+                checkedAt: string;
+                observations: number;
+                activityAt?: number;
+            } | undefined;
+        };
+        taskId: string;
+        attemptId: string;
+        state: string;
+        next: string;
+        ok: boolean;
+        alreadyReconciled: boolean;
+        taskCompleted: boolean;
+    }>;
     sync(taskId: string, limit?: number): Promise<StoredTask>;
     requireTask(taskId: string): StoredTask;
     executionStatus(taskId: string): {
@@ -172,6 +277,9 @@ export declare class TaskApplicationService {
         progress?: undefined;
         stopControl?: undefined;
         nativeHealth?: undefined;
+        nativeRateLimit?: undefined;
+        postReportFailure?: undefined;
+        nativeStopCheck?: undefined;
     } | {
         state: string;
         remoteStopped: boolean;
@@ -193,6 +301,7 @@ export declare class TaskApplicationService {
         stopControl: {
             requestedAt: string;
             issuedAt?: string;
+            acknowledgedAt?: string;
             checkedAt?: string;
             error?: string;
             state: "requested" | "stop_unconfirmed" | "stopped";
@@ -201,6 +310,19 @@ export declare class TaskApplicationService {
             state: string;
             observedAt: string;
             reason?: string;
+        } | undefined;
+        nativeRateLimit: import("./native-turn-failure.js").NativeRateLimit | undefined;
+        postReportFailure: {
+            error: string;
+            observedAt: string;
+            reportReceivedAt: string;
+            phase?: "session:sendMessage" | "native_history";
+        } | undefined;
+        nativeStopCheck: {
+            since: string;
+            checkedAt: string;
+            observations: number;
+            activityAt?: number;
         } | undefined;
     };
     listTasks(limit: number): StoredTask[];

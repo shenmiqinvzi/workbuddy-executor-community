@@ -1,0 +1,63 @@
+{
+  "verifiedOn": "2026-10-19",
+  "scope": "Local real validation on the same Windows computer; not second-machine acceptance.",
+  "packageVersion": "0.7.1",
+  "runtimeCodeHash": "390c822464ea829e6ff75e8abb0bb18a80699146a41c19946b4a550943a5fc71",
+  "environment": {
+    "platform": "Windows",
+    "node": "24.19.0"
+  },
+  "focusedRegression": {
+    "tests": 123,
+    "passed": 117,
+    "failed": 0,
+    "skipped": 6,
+    "skippedScope": "macOS lifecycle fixtures",
+    "beforeFixReproductionExitCode": 1,
+    "fullHistoricalSuiteClaimed": false
+  },
+  "latestRealDesktopSample": {
+    "task": "Count strictly positive numbers using a dependency-free Node sample.",
+    "model": "deepseek-v4.1-flash",
+    "observedCredits": "x0.00",
+    "runtimeSource": "desktop_queue",
+    "attempt": 1,
+    "state": "accepted",
+    "authenticatedReportMatched": true,
+    "beforeTestExitCode": 1,
+    "beforeTests": { "passed": 3, "failed": 2 },
+    "afterTestExitCode": 0,
+    "afterTests": { "passed": 5, "failed": 0 },
+    "protectedTestUnchanged": true,
+    "onlyExpectedImplementationChange": true,
+    "extraSampleFiles": false,
+    "workerBoundedCommandExitCode": 0,
+    "workerCleanupConfirmed": true,
+    "workerInputHashesIndependentlyMatched": true,
+    "explicitValidationRecordsFieldProvided": false,
+    "validationRecordReferencedInArtifacts": true,
+    "remoteStopped": true,
+    "twoFreshNativeIdleObservations": true,
+    "latestWakeMatched": true,
+    "backendActivityStable": true,
+    "correlatedNativeFailureObserved": false,
+    "codexChangedSampleImplementationAfterDispatch": false,
+    "projectCleanupRequired": false,
+    "workBuddyRestarted": false
+  },
+  "integrationRegression": {
+    "tests": 183,
+    "passed": 177,
+    "failed": 0,
+    "skipped": 6,
+    "scope": "Windows CI regression selection, including packaging and owned command cleanup."
+  },
+  "limits": [
+    "The latest desktop sample did not encounter HTTP 429; the new failure-stop path is covered by regression fixtures, not a new real rate-limit event.",
+    "Provider quota and rate-limit recovery remain unknown; the observed free label does not establish future availability or measured usage.",
+    "The worker referenced its command record in artifacts but omitted validationRecords; command, cleanup and current source/test hashes were independently checked.",
+    "Validation used fresh official MCP processes and the reloaded supervisor; an existing chat MCP connection can retain older code until reconnected.",
+    "Raw reports, task/session identities, logs, local paths, credentials and installation records remain private.",
+    "Second physical Windows machine acceptance remains pending."
+  ]
+}
