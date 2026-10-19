@@ -22,4 +22,4 @@
 
 依据：[总体设计](DEVELOPMENT_DESIGN.md)、[接口契约](INTERFACE_CONTRACT.md)。相关 PR 说明实际覆盖的场景、验证方法与未覆盖部分。
 
-平台范围修订于 2026-10-19。通用场景 V01–V12 须在每个声明支持的平台保留适用回归；无法触发的真实场景记录为未覆盖，不能写成通过。当前 Windows 部署候选的隔离验证见 [验证记录](../gateway/docs/PORTABILITY_VERIFICATION_2026-10-18.md)；macOS 社区版真实验证与 Windows 同平台异机验收均待取得。
+平台范围修订于 2026-10-19。通用场景 V01–V12 须在每个声明支持的平台保留适用回归；无法触发的真实场景记录为未覆盖，不能写成通过。已合并的 Windows 部署改造的隔离验证见 [验证记录](../gateway/docs/PORTABILITY_VERIFICATION_2026-10-18.md)；Windows CI 只证明自动检查，macOS 社区版真实验证与 Windows 同平台异机验收均待取得。
