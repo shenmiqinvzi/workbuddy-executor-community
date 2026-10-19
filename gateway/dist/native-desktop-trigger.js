@@ -416,7 +416,7 @@ export class NativeDesktopRpcTrigger {
             throw new Error("Native debugger target is not the registered loopback endpoint");
         return target.webSocketDebuggerUrl;
     }
-    async connect() {
+    async connect(observeOnly = false) {
         if (this.socket?.readyState === WebSocket.OPEN)
             return;
         if (this.connection)
@@ -451,7 +451,8 @@ export class NativeDesktopRpcTrigger {
                 request.reject(new Error("Native desktop disconnected; submission outcome may be uncertain"));
             } this.pending.clear(); });
             await new Promise((resolve, reject) => { const timer = setTimeout(() => reject(new Error("Native CDP connection timed out")), 5000); socket.addEventListener("open", () => { clearTimeout(timer); resolve(); }, { once: true }); socket.addEventListener("error", () => { clearTimeout(timer); reject(new Error("Native CDP connection failed")); }, { once: true }); });
-            await this.evaluateConnected(rendererBridgeForFreeModel(process.env.WORKBUDDY_REQUIRED_FREE_MODEL ?? ""));
+            if (!observeOnly)
+                await this.evaluateConnected(rendererBridgeForFreeModel(process.env.WORKBUDDY_REQUIRED_FREE_MODEL ?? ""));
         })();
         this.connection = connecting;
         try {
@@ -478,6 +479,13 @@ export class NativeDesktopRpcTrigger {
     }
     async setModel(sessionId, model) {
         return await this.call("setModel", [sessionId, model]);
+    }
+    /** Inspect an existing bridge without installing/configuring it or launching the app. */
+    async diagnoseReadOnly() {
+        if (this.autoLaunch)
+            throw new Error("Read-only diagnosis requires autoLaunch=false");
+        await this.connect(true);
+        return await this.evaluateConnected("(async()=>{const b=globalThis.__codexNativeQueueBridgeV2;if(b?.revision!==7||typeof b.listModels!=='function')return {bridgeReady:false};const r=await b.listModels();return {bridgeReady:true,models:r.models.map(m=>({id:m.id,credits:m.credits}))};})()", 35000);
     }
     async createWorker(workspace, sessionId, title) {
         if (!path.isAbsolute(workspace) || !fs.statSync(workspace).isDirectory())

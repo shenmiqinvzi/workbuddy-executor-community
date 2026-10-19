@@ -1,0 +1,46 @@
+name: Windows gateway
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gateway:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: gateway
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: gateway/package-lock.json
+      - name: Verify source snapshot
+        run: node verify-snapshot.mjs
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Build gateway
+        run: npm run build
+      - name: Verify committed compiler output
+        run: |
+          git diff --exit-code -- dist
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify executor skill copies
+        working-directory: .
+        run: |
+          $files = @('SKILL.md', 'references/setup.md', 'references/execution.md', 'references/dispatch.md', 'references/agent-hub.md', 'agents/openai.yaml')
+          foreach ($file in $files) {
+            $source = [System.IO.File]::ReadAllText((Join-Path $PWD $file)).Replace(([char]13 + [char]10), [string][char]10)
+            $bundled = [System.IO.File]::ReadAllText((Join-Path $PWD "gateway/skills/workbuddy-executor/$file")).Replace(([char]13 + [char]10), [string][char]10)
+            if ($source -cne $bundled) { throw "Executor skill copy differs: $file" }
+          }
+      - name: Deployment, packaging and execution regressions
+        run: node --import ./test/support/typescript-loader.mjs --test test/deployment.test.ts test/package.test.ts test/persistent-service.test.ts test/native-desktop-trigger.test.ts test/workspace-workers.test.ts test/inspect-task.test.ts test/task-store.test.ts test/coordinator.test.ts test/queue-reliability.test.ts test/reliability-v2.test.ts test/bounded-command.test.ts test/command-cleanup.test.ts test/native-process.test.ts

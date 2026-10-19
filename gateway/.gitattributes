@@ -1,2 +1,2 @@
 # Preserve the exact installed snapshot bytes, including original line endings.
-* -text
+* -text whitespace=cr-at-eol

@@ -1,3 +1,4 @@
+import { windowsProcessTable } from "./native-process.js";
 import { type Config } from "./config.js";
 import { type ServiceRegistration } from "./persistent-service.js";
 interface CommandResult {
@@ -37,5 +38,7 @@ export declare function installServiceWindows(options: InstallServiceOptions): {
     restartWorkBuddyRequired: boolean;
 };
 export declare function serviceStatus(configFile: string, run?: LaunchctlRunner, uid?: number | undefined): Record<string, unknown>;
+export declare function verifyServiceProcess(registration: ServiceRegistration, configFile: string, pid: number, table?: import("./native-process.js").NativeProcess[]): void;
+export declare function serviceProcessToStop(registration: ServiceRegistration, configFile: string, table: ReturnType<typeof windowsProcessTable>, recordedPid?: number): number | undefined;
 export declare function uninstallService(configFile: string, run?: LaunchctlRunner, uid?: number | undefined): Record<string, unknown>;
 export {};

@@ -20,7 +20,7 @@
 
 使用技能从 [SKILL.md](SKILL.md) 开始；完整正常流程见 [派工示例](references/dispatch.md)，部署和故障恢复见 [连接说明](references/setup.md)。示例中的本机路径须按实际安装调整。
 
-参与开发请先读 [贡献指南](CONTRIBUTING.md)。网关环境要求、快照核对和安装步骤见 [gateway/RESTORE.md](gateway/RESTORE.md)，配置模板为 [WINDOWS_ENV.example](gateway/WINDOWS_ENV.example)。实际配置、登录和运行数据由使用者在本机维护。
+新部署者从 [Windows 安装指南](gateway/docs/INSTALL_WINDOWS.md) 开始，使用配置探测、只读诊断和可重复安装流程。安装后按 [独立部署验收](gateway/docs/DEPLOYMENT_ACCEPTANCE.md)检查。参与开发请先读 [贡献指南](CONTRIBUTING.md)，历史快照恢复见 [gateway/RESTORE.md](gateway/RESTORE.md)。实际配置、登录和运行数据由使用者在本机维护。
 
 | 内容 | 入口 |
 |---|---|

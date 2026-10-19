@@ -4,7 +4,15 @@
 
 ## 本机部署与模型政策
 
-本机网关 `F:/WorkBuddy/codex-workbuddy-gateway`，Node `F:/node.exe`。迁移时只更新本节及已有服务注册中的真实安装位置，不把示例路径当成配置。网关由自身安装目录加载 `.env`，显式进程环境优先；保留 `.env`、任务库、会话映射及原任务身份。
+在实际 gateway 安装目录运行安装与诊断；网关从自己的目录加载 .env，显式进程环境优先。Node、WorkBuddy 与配置目录可自动探测，也可用环境变量或安装参数明确指定。不要复制其他机器的 .env、任务库或会话身份。
+
+```powershell
+node scripts/setup.mjs plan
+node scripts/setup.mjs install --apply
+node scripts/doctor.mjs
+```
+
+生成的 data/workbuddy-mcp.toml 包含这次安装的真实 Node/网关路径；核对后合并进自己的 MCP 配置，不覆盖其他条目。完整步骤见 [Windows 安装指南](https://github.com/shenmiqinvzi/workbuddy-executor-community/blob/main/gateway/docs/INSTALL_WINDOWS.md)。安装不启动或重启 WorkBuddy；首次原生连接应在无其他任务且用户明确允许初始化时进行。
 
 本部署 `.env` 设置 `WORKBUDDY_REQUIRED_FREE_MODEL=deepseek-v4.1-flash`。该开关启用原生配置与唤醒时的模型 ID/免费状态硬校验；不设置时通用网关允许原生模型选择，技能文字本身不提供费用保障。不能为绕过阻塞取消此配置。list_models 的免费信息是本次观察，不代表额度或后续平台一定可用。
 
@@ -12,10 +20,10 @@
 
 ## 查询与备用入口
 
-优先现有 MCP 的 get_task/wait。安装文件更新后，当前聊天可能仍连接旧内存版本；可用新进程官方启动器加载新构建，不必创建新任务：
+以下命令从本机 gateway 目录运行；桌面 PATH 没有 Node 时，使用生成 MCP 片段中的 command 绝对路径。优先现有 MCP 的 get_task/wait。安装文件更新后，当前聊天可能仍连接旧内存版本；可用新进程官方启动器加载新构建，不必创建新任务：
 
 ```powershell
-& 'F:/node.exe' 'F:/WorkBuddy/codex-workbuddy-gateway/scripts/workbuddy-call.mjs' workbuddy_get_task '@C:/absolute/task-arguments.json'
+node ./scripts/workbuddy-call.mjs workbuddy_get_task '@C:/absolute/task-arguments.json'
 ```
 
 参数文件为真实 JSON，例如 `{"taskId":"已有编号","detail":"brief"}`。不拼接多行文本、命令替换或凭据。启动器从本机加载环境，不打印凭据。它会同步本地任务记录，因此不属于完全无写入的离线查询。
@@ -23,7 +31,7 @@
 MCP 查询不可用或权限不足时，可先使用专用离线快照入口：
 
 ```powershell
-& 'F:/node.exe' 'F:/WorkBuddy/codex-workbuddy-gateway/scripts/workbuddy-inspect.mjs' '@C:/absolute/task-arguments.json'
+node ./scripts/workbuddy-inspect.mjs '@C:/absolute/task-arguments.json'
 ```
 
 离线入口只读 SQLite 和执行目录，不初始化/迁移数据库、不 chmod、不发任务、不提交结果、不连接原生接口。`snapshotOnly=true` 表示保存状态，`observedAt` 是原证据时间；不能把它当成刚刚确认的原生停止。`workerResult.present=true` 但 `authenticated=false` 表示存在尚未被队列认证的结果文件，应检查现有文件，不能据此报成功。Windows 数据库沿用 NTFS 权限，不通过放宽权限解决查询失败。

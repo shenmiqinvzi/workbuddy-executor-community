@@ -367,7 +367,7 @@ export class NativeDesktopRpcTrigger implements NativeDesktopTrigger {
     return target.webSocketDebuggerUrl;
   }
 
-  private async connect(): Promise<void> {
+  private async connect(observeOnly = false): Promise<void> {
     if (this.socket?.readyState === WebSocket.OPEN) return;
     if (this.connection) return this.connection;
     const connecting = (async () => {
@@ -382,7 +382,7 @@ export class NativeDesktopRpcTrigger implements NativeDesktopTrigger {
       });
       socket.addEventListener("close", () => {if(this.socket===socket)this.socket=undefined;for(const request of this.pending.values()){clearTimeout(request.timer);request.reject(new Error("Native desktop disconnected; submission outcome may be uncertain"));}this.pending.clear();});
       await new Promise<void>((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error("Native CDP connection timed out")),5000);socket.addEventListener("open",()=>{clearTimeout(timer);resolve();},{once:true});socket.addEventListener("error",()=>{clearTimeout(timer);reject(new Error("Native CDP connection failed"));},{once:true});});
-      await this.evaluateConnected(rendererBridgeForFreeModel(process.env.WORKBUDDY_REQUIRED_FREE_MODEL ?? ""));
+      if (!observeOnly) await this.evaluateConnected(rendererBridgeForFreeModel(process.env.WORKBUDDY_REQUIRED_FREE_MODEL ?? ""));
     })();
     this.connection=connecting;
     try { await connecting; } finally { if(this.connection===connecting)this.connection=undefined; }
@@ -403,6 +403,12 @@ export class NativeDesktopRpcTrigger implements NativeDesktopTrigger {
   }
   async setModel(sessionId: string, model: string): Promise<{sessionId:string;model:string}> {
     return await this.call("setModel",[sessionId,model]) as {sessionId:string;model:string};
+  }
+  /** Inspect an existing bridge without installing/configuring it or launching the app. */
+  async diagnoseReadOnly(): Promise<{ bridgeReady: boolean; models?: Array<{ id: string; credits?: unknown }> }> {
+    if (this.autoLaunch) throw new Error("Read-only diagnosis requires autoLaunch=false");
+    await this.connect(true);
+    return await this.evaluateConnected("(async()=>{const b=globalThis.__codexNativeQueueBridgeV2;if(b?.revision!==7||typeof b.listModels!=='function')return {bridgeReady:false};const r=await b.listModels();return {bridgeReady:true,models:r.models.map(m=>({id:m.id,credits:m.credits}))};})()", 35000) as { bridgeReady: boolean; models?: Array<{ id: string; credits?: unknown }> };
   }
   async createWorker(workspace: string, sessionId: string, title?: string): Promise<{sessionId: string; workspace: string}> {
     if(!path.isAbsolute(workspace)||!fs.statSync(workspace).isDirectory())throw new Error("workspace must be an existing absolute directory");

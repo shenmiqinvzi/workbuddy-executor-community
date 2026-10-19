@@ -15,6 +15,6 @@
 | 可复现安装 | 自动指标与新对照 | 事件采集、导出、统计核对、真实案例 | 时间、返工、人工介入可复算；未知成本保留 null |
 | 可复现安装 | Windows 诊断与发布流程 | 新机安装反馈、路径配置、使用文档 | 第二台 Windows 可复现，源码和运行版本可对应 |
 
-实现依据为 [总体设计](docs/DEVELOPMENT_DESIGN.md)、[接口契约](docs/INTERFACE_CONTRACT.md)和 [验收场景](docs/ACCEPTANCE.md)。前端可先依契约制作 mock，与共享服务实现并行；新能力经过真实验证后才写成“已支持”。
+实现依据为 [总体设计](docs/DEVELOPMENT_DESIGN.md)、[接口契约](docs/INTERFACE_CONTRACT.md)和 [验收场景](docs/ACCEPTANCE.md)。社区版首先推进可复现安装，配置探测、安装程序和验收工具的使用见 [Windows 安装指南](gateway/docs/INSTALL_WINDOWS.md)；第二台物理机器真实验收仍待取得。随后推进共享服务与面板，新能力经过真实验证后才写成“已支持”。
 
 多执行器、云端团队协作、并行派工等想法可以讨论，暂不作为本版发布条件。新增方向先说明用户场景、收益、依赖和验证方式，维护者再决定是否纳入版本。

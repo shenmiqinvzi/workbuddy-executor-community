@@ -1,6 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 import { PROJECT_ROOT } from "./env.js";
+import { discoverDesktopPaths } from "./deployment-paths.js";
 function optional(name) {
     const value = process.env[name]?.trim();
     return value || undefined;
@@ -20,6 +21,10 @@ export function loadConfig() {
                 : configuredBackend === "gateway"
                     ? "gateway"
                     : "desktop-queue";
+    const desktop = discoverDesktopPaths({ runningExecutables: () => [] });
+    if (["desktop-queue", "desktop-acp"].includes(backend) && (desktop.executable.source === "ambiguous" || desktop.config.source === "ambiguous")) {
+        throw new Error("Multiple WorkBuddy installations or data directories found; set WORKBUDDY_CLI_ELECTRON and WORKBUDDY_CONFIG_DIR explicitly.");
+    }
     return {
         backend,
         apiBaseUrl: (optional("WORKBUDDY_API_BASE_URL") ?? "https://www.workbuddy.cn/openapi/v2").replace(/\/$/, ""),
@@ -35,7 +40,7 @@ export function loadConfig() {
         oauthPort: integer("WORKBUDDY_OAUTH_PORT", 8787),
         oauthScopes: optional("WORKBUDDY_OAUTH_SCOPES") ?? "user.localassistant.invokable user.localassistant.readable",
         requestTimeoutMs: integer("WORKBUDDY_REQUEST_TIMEOUT_MS", 30_000),
-        cliElectronPath: optional("WORKBUDDY_CLI_ELECTRON") ?? (process.platform === "win32"
+        cliElectronPath: desktop.executable.value ?? (process.platform === "win32"
             ? path.join(process.env.LOCALAPPDATA ?? os.homedir(), "Programs", "WorkBuddy", "WorkBuddy.exe")
             : "/Applications/WorkBuddy.app/Contents/MacOS/Electron"),
         cliScriptPath: optional("WORKBUDDY_CLI_SCRIPT") ?? "/Applications/WorkBuddy.app/Contents/Resources/app.asar/cli/bin/codebuddy",
@@ -48,7 +53,7 @@ export function loadConfig() {
         gatewayPassword: optional("WORKBUDDY_GATEWAY_PASSWORD"),
         // The native app keeps its history database under the user's home on every
         // platform; process.env.HOME is empty on Windows, so resolve the real home.
-        workbuddyConfigDir: optional("WORKBUDDY_CONFIG_DIR") ?? path.join(os.homedir(), ".workbuddy"),
+        workbuddyConfigDir: desktop.config.value ?? path.join(os.homedir(), ".workbuddy"),
         runsDir: optional("WORKBUDDY_RUNS_DIR") ? path.resolve(PROJECT_ROOT, optional("WORKBUDDY_RUNS_DIR")) : undefined,
         taskTimeoutSeconds: Math.min(integer("WORKBUDDY_TASK_TIMEOUT_SECONDS", 1800), 86_400),
         claimTimeoutSeconds: Math.min(integer("WORKBUDDY_CLAIM_TIMEOUT_SECONDS", 180), 600),
