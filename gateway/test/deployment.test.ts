@@ -11,7 +11,7 @@ import { setup, assertInstallationIdle } from '../src/setup.js';
 import crypto from 'node:crypto';
 import vm from 'node:vm';
 import { NativeDesktopRpcTrigger } from '../src/native-desktop-trigger.js';
-import { verifyServiceProcess } from '../src/service-cli.js';
+import { serviceProcessToStop, verifyServiceProcess } from '../src/service-cli.js';
 import { TaskStore } from '../src/task-store.js';
 import { RunJournal } from '../src/run-journal.js';
 import { loadConfig } from '../src/config.js';
@@ -130,7 +130,15 @@ test('service PID verification rejects reused identities and unrelated Node comm
   assert.doesNotThrow(()=>verifyServiceProcess(registration,configFile,123,[row]));
   assert.throws(()=>verifyServiceProcess(registration,configFile,123,[{...row,exe:f.app}]),/ownership/);
   assert.throws(()=>verifyServiceProcess(registration,configFile,123,[{...row,commandLine:'node unrelated.js'}]),/ownership/);
+  assert.throws(()=>verifyServiceProcess(registration,configFile,123,[{...row,commandLine:'"' + process.execPath + '" -e "console.log(' + path.join(f.root,'dist/service-cli.js') + ' ' + configFile + ')"'}]),/ownership/);
+  assert.throws(()=>verifyServiceProcess(registration,configFile,123,[{...row,commandLine:'"' + process.execPath + '" "' + path.join(f.root,'dist/service-cli.js') + '" status --config "' + configFile + '"'}]),/ownership/);
+  assert.throws(()=>verifyServiceProcess(registration,configFile,123,[{...row,commandLine:row.commandLine + ' --extra'}]),/ownership/);
   assert.throws(()=>verifyServiceProcess(registration,configFile,124,[row]),/ownership/);
+  assert.equal(serviceProcessToStop(registration,configFile,[row]),123);
+  assert.equal(serviceProcessToStop(registration,configFile,[]),undefined);
+  assert.throws(()=>serviceProcessToStop(registration,configFile,[{...row,exe:f.app}],123),/ownership/);
+  assert.throws(()=>serviceProcessToStop(registration,configFile,[row,{...row,pid:124}],123),/Multiple/);
+  assert.throws(()=>serviceProcessToStop(registration,configFile,[row],-1),/Invalid/);
 });
 test('deployment report requires authentic saved evidence, matching identities and real rework count',t=>{
   const f=fixture(t),config={...loadConfig(),dbFile:path.join(f.root,'tasks.sqlite'),runsDir:path.join(f.root,'runs')};
