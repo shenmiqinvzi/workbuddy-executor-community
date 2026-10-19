@@ -5,6 +5,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import type { Config } from "./config.js";
 import type { LocalMessage } from "./workbuddy-client.js";
+import type { NativeRateLimit } from "./native-turn-failure.js";
 
 export type RunStatus = "queued" | "working" | "needs_review" | "blocked" | "failed" | "cancelled";
 export interface RunRequest {
@@ -30,6 +31,10 @@ export interface RunSnapshot {
   text?: string;
   stopReason?: string;
   error?: string;
+  nativeRateLimit?: NativeRateLimit;
+  nativeFailure?: { wakeId: string; error: string; observedAt: string; phase?: "session:sendMessage" | "native_history" };
+  nativeStopCheck?: { since: string; checkedAt: string; observations: number; activityAt?: number };
+  postReportFailure?: { error: string; observedAt: string; reportReceivedAt: string; phase?: "session:sendMessage" | "native_history" };
   waitingInput?: boolean;
   artifacts?: string[];
   reportDigest?: string;
@@ -37,7 +42,7 @@ export interface RunSnapshot {
   nativeIdleSince?: string;
   nativeStoppedAt?: string;
   nativeStopSource?: "native_idle" | "not_dispatched";
-  stopControl?: { requestedAt: string; issuedAt?: string; checkedAt?: string; error?: string; state: "requested" | "stop_unconfirmed" | "stopped" };
+  stopControl?: { requestedAt: string; issuedAt?: string; acknowledgedAt?: string; checkedAt?: string; error?: string; state: "requested" | "stop_unconfirmed" | "stopped" };
   progress?: { stage: string; completed: string; running: string; blocker: string; lastMeaningfulAt: string; reportedAt: string };
   reportBy?: string;
   nativeHealth?: {state:string;observedAt:string;reason?:string};
@@ -58,6 +63,16 @@ const TERMINAL = new Set<RunStatus>(["needs_review", "blocked", "failed", "cance
 export function hasNativeStopEvidence(snapshot: RunSnapshot | undefined): boolean {
   if (!snapshot) return false;
   if (snapshot.driver !== "desktop-queue") return false;
+  // A provider/RPC failure can precede further tool activity. An idle sample
+  // alone must never release a failed turn, including after a service restart.
+  if (snapshot.nativeFailure) {
+    const check = snapshot.nativeStopCheck;
+    const [failed,issued,acknowledged,since,checked,stopped] = [snapshot.nativeFailure.observedAt,
+      snapshot.stopControl?.issuedAt,snapshot.stopControl?.acknowledgedAt,check?.since,check?.checkedAt,snapshot.nativeStoppedAt].map(value=>Date.parse(value ?? ""));
+    if (![failed,issued,acknowledged,since,checked,stopped].every(Number.isFinite) ||
+        !check || !Number.isSafeInteger(check.observations) || check.observations < 2 ||
+        issued! < failed! || acknowledged! < issued! || since! < acknowledged! || checked! - since! < 1000 || stopped! < checked!) return false;
+  }
   if (snapshot.nativeStoppedAt && Number.isFinite(Date.parse(snapshot.nativeStoppedAt)) &&
       ["native_idle", "not_dispatched"].includes(snapshot.nativeStopSource ?? "")) return true;
   // These older supervisor reasons were already backed by native idle checks.

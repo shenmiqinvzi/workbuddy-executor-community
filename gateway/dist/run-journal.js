@@ -11,6 +11,17 @@ export function hasNativeStopEvidence(snapshot) {
         return false;
     if (snapshot.driver !== "desktop-queue")
         return false;
+    // A provider/RPC failure can precede further tool activity. An idle sample
+    // alone must never release a failed turn, including after a service restart.
+    if (snapshot.nativeFailure) {
+        const check = snapshot.nativeStopCheck;
+        const [failed, issued, acknowledged, since, checked, stopped] = [snapshot.nativeFailure.observedAt,
+            snapshot.stopControl?.issuedAt, snapshot.stopControl?.acknowledgedAt, check?.since, check?.checkedAt, snapshot.nativeStoppedAt].map(value => Date.parse(value ?? ""));
+        if (![failed, issued, acknowledged, since, checked, stopped].every(Number.isFinite) ||
+            !check || !Number.isSafeInteger(check.observations) || check.observations < 2 ||
+            issued < failed || acknowledged < issued || since < acknowledged || checked - since < 1000 || stopped < checked)
+            return false;
+    }
     if (snapshot.nativeStoppedAt && Number.isFinite(Date.parse(snapshot.nativeStoppedAt)) &&
         ["native_idle", "not_dispatched"].includes(snapshot.nativeStopSource ?? ""))
         return true;

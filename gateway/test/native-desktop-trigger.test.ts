@@ -196,11 +196,13 @@ test("policy refresh preserves an acknowledged in-flight turn, its busy exclusio
 test("upgrade retains legacy native activity instead of closing its transport", async t => {
   const f = await fixture(t); let closed = false; let busy = true;
   const old = f.bridge;
-  f.seedLegacy({ revision: 7, inspect: async () => ({ state: busy ? "busy" : "idle", workspace: f.workspace }), close: () => { closed = true; } });
+  // A fully cached old bridge lacks failureRevision and must receive the diagnostic update.
+  f.seedLegacy({ revision: 7, policyRevision: 1, stopRevision: 1, configurePolicy: () => {}, inspect: async () => ({ state: busy ? "busy" : "idle", workspace: f.workspace }), close: () => { closed = true; } });
   await assert.rejects(() => f.evaluate(RENDERER_BRIDGE), /explicit free-only model policy/);
   assert.equal(f.ports.length, 1);
   await f.evaluate(rendererBridgeForFreeModel("fast"));
   const current = await f.evaluate("globalThis.__codexNativeQueueBridgeV2") as Bridge;
+  assert.equal(await f.evaluate("globalThis.__codexNativeQueueBridgeV2.failureRevision"), 1);
   assert.equal(closed, false);
   assert.equal((await current.inspect(f.sessionId)).state, "busy");
   assert.equal((await current.wakeIdle(f.sessionId, WAKE_B, wakePrompt(WAKE_B))).accepted, false);
@@ -247,6 +249,7 @@ test("a failed acknowledged native turn retains its exact wake identity for supe
   assert.equal(native.state, "idle");
   assert.equal((native.failure as { wakeId: string }).wakeId, WAKE_A);
   assert.match((native.failure as { error: string }).error, /500/);
+  assert.equal((native.failure as { phase: string }).phase, "session:sendMessage");
   assert.equal(f.sends().length, 1);
   f.session.pendingPermissions = [{}];
   assert.equal((await f.bridge.inspect(f.sessionId)).state, "waiting_input", "failure evidence cannot clear native pending permission");
@@ -322,6 +325,28 @@ test("native pending input and tool or team activity cannot be cleared by a queu
     assert.equal((await f.bridge.wakeIdle(f.sessionId, WAKE_A, wakePrompt(WAKE_A))).accepted, false);
   }
   assert.equal(f.sends().length, 0);
+});
+
+test("terminal session flags do not hide unfinished raw tools, team work or background tasks", async t => {
+  const f = await fixture(t);
+  for (const detail of [
+    {eventHistory:[{update:{sessionUpdate:"tool_call",toolCallId:"own-tool",status:"in_progress"}}]},
+    {eventHistory:[{update:{sessionUpdate:"tool_call",toolCallId:"own-tool"}}]},
+    {teamRuntime:{teamActive:true,teamTrulyIdle:false}},
+    {hasRunningBackgroundTasks:true},
+    {hasActiveChildAgents:true},
+  ]) {
+    f.session = {sessionId:f.sessionId,cwd:f.workspace,status:"failed",isProcessing:false,hasActiveToolCalls:false,...detail};
+    assert.equal((await f.bridge.inspect(f.sessionId)).state,"busy");
+    assert.equal((await f.bridge.wakeIdle(f.sessionId,WAKE_B,wakePrompt(WAKE_B))).accepted,false);
+  }
+  f.session = {sessionId:f.sessionId,cwd:f.workspace,status:"failed",lastBackendActivityAt:12345,eventHistory:[
+    {update:{sessionUpdate:"tool_call",toolCallId:"own-tool",status:"in_progress"}},
+    {update:{sessionUpdate:"tool_call_update",toolCallId:"own-tool",status:"completed"}},
+  ],teamRuntime:{teamActive:true,teamTrulyIdle:true}};
+  const native = await f.bridge.inspect(f.sessionId);
+  assert.equal(native.state,"idle"); assert.equal(native.activityAt,12345);
+  assert.equal(f.sends().length,0);
 });
 
 test("native acknowledgement admits exactly one send even for simultaneous duplicate wake calls", async (t) => {

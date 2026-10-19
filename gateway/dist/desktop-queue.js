@@ -8,6 +8,7 @@ import { readDesktopSession } from "./desktop-runtime.js";
 import { sameExecutable, windowsProcessTable } from "./native-process.js";
 import { DurableRuns, RunJournal, runsDirectory, writePrivateJson, hasNativeStopEvidence } from "./run-journal.js";
 import { TaskStore } from "./task-store.js";
+import { diagnoseNativeFailure } from "./native-turn-failure.js";
 const SOURCE = "desktop_queue";
 const TERMINAL = new Set(["needs_review", "blocked", "failed", "cancelled"]);
 /** Prove the helper was launched by the native desktop app, not a standalone CLI or Codex. */
@@ -348,7 +349,7 @@ export class DesktopQueue {
             return;
         locked(path.join(journal.dir, "queue-write.lock"), () => {
             const current = journal.snapshot();
-            journal.save({ ...current, nativeHealth: { state: native.state, reason: native.reason, observedAt: new Date().toISOString() } });
+            journal.save({ ...current, nativeStopCheck: native.state === "idle" ? current.nativeStopCheck : undefined, nativeHealth: { state: native.state, reason: native.reason, observedAt: new Date().toISOString() } });
         });
     }
     authorizeCommand(input) {
@@ -414,9 +415,30 @@ export class DesktopQueue {
                 request.sessionId !== snapshot.sessionId || native.state === "offline" || native.workspace !== request.workspace ||
                 !snapshot.sessionId || !readDesktopSession(this.config.workbuddyConfigDir, snapshot.sessionId).registered)
                 throw new Error("Native observation does not match the execution");
+            const wake = readJson(path.join(journal.dir, "wake.json"));
+            const incomingFailure = native.failure;
+            if (incomingFailure && wake && incomingFailure.wakeId === wake.wakeId &&
+                Number.isFinite(Date.parse(incomingFailure.observedAt)) && Date.parse(incomingFailure.observedAt) >= Date.parse(wake.createdAt) &&
+                (!snapshot.nativeFailure || Date.parse(incomingFailure.observedAt) > Date.parse(snapshot.nativeFailure.observedAt))) {
+                snapshot = { ...snapshot, nativeFailure: incomingFailure, nativeStoppedAt: undefined, nativeStopSource: undefined, nativeStopCheck: undefined };
+                journal.save(snapshot);
+            }
             if (hasNativeStopEvidence(snapshot))
                 return snapshot;
-            if (native.state === "idle") {
+            let stopped = native.state === "idle";
+            if (snapshot.nativeFailure) {
+                const acknowledgedAt = Date.parse(snapshot.stopControl?.acknowledgedAt ?? "");
+                stopped = stopped && native.latestWakeId === wake?.wakeId && Number.isFinite(acknowledgedAt) && acknowledgedAt >= Date.parse(snapshot.nativeFailure.observedAt);
+                const prior = snapshot.nativeStopCheck;
+                const now = new Date().toISOString();
+                const check = stopped ? prior && prior.activityAt === native.activityAt
+                    ? { ...prior, checkedAt: now, observations: prior.observations + 1 }
+                    : { since: now, checkedAt: now, observations: 1, activityAt: native.activityAt } : undefined;
+                snapshot = { ...snapshot, nativeStopCheck: check };
+                journal.save(snapshot);
+                stopped = Boolean(check && check.observations >= 2 && Date.parse(now) - Date.parse(check.since) >= 1000);
+            }
+            if (stopped) {
                 const commands = path.join(journal.dir, "commands");
                 if (fs.existsSync(commands))
                     for (const name of fs.readdirSync(commands)) {
@@ -433,9 +455,8 @@ export class DesktopQueue {
                         }
                     }
             }
-            const wake = readJson(path.join(journal.dir, "wake.json"));
             if (journal.cancellationRequested()) {
-                if (native.state === "idle") {
+                if (stopped) {
                     const cancelled = readJson(path.join(journal.dir, "cancel.json"));
                     const status = cancelled?.reason === "deadline" || snapshot.error ? "blocked" : "cancelled";
                     journal.save({ ...snapshot, status, stopReason: snapshot.stopReason ?? "native_idle_verified", waitingInput: false, nativeStoppedAt: new Date().toISOString(), nativeStopSource: "native_idle",
@@ -444,14 +465,20 @@ export class DesktopQueue {
                 }
                 return journal.snapshot();
             }
-            const failure = native.failure;
+            const failure = snapshot.nativeFailure;
             if (failure && wake && failure.wakeId === wake.wakeId &&
                 Number.isFinite(Date.parse(failure.observedAt)) && Date.parse(failure.observedAt) >= Date.parse(wake.createdAt)) {
-                const error = `WorkBuddy native turn failed: ${failure.error.slice(0, 2000)}. No automatic resend occurred.`;
-                const stopReason = native.state === "idle" ? "native_failure_verified" : undefined;
+                const diagnosis = diagnoseNativeFailure(failure.error, failure.observedAt, failure.phase);
+                const reportedAt = snapshot.status === "needs_review" ? this.completedReportBeforeFailure(journal, snapshot, failure.observedAt) : undefined;
+                if (reportedAt) {
+                    this.preserveReportedFailure(journal, snapshot, native, failure, reportedAt, undefined, stopped);
+                    return journal.snapshot();
+                }
+                const error = diagnosis.message;
+                const stopReason = stopped ? "native_failure_verified" : undefined;
                 if (snapshot.error !== error || snapshot.stopReason !== stopReason || snapshot.status !== "blocked") {
-                    journal.save({ ...snapshot, status: "blocked", error, stopReason, waitingInput: native.state === "waiting_input", nativeStoppedAt: native.state === "idle" ? new Date().toISOString() : undefined, nativeStopSource: native.state === "idle" ? "native_idle" : undefined });
-                    journal.append("result", `TASK_STATUS: blocked\n${error}`, { status: "blocked", blockedReason: error, sessionId: snapshot.sessionId, runtimeSource: snapshot.runtimeSource, stopReason });
+                    journal.save({ ...snapshot, status: "blocked", error, nativeRateLimit: diagnosis.rateLimit, stopReason, waitingInput: native.state === "waiting_input", nativeStoppedAt: stopped ? new Date().toISOString() : undefined, nativeStopSource: stopped ? "native_idle" : undefined });
+                    journal.append("result", `TASK_STATUS: blocked\n${error}`, { status: "blocked", blockedReason: error, sessionId: snapshot.sessionId, runtimeSource: snapshot.runtimeSource, stopReason, nativeRateLimit: diagnosis.rateLimit });
                 }
                 return journal.snapshot();
             }
@@ -503,6 +530,81 @@ export class DesktopQueue {
             return journal.snapshot();
         });
     }
+    /** Reconcile the old ordering bug using the existing authenticated report only. */
+    reconcileReportedFailure(input, native) {
+        const journal = new RunJournal(this.root, input.attemptId);
+        return locked(path.join(journal.dir, "queue-write.lock"), () => {
+            const snapshot = journal.snapshot(), request = journal.request();
+            const claim = readJson(path.join(journal.dir, "claim.json"));
+            const wake = readJson(path.join(journal.dir, "wake.json"));
+            const store = new TaskStore(this.config.dbFile);
+            try {
+                const task = store.get(input.taskId);
+                if (!task || task.attemptId !== input.attemptId || task.sessionId !== input.sessionId || task.workspace !== input.workspace ||
+                    !snapshot || snapshot.taskId !== input.taskId || snapshot.attemptId !== input.attemptId || snapshot.sessionId !== input.sessionId || snapshot.driver !== "desktop-queue" ||
+                    request.taskId !== input.taskId || request.attemptId !== input.attemptId || request.sessionId !== input.sessionId || request.workspace !== input.workspace ||
+                    claim?.sessionId !== input.sessionId || wake?.sessionId !== input.sessionId || wake.attemptId !== input.attemptId ||
+                    !readDesktopSession(this.config.workbuddyConfigDir, input.sessionId).registered)
+                    throw Error("Report reconciliation identity does not match the current task/attempt/session/workspace");
+                if (native.state !== "idle" || native.workspace !== input.workspace)
+                    throw Error("Report reconciliation requires current native idle in the original workspace");
+                const alreadyReconciled = ["blocked", "needs_review"].includes(task.state) && snapshot.status === "needs_review" && Boolean(snapshot.postReportFailure) && hasNativeStopEvidence(snapshot);
+                if (!alreadyReconciled && (task.state !== "blocked" || snapshot.status !== "blocked" || snapshot.stopReason !== "native_failure_verified" || !hasNativeStopEvidence(snapshot)))
+                    throw Error("Only a stopped native-failure attempt with a preserved authenticated report can be reconciled");
+                if (!input.reason.trim() || journal.cancellationRequested())
+                    throw Error("A reconciliation reason is required and cancelled/deadline attempts cannot be reconciled");
+                const failure = native.failure;
+                if (!failure || failure.wakeId !== wake.wakeId)
+                    throw Error("The original native failure must be correlated with this wake");
+                const reportedAt = this.completedReportBeforeFailure(journal, snapshot, failure.observedAt);
+                if (!reportedAt)
+                    throw Error("No intact, on-time authenticated completed report predates the native failure");
+                const commands = path.join(journal.dir, "commands");
+                if (fs.existsSync(commands))
+                    for (const name of fs.readdirSync(commands)) {
+                        if (!/^[a-f0-9-]{36}\.json$/.test(name))
+                            continue;
+                        const record = readJson(path.join(commands, name));
+                        if (!record?.endedAt || record.cleanupConfirmed !== true || record.reason === "supervisor_exited_job_closed")
+                            throw Error("Owned command completion/cleanup is not verified; report reconciliation refused");
+                    }
+                this.preserveReportedFailure(journal, snapshot, native, failure, reportedAt, input.reason);
+                return { ok: true, alreadyReconciled, taskCompleted: false };
+            }
+            finally {
+                store.close();
+            }
+        });
+    }
+    completedReportBeforeFailure(journal, snapshot, failedAt) {
+        if (!snapshot.reportDigest || !snapshot.text?.trim() || snapshot.runtimeSource !== SOURCE || journal.cancellationRequested() ||
+            !snapshot.deadline || !Number.isFinite(Date.parse(snapshot.deadline)))
+            return;
+        const fields = ["completed", snapshot.text, snapshot.artifacts ?? []];
+        if (snapshot.validationRecords?.length)
+            fields.push(snapshot.validationRecords);
+        if (crypto.createHash("sha256").update(JSON.stringify(fields)).digest("hex") !== snapshot.reportDigest)
+            return;
+        const event = journal.events(0, Infinity).find(event => event.type === "result" && event.metadata?.status === "needs_review" &&
+            event.metadata.sessionId === snapshot.sessionId && event.metadata.runtimeSource === SOURCE && event.text === snapshot.text &&
+            JSON.stringify(event.metadata.artifacts) === JSON.stringify(snapshot.artifacts ?? []));
+        if (!event || !Number.isFinite(Date.parse(event.createdAt)) || !Number.isFinite(Date.parse(failedAt)) ||
+            Date.parse(event.createdAt) >= Date.parse(failedAt) || (snapshot.deadline && Date.parse(event.createdAt) > Date.parse(snapshot.deadline)))
+            return;
+        return event.createdAt;
+    }
+    preserveReportedFailure(journal, snapshot, native, failure, reportedAt, reconciliationReason, stopped = native.state === "idle") {
+        const diagnosis = diagnoseNativeFailure(failure.error, failure.observedAt, failure.phase);
+        const warning = { error: failure.error.slice(0, 2000), observedAt: failure.observedAt, reportReceivedAt: reportedAt, phase: failure.phase };
+        const recorded = journal.events(0, Infinity).some(event => event.metadata?.reportPreserved === true &&
+            event.metadata.postReportFailure?.observedAt === failure.observedAt);
+        if (snapshot.status === "needs_review" && snapshot.postReportFailure?.observedAt === failure.observedAt &&
+            snapshot.postReportFailure.error === warning.error && (!stopped || hasNativeStopEvidence(snapshot)) && recorded)
+            return;
+        journal.save({ ...snapshot, status: "needs_review", error: undefined, stopReason: "end_turn", postReportFailure: warning, nativeRateLimit: diagnosis.rateLimit,
+            waitingInput: native.state === "waiting_input", nativeStoppedAt: stopped ? new Date().toISOString() : undefined, nativeStopSource: stopped ? "native_idle" : undefined });
+        journal.append("status", "Authenticated worker report preserved; a later native error is recorded separately. Independent review is still required.", { status: "needs_review", sessionId: snapshot.sessionId, runtimeSource: SOURCE, reportPreserved: true, postReportFailure: warning, reconciliationReason });
+    }
     /** Close an expired lease after a separate native idle check. This is NOT a worker result. */
     confirmExpiredStop(input) {
         const journal = new RunJournal(this.root, input.attemptId);
@@ -522,6 +624,8 @@ export class DesktopQueue {
                 const cancellation = readJson(path.join(journal.dir, "cancel.json"));
                 if (!snapshot.deadline || Date.parse(snapshot.deadline) > Date.now() || (cancellation && cancellation.reason !== "deadline"))
                     throw new Error("Only an expired attempt without an operator cancellation can be recovered");
+                if (snapshot.nativeFailure && !hasNativeStopEvidence(snapshot))
+                    throw new Error("Native failure stop is unconfirmed; a one-time idle recovery cannot bypass cancellation acknowledgement and stable idle checks");
                 if (snapshot.stopReason === "native_idle_verified")
                     return { ok: true, alreadyRecovered: true };
                 if (snapshot.stopReason)

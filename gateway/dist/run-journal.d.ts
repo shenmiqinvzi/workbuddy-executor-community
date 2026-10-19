@@ -1,5 +1,6 @@
 import type { Config } from "./config.js";
 import type { LocalMessage } from "./workbuddy-client.js";
+import type { NativeRateLimit } from "./native-turn-failure.js";
 export type RunStatus = "queued" | "working" | "needs_review" | "blocked" | "failed" | "cancelled";
 export interface RunRequest {
     attemptId: string;
@@ -24,6 +25,25 @@ export interface RunSnapshot {
     text?: string;
     stopReason?: string;
     error?: string;
+    nativeRateLimit?: NativeRateLimit;
+    nativeFailure?: {
+        wakeId: string;
+        error: string;
+        observedAt: string;
+        phase?: "session:sendMessage" | "native_history";
+    };
+    nativeStopCheck?: {
+        since: string;
+        checkedAt: string;
+        observations: number;
+        activityAt?: number;
+    };
+    postReportFailure?: {
+        error: string;
+        observedAt: string;
+        reportReceivedAt: string;
+        phase?: "session:sendMessage" | "native_history";
+    };
     waitingInput?: boolean;
     artifacts?: string[];
     reportDigest?: string;
@@ -37,6 +57,7 @@ export interface RunSnapshot {
     stopControl?: {
         requestedAt: string;
         issuedAt?: string;
+        acknowledgedAt?: string;
         checkedAt?: string;
         error?: string;
         state: "requested" | "stop_unconfirmed" | "stopped";

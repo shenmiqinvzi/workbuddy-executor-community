@@ -184,7 +184,7 @@ test("MCP schemas expose optional brief and full still retrieves complete durabl
   const listed = await call("workbuddy_list_tasks", { detail: "brief" });
   assert.equal(listed.tasks[0].taskId, stored.taskId);
   assert.equal("objective" in listed.tasks[0], false);
-  const duplicate = await call("workbuddy_send_task", { taskId: stored.taskId, objective: "Never dispatched duplicate", detail: "brief" });
+  const duplicate = await call("workbuddy_send_task", { taskId: stored.taskId, objective: stored.objective, detail: "brief" });
   assert.equal(duplicate.created, false);
   assert.equal("objective" in duplicate.task, false);
   const health = await call("workbuddy_health", { detail: "brief" });

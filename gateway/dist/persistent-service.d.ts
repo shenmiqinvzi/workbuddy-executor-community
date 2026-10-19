@@ -5,10 +5,13 @@ export interface NativeObservation {
     state: "idle" | "busy" | "waiting_input" | "offline";
     workspace?: string;
     reason?: string;
+    activityAt?: number;
+    latestWakeId?: string | null;
     failure?: {
         wakeId: string;
         error: string;
         observedAt: string;
+        phase?: "session:sendMessage" | "native_history";
     };
 }
 export interface NativeDesktopTrigger {
@@ -84,6 +87,20 @@ export declare function recoverExpiredAttempt(config: Config, registration: Serv
     next: string;
     ok: true;
     alreadyRecovered: boolean;
+}>;
+/** Bounded reconciliation restores an existing report for review, never a new execution or acceptance. */
+export declare function reconcileReportedAttempt(config: Config, registration: ServiceRegistration, trigger: NativeDesktopTrigger, input: {
+    taskId: string;
+    attemptId: string;
+    reason: string;
+}): Promise<{
+    taskId: string;
+    attemptId: string;
+    state: string;
+    next: string;
+    ok: boolean;
+    alreadyReconciled: boolean;
+    taskCompleted: boolean;
 }>;
 /** One launchd service supervises every enrolled native session independently. */
 export declare function pumpWorkspaceWorkers(config: Config, registration: ServiceRegistration, trigger: NativeDesktopTrigger, store: TaskStore): Promise<{

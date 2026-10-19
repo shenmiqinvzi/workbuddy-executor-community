@@ -10,13 +10,16 @@ import { RunJournal, runsDirectory, writePrivateJson, hasNativeStopEvidence } fr
 import { WorkspaceWorkers } from "./workspace-workers.js";
 import { readNativeTurnFailure } from "./native-turn-failure.js";
 import {reconcileOwnedCommands} from "./command-cleanup.js";
+import { latestNativeWake } from "./native-ownership.js";
 
 /** This adapter may wake the native chat; it must never execute the queue task. */
 export interface NativeObservation {
   state: "idle" | "busy" | "waiting_input" | "offline";
   workspace?: string;
   reason?: string;
-  failure?: { wakeId: string; error: string; observedAt: string };
+  activityAt?: number;
+  latestWakeId?: string | null;
+  failure?: { wakeId: string; error: string; observedAt: string; phase?: "session:sendMessage" | "native_history" };
 }
 export interface NativeDesktopTrigger {
   inspect(sessionId: string, options?: { readOnly?: boolean }): Promise<NativeObservation>;
@@ -167,6 +170,28 @@ export async function recoverExpiredAttempt(config: Config, registration: Servic
   } finally { lock.close(); }
 }
 
+/** Bounded reconciliation restores an existing report for review, never a new execution or acceptance. */
+export async function reconcileReportedAttempt(config: Config, registration: ServiceRegistration, trigger: NativeDesktopTrigger,
+  input: {taskId:string;attemptId:string;reason:string}) {
+  const bound = registeredServiceConfig(config, registration);
+  const lock = new ServicePumpLock(runsDirectory(bound), registration.sessionId);
+  try {
+    if (!lock.acquire()) throw Error("A service pump owns this session; reconciliation did not dispatch anything");
+    const journal = new RunJournal(runsDirectory(bound), input.attemptId);
+    const wake = readJson<WakeIntent>(path.join(journal.dir,"wake.json"));
+    if (!wake || wake.attemptId !== input.attemptId || wake.sessionId !== registration.sessionId ||
+        latestNativeWake(bound.workbuddyConfigDir, registration.sessionId) !== wake.wakeId) throw Error("Latest native turn does not belong to this attempt; reconciliation refused");
+    const queue = new DesktopQueue(bound);
+    if (queue.listeners().some(listener=>listener.sessionId === registration.sessionId)) throw Error("A native helper is still waiting; reconciliation refused");
+    const native = await bounded(trigger.inspect(registration.sessionId,{readOnly:true}),7000);
+    if (native.state !== "idle" || native.workspace !== registration.workspace) throw Error(`Report reconciliation requires current native idle in the original workspace; observed ${native.state}${native.reason ? ": " + native.reason : ""}`);
+    if (!native.failure) native.failure = readNativeTurnFailure(bound.workbuddyConfigDir,registration.sessionId,wake);
+    if (latestNativeWake(bound.workbuddyConfigDir, registration.sessionId) !== wake.wakeId) throw Error("Native turn ownership changed during reconciliation");
+    return {...queue.reconcileReportedFailure({...input,sessionId:registration.sessionId,workspace:registration.workspace},native),
+      taskId:input.taskId,attemptId:input.attemptId,state:"needs_review",next:"Inspect the existing result and rerun affected checks before accept_task. No task was dispatched."};
+  } finally {lock.close();}
+}
+
 /** One launchd service supervises every enrolled native session independently. */
 export async function pumpWorkspaceWorkers(config: Config, registration: ServiceRegistration, trigger: NativeDesktopTrigger, store: TaskStore) {
   const bound = registeredServiceConfig(config,registration);
@@ -276,21 +301,30 @@ export class PersistentDesktopService {
     try {
       const native = await this.inspectAttempt(journal);
       if (native.state === "offline" || native.workspace !== this.registration.workspace) return remember(native.reason ?? "Native session unavailable or binding changed");
-      if (native.state !== "idle" && !control.issuedAt) {
+      if ((native.state !== "idle" || snapshot.nativeFailure) && !control.issuedAt) {
         if (!wake || !this.trigger.cancelAttempt) return remember("Native stop API or exact wake evidence unavailable");
         control = {...control,issuedAt:new Date().toISOString(),state:"requested"};
         queue.updateStopControl(journal.attemptId,control);
         journal.append("status", "Native cancellation issued for this task/attempt/session only.", {taskId:task.taskId,attemptId:journal.attemptId,sessionId:task.sessionId});
         await bounded(this.trigger.cancelAttempt(task.sessionId!,wake.wakeId,this.registration.workspace),10000);
+        control = {...control,acknowledgedAt:new Date().toISOString()};
+        queue.updateStopControl(journal.attemptId,control);
       }
+      if (snapshot.nativeFailure && !control.acknowledgedAt) return remember("Native cancellation acknowledgement is missing; the request will not be replayed");
       const end = Date.now() + 3000;
-      let observed = native;
+      // Never count the pre-cancellation observation as post-cancellation proof.
+      let observed = control.acknowledgedAt ? await this.inspectAttempt(journal) : native;
       do {
+        if (observed.state === "offline" || observed.workspace !== this.registration.workspace) return remember(observed.reason ?? "Native session unavailable or binding changed during stop confirmation");
+        if (snapshot.nativeFailure && observed.latestWakeId !== wake?.wakeId) return remember("Latest native turn changed or is unknown after cancellation; stop is unconfirmed");
         if (observed.state === "idle") {
           const cleanup=reconcileOwnedCommands(path.join(journal.dir,"commands"));
           if(cleanup.recovered.length)journal.append("status","Interrupted command supervisors are absent; Windows Job handle closure proves cleanup. Exit codes remain unknown (125), never passing validations.",{recoveredCommands:cleanup.recovered,sessionId:task.sessionId});
-          queue.observeNative(journal.attemptId,observed);
-          return this.result("stop_confirmed",identity);
+          const stopped = queue.observeNative(journal.attemptId,observed);
+          if (hasNativeStopEvidence(stopped)) {
+            queue.updateStopControl(journal.attemptId,{...control,state:"stopped",checkedAt:new Date().toISOString(),error:undefined});
+            return this.result(stopped.nativeFailure && stopped.status === "blocked" ? "native_blocked" : "stop_confirmed",identity);
+          }
         }
         if (Date.now() >= end) break;
         await new Promise(resolve=>setTimeout(resolve,250));
@@ -318,6 +352,7 @@ export class PersistentDesktopService {
         if (native.workspace !== this.registration.workspace) return this.result("binding_mismatch", identity);
         if(native.state==="idle")reconcileOwnedCommands(path.join(journal.dir,"commands"));
         const observed = new DesktopQueue(this.config).observeNative(active.attemptId, native);
+        if (observed.nativeFailure && !hasNativeStopEvidence(observed)) return this.stopAttempt(journal);
         if (observed.waitingInput) return this.result("waiting_input", { ...identity, reason: native.reason });
         if (hasNativeStopEvidence(observed)) return this.result(["cancelled", "needs_review"].includes(observed.status) ? "stop_confirmed" : "native_blocked", { ...identity, reason: observed.error });
         if (observed.status === "blocked") return this.result("native_blocked", { ...identity, reason: observed.error });
@@ -354,6 +389,7 @@ export class PersistentDesktopService {
       const native = await this.inspectAttempt(journal);
       if (native.state !== "offline" && native.workspace === this.registration.workspace) {
         const observed = new DesktopQueue(this.config).observeNative(journal.attemptId, native);
+        if (observed.nativeFailure && !hasNativeStopEvidence(observed)) return this.stopAttempt(journal);
         if (observed.waitingInput) return this.result("waiting_input", { ...identity, reason: native.reason });
         if (observed.status === "blocked" || observed.stopReason) return this.result(observed.status === "cancelled" ? "stop_confirmed" : "native_blocked", { ...identity, reason: observed.error });
       }

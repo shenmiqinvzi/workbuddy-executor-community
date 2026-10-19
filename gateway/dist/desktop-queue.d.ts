@@ -84,6 +84,20 @@ export declare class DesktopQueue {
     };
     /** Supervisor evidence can block or confirm stop, never manufacture success. */
     observeNative(attemptId: string, native: NativeObservation): RunSnapshot;
+    /** Reconcile the old ordering bug using the existing authenticated report only. */
+    reconcileReportedFailure(input: {
+        taskId: string;
+        attemptId: string;
+        sessionId: string;
+        workspace: string;
+        reason: string;
+    }, native: NativeObservation): {
+        ok: boolean;
+        alreadyReconciled: boolean;
+        taskCompleted: boolean;
+    };
+    private completedReportBeforeFailure;
+    private preserveReportedFailure;
     /** Close an expired lease after a separate native idle check. This is NOT a worker result. */
     confirmExpiredStop(input: {
         taskId: string;

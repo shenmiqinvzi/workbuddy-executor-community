@@ -55,6 +55,29 @@ node scripts/doctor.mjs --live
 
 本地诊断只查环境与原生 sessions 表结构；--live 进一步观察已存在的原生桥接和模型目录，不安装桥接、不重配模型、不重启应用。初装时 bridge_missing 是可解释状态，须先完成上述首次连接；不能靠重复运行 doctor 自动修复。login/quota 保持 unknown，诊断通过不等于任务已执行。
 
+原生回合在提交有效完成报告前返回 HTTP 429 时，任务保持 blocked，`execution.nativeRateLimit` 标记限流，并在证据可确定时注明原生消息提交或原生历史阶段。只有错误文本明确提供数字形式的 `Retry-After` 时才记录 `retryAfterSeconds`；未提供时不推算恢复时间。该值是原生响应的等待提示，不保证额度恢复，也不会触发自动重发或付费模型切换。先核对原任务的停止证据和原生界面状态，服务恢复后沿原 taskId/会话继续。
+
+如果已认证、按时提交的完成报告早于原生错误，网关保留 `needs_review`，在 `execution.postReportFailure` 单独记录后到的错误；原生停止与独立验收仍是必要条件。错误早于报告、报告缺失或被改动、取消或超时的任务继续保持 blocked。
+
+原生报错不代表本轮已经结束。新版将相关错误持久保存；即使重连后错误不再出现在原生接口中，也不会仅凭一次空闲判定 `remoteStopped=true`。监督器核对原 task/attempt/session、工作目录和最近唤醒标记，只向这一轮发送一次原生 `session:cancel` 收尾请求，不关闭整个应用。必须收到该请求回执，随后至少两次观察到空闲（间隔至少一秒、后端活动时间未变化），并核对没有未结束工具、团队或已知后台任务，以及本轮命令清理证据，才允许返工或验收。收尾保留已有结果，不自动重发、不将失败改成成功。
+
+请求超时、回执丢失、归属变化或仍有活动时保持 `stop_unconfirmed`，重连不重发取消请求，也不放行下一任务。`execution.stopControl` 和 `execution.nativeStopCheck` 提供请求与连续观察记录；单次空闲恢复和报告恢复工具不能绕过新版失败轮次的停止门槛。旧版本保存的历史停止记录不会被本次源码修改自动重新核验。
+
+旧版本因后到错误覆盖了报告时，可用 `workbuddy_reconcile_report`，提供原 taskId、当前 attemptId 与核查原因。它核对现有报告摘要、原生最近唤醒身份、当前原生空闲和命令清理证据，仅恢复到待审查，不重发任务、不延长预算、不自动验收；原报告和失败事件都保留。当前聊天仍是旧内存版本时，可通过本机 `scripts/workbuddy-call.mjs` 启动器调用该工具。
+
+当前 MCP 的相关可选返回字段如下；未观察到的证据省略，不推断为成功：
+
+| 字段 | 含义 |
+|---|---|
+| `execution.nativeRateLimit` | `kind=rate_limited`、`statusCode=429`、`observedAt`；可附 `phase`（`session:sendMessage` 或 `native_history`）和明确提供的 `retryAfterSeconds` |
+| `execution.postReportFailure` | 晚于有效完成报告的 `error`、`observedAt`、原 `reportReceivedAt`，可附 `phase`；保留报告但不跳过停止和验收 |
+| `execution.stopControl` | 原有请求状态加 `issuedAt`、`acknowledgedAt` 等时间；仅 `issuedAt` 不证明请求成功或任务停止 |
+| `execution.nativeStopCheck` | 失败轮次的连续空闲检查：`since`、`checkedAt`、`observations`，可附后端 `activityAt` |
+
+`workbuddy_reconcile_report` 输入为 `{taskId, attemptId, reason, detail?}`：`attemptId` 必须是当前 `run-<UUID>`，`reason` 为非空核查说明（最长2000字符），`detail` 为 `brief` 或 `full`。成功只表示已有报告恢复到 `needs_review`，`taskCompleted=false`；仍须核对返回的 `task`、`execution` 和当前成果后另行验收。
+
+本次本机真实样本与回归测试的脱敏边界记录见 [原生停止验证摘要](native-stop-verification.json)。
+
 ## 5. 升级、回退和卸载
 
 先让所有任务完成验收或明确结束，并取得停止证明。仍有 working、needs_review 或停止不明记录时，安装程序拒绝变更。

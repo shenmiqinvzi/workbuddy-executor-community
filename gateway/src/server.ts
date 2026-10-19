@@ -99,6 +99,10 @@ server.tool("workbuddy_continue_task", "Send specific review feedback to the sam
   taskId, feedback: z.string().min(1).max(10_000), acceptanceCommands: z.array(z.string()).max(30).optional(), timeoutSeconds: timeout, model: z.string().min(1).optional(), detail,
 }, ({ detail, ...input }) => guard(() => coordinator.continue(input), detail));
 
+server.tool("workbuddy_reconcile_report", "Restore an existing authenticated, on-time worker report for review when a later native error overwrote it. Requires the current attempt, verified native idle and original turn ownership. Does not dispatch a task or accept a result.", {
+  taskId,attemptId:z.string().regex(/^run-[a-f0-9-]{36}$/),reason:z.string().trim().min(1).max(2000),detail,
+}, ({detail,...input})=>guard(()=>coordinator.reconcileReport(input),detail));
+
 server.tool("workbuddy_respond_task", "Respond to an active WorkBuddy permission or form request. Only offered single-action permission choices are accepted; never grants permanent access. Use submit with content for elicitation.", {
   taskId, decision: z.enum(["allow_once", "reject_once", "cancel", "submit"]), content: z.record(z.unknown()).optional(),
 }, ({ taskId, decision, content }) => guard(async () => coordinator.respond(taskId, decision, content)));
