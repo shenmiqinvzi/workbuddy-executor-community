@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "capturedAt": "2026-10-18T15:56:35.211225Z",
+  "capturedAt": "2026-10-19T02:15:57.161630Z",
   "upstream": "https://github.com/dudu555-djiao/codex-workbuddy-gateway",
   "upstreamCommit": "fbaaa2ef6d6cb59f48b953a1f27058202a81553f",
   "snapshot": "2026-10-18-community-portable-windows-setup",
@@ -759,18 +759,18 @@
     },
     {
       "path": "dist/service-cli.d.ts",
-      "sha256": "8b162da97a50623d6c4626e75937e332c5a879e6b9195f4d34336a12e658884f",
-      "bytes": 1758
+      "sha256": "96cbd411afafd0df4bb86505e4910ac09954f8b13f47f81b76247e40f74a4dee",
+      "bytes": 2007
     },
     {
       "path": "dist/service-cli.js",
-      "sha256": "16fdc57885fd3771ea3b0dcd8c0e4eccc2a729e26328c20e6ea7caf87088c501",
-      "bytes": 21733
+      "sha256": "4c75fd4a316a6a9af350e5e7ff697f83720bff92cee6ebc2a77ed6ea8df746e5",
+      "bytes": 23426
     },
     {
       "path": "dist/service-cli.js.map",
-      "sha256": "bcd9daa6bbc69e27a7b6ce38493dee89af5bc63bc538646186163f764166c0d3",
-      "bytes": 21082
+      "sha256": "7ae1ba41f2d7e74419b6a653e85896dfb32451397dec70269e5d690c85586268",
+      "bytes": 22813
     },
     {
       "path": "dist/setup.d.ts",
@@ -1294,8 +1294,8 @@
     },
     {
       "path": "src/service-cli.ts",
-      "sha256": "80aa96549f827b09865c7f9dfe307b068ba1bd18617ae535d8166f3820a0e5a2",
-      "bytes": 22162
+      "sha256": "8d32da5d09aa2d749dbe04eb35c60d4202b4ce4ab77881ababfc147e78ee3834",
+      "bytes": 23824
     },
     {
       "path": "src/setup.ts",
@@ -1374,8 +1374,8 @@
     },
     {
       "path": "test/deployment.test.ts",
-      "sha256": "196be81ec7575d2cdf8385d8f23e6a7efaa1fbdd20669633fc241439e637ce05",
-      "bytes": 13607
+      "sha256": "a9919ca8ac48827265cadfbe44d9876b082bd24812adee23b01b1d95a8c788ff",
+      "bytes": 14656
     },
     {
       "path": "test/desktop-queue.test.ts",
