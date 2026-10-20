@@ -349,6 +349,95 @@ test("terminal session flags do not hide unfinished raw tools, team work or back
   assert.equal(f.sends().length,0);
 });
 
+const invocationMeta = {
+  "codebuddy.ai/toolName": "Bash",
+  "codebuddy.ai/conversationRequestId": "fixture-conversation",
+  "codebuddy.ai/modelRequestId": "fixture-model-request",
+  "codebuddy.ai/messageRequestId": WAKE_A,
+};
+const completedArgumentHistory = (status = "failed") => [
+  {update:{sessionUpdate:"tool_call",toolCallId:"fixture-command",status:"in_progress",_meta:invocationMeta}},
+  {update:{sessionUpdate:"tool_call_update",toolCallId:"fixture-command",status,_meta:invocationMeta}},
+  {update:{sessionUpdate:"tool_call",toolCallId:"fixture-command",status:"pending",_meta:{...invocationMeta,"codebuddy.ai/toolArgumentsComplete":true}}},
+];
+
+test("late argument completion cannot reopen the same correlated terminal tool invocation", async t => {
+  const f = await fixture(t);
+  for (const status of ["completed", "failed", "cancelled"]) {
+    f.session.eventHistory = completedArgumentHistory(status);
+    assert.equal((await f.bridge.inspect(f.sessionId)).state, "idle", status);
+  }
+  assert.equal(f.sends().length, 0);
+});
+
+test("late argument filtering requires exact invocation identity and keeps real activity busy", async t => {
+  const f = await fixture(t);
+  const unknownReplays = [
+    {sessionUpdate:"tool_call",status:"pending",_meta:invocationMeta},
+    {sessionUpdate:"tool_call_update",status:"pending",_meta:{...invocationMeta,"codebuddy.ai/toolArgumentsComplete":true}},
+    {sessionUpdate:"tool_call",status:"in_progress",_meta:{...invocationMeta,"codebuddy.ai/toolArgumentsComplete":true}},
+    ...Object.keys(invocationMeta).flatMap(key=>[
+      {sessionUpdate:"tool_call",status:"pending",_meta:{...invocationMeta,[key]:"different","codebuddy.ai/toolArgumentsComplete":true}},
+      {sessionUpdate:"tool_call",status:"pending",_meta:{...invocationMeta,[key]:undefined,"codebuddy.ai/toolArgumentsComplete":true}},
+    ]),
+  ];
+  for (const event of unknownReplays) {
+    f.session.eventHistory = [...completedArgumentHistory().slice(0,2),{update:{toolCallId:"fixture-command",...event}}];
+    assert.equal((await f.bridge.inspect(f.sessionId)).state,"busy");
+  }
+  f.session.eventHistory = [...completedArgumentHistory(),{update:{sessionUpdate:"tool_call_update",toolCallId:"fixture-command",status:"in_progress"}}];
+  assert.equal((await f.bridge.inspect(f.sessionId)).state,"busy");
+  f.session.eventHistory = [...completedArgumentHistory(),{update:{sessionUpdate:"tool_call",toolCallId:"another-command",status:"pending"}}];
+  assert.equal((await f.bridge.inspect(f.sessionId)).state,"busy");
+  for (const activity of ["isProcessing","stopRequested","hasActiveToolCalls","hasActiveTeamMembers","hasRunningBackgroundTasks","hasActiveChildAgents"]) {
+    f.session.eventHistory=completedArgumentHistory(); f.session[activity]=true;
+    assert.equal((await f.bridge.inspect(f.sessionId)).state,"busy",activity);
+    delete f.session[activity];
+  }
+  f.session.pendingPermissions=[{}];
+  assert.equal((await f.bridge.inspect(f.sessionId)).state,"waiting_input");
+  assert.equal(f.sends().length,0);
+});
+
+test("persisted argument replay requires history markers and matching request identity", async t => {
+  const f=await fixture(t);
+  const meta={...invocationMeta,"codebuddy.ai/messageRequestId":undefined,"codebuddy.ai/requestId":"fixture-request","codebuddy.ai":{mode:"history",offset:7}};
+  const history=()=>[
+    {update:{sessionUpdate:"tool_call_update",toolCallId:"persisted-tool",status:"failed",_meta:meta}},
+    {update:{sessionUpdate:"tool_call",toolCallId:"persisted-tool",status:"pending",_meta:{...meta,"codebuddy.ai/toolArgumentsComplete":true,"codebuddy.ai":{mode:"history",offset:8}}}},
+  ];
+  f.session.eventHistory=history();assert.equal((await f.bridge.inspect(f.sessionId)).state,"idle");
+  for(const change of [
+    {"codebuddy.ai/requestId":"another-request"},
+    {"codebuddy.ai/requestId":undefined},
+    {"codebuddy.ai/messageRequestId":WAKE_B},
+    {"codebuddy.ai":{mode:"live",offset:8}},
+    {"codebuddy.ai":{mode:"history"}},
+    {"codebuddy.ai":undefined},
+  ]){
+    const events=history();Object.assign(events[1]!.update._meta,change);f.session.eventHistory=events;
+    assert.equal((await f.bridge.inspect(f.sessionId)).state,"busy");
+  }
+  for(const change of [{"codebuddy.ai":undefined},{"codebuddy.ai":{mode:"live",offset:7}},{"codebuddy.ai":{mode:"history"}}]){
+    const events=history();events[0]!.update._meta={...meta,...change};f.session.eventHistory=events;
+    assert.equal((await f.bridge.inspect(f.sessionId)).state,"busy");
+  }
+  assert.equal(f.sends().length,0);
+});
+
+test("history parser refresh retains the old bridge busy ownership", async t => {
+  const f = await fixture(t);
+  let busy=true;const previous=f.bridge;
+  f.seedLegacy({...previous,revision:7,policyRevision:1,stopRevision:2,failureRevision:1,historyRevision:undefined,inspect:async()=>({state:busy?"busy":"idle",workspace:f.workspace})});
+  await f.evaluate(rendererBridgeForFreeModel("fast"));
+  const refreshed=await f.evaluate("globalThis.__codexNativeQueueBridgeV2") as Bridge;
+  assert.equal(await f.evaluate("globalThis.__codexNativeQueueBridgeV2.historyRevision"),2);
+  assert.equal((await refreshed.inspect(f.sessionId)).state,"busy");
+  busy=false;
+  assert.equal((await refreshed.inspect(f.sessionId)).state,"idle");
+  assert.equal(f.ports.length,2);assert.equal(f.ports[0]!.closed,false);assert.equal(f.sends().length,0);
+});
+
 test("native acknowledgement admits exactly one send even for simultaneous duplicate wake calls", async (t) => {
   const f = await fixture(t);
   f.handler = (request) => {

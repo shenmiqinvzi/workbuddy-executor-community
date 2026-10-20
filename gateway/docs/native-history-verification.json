@@ -1,0 +1,72 @@
+{
+  "kind": "same_machine_real_observation_and_isolated_candidate_regression",
+  "recordedPhase": "before_history_parser_deployment",
+  "subsequentDeploymentEvidence": "native-history-deployment-verification.json",
+  "baseCommit": "d84936a03962fad548d75425cdce00c6d08b5da2",
+  "realDeployedCodeHash": "07639e15733e62532158dee44fd2add5766d18648171f6f37d1fce45e10cc7ac",
+  "realNormalTask": {
+    "runtimeSource": "desktop_queue",
+    "attempts": 1,
+    "beforeTestExitCode": 1,
+    "afterIndependentTestExitCode": 0,
+    "testsPassed": 5,
+    "testsFailed": 0,
+    "protectedTestsUnchanged": true,
+    "onlyImplementationChanged": true,
+    "remoteStopped": true,
+    "accepted": true
+  },
+  "realCancellation": {
+    "nativeClaimed": true,
+    "nativeCancellationAcknowledged": true,
+    "commandExitCode": 130,
+    "ownership": "windows_job_object",
+    "cleanupConfirmed": true,
+    "remoteStopped": true
+  },
+  "realCommandTimeout": {
+    "nativeClaimed": true,
+    "commandExitCode": 124,
+    "reason": "timeout",
+    "commandDurationMs": 5086,
+    "ownership": "windows_job_object",
+    "cleanupConfirmed": true,
+    "realReportPresent": true,
+    "nativeUiCompletedConfirmedByUserScreenshot": true,
+    "nativeStatus": "completed",
+    "nativeProcessing": false,
+    "nativeActiveToolCalls": false,
+    "toolHistorySequence": ["tool_call:in_progress", "tool_call_update:arguments", "tool_call_update:failed", "tool_call:pending:toolArgumentsComplete"],
+    "nativeToolSecurityRejectionObserved": true,
+    "currentTaskState": "blocked",
+    "currentDisplayState": "waiting_stop",
+    "nativeDeadlineCancellationAcknowledged": true,
+    "remoteStopped": false,
+    "accepted": false
+  },
+  "isolatedFix": {
+    "historyRevision": 1,
+    "scope": "Ignore only a late pending tool_call marked toolArgumentsComplete when a terminal result already exists for the same tool ID and matching nonempty tool name, conversation request, model request and message request metadata.",
+    "reproducedBeforeFix": true,
+    "buildExitCode": 0,
+    "regressionTests": 101,
+    "passed": 95,
+    "failed": 0,
+    "skippedMacOsFixtures": 6,
+    "privateActualEventOfflineReplay": {"events": 4, "oldParser": "busy", "candidateParser": "idle", "realStateChanged": false},
+    "retainsLegacyBridgeBusyOwnership": true,
+    "deployed": false,
+    "workBuddyRestarted": false,
+    "taskDatabaseEdited": false,
+    "existingInstallationsUpgraded": false
+  },
+  "boundaries": [
+    "This is same-machine Windows verification, not a second physical machine acceptance.",
+    "The candidate fix has build, fixture and offline real-event replay evidence; it has not completed a new live native task.",
+    "At this recorded phase, the original timeout task was blocked and had not been accepted or replaced; see subsequentDeploymentEvidence for the later third-attempt acceptance.",
+    "At this recorded phase, existing installations and the native application had not been upgraded, restarted or uninstalled.",
+    "A native security rejection is recorded as a failure, not bypassed or described as a successful permission-wait test.",
+    "Actual provider 429, native input/permission recovery and successful whole-task deadline shutdown remain unverified for this integrated runtime.",
+    "Original session contents, task credentials and machine-specific path lists are excluded from this record."
+  ]
+}

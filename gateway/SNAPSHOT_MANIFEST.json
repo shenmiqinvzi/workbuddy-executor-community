@@ -1,9 +1,9 @@
 {
   "format": 1,
-  "capturedAt": "2026-10-19T12:17:26.341Z",
+  "capturedAt": "2026-10-20T00:21:01.130Z",
   "upstream": "https://github.com/dudu555-djiao/codex-workbuddy-gateway",
   "upstreamCommit": "fbaaa2ef6d6cb59f48b953a1f27058202a81553f",
-  "snapshot": "2026-10-19-community-shared-task-service",
+  "snapshot": "2026-10-19-community-native-history-argument-completion",
   "packageVersion": "0.7.1",
   "exclusions": [
     ".git",
@@ -23,7 +23,10 @@
     "Native failure diagnosis, authenticated report preservation/reconciliation and failed-turn stop confirmation were integrated after source review and isolated Windows regressions.",
     "Same-computer real desktop sample passed on its first attempt; HTTP 429 was not triggered in that sample. See docs/native-stop-verification.json for boundaries.",
     "Shared task service compatibility layer and conservative status views are integrated with native failure shutdown and report reconciliation.",
-    "Integrated branch requires its own real desktop deployment acceptance; the earlier native-stop verification remains evidence for its recorded main-branch runtime only."
+    "Integrated branch requires its own real desktop deployment acceptance; the earlier native-stop verification remains evidence for its recorded main-branch runtime only.",
+    "Integrated d849 runtime passed the same-computer normal task, reconnect and cancellation samples; its command-timeout sample remains blocked by a late argument event. The isolated parser fix is not deployed; see docs/native-history-verification.json.",
+    "History parser revision 2 also checks explicitly marked persisted history with matching native request identity when wake metadata was omitted.",
+    "History parser revision 2 was deployed to the dedicated same-machine gateway and the original timeout task attempt 3 was accepted; earlier blocked outcomes remain preserved. See docs/native-history-deployment-verification.json."
   ],
   "files": [
     {
@@ -483,13 +486,13 @@
     },
     {
       "path": "dist/native-desktop-trigger.js",
-      "sha256": "892e90e69a2c9440e0195f10f5de983f4c5bf0c4c45ecbabd3dd4c9e7b117e55",
-      "bytes": 34012
+      "sha256": "69ca6e59cbd50c9764ae2525053b0eb49247bb229bfef71c695c2d254a1aa800",
+      "bytes": 35371
     },
     {
       "path": "dist/native-desktop-trigger.js.map",
-      "sha256": "393f6a53d148025dcf6ce67ff2cf531d9f34c2d25560ec0ad5c79eec218bfcfe",
-      "bytes": 18411
+      "sha256": "252c71466b7d5ad390192f4eaafc54fa20257b8b7481d215a3b4218fbb4d7abd",
+      "bytes": 18427
     },
     {
       "path": "dist/native-ownership.d.ts",
@@ -928,8 +931,8 @@
     },
     {
       "path": "docs/INSTALL_WINDOWS.md",
-      "sha256": "e58830d5b837408f35bf22549ade1a55d3fadc10ec6d1bcf694931cd93593fcf",
-      "bytes": 10192
+      "sha256": "3c03bf711a220bd2cdfbc2e1d131319c12c1cd3aafa21bc1a1b9971ee6934442",
+      "bytes": 11716
     },
     {
       "path": "docs/PORTABILITY_VERIFICATION_2026-10-18.md",
@@ -965,6 +968,16 @@
       "path": "docs/desktop-queue-reliability.md",
       "sha256": "8ac03f19898a8f70b442b52a2a2122195456e3bd2ea18085beae2da8512b142b",
       "bytes": 4017
+    },
+    {
+      "path": "docs/native-history-deployment-verification.json",
+      "sha256": "0ad6776b387ea6f9ee7eab5112b7bdc43e2b84915bf3cf52a7ee56203a9fda68",
+      "bytes": 2745
+    },
+    {
+      "path": "docs/native-history-verification.json",
+      "sha256": "b4aaf3dd52f7d53308a09f183d533cea3e98c6b31ff05e71a895570bf114099a",
+      "bytes": 3387
     },
     {
       "path": "docs/native-stop-verification.json",
@@ -1223,8 +1236,8 @@
     },
     {
       "path": "src/native-desktop-trigger.ts",
-      "sha256": "e64f61853bdac9a70e4b2ae8eb1b55314c243f103e41f00938b983b91267c8c5",
-      "bytes": 33644
+      "sha256": "f96e2ea6e2f4be5cf3e82163fc0de1de8ed107b0e7c7d6096b39731a97ea952c",
+      "bytes": 35003
     },
     {
       "path": "src/native-ownership.ts",
@@ -1423,8 +1436,8 @@
     },
     {
       "path": "test/native-desktop-trigger.test.ts",
-      "sha256": "b21e4e703e51500c77f12cd42ecc01f65a5780f055d18cbdf78f5ee2e8d84a2c",
-      "bytes": 34311
+      "sha256": "95f7235c8b8c25b65d6bcf51c6d7e8e61f8c647aec13023ca8f98022f770c3ad",
+      "bytes": 39705
     },
     {
       "path": "test/native-failure-diagnostic.test.ts",
