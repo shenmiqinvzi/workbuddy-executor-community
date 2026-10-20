@@ -39,6 +39,7 @@ Codex 定义范围、监督和独立验收，WorkBuddy 负责执行，网关维�
 - `gateway/src/task-application-service.ts`：当前基础状态投影。
 - `gateway/docs/native-history-deployment-verification.json`：本机真实执行证据，不代表面板已经接入，也不代表第二台 Windows 验收。
 - `docs/FRONTEND_TASK_PANEL_DESIGN.md`：本次只读模拟面板的具体交付范围与验收标准。
+- `docs/PROGRESS.md`：当前实现、部署验证、已发布任务与下一步；具体交付和负责人由Issue/PR维护。
 
 ## Product Principles
 
