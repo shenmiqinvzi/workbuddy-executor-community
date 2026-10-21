@@ -841,13 +841,13 @@
     },
     {
       "path": "dist/task-view-adapter.js",
-      "sha256": "8cea59be70d84b1e4d50f76c2d59dd597a38dcec11c7d9423541026ca4e06108",
-      "bytes": 23607
+      "sha256": "799938cb2a67cbca6f1608a78da9e64621ada4e73de738c2e28057a761c5636d",
+      "bytes": 24916
     },
     {
       "path": "dist/task-view-adapter.js.map",
-      "sha256": "2a0bd3a67b7cecb221b5b465af6428fa81c69e7e5b385db4a038dda7c256a2e7",
-      "bytes": 13723
+      "sha256": "0e1589b901544b165936b2d2aba0f54ef25da7b0af751190f978521f5e1f8ad1",
+      "bytes": 14291
     },
     {
       "path": "dist/task-view-reader.d.ts",
@@ -1421,8 +1421,8 @@
     },
     {
       "path": "src/task-view-adapter.ts",
-      "sha256": "387f920f48ddf9c5bd17b237914ac9b616a9d7be22e0a49f37367a8a01b9e6b8",
-      "bytes": 27973
+      "sha256": "97b9984f340d7a95a06f522e8dbffefdb3f841c07498d4b53decbc37a41ec2c4",
+      "bytes": 29235
     },
     {
       "path": "src/task-view-reader.ts",
@@ -1576,8 +1576,8 @@
     },
     {
       "path": "test/report-authentication.test.ts",
-      "sha256": "041d56e0a76680c98e419a95d012ec20ea7f8b3cb6c0c63ae76fb92cb89147fb",
-      "bytes": 17983
+      "sha256": "31caa85dc46d99f209954228d69f2a8adc4836962ecac14588b032a048f18136",
+      "bytes": 29437
     },
     {
       "path": "test/run-journal.test.ts",

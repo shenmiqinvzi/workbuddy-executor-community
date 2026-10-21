@@ -218,6 +218,7 @@ function withoutFacts(gaps: AdapterGap[], displayState: TaskViewDisplayState | n
  */
 function authenticateReport(
   task: StoredTask,
+  attempt: StoredAttempt | null,
   snapshot: RunSnapshot | null,
   attemptId: string,
 ): { state: "authenticated" } | { state: "unknown"; code: AdapterGapCode; reason: string } {
@@ -228,9 +229,27 @@ function authenticateReport(
   if (!record) {
     return { state: "unknown", code: "report_authentication_missing", reason: "This report has no authentication record; reports written before the record existed stay unknown." };
   }
-  if (!nonBlank(task.sessionId) || !nonBlank(task.runtimeSource)) {
-    return { state: "unknown", code: "report_authentication_binding_mismatch", reason: "The task does not record the session and runtime source the authentication must bind to." };
+  if (!nonBlank(task.sessionId)) {
+    return { state: "unknown", code: "report_authentication_binding_mismatch", reason: "The task does not record the session the authentication must bind to." };
   }
+  // The task row is written by the coordinator, which may not have run yet: a
+  // report can be complete while task.runtimeSource is still empty. Fall back to
+  // the source recorded on the current round, which the association checks have
+  // already tied to this task and this attempt. Missing is never a match, no
+  // default source is assumed, and any two stored sources that disagree still
+  // refuse authentication.
+  const declaredSources = [task.runtimeSource, attempt?.runtimeSource, snapshot.runtimeSource].filter(nonBlank);
+  const distinctSources = [...new Set(declaredSources)];
+  if (distinctSources.length !== 1) {
+    return {
+      state: "unknown",
+      code: "report_authentication_binding_mismatch",
+      reason: distinctSources.length === 0
+        ? "No record carries a runtime source, so the authentication cannot be bound to one."
+        : "The task, attempt row and snapshot disagree about the runtime source.",
+    };
+  }
+  const runtimeSource = distinctSources[0]!;
   const recomputed = snapshotReportDigest(snapshot);
   if (!recomputed || recomputed !== snapshot.reportDigest) {
     return { state: "unknown", code: "report_authentication_digest_mismatch", reason: "The report content no longer matches the digest stored with it." };
@@ -239,7 +258,7 @@ function authenticateReport(
     taskId: task.taskId,
     attemptId,
     sessionId: task.sessionId,
-    runtimeSource: task.runtimeSource,
+    runtimeSource,
     snapshotDigest: recomputed,
   });
   if (outcome.state === "authenticated") return { state: "authenticated" };
@@ -414,16 +433,20 @@ export function adaptTaskViewFacts(input: TaskViewAdapterInput): TaskViewAdapter
   }
 
   // --- 4. report -------------------------------------------------------
+  // A report-shaped record in the attempt's own directory means a report
+  // exists, even when the snapshot is later rejected as foreign. Reading that
+  // as "no report" would be a false negative, so the raw snapshot counts here;
+  // authentication below still needs a usable one.
   const hasReportText =
     nonBlank(task.report?.rawText) ||
-    Boolean(usableSnapshot && (nonBlank(usableSnapshot.text) || nonBlank(usableSnapshot.reportDigest)));
+    Boolean(snapshot && (nonBlank(snapshot.text) || nonBlank(snapshot.reportDigest)));
   let reportState: ReportState;
   let reportAttemptId: string | null = null;
   if (!hasReportText) {
     reportState = "absent";
     reportAttemptId = attemptId;
   } else {
-    const authentication = authenticateReport(task, usableSnapshot, attemptId);
+    const authentication = authenticateReport(task, attemptUsable ? attempt : null, usableSnapshot, attemptId);
     if (authentication.state === "authenticated") {
       // The queue verified the origin of this report and the digest still
       // matches the content on disk. Authentication is not acceptance.

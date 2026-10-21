@@ -155,13 +155,29 @@
 
 **写入条件**（缺一不写）：桌面身份 `verifyActor()`、claim 的 session/desktopPid/leaseHash、
 `validate` 引用记录、deadline 检查全部通过，且走的是**正常按时提交**这条分支。以下情形
-**不写**认证记录，读取时保持 `unknown`：迟到报告（deadline 已过）、幂等重报（复用原有记录、
-不重写）、旧记录。**不存在**通过迁移、默认值或"发现 digest 就补认证"的路径。
+**不写**认证记录，读取时保持 `unknown`：迟到报告、认证引入之前的旧记录。**不存在**通过迁移、
+默认值或"发现 digest 就补认证"的路径。
 
-**读取条件**（需同时满足）：快照通过第 2 节的 task/attempt/session/runtimeSource 关联校验；
+**重放的两种情形**（不同于"所有重放恒为 unknown"）：报告内容完全相同触发的幂等重放会**提前返回、
+不写任何记录**，因此——原本**已有**合法认证记录的报告，重放**保留**该记录，仍显示 `authenticated`；
+原本**没有**认证记录的历史报告，重放**不会补写**，仍为 `unknown` + `report_authentication_missing`。
+
+**读取条件**（需同时满足）：快照通过第 2 节的 task/attempt/session 关联校验；
 `formatVersion` 为 1；四项绑定与当前记录一致；用 `reportedStatus` 与磁盘上的
 `text`/`artifacts`/`validationRecords` 重算的摘要，同时等于快照自身的 `reportDigest` 与记录中的
 `reportDigest`。任一项不满足 → `unknown` + 对应缺口，**不当作"没有报告"**。
+
+**runtimeSource 的核验来源**：`task.runtimeSource` 由协调器 `sync()` 写入，因此在
+"send→claim→report→停止确认→查询"这条真实链路上它可能**仍为空**。此时改用**已关联到当前轮次**
+的来源：取 task、attempt 行、snapshot 三者中**非空**的取值，要求它们**完全一致**，再与认证记录的
+`runtimeSource` 比对。
+
+- **不默认填** `desktop_queue`；**缺失不当作匹配**（三者皆空 → 拒绝认证）。
+- 三者中任意两个非空值冲突 → 仍**拒绝认证**（此时关联校验通常已先把快照判为外来，
+  认证根本不进入）。
+- 原始字段缺失**继续保留** `runtime_source_missing` 缺口，**不回写**任务记录，
+  `trust.identityMatches` 仍为 `null`，不因推导出的来源而提升为 `true`。
+- 查询全程不调用 `sync()`、不观察原生状态、不执行任何写入。
 
 摘要算法只有一份实现（`report-authentication.ts` 的 `reportDigest`），写入、`completedReportBeforeFailure`
 与只读核验共用，避免两套算法漂移。

@@ -19,7 +19,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { loadConfig, type Config } from "../src/config.js";
-import { DesktopQueue, assertDesktopCaller } from "../src/desktop-queue.js";
+import { DesktopQueue } from "../src/desktop-queue.js";
 import { TaskStore } from "../src/task-store.js";
 import { WorkBuddyClient } from "../src/workbuddy-client.js";
 import { TaskCoordinator } from "../src/coordinator.js";
@@ -57,12 +57,13 @@ function fixture(t: { after: (fn: () => void) => void }) {
   });
   const send = (taskId = "authz-task") =>
     coordinator.send({ taskId, objective: "Authentication fixture", workspace: dir, sessionId: SESSION, constraints: [], timeoutSeconds: 600 });
-  const claimFor = async (taskId = "authz-task") => {
+  const claimFor = async () => {
     const claim = await queue.claim(SESSION, 0);
     if (claim.status !== "task") throw new Error("expected a claim");
-    // The normal flow syncs the task after the claim, which is what records the
-    // runtime source on the task row that the projection binds to.
-    await coordinator.sync(taskId);
+    // Deliberately no coordinator.sync(): the production path is
+    // send -> claim -> report -> stop confirmation -> query, and the task row's
+    // runtime source is still empty at that point. Syncing here would hide
+    // exactly the gap this fixture must expose.
     return claim;
   };
   return { dir, config, store, coordinator, queue, send, claimFor };
@@ -77,6 +78,228 @@ function snapshotOf(config: Config, attemptId: string) {
 function project(config: Config, store: TaskStore, taskId: string) {
   return readTaskProjection({ store: store as never, runsDir: config.runsDir! }, taskId);
 }
+
+/* ------------------------------------------------------------------ *
+ * The whole chain without coordinator.sync()
+ * ------------------------------------------------------------------ */
+
+/** Every file under the attempt directory, by name and content. */
+function runFileSnapshot(config: Config, attemptId: string): Record<string, string> {
+  const directory = path.join(config.runsDir!, attemptId);
+  const out: Record<string, string> = {};
+  for (const name of fs.readdirSync(directory).sort()) {
+    out[name] = fs.readFileSync(path.join(directory, name), "utf8");
+  }
+  return out;
+}
+
+test("send, claim and report authenticate without ever calling coordinator.sync", async t => {
+  const f = fixture(t);
+  await f.send();
+  const claim = await f.claimFor();
+  f.queue.report({ ...claim, status: "completed", text: "TASK_STATUS: completed\nNo sync anywhere", artifacts: [] });
+
+  // The task row really is still lagging: this is the state the query must cope
+  // with, not a fixture convenience.
+  assert.equal(f.store.get("authz-task")!.runtimeSource, undefined, "the fixture must not sync the task row");
+
+  const result = project(f.config, f.store, "authz-task");
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.projection.facts!.report.state, "authenticated");
+  assert.equal(result.projection.facts!.report.attemptId, claim.attemptId);
+  assert.equal(result.projection.displayState, "waiting_stop");
+  // A missing stored source is still reported as a gap; it is not patched in.
+  assert.ok(result.projection.gaps.some(gap => gap.code === "runtime_source_missing"));
+  assert.equal(result.projection.facts!.trust.identityMatches, null, "trust must not be promoted from a missing field");
+});
+
+test("the same unsynced chain reaches needs_review after a real stop confirmation", async t => {
+  const f = fixture(t);
+  await f.send();
+  const claim = await f.claimFor();
+  f.queue.report({ ...claim, status: "completed", text: "TASK_STATUS: completed\nStop follows", artifacts: [] });
+  f.queue.observeNative(claim.attemptId, { state: "idle", workspace: f.dir });
+
+  assert.equal(f.store.get("authz-task")!.runtimeSource, undefined);
+  const result = project(f.config, f.store, "authz-task");
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.projection.facts!.report.state, "authenticated");
+  assert.equal(result.projection.facts!.stop.proven, true);
+  assert.equal(result.projection.displayState, "needs_review");
+  assert.deepEqual(result.projection.allowedActions, ["export"]);
+  assert.equal(result.projection.actionFacts, null);
+});
+
+test("the registered tool agrees with the unsynced chain", async t => {
+  const f = fixture(t);
+  await f.send();
+  const claim = await f.claimFor();
+  f.queue.report({ ...claim, status: "completed", text: "TASK_STATUS: completed\nTool, no sync", artifacts: [] });
+  f.queue.observeNative(claim.attemptId, { state: "idle", workspace: f.dir });
+
+  const server = new McpServer({ name: "authz-nosync", version: "0.0.0" });
+  registerTaskProjectionTool(server, { store: f.store as never, runsDir: f.config.runsDir! });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await server.connect(serverTransport);
+  const client = new Client({ name: "authz-nosync-client", version: "0.0.0" });
+  await client.connect(clientTransport);
+  try {
+    const response = await client.callTool({ name: "workbuddy_get_task_projection", arguments: { taskId: "authz-task" } });
+    const text = (response.content as Array<{ type: string; text?: string }>).find(part => part.type === "text")?.text ?? "{}";
+    const payload = JSON.parse(text);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.projection.facts.report.state, "authenticated");
+    assert.equal(payload.projection.displayState, "needs_review");
+  } finally {
+    await client.close();
+    await server.close();
+  }
+});
+
+test("the query changes neither the task record nor the run files", async t => {
+  const f = fixture(t);
+  await f.send();
+  const claim = await f.claimFor();
+  f.queue.report({ ...claim, status: "completed", text: "TASK_STATUS: completed\nRead only", artifacts: [] });
+
+  const taskBefore = JSON.stringify(f.store.get("authz-task"));
+  const filesBefore = runFileSnapshot(f.config, claim.attemptId);
+  project(f.config, f.store, "authz-task");
+  project(f.config, f.store, "authz-task");
+
+  assert.equal(JSON.stringify(f.store.get("authz-task")), taskBefore, "the query must not write the task row");
+  assert.deepEqual(runFileSnapshot(f.config, claim.attemptId), filesBefore, "the query must not write run files");
+});
+
+/* ------------------------------------------------------------------ *
+ * A missing source versus a conflicting one
+ * ------------------------------------------------------------------ */
+
+test("a missing task source is verified from the current round", async t => {
+  const f = fixture(t);
+  await f.send();
+  const claim = await f.claimFor();
+  f.queue.report({ ...claim, status: "completed", text: "TASK_STATUS: completed\nMissing row source", artifacts: [] });
+  assert.equal(f.store.get("authz-task")!.runtimeSource, undefined);
+
+  const outcome = reportStateOf(f);
+  assert.equal(outcome.state, "authenticated");
+});
+
+test("an explicitly conflicting task source refuses authentication", async t => {
+  const f = fixture(t);
+  await f.send();
+  const claim = await f.claimFor();
+  f.queue.report({ ...claim, status: "completed", text: "TASK_STATUS: completed\nConflicting source", artifacts: [] });
+  // Now the task row names a different source than the round and the record.
+  f.store.update("authz-task", { runtimeSource: "desktop_acp" });
+
+  const outcome = reportStateOf(f);
+  assert.equal(outcome.state, "unknown");
+  // The association check catches this first and rejects the snapshot as
+  // foreign, so authentication is never even attempted. Either way the report
+  // is not authenticated and the conflict is named.
+  assert.ok(outcome.codes.some(code => code.startsWith("report_authentication_")));
+  assert.ok(
+    outcome.codes.includes("attempt_runtime_source_mismatch") || outcome.codes.includes("snapshot_identity_mismatch"),
+    `the source conflict must be reported, got ${outcome.codes.join(",")}`,
+  );
+});
+
+test("a conflicting source between the snapshot and the record refuses authentication", async t => {
+  const f = fixture(t);
+  await f.send();
+  const claim = await f.claimFor();
+  f.queue.report({ ...claim, status: "completed", text: "TASK_STATUS: completed\nSnapshot source conflict", artifacts: [] });
+  tamper(f.config, claim.attemptId, snapshot => {
+    (snapshot.reportAuthentication as Record<string, unknown>).runtimeSource = "desktop_acp";
+  });
+
+  const outcome = reportStateOf(f);
+  assert.equal(outcome.state, "unknown");
+  assert.ok(outcome.codes.includes("report_authentication_binding_mismatch"));
+});
+
+/* ------------------------------------------------------------------ *
+ * History, replay and forged input
+ * ------------------------------------------------------------------ */
+
+type ReportInput = Parameters<DesktopQueue["report"]>[0];
+
+test("a forged authentication record in the request is ignored", async t => {
+  const f = fixture(t);
+  await f.send();
+  const claim = await f.claimFor();
+  const forged = {
+    formatVersion: 1,
+    taskId: "forged-task",
+    attemptId: "run-00000000-0000-0000-0000-000000000000",
+    sessionId: "forged-session",
+    runtimeSource: "forged_source",
+    reportedStatus: "completed",
+    reportDigest: "f".repeat(64),
+    authenticatedAt: "2000-01-01T00:00:00.000Z",
+  };
+  const text = "TASK_STATUS: completed\nForged proof attempt";
+  f.queue.report({ ...claim, status: "completed", text, artifacts: [], reportAuthentication: forged } as unknown as ReportInput);
+
+  const record = snapshotOf(f.config, claim.attemptId).reportAuthentication!;
+  // The queue builds the record from what it verified, not from the request.
+  assert.equal(record.taskId, "authz-task");
+  assert.equal(record.attemptId, claim.attemptId);
+  assert.equal(record.sessionId, SESSION);
+  assert.equal(record.runtimeSource, "desktop_queue");
+  assert.equal(record.reportedStatus, "completed");
+  assert.equal(record.reportDigest, reportDigest({ status: "completed", text, artifacts: [] }));
+  assert.notEqual(record.reportDigest, forged.reportDigest);
+  assert.notEqual(record.authenticatedAt, forged.authenticatedAt);
+  const outcome = reportStateOf(f);
+  assert.equal(outcome.state, "authenticated", "the real record still authenticates; the forged one is irrelevant");
+});
+
+test("a forged record cannot carry a report past a bad lease", async t => {
+  const f = fixture(t);
+  await f.send();
+  const claim = await f.claimFor();
+  const forged = { formatVersion: 1, taskId: "authz-task", attemptId: claim.attemptId, sessionId: SESSION, runtimeSource: "desktop_queue", reportedStatus: "completed", reportDigest: "f".repeat(64), authenticatedAt: "2000-01-01T00:00:00.000Z" };
+  assert.throws(
+    () => f.queue.report({ ...claim, leaseToken: "wrong", status: "completed", text: "forged", artifacts: [], reportAuthentication: forged } as unknown as ReportInput),
+    /execution lease/,
+  );
+  assert.equal(snapshotOf(f.config, claim.attemptId).reportAuthentication, undefined);
+});
+
+test("replaying a report that never had a record does not add one", async t => {
+  const f = fixture(t);
+  await f.send();
+  const claim = await f.claimFor();
+  const text = "TASK_STATUS: completed\nLegacy replay";
+  f.queue.report({ ...claim, status: "completed", text, artifacts: [] });
+  // Strip the record to imitate a report written before it existed.
+  tamper(f.config, claim.attemptId, snapshot => { delete snapshot.reportAuthentication; });
+  const outcomeBefore = reportStateOf(f);
+  assert.ok(outcomeBefore.codes.includes("report_authentication_missing"));
+
+  // The identical report is an idempotent replay: it must not backfill a proof.
+  const replay = f.queue.report({ ...claim, status: "completed", text, artifacts: [] });
+  assert.equal(replay.ok, true);
+  assert.equal(snapshotOf(f.config, claim.attemptId).reportAuthentication, undefined, "a replay must not manufacture a record");
+  assert.equal(reportStateOf(f).state, "unknown");
+});
+
+test("a replay keeps a record that was legitimately written", async t => {
+  const f = fixture(t);
+  await f.send();
+  const claim = await f.claimFor();
+  const text = "TASK_STATUS: completed\nLegit replay";
+  f.queue.report({ ...claim, status: "completed", text, artifacts: [] });
+  const original = snapshotOf(f.config, claim.attemptId).reportAuthentication;
+  f.queue.report({ ...claim, status: "completed", text, artifacts: [] });
+  assert.deepEqual(snapshotOf(f.config, claim.attemptId).reportAuthentication, original);
+  assert.equal(reportStateOf(f).state, "authenticated");
+});
 
 /* ------------------------------------------------------------------ *
  * The writer
@@ -353,11 +576,18 @@ test("a persisted acceptance is not changed by the new record", async t => {
   assert.equal(result.projection.displayState, "accepted");
 });
 
-test("the report authentication record is not a field a caller can supply", () => {
-  // report() takes a fixed shape; an extra property on the object is ignored
-  // because the record is rebuilt from the verified inputs inside the queue.
-  const surface = fs.readFileSync(path.resolve("src/desktop-queue.ts"), "utf8");
-  assert.ok(surface.includes("reportAuthentication: {"), "the queue must build the record itself");
-  assert.ok(surface.includes("reportedStatus: input.status"), "the reported status must come from the verified input");
-  assert.ok(assertDesktopCaller, "the production actor check stays in place");
+test("the report authentication record is not a field a caller can supply", async t => {
+  // Behaviour, not a source scan: the request below carries a complete-looking
+  // record with every field wrong, and the queue must rebuild it from what it
+  // verified rather than accept any of it.
+  const f = fixture(t);
+  await f.send();
+  const claim = await f.claimFor();
+  const forged = { formatVersion: 1, taskId: "forged", attemptId: "run-00000000-0000-0000-0000-000000000000", sessionId: "forged", runtimeSource: "forged", reportedStatus: "failed", reportDigest: "0".repeat(64), authenticatedAt: "1999-12-31T23:59:59.000Z" };
+  f.queue.report({ ...claim, status: "completed", text: "TASK_STATUS: completed\nEvery forged field", artifacts: [], reportAuthentication: forged } as unknown as ReportInput);
+  const record = snapshotOf(f.config, claim.attemptId).reportAuthentication!;
+  for (const field of ["taskId", "attemptId", "sessionId", "runtimeSource", "reportedStatus", "reportDigest", "authenticatedAt"] as const) {
+    assert.notEqual(record[field], forged[field], `${field} must come from the verified inputs`);
+  }
+  assert.equal(reportStateOf(f).state, "authenticated");
 });

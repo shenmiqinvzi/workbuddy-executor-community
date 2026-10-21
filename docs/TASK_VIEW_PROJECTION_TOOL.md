@@ -101,10 +101,15 @@ workbuddy_get_task_projection({ taskId: string })
 - **不是完整 TaskView**：缺 `revision`、`reviewId`、约定版本、源码摘要与结构化必需检查，
   这些在 `gaps` 中逐项列出。
 - **报告认证仅限按时提交的报告**：只有 `DesktopQueue.report()` 在身份、租约、期限与验证记录
-  检查全部通过后写入认证记录的普通报告，才会显示 `authenticated`。**迟到报告、幂等重报复用
-  的旧记录、以及认证引入之前的旧记录**都没有认证记录，保持 `unknown` 并给出
-  `report_authentication_missing`。不接受迁移、默认值或"发现 digest 就补认证"。
+  检查全部通过后写入认证记录的普通报告，才会显示 `authenticated`。**迟到报告、认证引入之前的
+  旧记录**没有认证记录，保持 `unknown` 并给出 `report_authentication_missing`。不接受迁移、
+  默认值或"发现 digest 就补认证"。
+  幂等重放**不写**任何记录：原本已有合法认证的重放保留该认证，原本没有的仍为 `unknown`。
   认证不代表任务成功，也不代表已通过独立验收。
+- **不要求先调用 `coordinator.sync()`**：`task.runtimeSource` 由协调器写入，真实链路
+  "send→claim→report→停止确认→查询"中它可能仍为空。此时认证按已关联到当前轮次的
+  attempt 行与快照来源核验，要求二者与认证记录完全一致；缺失不当作匹配，冲突仍拒绝。
+  原始字段的缺失**继续作为缺口报告**，不补写任务记录。
 - **无实时状态**：未提供实时观测，`queued`/`running`/`waiting_input` 不会被断言为可信。
 - **写操作不开放**：只建议 `export`，没有 accept/review/rework。
 
