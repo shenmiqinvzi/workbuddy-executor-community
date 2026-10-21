@@ -357,6 +357,216 @@ test("the query does not create the runs directory when it is absent", () => {
 });
 
 /* ------------------------------------------------------------------ *
+ * Attempt identity is validated before any path is built
+ * ------------------------------------------------------------------ */
+
+test("a traversal attempt id is rejected without reading anything", () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "task-projection-traversal-"));
+  try {
+    const runsDir = path.join(base, "runs");
+    fs.mkdirSync(runsDir, { recursive: true });
+    // A readable record placed where a traversal would land, so a reader that
+    // built the path would succeed and prove the defect.
+    const outside = path.join(base, "outside");
+    fs.mkdirSync(outside, { recursive: true });
+    fs.writeFileSync(path.join(outside, "state.json"), JSON.stringify(snapshot()));
+
+    const result = readTaskProjection(
+      { store: storeOf(task({ attemptId: "../outside" }), []), runsDir },
+      TASK_ID,
+    );
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.code, "invalid_attempt_id");
+    assert.equal(result.field, "task.attemptId");
+    // Not treated as "this task has no current attempt".
+    assert.notEqual(result.code, "task_not_found");
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("a Windows style path attempt id is rejected", () => {
+  withRunsDir(runsDir => {
+    for (const attemptId of ["..\\outside", "run-33333333-3333-3333-3333-333333333333\\..\\x", "C:\\Windows\\system32"]) {
+      const result = readTaskProjection({ store: storeOf(task({ attemptId }), []), runsDir }, TASK_ID);
+      assert.equal(result.ok, false, `expected rejection for ${attemptId}`);
+      if (result.ok) continue;
+      assert.equal(result.code, "invalid_attempt_id");
+    }
+  });
+});
+
+test("a well formed attempt id still reads its run files", () => {
+  withRunsDir(runsDir => {
+    writeRun(runsDir, { state: snapshot() });
+    const result = readTaskProjection({ store: storeOf(task(), [attemptRow()]), runsDir }, TASK_ID);
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(result.projection.facts!.stop.proven, true);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Run file fields are validated at runtime
+ * ------------------------------------------------------------------ */
+
+test("a numeric stop instant is corrupt and never becomes a stop proof", () => {
+  withRunsDir(runsDir => {
+    writeRun(runsDir, {
+      state: { taskId: TASK_ID, attemptId: ATTEMPT_ID, driver: "desktop-queue", nativeStoppedAt: 123 },
+    });
+    const result = readTaskProjection({ store: storeOf(task(), [attemptRow()]), runsDir }, TASK_ID);
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.code, "state_corrupt");
+    assert.equal(result.field, "state.json.nativeStoppedAt");
+  });
+});
+
+test("a wrongly typed identity field in the snapshot is corrupt", () => {
+  withRunsDir(runsDir => {
+    writeRun(runsDir, { state: { taskId: 42, attemptId: ATTEMPT_ID } });
+    const result = readTaskProjection({ store: storeOf(task(), [attemptRow()]), runsDir }, TASK_ID);
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.code, "state_corrupt");
+    assert.equal(result.field, "state.json.taskId");
+  });
+});
+
+test("a wrongly typed runtime source in the snapshot is corrupt", () => {
+  withRunsDir(runsDir => {
+    writeRun(runsDir, { state: { ...snapshot(), runtimeSource: 5 } });
+    const result = readTaskProjection({ store: storeOf(task(), [attemptRow()]), runsDir }, TASK_ID);
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.code, "state_corrupt");
+    assert.equal(result.field, "state.json.runtimeSource");
+  });
+});
+
+test("a wrongly typed nested stop check is corrupt", () => {
+  withRunsDir(runsDir => {
+    writeRun(runsDir, {
+      state: {
+        ...snapshot(),
+        nativeFailure: { wakeId: "w", error: "e", observedAt: STOPPED_AT },
+        nativeStopCheck: { since: STOPPED_AT, checkedAt: STOPPED_AT, observations: "two" },
+      },
+    });
+    const result = readTaskProjection({ store: storeOf(task(), [attemptRow()]), runsDir }, TASK_ID);
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.code, "state_corrupt");
+    assert.equal(result.field, "state.json.nativeStopCheck.observations");
+  });
+});
+
+test("a wrongly typed cancellation field is corrupt", () => {
+  withRunsDir(runsDir => {
+    for (const cancel of [{ reason: 5 }, { requestedAt: { at: 1 } }]) {
+      writeRun(runsDir, { state: snapshot(), cancel });
+      const result = readTaskProjection({ store: storeOf(task(), [attemptRow()]), runsDir }, TASK_ID);
+      assert.equal(result.ok, false, `expected rejection for ${JSON.stringify(cancel)}`);
+      if (result.ok) continue;
+      assert.equal(result.code, "cancel_corrupt");
+    }
+  });
+});
+
+test("a legacy snapshot without optional fields is still accepted", () => {
+  withRunsDir(runsDir => {
+    // No session, no runtime source, no stop instant: only the fields the
+    // records actually carried.
+    writeRun(runsDir, {
+      state: { taskId: TASK_ID, attemptId: ATTEMPT_ID, driver: "desktop-queue", stopReason: "native_idle_verified" },
+    });
+    const result = readTaskProjection(
+      { store: storeOf(task({ sessionId: undefined, runtimeSource: undefined }), [attemptRow({ sessionId: undefined, runtimeSource: undefined })]), runsDir },
+      TASK_ID,
+    );
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(result.projection.facts!.stop.proven, true);
+    assert.equal(result.projection.facts!.stop.at, null);
+  });
+});
+
+test("unknown extra fields in a run file are ignored", () => {
+  withRunsDir(runsDir => {
+    writeRun(runsDir, {
+      state: { ...snapshot(), futureField: { nested: [1, 2, 3] }, another: "ok" },
+      cancel: { requestedAt: "2026-10-18T10:10:00.000Z", reason: "cancellation", futureField: 1 },
+    });
+    const result = readTaskProjection({ store: storeOf(task(), [attemptRow()]), runsDir }, TASK_ID);
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(result.projection.displayState, "cancelled");
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * Store failures are structured
+ * ------------------------------------------------------------------ */
+
+test("a failing task read is a store error, not a missing task", () => {
+  const store: TaskProjectionStore = {
+    get() {
+      throw new Error("database is locked at C:\\private\\tasks.sqlite");
+    },
+    listAttempts() {
+      return [];
+    },
+  };
+  const result = readTaskProjection({ store, runsDir: "unused" }, TASK_ID);
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.equal(result.code, "store_unavailable");
+  assert.equal(result.field, "store.get");
+  assert.ok(!result.message.includes("locked"));
+  assert.ok(!result.message.includes("private"));
+});
+
+test("a failing attempt list read is a store error", () => {
+  const store: TaskProjectionStore = {
+    get() {
+      return task();
+    },
+    listAttempts() {
+      throw new Error("disk I/O error");
+    },
+  };
+  const result = readTaskProjection({ store, runsDir: "unused" }, TASK_ID);
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.equal(result.code, "store_unavailable");
+  assert.equal(result.field, "store.listAttempts");
+});
+
+test("a failing final re-read is a store error", () => {
+  withRunsDir(runsDir => {
+    writeRun(runsDir, { state: snapshot() });
+    let reads = 0;
+    const store: TaskProjectionStore = {
+      get() {
+        reads += 1;
+        if (reads === 1) return task();
+        throw new Error("connection closed");
+      },
+      listAttempts() {
+        return [attemptRow()];
+      },
+    };
+    const result = readTaskProjection({ store, runsDir }, TASK_ID);
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.code, "store_unavailable");
+    assert.equal(result.field, "store.get");
+  });
+});
+
+/* ------------------------------------------------------------------ *
  * The registered MCP handler
  * ------------------------------------------------------------------ */
 
@@ -419,6 +629,37 @@ test("the registered tool reports an unknown task without throwing", async () =>
     assert.equal(payload.ok, false);
     assert.equal(payload.code, "task_not_found");
     assert.equal(payload.readOnly, true);
+  });
+});
+
+test("the registered tool returns a structured response when the store throws", async () => {
+  await withRunsDirAsync(async runsDir => {
+    const store: TaskProjectionStore = {
+      get() {
+        throw new Error("database is locked");
+      },
+      listAttempts() {
+        return [];
+      },
+    };
+    const { payload } = await callRegisteredTool({ store, runsDir }, TASK_ID);
+    // The exception must not escape as a protocol error.
+    assert.equal(payload.ok, false);
+    assert.equal(payload.code, "store_unavailable");
+    assert.equal(payload.readOnly, true);
+    assert.equal(payload.snapshotOnly, true);
+    assert.ok(!String(payload.message).includes("locked"));
+  });
+});
+
+test("the registered tool reports an invalid attempt id without reading", async () => {
+  await withRunsDirAsync(async runsDir => {
+    const { payload } = await callRegisteredTool(
+      { store: storeOf(task({ attemptId: "../outside" }), []), runsDir },
+      TASK_ID,
+    );
+    assert.equal(payload.ok, false);
+    assert.equal(payload.code, "invalid_attempt_id");
   });
 });
 

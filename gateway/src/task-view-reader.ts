@@ -63,7 +63,9 @@ export interface TaskProjectionSources {
 /** Stable failure codes. A code never changes meaning once published. */
 export type TaskProjectionFailureCode =
   | "task_not_found"
+  | "invalid_attempt_id"
   | "read_conflict"
+  | "store_unavailable"
   | "state_unreadable"
   | "state_corrupt"
   | "cancel_unreadable"
@@ -121,20 +123,123 @@ function failure(
   return { ok: false, readOnly: true, snapshotOnly: true, code, taskId, attemptId, field, message };
 }
 
+/**
+ * The attempt id shape RunJournal accepts.
+ *
+ * Mirrors the pattern in run-journal.ts. An id outside it is never turned into
+ * a path, so a traversal or a Windows-style path cannot be smuggled in through
+ * a stored record.
+ */
+const ATTEMPT_ID_PATTERN = /^run-[a-f0-9-]{36}$/;
+
+/**
+ * Resolve the run directory for an attempt, or null when the id is not usable.
+ *
+ * Two independent checks: the id must match the accepted shape, and the
+ * resolved directory must stay inside the configured runs directory.
+ */
+function attemptRunDirectory(runsDir: string, attemptId: string): string | null {
+  if (!ATTEMPT_ID_PATTERN.test(attemptId)) return null;
+  const base = path.resolve(runsDir);
+  const directory = path.resolve(base, attemptId);
+  if (!directory.startsWith(base + path.sep)) return null;
+  return directory;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+/** An optional field may be absent or null, but when present must be text. */
+function optionalText(value: unknown): boolean {
+  return value === undefined || value === null || typeof value === "string";
+}
+
+/**
+ * Validate the fields the adapter and the stop rule actually read.
+ *
+ * Only presence and type are checked: a legacy record may omit any optional
+ * field, and fields this module does not read are left alone. The point is that
+ * a wrong type can never reach Date.parse, where a number such as 0 would be
+ * coerced into an instant and could manufacture a stop proof.
+ */
+function snapshotShapeProblem(value: Record<string, unknown>): string | null {
+  if (typeof value.taskId !== "string" || !value.taskId.trim()) return "taskId";
+  if (typeof value.attemptId !== "string" || !value.attemptId.trim()) return "attemptId";
+
+  for (const field of [
+    "driver",
+    "sessionId",
+    "runtimeSource",
+    "nativeStoppedAt",
+    "nativeStopSource",
+    "stopReason",
+    "text",
+    "reportDigest",
+  ]) {
+    if (!optionalText(value[field])) return field;
+  }
+
+  const nativeFailure = value.nativeFailure;
+  if (nativeFailure !== undefined && nativeFailure !== null) {
+    if (!isRecord(nativeFailure)) return "nativeFailure";
+    if (typeof nativeFailure.observedAt !== "string") return "nativeFailure.observedAt";
+    if (!optionalText(nativeFailure.error)) return "nativeFailure.error";
+  }
+
+  const stopCheck = value.nativeStopCheck;
+  if (stopCheck !== undefined && stopCheck !== null) {
+    if (!isRecord(stopCheck)) return "nativeStopCheck";
+    if (typeof stopCheck.since !== "string") return "nativeStopCheck.since";
+    if (typeof stopCheck.checkedAt !== "string") return "nativeStopCheck.checkedAt";
+    if (typeof stopCheck.observations !== "number" || !Number.isFinite(stopCheck.observations)) {
+      return "nativeStopCheck.observations";
+    }
+    if (!optionalText(stopCheck.activityAt)) return "nativeStopCheck.activityAt";
+  }
+
+  const stopControl = value.stopControl;
+  if (stopControl !== undefined && stopControl !== null) {
+    if (!isRecord(stopControl)) return "stopControl";
+    for (const field of ["requestedAt", "issuedAt", "acknowledgedAt", "checkedAt", "error", "state"]) {
+      if (!optionalText(stopControl[field])) return `stopControl.${field}`;
+    }
+  }
+
+  return null;
+}
+
+/** The cancellation record only carries a timestamp and a reason. */
+function cancellationShapeProblem(value: Record<string, unknown>): string | null {
+  if (!optionalText(value.requestedAt)) return "requestedAt";
+  if (!optionalText(value.reason)) return "reason";
+  return null;
+}
+
 /** A run file that is either absent (undefined) or readable. */
 type RunFileRead<T> =
   | { ok: true; value: T | undefined }
-  | { ok: false; code: "state_unreadable" | "state_corrupt" | "cancel_unreadable" | "cancel_corrupt"; message: string };
+  | {
+      ok: false;
+      code: "state_unreadable" | "state_corrupt" | "cancel_unreadable" | "cancel_corrupt";
+      field: string;
+      message: string;
+    };
 
 /**
  * Read one run file.
  *
  * Only ENOENT means "this file is not there". Any other read error is reported
- * as unreadable, and invalid content as corrupt, so neither can be mistaken for
- * an attempt that simply has no record.
+ * as unreadable, invalid JSON or a wrong field type as corrupt, so none of them
+ * can be mistaken for an attempt that simply has no record.
  */
-function readRunFile<T>(file: string, kind: "state" | "cancel"): RunFileRead<T> {
+function readRunFile<T>(
+  file: string,
+  kind: "state" | "cancel",
+  shapeProblem: (value: Record<string, unknown>) => string | null,
+): RunFileRead<T> {
   const name = kind === "state" ? "state.json" : "cancel.json";
+  const corruptCode = kind === "state" ? "state_corrupt" : "cancel_corrupt";
   let text: string;
   try {
     text = fs.readFileSync(file, "utf8");
@@ -143,6 +248,7 @@ function readRunFile<T>(file: string, kind: "state" | "cancel"): RunFileRead<T> 
     return {
       ok: false,
       code: kind === "state" ? "state_unreadable" : "cancel_unreadable",
+      field: name,
       message: `${name} could not be read; this is not reported as a missing file.`,
     };
   }
@@ -151,15 +257,28 @@ function readRunFile<T>(file: string, kind: "state" | "cancel"): RunFileRead<T> 
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       return {
         ok: false,
-        code: kind === "state" ? "state_corrupt" : "cancel_corrupt",
+        code: corruptCode,
+        field: name,
         message: `${name} does not contain a JSON object.`,
+      };
+    }
+    // A type assertion alone would let a wrongly typed field reach the adapter
+    // and the stop rule, where a coerced value could look like evidence.
+    const problem = shapeProblem(parsed as Record<string, unknown>);
+    if (problem) {
+      return {
+        ok: false,
+        code: corruptCode,
+        field: `${name}.${problem}`,
+        message: `${name} field ${problem} has a type this record does not allow.`,
       };
     }
     return { ok: true, value: parsed as T };
   } catch {
     return {
       ok: false,
-      code: kind === "state" ? "state_corrupt" : "cancel_corrupt",
+      code: corruptCode,
+      field: name,
       message: `${name} is not valid JSON.`,
     };
   }
@@ -174,13 +293,39 @@ function readRunFile<T>(file: string, kind: "state" | "cancel"): RunFileRead<T> 
  * confirmed attempt id.
  */
 export function readTaskProjection(sources: TaskProjectionSources, taskId: string): TaskProjectionResult {
-  const task = sources.store.get(taskId);
+  let task: StoredTask | undefined;
+  try {
+    task = sources.store.get(taskId);
+  } catch {
+    // A failing store is not an absent task. The message carries no database
+    // content and no local path.
+    return failure("store_unavailable", taskId, null, "store.get", "Reading the task record failed; this is not reported as a missing task.");
+  }
   if (!task) {
     return failure("task_not_found", taskId, null, "taskId", "No stored task has this id.");
   }
 
-  const attemptId = nonBlank(task.attemptId) ? task.attemptId : null;
-  const attempts = sources.store.listAttempts(taskId);
+  const attemptId = nonBlank(task.attemptId) ? task.attemptId.trim() : null;
+
+  // A present but unusable attempt id is a malformed record, not a task with no
+  // current attempt. No path is built from it and no file is read.
+  const runDir = attemptId ? attemptRunDirectory(sources.runsDir, attemptId) : null;
+  if (attemptId && !runDir) {
+    return failure(
+      "invalid_attempt_id",
+      taskId,
+      null,
+      "task.attemptId",
+      "The stored attempt id does not have the accepted shape or would resolve outside the runs directory; no record was read.",
+    );
+  }
+
+  let attempts: StoredAttempt[];
+  try {
+    attempts = sources.store.listAttempts(taskId);
+  } catch {
+    return failure("store_unavailable", taskId, attemptId, "store.listAttempts", "Reading the attempt records failed; this is not reported as a missing attempt.");
+  }
   const attempt = attemptId ? attempts.find(row => row.attemptId === attemptId) ?? null : null;
   const identity: TaskProjectionIdentity = {
     taskId: task.taskId,
@@ -191,27 +336,30 @@ export function readTaskProjection(sources: TaskProjectionSources, taskId: strin
 
   // Without a current attempt there is no round to read files for. The adapter
   // records the gap, and no directory is touched.
-  if (!attemptId) {
+  if (!attemptId || !runDir) {
     const projection = adaptTaskViewFacts({ task, attempt: null, snapshot: null, cancellation: null });
     return { ok: true, readOnly: true, snapshotOnly: true, task: identity, projection };
   }
 
-  const runDir = path.join(sources.runsDir, attemptId);
+  const state = readRunFile<RunSnapshot>(path.join(runDir, "state.json"), "state", snapshotShapeProblem);
+  if (!state.ok) return failure(state.code, taskId, attemptId, state.field, state.message);
 
-  const state = readRunFile<RunSnapshot>(path.join(runDir, "state.json"), "state");
-  if (!state.ok) return failure(state.code, taskId, attemptId, "state.json", state.message);
-
-  const cancel = readRunFile<AdapterCancellationRecord>(path.join(runDir, "cancel.json"), "cancel");
-  if (!cancel.ok) return failure(cancel.code, taskId, attemptId, "cancel.json", cancel.message);
+  const cancel = readRunFile<AdapterCancellationRecord>(path.join(runDir, "cancel.json"), "cancel", cancellationShapeProblem);
+  if (!cancel.ok) return failure(cancel.code, taskId, attemptId, cancel.field, cancel.message);
 
   // The files were read one after another, so the current attempt is checked
   // again before the facts are assembled. A change means the records may come
   // from two different rounds, and joining them would describe neither.
-  const after = sources.store.get(taskId);
+  let after: StoredTask | undefined;
+  try {
+    after = sources.store.get(taskId);
+  } catch {
+    return failure("store_unavailable", taskId, attemptId, "store.get", "Re-reading the task record failed; the result was not assembled.");
+  }
   if (!after) {
     return failure("read_conflict", taskId, attemptId, "taskId", "The task disappeared while its records were being read.");
   }
-  const attemptAfter = nonBlank(after.attemptId) ? after.attemptId : null;
+  const attemptAfter = nonBlank(after.attemptId) ? after.attemptId.trim() : null;
   if (attemptAfter !== attemptId) {
     return failure(
       "read_conflict",
