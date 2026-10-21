@@ -100,8 +100,12 @@ workbuddy_get_task_projection({ taskId: string })
   未变化也不构成强一致保证，只是"同一轮次内读到的两个文件"。
 - **不是完整 TaskView**：缺 `revision`、`reviewId`、约定版本、源码摘要与结构化必需检查，
   这些在 `gaps` 中逐项列出。
-- **报告认证未知**：有报告只记为 `unknown`，因此 `needs_review` 本轮不可达。
+- **报告认证仅限按时提交的报告**：只有 `DesktopQueue.report()` 在身份、租约、期限与验证记录
+  检查全部通过后写入认证记录的普通报告，才会显示 `authenticated`。**迟到报告、幂等重报复用
+  的旧记录、以及认证引入之前的旧记录**都没有认证记录，保持 `unknown` 并给出
+  `report_authentication_missing`。不接受迁移、默认值或"发现 digest 就补认证"。
+  认证不代表任务成功，也不代表已通过独立验收。
 - **无实时状态**：未提供实时观测，`queued`/`running`/`waiting_input` 不会被断言为可信。
-- **写操作不开放**：只建议 `export`。
+- **写操作不开放**：只建议 `export`，没有 accept/review/rework。
 
 字段级来源与成立条件见 [TASK_VIEW_FACT_MAPPING.md](TASK_VIEW_FACT_MAPPING.md)。

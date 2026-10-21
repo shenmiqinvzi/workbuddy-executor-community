@@ -40,6 +40,7 @@ import {
   type TaskDisplayFacts,
   type TerminalDecisionCause,
 } from "./task-view-state.js";
+import { snapshotReportDigest, verifyReportAuthentication } from "./report-authentication.js";
 
 /**
  * The cancellation record written next to an attempt.
@@ -107,6 +108,10 @@ export type AdapterGapCode =
   | "stop_proof_absent"
   | "stop_time_unavailable"
   | "report_authentication_unverified"
+  | "report_authentication_missing"
+  | "report_authentication_unsupported"
+  | "report_authentication_binding_mismatch"
+  | "report_authentication_digest_mismatch"
   | "terminal_decision_undetermined"
   | "terminal_cause_conflict"
   | "cancellation_reason_missing"
@@ -194,6 +199,60 @@ function withoutFacts(gaps: AdapterGap[], displayState: TaskViewDisplayState | n
     allowedActions: [...READ_ONLY_ACTIONS],
     gaps: [...gaps, ...actionCapabilityGaps()],
   };
+}
+
+/**
+ * Decide whether a stored report may be treated as authenticated.
+ *
+ * Three things must hold together: the snapshot belongs to this task and
+ * attempt (the caller has already established that), the authentication record
+ * is one this build understands and is bound to the same task, attempt, session
+ * and runtime source, and the digest recomputed from the content on disk still
+ * matches. A missing record, an unknown format version, a binding conflict or
+ * altered content all leave the report unknown with the reason named; none of
+ * them is reported as "no report".
+ *
+ * Authentication says the queue verified the origin of this report. It says
+ * nothing about the work being accepted, and nothing about the native turn
+ * having stopped.
+ */
+function authenticateReport(
+  task: StoredTask,
+  snapshot: RunSnapshot | null,
+  attemptId: string,
+): { state: "authenticated" } | { state: "unknown"; code: AdapterGapCode; reason: string } {
+  if (!snapshot) {
+    return { state: "unknown", code: "report_authentication_unverified", reason: "A report exists but no usable run snapshot is bound to this attempt, so its authentication cannot be checked." };
+  }
+  const record = snapshot.reportAuthentication;
+  if (!record) {
+    return { state: "unknown", code: "report_authentication_missing", reason: "This report has no authentication record; reports written before the record existed stay unknown." };
+  }
+  if (!nonBlank(task.sessionId) || !nonBlank(task.runtimeSource)) {
+    return { state: "unknown", code: "report_authentication_binding_mismatch", reason: "The task does not record the session and runtime source the authentication must bind to." };
+  }
+  const recomputed = snapshotReportDigest(snapshot);
+  if (!recomputed || recomputed !== snapshot.reportDigest) {
+    return { state: "unknown", code: "report_authentication_digest_mismatch", reason: "The report content no longer matches the digest stored with it." };
+  }
+  const outcome = verifyReportAuthentication(record, {
+    taskId: task.taskId,
+    attemptId,
+    sessionId: task.sessionId,
+    runtimeSource: task.runtimeSource,
+    snapshotDigest: recomputed,
+  });
+  if (outcome.state === "authenticated") return { state: "authenticated" };
+  switch (outcome.problem) {
+    case "missing":
+      return { state: "unknown", code: "report_authentication_missing", reason: "This report has no authentication record." };
+    case "unsupported_format":
+      return { state: "unknown", code: "report_authentication_unsupported", reason: "The authentication record uses a format this build does not verify." };
+    case "digest_mismatch":
+      return { state: "unknown", code: "report_authentication_digest_mismatch", reason: "The authentication record does not match the report content on disk." };
+    default:
+      return { state: "unknown", code: "report_authentication_binding_mismatch", reason: "The authentication record is bound to another task, attempt, session or runtime source." };
+  }
 }
 
 /**
@@ -364,11 +423,16 @@ export function adaptTaskViewFacts(input: TaskViewAdapterInput): TaskViewAdapter
     reportState = "absent";
     reportAttemptId = attemptId;
   } else {
-    // A report exists, but authenticating it needs the reported status, the
-    // lease and the actor check that report() and mutateClaim() performed at
-    // submission time. None of that is reproducible here.
-    reportState = "unknown";
-    gaps.push(gap("report_authentication_unverified", "report.state", "A report exists but its authentication is not established; it is not treated as authenticated."));
+    const authentication = authenticateReport(task, usableSnapshot, attemptId);
+    if (authentication.state === "authenticated") {
+      // The queue verified the origin of this report and the digest still
+      // matches the content on disk. Authentication is not acceptance.
+      reportState = "authenticated";
+      reportAttemptId = attemptId;
+    } else {
+      reportState = "unknown";
+      gaps.push(gap(authentication.code, "report.state", authentication.reason));
+    }
   }
 
   // --- 5. terminal decision -------------------------------------------

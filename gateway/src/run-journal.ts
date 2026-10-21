@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import type { Config } from "./config.js";
 import type { LocalMessage } from "./workbuddy-client.js";
 import type { NativeRateLimit } from "./native-turn-failure.js";
+import type { ReportAuthentication } from "./report-authentication.js";
 
 export type RunStatus = "queued" | "working" | "needs_review" | "blocked" | "failed" | "cancelled";
 export interface RunRequest {
@@ -38,6 +39,12 @@ export interface RunSnapshot {
   waitingInput?: boolean;
   artifacts?: string[];
   reportDigest?: string;
+  /**
+   * Written only by DesktopQueue.report(), in the same save as the report and
+   * only after its identity, lease, deadline and validation checks passed.
+   * Absent on older records and on late or replayed reports.
+   */
+  reportAuthentication?: ReportAuthentication;
   validationRecords?: Array<{ path: string; sha256: string }>;
   nativeIdleSince?: string;
   nativeStoppedAt?: string;

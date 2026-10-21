@@ -231,7 +231,9 @@ test("a bare nativeStoppedAt without a recorded source is not stop evidence", ()
  * Report authentication
  * ------------------------------------------------------------------ */
 
-test("a report is recorded as received but not promoted to authenticated", () => {
+test("a report without an authentication record stays unknown, not authenticated", () => {
+  // The text and digest are present, but no record proves the origin of this
+  // report was verified. Presence alone must never authenticate it.
   const result = adaptTaskViewFacts({
     task: task({ state: "needs_review", report: { status: "completed", filesChanged: [], commandsRun: [], rawText: "done" } }),
     attempt: attemptRow({ state: "needs_review" }),
@@ -239,7 +241,7 @@ test("a report is recorded as received but not promoted to authenticated", () =>
   });
   assert.equal(result.facts!.report.state, "unknown");
   assert.equal(result.facts!.report.attemptId, null);
-  assert.ok(hasGap(result, "report_authentication_unverified"));
+  assert.ok(hasGap(result, "report_authentication_missing"));
 });
 
 test("no report at all is recorded as absent", () => {

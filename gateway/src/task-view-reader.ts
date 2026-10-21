@@ -39,6 +39,7 @@ import {
   type TaskViewAdapterResult,
 } from "./task-view-adapter.js";
 import { runtimeVersion } from "./runtime-version.js";
+import { REPORT_AUTHENTICATION_FORMAT } from "./report-authentication.js";
 
 /**
  * The store surface the reader needs.
@@ -217,6 +218,31 @@ function snapshotShapeProblem(value: Record<string, unknown>): string | null {
     if (!isRecord(stopControl)) return "stopControl";
     for (const field of ["requestedAt", "issuedAt", "acknowledgedAt", "checkedAt", "error", "state"]) {
       if (!optionalText(stopControl[field])) return `stopControl.${field}`;
+    }
+  }
+
+  // The report authentication record is checked at runtime for the same reason
+  // as the fields above: a wrongly typed value must not reach the verifier.
+  // Only the format this build writes is checked field by field, so a future
+  // version is reported as unsupported instead of corrupt.
+  const authentication = value.reportAuthentication;
+  if (authentication !== undefined && authentication !== null) {
+    if (!isRecord(authentication)) return "reportAuthentication";
+    if (typeof authentication.formatVersion !== "number" || !Number.isInteger(authentication.formatVersion)) {
+      return "reportAuthentication.formatVersion";
+    }
+    if (authentication.formatVersion === REPORT_AUTHENTICATION_FORMAT) {
+      for (const field of [
+        "taskId",
+        "attemptId",
+        "sessionId",
+        "runtimeSource",
+        "reportedStatus",
+        "reportDigest",
+        "authenticatedAt",
+      ]) {
+        if (typeof authentication[field] !== "string") return `reportAuthentication.${field}`;
+      }
     }
   }
 

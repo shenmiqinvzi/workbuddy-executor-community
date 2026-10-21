@@ -83,7 +83,7 @@
 | `stop.proven` | `hasNativeStopEvidence(snapshot)`（复用现有纯判定） | 快照可用 | 无快照 → `null`；快照不可用 → `null`；有快照但无证据 → `false` |
 | `stop.at` | `snapshot.nativeStoppedAt` | 可被 `Date.parse` 解析 | 否则 `null`；**停止已确认但无可靠时间仍为已确认**（+`stop_time_unavailable`） |
 | `stop.attemptId` | 当前 `attemptId` | 仅在快照可用时写入 | 否则 `null`，使停止证据无法被本 attempt 使用 |
-| `report.state` | `task.report?.rawText` / **可用**快照的 `text` / `reportDigest` | 存在即"有报告" | 无报告 → `"absent"`；有报告 → **`"unknown"`** + `report_authentication_unverified`（见第 4 节） |
+| `report.state` | `task.report?.rawText` / **可用**快照的 `text` / `reportDigest` | 存在即"有报告" | 无报告 → `"absent"`；有报告但认证未成立 → **`"unknown"`** + 具体缺口（见第 4 节）；认证成立 → `"authenticated"` |
 | `report.attemptId` | 当前 `attemptId` | 仅在认证成立时写入 | 未认证 → `null` |
 | `nativeWaitingForInput` | `liveObservation.phase === "waiting_input"` | 仅实时观测 | 否则 `null`。**不用** `snapshot.waitingInput`（持久标志不是实时观测） |
 | `nativePhase` | `liveObservation.phase`；`waiting_input`→`idle`（等待人工不是在执行），`offline`→`unknown` | 仅实时观测 | 否则 `"unknown"` + `live_observation_absent` |
@@ -137,14 +137,36 @@
 
 ### 报告认证的边界（对应任务规则 4）
 
-`DesktopQueue.report()` 计算
-`reportDigest = sha256(JSON.stringify([status, text, artifacts]))`，并在 `validationRecords` **非空**时
-把该数组追加为第四个元素，因此摘要覆盖的字段取决于提交时是否带了验证记录。
-身份与租约由 `mutateClaim()`/`verifyActor()` 核验，`verifyValidationEvidence()` 另核验引用记录。
-这些都无法从 `StoredTask` 离线复现：报告提交时的 `status` 未单独保存，租约、actor 校验与
-`validationRecords` 是否参与摘要都不留痕。
-因此本轮**不把** `state=needs_review`、`rawText` 非空或 `reportDigest` 存在提升为"已认证"，
-只记为"有报告、认证未知"。`needs_review` 显示状态本轮因此不可达，属预期缺口。
+`DesktopQueue.report()` 在现有检查全部通过后，与报告**同一次** `journal.save` 写入一条认证记录。
+摘要覆盖原始提交 `status`、`text`、`artifacts`，以及**非空时**的 `validationRecords`。
+
+**记录字段**（`snapshot.reportAuthentication`，格式版本 1）：
+
+| 字段 | 含义 |
+|---|---|
+| `formatVersion` | 恒为 `1`；其他版本读取时按"不支持"处理，不按损坏处理 |
+| `taskId` / `attemptId` / `sessionId` / `runtimeSource` | 提交时经核验的绑定，用于读取时逐项比对 |
+| `reportedStatus` | **原始提交**的 status（映射前），重算摘要所必需 |
+| `reportDigest` | 提交时的 `reportDigest` |
+| `authenticatedAt` | 队列接受该报告的实际时间 |
+
+**不保存** `leaseToken`、凭据或原生私有历史。记录由程序内部构造，`report()` 的入参形状不含该字段，
+调用方无法填写。
+
+**写入条件**（缺一不写）：桌面身份 `verifyActor()`、claim 的 session/desktopPid/leaseHash、
+`validate` 引用记录、deadline 检查全部通过，且走的是**正常按时提交**这条分支。以下情形
+**不写**认证记录，读取时保持 `unknown`：迟到报告（deadline 已过）、幂等重报（复用原有记录、
+不重写）、旧记录。**不存在**通过迁移、默认值或"发现 digest 就补认证"的路径。
+
+**读取条件**（需同时满足）：快照通过第 2 节的 task/attempt/session/runtimeSource 关联校验；
+`formatVersion` 为 1；四项绑定与当前记录一致；用 `reportedStatus` 与磁盘上的
+`text`/`artifacts`/`validationRecords` 重算的摘要，同时等于快照自身的 `reportDigest` 与记录中的
+`reportDigest`。任一项不满足 → `unknown` + 对应缺口，**不当作"没有报告"**。
+
+摘要算法只有一份实现（`report-authentication.ts` 的 `reportDigest`），写入、`completedReportBeforeFailure`
+与只读核验共用，避免两套算法漂移。
+
+认证只说明"队列核验过这份报告的来源"，**不代表任务成功或已通过独立验收**。
 
 ## 4. TaskActionFacts 映射（本轮恒为 null）
 
@@ -182,7 +204,11 @@
 | `runtime_source_missing` | 一侧或两侧缺 runtimeSource；缺失不当作匹配 |
 | `stop_proof_absent` | 有快照但无原生停止证据 |
 | `stop_time_unavailable` | 停止证据成立但无可信停止时刻 |
-| `report_authentication_unverified` | 有报告，但认证未建立 |
+| `report_authentication_unverified` | 有报告，但本 attempt 没有可用快照，认证无法核验 |
+| `report_authentication_missing` | 有报告但没有认证记录（旧记录、迟到报告或重报均属此类） |
+| `report_authentication_unsupported` | 认证记录格式版本不是本构建支持的那一个 |
+| `report_authentication_binding_mismatch` | 认证记录绑定的 task/attempt/session/runtimeSource 与当前记录不一致 |
+| `report_authentication_digest_mismatch` | 报告内容或原始 status 与认证记录/快照的 digest 不一致 |
 | `terminal_decision_undetermined` | 无法判定是否已有终态决定 |
 | `terminal_cause_conflict` | 有决定，但 cancelled/failed 并存且无原因记录可排序 |
 | `cancellation_reason_missing` | 取消记录存在但缺 reason；仍算已决定，原因不默认 |
@@ -194,9 +220,10 @@
 ## 6. 能表达与不能表达
 
 可表达（有结构化来源时）：`accepted`、`cancelled`、`failed`、`expired`、`waiting_stop`、
-`unknown`；`queued`/`running`/`waiting_input` 仅在调用方提供实时观测时可表达。
+`needs_review`（报告认证成立且停止已确认时）、`unknown`；`queued`/`running`/`waiting_input`
+仅在调用方提供实时观测时可表达。
 
-不可表达：`needs_review`（缺报告认证）。本轮不为此编造数据。
+仍不可表达：任何写操作。`actionFacts` 恒为 `null`，`allowedActions` 恒为 `["export"]`。
 
 ## 7. 测试覆盖矩阵
 

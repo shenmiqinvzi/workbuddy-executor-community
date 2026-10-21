@@ -700,6 +700,21 @@
       "bytes": 908
     },
     {
+      "path": "dist/report-authentication.d.ts",
+      "sha256": "49baaa17de175076b4ec3c03e4b66ae4fc5023fde9ace3fcf8d8c0c1c168011a",
+      "bytes": 4161
+    },
+    {
+      "path": "dist/report-authentication.js",
+      "sha256": "180f5a66bd91fff7d6e788ffdfe9f3d94ced0edee378bfa79e98e4f90ebf5210",
+      "bytes": 3825
+    },
+    {
+      "path": "dist/report-authentication.js.map",
+      "sha256": "107c5101a33ab1d719ecc59dcea25ee199ad3f73d815fb3b53067779e9edcf7f",
+      "bytes": 2156
+    },
+    {
       "path": "dist/run-journal.d.ts",
       "sha256": "abf867ea8cfda403655f1430511077a4534f61a3a2f4e440e4b1347f55455dff",
       "bytes": 3986
@@ -1360,6 +1375,11 @@
       "bytes": 610
     },
     {
+      "path": "src/report-authentication.ts",
+      "sha256": "9fa193be090df6ab12c1b5ab197faf076f98ceaed4e764d6e6225f50f5e96b58",
+      "bytes": 5793
+    },
+    {
       "path": "src/run-journal.ts",
       "sha256": "4454228d9c3766ad251c6a8f1c2c84e489db19a3db4986c6bb626626207d8723",
       "bytes": 13420
@@ -1553,6 +1573,11 @@
       "path": "test/reliability-v2.test.ts",
       "sha256": "eee96c184f75e3ccf3fe30197d96cedfed82b01794d84aeeaa51448bf68c3b95",
       "bytes": 14272
+    },
+    {
+      "path": "test/report-authentication.test.ts",
+      "sha256": "041d56e0a76680c98e419a95d012ec20ea7f8b3cb6c0c63ae76fb92cb89147fb",
+      "bytes": 17983
     },
     {
       "path": "test/run-journal.test.ts",
