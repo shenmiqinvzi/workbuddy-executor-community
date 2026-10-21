@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "capturedAt": "2026-10-19T11:52:33.941Z",
+  "capturedAt": "2026-10-21T01:34:28.859Z",
   "upstream": "https://github.com/dudu555-djiao/codex-workbuddy-gateway",
   "upstreamCommit": "fbaaa2ef6d6cb59f48b953a1f27058202a81553f",
   "snapshot": "2026-10-19-community-native-stop-safety",
@@ -751,13 +751,13 @@
     },
     {
       "path": "dist/server.js",
-      "sha256": "0725e7134cc8885a056f640d08c4cb8dbb309982cc63116e87d045333cdb64ed",
-      "bytes": 15570
+      "sha256": "b785c72e8ee63dc529ef76b77b81f561b0a2f0ac49fcef9bb33978d3743b368e",
+      "bytes": 15948
     },
     {
       "path": "dist/server.js.map",
-      "sha256": "a8ca6cfb408ba4b6497852ca4fb8d1cd1ffd788472cb81296297b947409e98fd",
-      "bytes": 14179
+      "sha256": "2159af75ffb41f2e7349e50cd9465e92d5a8c7b5d771cb78863fa7a250cb8143",
+      "bytes": 14394
     },
     {
       "path": "dist/service-cli.d.ts",
@@ -803,6 +803,81 @@
       "path": "dist/task-store.js.map",
       "sha256": "9bb11af69c0ba3fdc310436a3c713c1f3209484b78e2c6f1bf14e7f2bc4de1b6",
       "bytes": 12466
+    },
+    {
+      "path": "dist/task-view-actions.d.ts",
+      "sha256": "9883e022ee3a15e1a25fb34f645c2e6e4ce2170821250efbedf0e24afec95149",
+      "bytes": 7070
+    },
+    {
+      "path": "dist/task-view-actions.js",
+      "sha256": "2fbb057f4349aba2d80478f64433a10d0da8b3d08e5cd0fb300bc4ace531651e",
+      "bytes": 15095
+    },
+    {
+      "path": "dist/task-view-actions.js.map",
+      "sha256": "ce2081cf7b6a1c1ddbb5889e0a2808fceba1c1f3b182218da5ad4da51d001392",
+      "bytes": 6994
+    },
+    {
+      "path": "dist/task-view-adapter.d.ts",
+      "sha256": "4f8d5e37034030e958297b36a0e194835b66d866ddc2c14cacb0610d7828cce1",
+      "bytes": 6715
+    },
+    {
+      "path": "dist/task-view-adapter.js",
+      "sha256": "9449878e8d81e6d822b9618ee07eaaeeae029a0201fb5cc800dd938ee5777b43",
+      "bytes": 20440
+    },
+    {
+      "path": "dist/task-view-adapter.js.map",
+      "sha256": "2489b4e4ffbec94e80f424eda7cfade701b55b63113c8952d6871ce327376b2e",
+      "bytes": 11992
+    },
+    {
+      "path": "dist/task-view-reader.d.ts",
+      "sha256": "0053f54c4a3897f360ddf91d521cfa6b5935f7cf1592afe91b82833e64ce1aea",
+      "bytes": 4515
+    },
+    {
+      "path": "dist/task-view-reader.js",
+      "sha256": "844cd1432c67f4760e0f9be0a9262f034cabd904b95f148722c40ffada9a3728",
+      "bytes": 13046
+    },
+    {
+      "path": "dist/task-view-reader.js.map",
+      "sha256": "b7f63fe5aa583121ea557d8059a3d6160b69dc934d581718f7b21a0d8d80906d",
+      "bytes": 8331
+    },
+    {
+      "path": "dist/task-view-state.d.ts",
+      "sha256": "1b5abb2aeee776bcb2683d8c989a54adf4be8bee39a1725d44303c4aac4dd952",
+      "bytes": 7661
+    },
+    {
+      "path": "dist/task-view-state.js",
+      "sha256": "8fe6060a0c5121dfde8dd4485d1818fc3658b0b7e07471bab1fa5f5122334d25",
+      "bytes": 7673
+    },
+    {
+      "path": "dist/task-view-state.js.map",
+      "sha256": "c7173d6195038e9d5202f461b5dd949aead8d553d25c0696c39167381c40ee29",
+      "bytes": 2462
+    },
+    {
+      "path": "dist/task-view.d.ts",
+      "sha256": "dcd8f5f51146c4968bf2133d3ca3a0708bf8dabf9a7cfc281513f619f9c918af",
+      "bytes": 11166
+    },
+    {
+      "path": "dist/task-view.js",
+      "sha256": "4a044c619aa7a6dc1b0f67cfdc4ad60f8892643e9afff27af5bca124024221c0",
+      "bytes": 2588
+    },
+    {
+      "path": "dist/task-view.js.map",
+      "sha256": "e39aa4ab9ec12a05a2fc07544bd40eb13f01769bf2da9e7a40cfcaf5316aada1",
+      "bytes": 958
     },
     {
       "path": "dist/token-store.d.ts",
@@ -981,8 +1056,8 @@
     },
     {
       "path": "package.json",
-      "sha256": "db0b4c482092edf6454b3a62520b81299a23f9cc5e426c3239124bcd4f7262ba",
-      "bytes": 1297
+      "sha256": "150034f2a5c4efa27c4bbe1855ba66c160d6dfc61b2bd3d069d31a293fb78cd9",
+      "bytes": 1359
     },
     {
       "path": "scripts/agent-hub-call.mjs",
@@ -1008,6 +1083,11 @@
       "path": "scripts/doctor.mjs",
       "sha256": "06523768e22bc8faef89e4bdf210bad9eff9d2e2e371a1ea507aa62f9ff4f5b0",
       "bytes": 405
+    },
+    {
+      "path": "scripts/generate-snapshot-manifest.mjs",
+      "sha256": "5b5c09e6df4db7f08274f2e7eab2b2822e617acc20a498a43730f0128fcd5826",
+      "bytes": 3257
     },
     {
       "path": "scripts/install-deepseek-plugin.mjs",
@@ -1296,8 +1376,8 @@
     },
     {
       "path": "src/server.ts",
-      "sha256": "0909faaec7826c2cc8fa70ecb8a9db8ea0bf86295dfe27ea81976812762c0bf8",
-      "bytes": 15610
+      "sha256": "80af964dc90e56af266a1daa235405fcbfce32c4b84df44c2d6718e10fcc9e90",
+      "bytes": 15996
     },
     {
       "path": "src/service-cli.ts",
@@ -1313,6 +1393,31 @@
       "path": "src/task-store.ts",
       "sha256": "59dcf87631857fa090645aee1f36ef9ab1ed887176d749642a6aafe36bfb57e2",
       "bytes": 18072
+    },
+    {
+      "path": "src/task-view-actions.ts",
+      "sha256": "626996302294d69d1b5b374287d9f229e1d308c8b67c8b8ec4415e87634b2817",
+      "bytes": 18890
+    },
+    {
+      "path": "src/task-view-adapter.ts",
+      "sha256": "b506854406ff582b04d9668a0d08d587d6e3ea38dd01b0a3c8af9e59085ae8c9",
+      "bytes": 24656
+    },
+    {
+      "path": "src/task-view-reader.ts",
+      "sha256": "ec2c35b6505a4282ce235ade9041214f9e54dc6cd0aa36f8f6b3cfb725a3f19f",
+      "bytes": 15713
+    },
+    {
+      "path": "src/task-view-state.ts",
+      "sha256": "862d6fd1a33ce366162a8856b60776f46344e47c2e5400c29bb454023cb8da5a",
+      "bytes": 11790
+    },
+    {
+      "path": "src/task-view.ts",
+      "sha256": "349ec19506abe9c82bde180ad84da871d3977a11f840c1088d39b53dcdd78b56",
+      "bytes": 11758
     },
     {
       "path": "src/token-store.ts",
@@ -1388,6 +1493,11 @@
       "path": "test/desktop-queue.test.ts",
       "sha256": "b3a160cb023b9f7bad3fa2c891880f17c6c8e142fd9162f5b92c333d0f60ffe1",
       "bytes": 16984
+    },
+    {
+      "path": "test/fixtures/task-view-samples.ts",
+      "sha256": "143d97c964a0ee2c82097aa391c5bddf4c79cb9f805b93d9ed0b3f5d78af536b",
+      "bytes": 40727
     },
     {
       "path": "test/inspect-task.test.ts",
@@ -1470,6 +1580,31 @@
       "bytes": 12149
     },
     {
+      "path": "test/task-view-actions.test.ts",
+      "sha256": "fcc0a9a760ce7d5ef831d4bcde3f699a0d559a8e88878013b015136c5f482731",
+      "bytes": 41575
+    },
+    {
+      "path": "test/task-view-adapter.test.ts",
+      "sha256": "34186f7fa3476568048e333c55f24c4dc7cd5a1a1b7ef79b807dc8f64adfbf21",
+      "bytes": 31523
+    },
+    {
+      "path": "test/task-view-reader.test.ts",
+      "sha256": "2f252360fee266b37842ff7e1ec7b9b4483ef8085825fe89fbc0761cbbe69e38",
+      "bytes": 27384
+    },
+    {
+      "path": "test/task-view-state.test.ts",
+      "sha256": "28f695da7d9a860c6bd900be6df0f8e81811ce64dc3932db1957ca02e7355540",
+      "bytes": 20332
+    },
+    {
+      "path": "test/task-view.test.ts",
+      "sha256": "6cbbf187ee053ef31f86c91fb46f297d7af722cbac28d2ce8b3c1c0195be44af",
+      "bytes": 34876
+    },
+    {
       "path": "test/workbuddy-client.test.ts",
       "sha256": "727b108197772e0db2019259c987c9eef245637879395da201fe36ed439e4c5a",
       "bytes": 2628
@@ -1483,6 +1618,11 @@
       "path": "tsconfig.json",
       "sha256": "3e833503705b9dc203bea4f4dfd74da6cf1b19ccc70790bc40e9ae3105092414",
       "bytes": 398
+    },
+    {
+      "path": "tsconfig.task-view.json",
+      "sha256": "248c3f4ee82d8d538d675f31be4cab0465d5b87d01a49a27c8e8f36908184a04",
+      "bytes": 691
     },
     {
       "path": "verify-snapshot.mjs",

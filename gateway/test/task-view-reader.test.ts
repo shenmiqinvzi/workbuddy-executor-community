@@ -463,6 +463,53 @@ test("a wrongly typed nested stop check is corrupt", () => {
   });
 });
 
+test("a numeric activity timestamp in the stop check is accepted", () => {
+  withRunsDir(runsDir => {
+    // run-journal.ts declares activityAt?: number and desktop-queue.ts writes a
+    // number, so a numeric record is legitimate.
+    writeRun(runsDir, {
+      state: {
+        ...snapshot(),
+        nativeFailure: { wakeId: "w", error: "e", observedAt: STOPPED_AT },
+        nativeStopCheck: { since: STOPPED_AT, checkedAt: STOPPED_AT, observations: 2, activityAt: 1792400000000 },
+      },
+    });
+    const result = readTaskProjection({ store: storeOf(task(), [attemptRow()]), runsDir }, TASK_ID);
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.ok(!result.projection.gaps.some(gap => gap.field === "nativeStopCheck.activityAt"));
+  });
+});
+
+test("a wrongly typed activity timestamp is corrupt", () => {
+  withRunsDir(runsDir => {
+    writeRun(runsDir, {
+      state: {
+        ...snapshot(),
+        nativeStopCheck: { since: STOPPED_AT, checkedAt: STOPPED_AT, observations: 2, activityAt: "1792400000000" },
+      },
+    });
+    const result = readTaskProjection({ store: storeOf(task(), [attemptRow()]), runsDir }, TASK_ID);
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.code, "state_corrupt");
+    assert.equal(result.field, "state.json.nativeStopCheck.activityAt");
+  });
+});
+
+test("a stop check without activityAt is still accepted", () => {
+  withRunsDir(runsDir => {
+    writeRun(runsDir, {
+      state: {
+        ...snapshot(),
+        nativeStopCheck: { since: STOPPED_AT, checkedAt: STOPPED_AT, observations: 2 },
+      },
+    });
+    const result = readTaskProjection({ store: storeOf(task(), [attemptRow()]), runsDir }, TASK_ID);
+    assert.equal(result.ok, true);
+  });
+});
+
 test("a wrongly typed cancellation field is corrupt", () => {
   withRunsDir(runsDir => {
     for (const cancel of [{ reason: 5 }, { requestedAt: { at: 1 } }]) {

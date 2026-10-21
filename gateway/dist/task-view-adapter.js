@@ -1,0 +1,375 @@
+/**
+ * Read-only projection of existing task records into TaskView facts.
+ *
+ * This module turns records that already exist into the facts that
+ * deriveTaskDisplayState consumes, and reports the facts it could not
+ * establish. The mapping rules, the reason each source is or is not used, and
+ * the priority between competing terminal records are fixed in
+ * docs/TASK_VIEW_FACT_MAPPING.md.
+ *
+ * What this is not:
+ *   - It is not a complete TaskView. Existing storage has no vNext reviewId,
+ *     no structured required-check list, no agreement version, no current
+ *     source summary and no persisted revision, so the projection cannot
+ *     claim to be an executable vNext service.
+ *   - It is not a verifier. It compares and maps the values it is given; it
+ *     does not authenticate a report, verify a lease, hash a source or prove
+ *     that a native session is the one this task owns.
+ *   - It is not a live observer. A stored snapshot's updatedAt is the time the
+ *     record was saved, not evidence that the native side is active now.
+ *
+ * Order of work: the records are associated first, and only then are their
+ * facts read. A record that belongs to another task or to another attempt
+ * contributes no acceptance, terminal, stop or report fact, no matter what it
+ * says.
+ *
+ * Purity: it reads no clock, file, database, network or process environment,
+ * mutates nothing, and instantiates no store, journal or native adapter. It
+ * reuses the existing pure predicate hasNativeStopEvidence for the stop rule.
+ */
+import { hasNativeStopEvidence } from "./run-journal.js";
+import { deriveTaskDisplayState, } from "./task-view-state.js";
+/** The only action this round offers. Write actions stay closed. */
+const READ_ONLY_ACTIONS = ["export"];
+function gap(code, field, reason) {
+    return { code, field, reason };
+}
+function nonBlank(value) {
+    return typeof value === "string" && value.trim().length > 0;
+}
+function parseable(value) {
+    return typeof value === "string" && Number.isFinite(Date.parse(value));
+}
+/**
+ * The gaps that explain why TaskActionFacts cannot be constructed.
+ *
+ * Existing storage lacks every binding input the action derivation needs, so
+ * the action facts stay null rather than being filled with blanks, default
+ * true values or an empty required-check list that would read as "nothing was
+ * required".
+ */
+function actionCapabilityGaps() {
+    return [
+        gap("review_id_unavailable", "review.reviewId", "Storage keeps reviewNote and reviewedAt, not an immutable vNext reviewId; neither is used as one."),
+        gap("agreement_version_unavailable", "agreementVersion", "submissionHash is the normalized initial submission, not a vNext agreement version."),
+        gap("source_summary_unavailable", "currentSourceSummary", "No source summary is recorded for an attempt and this round does not scan sources."),
+        gap("required_checks_unavailable", "requiredCheckIds", "No structured required-check list is recorded; an empty list is not assumed to mean nothing is required."),
+        gap("model_verification_unavailable", "rework.modelVerified", "A model id or a free catalogue label is not a completed model verification."),
+        gap("action_facts_not_constructible", "actionFacts", "TaskActionFacts stays null because the review, agreement and source bindings above are unavailable."),
+    ];
+}
+/** The result when no current attempt identity can be established. */
+function withoutFacts(gaps, displayState = null) {
+    return {
+        facts: null,
+        displayState,
+        actionFacts: null,
+        allowedActions: [...READ_ONLY_ACTIONS],
+        gaps: [...gaps, ...actionCapabilityGaps()],
+    };
+}
+/**
+ * Project existing records into display facts.
+ *
+ * The returned gaps are ordered: identity, association, stop, report,
+ * terminal decision, acceptance, live observation, then the action capability
+ * gaps. The same input always produces the same result, and the input is not
+ * modified.
+ */
+export function adaptTaskViewFacts(input) {
+    const gaps = [];
+    const { task } = input;
+    const attempt = input.attempt ?? null;
+    const snapshot = input.snapshot ?? null;
+    const cancellation = input.cancellation ?? null;
+    const live = input.liveObservation ?? null;
+    // --- 1. the current attempt comes from the task alone ----------------
+    // A historical attempt row must never be promoted to "the current attempt":
+    // doing so would invent an identity for a task that has none.
+    const attemptId = nonBlank(task.attemptId) ? task.attemptId : null;
+    if (!attemptId) {
+        gaps.push(gap("attempt_missing", "attemptId", "The stored task has no durable attempt id, so no identity is invented and no historical row is promoted."));
+        // The task's own acceptance decision does not depend on a current
+        // attempt, so it is kept even though no facts can be attached to it.
+        if (task.state === "accepted")
+            return withoutFacts(gaps, "accepted");
+        return withoutFacts(gaps);
+    }
+    // --- 2. associate every record before reading any fact ---------------
+    let attemptConflict = false;
+    let snapshotConflict = false;
+    let incomplete = false;
+    const conflict = (code, field, reason, onAttempt) => {
+        if (onAttempt)
+            attemptConflict = true;
+        else
+            snapshotConflict = true;
+        gaps.push(gap(code, field, reason));
+    };
+    const missing = (code, field, reason) => {
+        incomplete = true;
+        gaps.push(gap(code, field, reason));
+    };
+    if (!attempt) {
+        gaps.push(gap("attempt_record_missing", "attemptId", "The attempt id is recorded but the attempt row was not supplied."));
+    }
+    else {
+        if (attempt.attemptId !== attemptId) {
+            conflict("attempt_identity_mismatch", "attempt.attemptId", "The attempt row names another attempt.", true);
+        }
+        if (attempt.taskId !== task.taskId) {
+            conflict("attempt_task_mismatch", "attempt.taskId", "The attempt row belongs to another task.", true);
+        }
+        if (nonBlank(task.sessionId) && nonBlank(attempt.sessionId)) {
+            if (attempt.sessionId !== task.sessionId) {
+                conflict("attempt_session_mismatch", "attempt.sessionId", "The attempt row names another session.", true);
+            }
+        }
+        else if (nonBlank(task.sessionId) !== nonBlank(attempt.sessionId)) {
+            missing("session_missing", "attempt.sessionId", "One side records a session and the other does not; a missing session is not a match.");
+        }
+        if (nonBlank(task.runtimeSource) && nonBlank(attempt.runtimeSource)) {
+            if (attempt.runtimeSource !== task.runtimeSource) {
+                conflict("attempt_runtime_source_mismatch", "attempt.runtimeSource", "The attempt row names another runtime source.", true);
+            }
+        }
+        else if (nonBlank(task.runtimeSource) !== nonBlank(attempt.runtimeSource)) {
+            missing("runtime_source_missing", "attempt.runtimeSource", "One side records a runtime source and the other does not; a missing source is not a match.");
+        }
+    }
+    if (snapshot) {
+        if (snapshot.taskId !== task.taskId) {
+            conflict("snapshot_identity_mismatch", "snapshot.taskId", "The snapshot belongs to another task.", false);
+        }
+        if (snapshot.attemptId !== attemptId) {
+            conflict("snapshot_identity_mismatch", "snapshot.attemptId", "The snapshot belongs to another attempt.", false);
+        }
+        if (nonBlank(task.sessionId) && nonBlank(snapshot.sessionId)) {
+            if (snapshot.sessionId !== task.sessionId) {
+                conflict("snapshot_identity_mismatch", "snapshot.sessionId", "The snapshot names another session.", false);
+            }
+        }
+        else if (nonBlank(task.sessionId) !== nonBlank(snapshot.sessionId)) {
+            missing("session_missing", "snapshot.sessionId", "One side records a session and the other does not; a missing session is not a match.");
+        }
+        if (nonBlank(task.runtimeSource) && nonBlank(snapshot.runtimeSource)) {
+            if (snapshot.runtimeSource !== task.runtimeSource) {
+                conflict("snapshot_identity_mismatch", "snapshot.runtimeSource", "The snapshot was produced by another runtime source.", false);
+            }
+        }
+        else if (nonBlank(task.runtimeSource) !== nonBlank(snapshot.runtimeSource)) {
+            missing("runtime_source_missing", "snapshot.runtimeSource", "One side records a runtime source and the other does not; a missing source is not a match.");
+        }
+    }
+    else {
+        gaps.push(gap("snapshot_missing", "stop.proven", "No run snapshot was supplied, so the stop status is unknown."));
+    }
+    // Two records that both belong to this task and this attempt must also agree
+    // with each other. Comparing only against the task would let a field the task
+    // happens to be missing hide a direct conflict between the attempt row and
+    // the snapshot.
+    //
+    // An attempt already judged foreign is not used here: it must not be allowed
+    // to invalidate an otherwise matching snapshot.
+    if (attempt && snapshot) {
+        const attemptCoreOk = attempt.attemptId === attemptId && attempt.taskId === task.taskId;
+        const snapshotCoreOk = snapshot.taskId === task.taskId && snapshot.attemptId === attemptId;
+        if (attemptCoreOk && snapshotCoreOk && !attemptConflict && !snapshotConflict) {
+            if (nonBlank(attempt.sessionId) && nonBlank(snapshot.sessionId)) {
+                if (attempt.sessionId !== snapshot.sessionId) {
+                    conflict("attempt_snapshot_mismatch", "snapshot.sessionId", "The attempt row and the snapshot name different sessions.", false);
+                }
+            }
+            else if (nonBlank(attempt.sessionId) !== nonBlank(snapshot.sessionId)) {
+                missing("session_missing", "snapshot.sessionId", "The attempt row and the snapshot disagree about whether a session exists.");
+            }
+            if (nonBlank(attempt.runtimeSource) && nonBlank(snapshot.runtimeSource)) {
+                if (attempt.runtimeSource !== snapshot.runtimeSource) {
+                    conflict("attempt_snapshot_mismatch", "snapshot.runtimeSource", "The attempt row and the snapshot name different runtime sources.", false);
+                }
+            }
+            else if (nonBlank(attempt.runtimeSource) !== nonBlank(snapshot.runtimeSource)) {
+                missing("runtime_source_missing", "snapshot.runtimeSource", "The attempt row and the snapshot disagree about whether a runtime source exists.");
+            }
+        }
+    }
+    // A record is usable only when it describes this task and this attempt.
+    const attemptUsable = attempt !== null && !attemptConflict;
+    const snapshotUsable = snapshot !== null && !snapshotConflict;
+    const attemptState = attemptUsable ? attempt.state : null;
+    const usableSnapshot = snapshotUsable ? snapshot : null;
+    // A never-dispatched attempt has no native session by design, so the absence
+    // of a session must not be read as an incomplete identity there.
+    const neverDispatched = usableSnapshot?.nativeStopSource === "not_dispatched";
+    if (!nonBlank(task.sessionId) && !neverDispatched) {
+        // A session that no record carries is not a match: it is a missing fact.
+        incomplete = true;
+        gaps.push(gap("session_missing", "trust.identityMatches", "No session id is recorded, so the identity cannot be established as matching."));
+    }
+    if (!nonBlank(task.runtimeSource)) {
+        incomplete = true;
+        gaps.push(gap("runtime_source_missing", "trust.identityMatches", "No runtime source is recorded, so the source cannot be established as matching."));
+    }
+    // --- 3. stop proof ---------------------------------------------------
+    let stopProven = null;
+    let stopAt = null;
+    let stopAttemptId = null;
+    if (usableSnapshot) {
+        stopProven = hasNativeStopEvidence(usableSnapshot);
+        stopAttemptId = attemptId;
+        stopAt = parseable(usableSnapshot.nativeStoppedAt) ? usableSnapshot.nativeStoppedAt : null;
+        if (stopProven && !stopAt) {
+            gaps.push(gap("stop_time_unavailable", "stop.at", "The stop evidence holds but carries no reliable stop instant; the proof still confirms the stop."));
+        }
+        if (!stopProven) {
+            gaps.push(gap("stop_proof_absent", "stop.proven", "The snapshot carries no native stop evidence for this attempt."));
+        }
+    }
+    else if (snapshot) {
+        gaps.push(gap("snapshot_identity_mismatch", "stop.proven", "The snapshot does not belong to this task and attempt, so its stop evidence is not used."));
+    }
+    // --- 4. report -------------------------------------------------------
+    const hasReportText = nonBlank(task.report?.rawText) ||
+        Boolean(usableSnapshot && (nonBlank(usableSnapshot.text) || nonBlank(usableSnapshot.reportDigest)));
+    let reportState;
+    let reportAttemptId = null;
+    if (!hasReportText) {
+        reportState = "absent";
+        reportAttemptId = attemptId;
+    }
+    else {
+        // A report exists, but authenticating it needs the reported status, the
+        // lease and the actor check that report() and mutateClaim() performed at
+        // submission time. None of that is reproducible here.
+        reportState = "unknown";
+        gaps.push(gap("report_authentication_unverified", "report.state", "A report exists but its authentication is not established; it is not treated as authenticated."));
+    }
+    // --- 5. terminal decision -------------------------------------------
+    // The cancellation record is authoritative for the cause because it is the
+    // only record that carries one, and RunJournal.cancel() writes it with flag
+    // "wx" so a later cancellation request cannot replace the first reason.
+    // That immutability orders cancellation reasons among themselves; it does
+    // not establish a global order against every other terminal state, so a
+    // coarse state is never used to rename an explicit reason, and a missing
+    // reason is never defaulted.
+    const cancellationRecorded = cancellation !== null && cancellation !== undefined;
+    const cancelReason = cancellationRecorded && nonBlank(cancellation.reason) ? cancellation.reason : null;
+    const cancelled = task.state === "cancelled" || attemptState === "cancelled";
+    const failed = task.state === "failed" || attemptState === "failed";
+    let decided = null;
+    let cause = null;
+    if (cancelReason === "deadline") {
+        decided = true;
+        cause = "deadline";
+    }
+    else if (cancelReason !== null) {
+        // "operator" is RunJournal.cancel()'s default reason; the record was
+        // written by the cancel entry point, so it is a structured decision.
+        decided = true;
+        cause = "cancellation";
+    }
+    else if (cancellationRecorded) {
+        // A cancellation request exists but carries no reason. The request is a
+        // decision, so the task is not simply running; the cause, however, is not
+        // established and must not be defaulted to operator or deadline.
+        decided = true;
+        gaps.push(gap("cancellation_reason_missing", "terminalDecision.cause", "A cancellation record exists but carries no reason; the cause is not defaulted."));
+    }
+    else if (cancelled && failed) {
+        decided = true;
+        gaps.push(gap("terminal_cause_conflict", "terminalDecision.cause", "The task and attempt records name different terminal outcomes and no reason record orders them."));
+    }
+    else if (cancelled) {
+        decided = true;
+        cause = "cancellation";
+    }
+    else if (failed) {
+        decided = true;
+        cause = "failure";
+    }
+    else if (task.state === "accepted" || attemptState === "accepted") {
+        decided = false;
+    }
+    else if (task.state === "needs_review" || task.state === "completed" || task.state === "queued" || task.state === "working") {
+        decided = false;
+    }
+    else {
+        // A plain blocked state does not say why it blocked: it can come from a
+        // deadline, a native failure or a waiting input. Guessing the cause from
+        // the state or from an error string is not allowed.
+        gaps.push(gap("terminal_decision_undetermined", "terminalDecision.decided", "The stored state does not establish whether a terminal decision exists."));
+    }
+    const deadlineReached = cancelReason === "deadline" ? true : (live?.deadlineReached ?? null);
+    // --- 6. acceptance ---------------------------------------------------
+    // Only the task's own record can establish acceptance for this task. An
+    // accepted state on an attempt row counts only when that row is this
+    // attempt, so a foreign attempt can never accept the current task.
+    const acceptedByTask = task.state === "accepted";
+    const acceptedByAttempt = attemptState === "accepted";
+    const acceptanceDecision = acceptedByTask || acceptedByAttempt ? "accepted" : "not_accepted";
+    let acceptanceConflict = false;
+    if (acceptanceDecision === "accepted") {
+        if (acceptedByTask && attempt !== null && !attemptUsable) {
+            acceptanceConflict = true;
+            gaps.push(gap("acceptance_conflict", "acceptance.conflict", "The task is accepted but the supplied attempt row is not this attempt; the decision is kept and the foreign row is ignored."));
+        }
+        else if (acceptedByTask && attemptUsable && !acceptedByAttempt) {
+            acceptanceConflict = true;
+            gaps.push(gap("acceptance_conflict", "acceptance.conflict", "The task is accepted but its current attempt row is not; the decision is kept and the conflict is reported."));
+        }
+        if (snapshotConflict) {
+            acceptanceConflict = true;
+            gaps.push(gap("acceptance_conflict", "acceptance.conflict", "The acceptance decision is kept although the surrounding evidence does not belong to this attempt."));
+        }
+    }
+    // --- 7. live observation ---------------------------------------------
+    let nativePhase = "unknown";
+    let nativeWaitingForInput = null;
+    let observationCurrent = null;
+    let connected = null;
+    if (live) {
+        // NativePhase describes whether the attempt is queued, working, or not
+        // working. A native side waiting for a human is not working, so it maps to
+        // "idle"; the waiting fact itself is carried by nativeWaitingForInput.
+        nativePhase =
+            live.phase === "offline" ? "unknown" : live.phase === "waiting_input" ? "idle" : live.phase;
+        nativeWaitingForInput = live.phase === "waiting_input";
+        observationCurrent = live.observationCurrent;
+        connected = live.connected;
+    }
+    else {
+        gaps.push(gap("live_observation_absent", "nativePhase", "No live observation was supplied; a stored snapshot's updatedAt is a save time and does not prove the native side is active."));
+    }
+    // --- 8. trust --------------------------------------------------------
+    // Record agreement and live verification are different facts. When a live
+    // observation exists its verdict is used as-is: a live null or false is
+    // never promoted to true because the stored fields look complete.
+    const recordIdentityComplete = !attemptConflict && !snapshotConflict && !incomplete;
+    let identityMatches;
+    if (attemptConflict || snapshotConflict)
+        identityMatches = false;
+    else if (live)
+        identityMatches = live.identityMatches;
+    else if (recordIdentityComplete)
+        identityMatches = true;
+    else
+        identityMatches = null;
+    const facts = {
+        attemptId,
+        acceptance: { decision: acceptanceDecision, conflict: acceptanceConflict },
+        terminalDecision: { decided, cause, deadlineReached },
+        stop: { attemptId: stopAttemptId, proven: stopProven, at: stopAt },
+        nativeWaitingForInput,
+        report: { attemptId: reportAttemptId, state: reportState },
+        nativePhase,
+        trust: { identityMatches, observationCurrent, connected },
+    };
+    return {
+        facts,
+        displayState: deriveTaskDisplayState(facts),
+        actionFacts: null,
+        allowedActions: [...READ_ONLY_ACTIONS],
+        gaps: [...gaps, ...actionCapabilityGaps()],
+    };
+}
+//# sourceMappingURL=task-view-adapter.js.map

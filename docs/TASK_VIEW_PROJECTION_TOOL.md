@@ -71,8 +71,9 @@ workbuddy_get_task_projection({ taskId: string })
 `JSON.parse` 之后按字段类型校验，而不是只做类型断言。校验范围是**适配与停止判定实际读取的字段**：
 `taskId`、`attemptId`（必填字符串）、`driver`/`sessionId`/`runtimeSource`/`nativeStoppedAt`/
 `nativeStopSource`/`stopReason`/`text`/`reportDigest`（可选字符串）、`nativeFailure.observedAt`、
-`nativeStopCheck.since|checkedAt|observations`、`stopControl.*`，以及 `cancel.json` 的
-`requestedAt`/`reason`。
+`nativeStopCheck.since|checkedAt|observations`、**`nativeStopCheck.activityAt`（可选数字**，
+与 `run-journal.ts` 的 `activityAt?: number` 及 `desktop-queue.ts` 实际写入的数字一致）、
+`stopControl.*`，以及 `cancel.json` 的 `requestedAt`/`reason`。
 
 - 类型不符 → `state_corrupt` / `cancel_corrupt`，`field` 形如 `state.json.nativeStoppedAt`。
 - 这防止 `Date.parse` 把数字（如 `0`）隐式转成字符串并**伪造停止证明**。

@@ -156,6 +156,20 @@ function optionalText(value: unknown): boolean {
 }
 
 /**
+ * An optional numeric field, matching the production types.
+ *
+ * `nativeStopCheck.activityAt` is `number | undefined` in run-journal.ts and
+ * desktop-queue.ts writes a number there, so a number is the only accepted
+ * value. Absent or null is treated as "no value": JSON drops undefined and
+ * turns a non-finite number into null, and this field takes no part in the
+ * stop rule, so neither case is worth rejecting.
+ */
+function optionalNumber(value: unknown): boolean {
+  if (value === undefined || value === null) return true;
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+/**
  * Validate the fields the adapter and the stop rule actually read.
  *
  * Only presence and type are checked: a legacy record may omit any optional
@@ -195,7 +209,7 @@ function snapshotShapeProblem(value: Record<string, unknown>): string | null {
     if (typeof stopCheck.observations !== "number" || !Number.isFinite(stopCheck.observations)) {
       return "nativeStopCheck.observations";
     }
-    if (!optionalText(stopCheck.activityAt)) return "nativeStopCheck.activityAt";
+    if (!optionalNumber(stopCheck.activityAt)) return "nativeStopCheck.activityAt";
   }
 
   const stopControl = value.stopControl;
