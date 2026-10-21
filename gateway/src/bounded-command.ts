@@ -7,6 +7,28 @@ import { writePrivateJson } from "./run-journal.js";
 import { windowsPowerShellPath } from "./native-process.js";
 
 export interface CommandSpec {executable:string;args:string[];cwd:string;timeoutSeconds:number;inputs?:string[]}
+
+/**
+ * Why the Windows job supervisor did not produce a result.
+ *
+ * The supervisor starts PowerShell, compiles its C# helper with Add-Type and
+ * only then begins supervising, so its total time is startup + the command's
+ * own bound + cleanup. When the parent watchdog fires, the run reports 125 and
+ * the supervisor's own verdict is lost; without this evidence it is impossible
+ * to tell a slow startup from a genuinely stuck helper.
+ */
+export interface CommandFailureEvidence {
+  /** True when the parent watchdog killed the supervisor because it never returned. */
+  watchdogFired: boolean;
+  /** The supervisor exit code, or null when it never exited. */
+  helperExitCode: number | null;
+  /** Wall time from spawning the supervisor to the failure. */
+  elapsedMs: number;
+  /** Bytes the supervisor wrote to stdout. */
+  stdoutBytes: number;
+  /** The bounded tail of the supervisor stderr. */
+  stderrTail: string;
+}
 function fingerprints(spec:CommandSpec) {
   return Object.fromEntries((spec.inputs ?? []).map(file=>{
     const absolute=path.resolve(spec.cwd,file);
@@ -23,19 +45,30 @@ export async function runBounded(spec:CommandSpec, directory:string, options:{ca
   const id=crypto.randomUUID(),base=path.join(directory,id),stdout=base+".stdout.log",stderr=base+".stderr.log",record=base+".json";
   const timeoutMs=Math.max(1,Math.min(spec.timeoutSeconds*1000,remaining)),startedAt=new Date().toISOString(),before=fingerprints(spec);
   writePrivateJson(record,{...spec,startedAt,before,state:"running",stdout,stderr});
-  let outcome: {exitCode:number;reason:string;cleanupConfirmed:boolean;pid?:number;ownership?:string};
+  let outcome: {exitCode:number;reason:string;cleanupConfirmed:boolean;pid?:number;ownership?:string;failure?:CommandFailureEvidence};
   if(process.platform==="win32") {
     const specFile=base+".spec.json";
     writePrivateJson(specFile,{...spec,stdout,stderr,timeoutMs:Math.ceil(timeoutMs),cancelFile:options.cancelFile});
-    outcome=await new Promise<typeof outcome>((resolve,reject)=>{
+    outcome=await new Promise<typeof outcome>((resolve)=>{
       const helper=fileURLToPath(new URL("../scripts/bounded-job.ps1",import.meta.url));
       const child=spawn(windowsPowerShellPath(),["-NoProfile","-NonInteractive","-File",helper,"-SpecFile",specFile],{windowsHide:true,stdio:["ignore","pipe","pipe"]});
       writePrivateJson(record,{...spec,startedAt,before,state:"running",stdout,stderr,supervisorPid:child.pid,supervisorSpec:specFile,ownership:"windows_job_object"});
-      let out="",err="";child.stdout.on("data",b=>out+=String(b));child.stderr.on("data",b=>err+=String(b));
-      const watchdog=setTimeout(()=>child.kill(),timeoutMs+20000);
-      child.once("error",e=>{clearTimeout(watchdog);reject(e);});
-      child.once("exit",code=>{clearTimeout(watchdog);try{if(code!==0)throw Error(err.slice(-2000)||"Job supervisor failed");resolve(JSON.parse(out.trim()));}catch(e){reject(e);}});
-    }).catch(error=>({exitCode:125,reason:String(error),cleanupConfirmed:false}));
+      let out="",err="",watchdogFired=false,helperExitCode:number|null=null;
+      const spawnedAt=Date.now();
+      const evidence=():CommandFailureEvidence=>({watchdogFired,helperExitCode,elapsedMs:Date.now()-spawnedAt,stdoutBytes:out.length,stderrTail:err.slice(-600)});
+      const fail=(reason:string)=>resolve({exitCode:125,reason,cleanupConfirmed:false,failure:evidence()});
+      child.stdout.on("data",b=>out+=String(b));child.stderr.on("data",b=>err+=String(b));
+      // The supervisor enforces the command's own timeout; this watchdog only
+      // catches a supervisor that never returns. Its margin has to cover the
+      // supervisor's startup, which is why a firing watchdog is recorded.
+      const watchdog=setTimeout(()=>{watchdogFired=true;child.kill();},timeoutMs+20000);
+      child.once("error",e=>{clearTimeout(watchdog);fail(`Job supervisor could not be started: ${String(e)}`);});
+      child.once("exit",code=>{
+        clearTimeout(watchdog);helperExitCode=code;
+        if(code!==0)return fail(`Job supervisor exited ${code}: ${err.slice(-2000)||"no stderr"}`);
+        try{resolve(JSON.parse(out.trim()));}catch{fail(`Job supervisor did not return a JSON result: ${err.slice(-2000)||"no stderr"}`);}
+      });
+    });
   } else {
     const out=fs.openSync(stdout,"w"),err=fs.openSync(stderr,"w");
     outcome=await new Promise((resolve)=>{

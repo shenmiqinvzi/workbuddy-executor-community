@@ -26,6 +26,11 @@ test("real nested Job cancellation leaves no descendants and orphan record is re
  const runner=path.resolve("dist/bounded-command.js").replaceAll("\\","/");
  const script=path.join(dir,"nested.mjs");
  fs.writeFileSync(script,`import {runBounded} from 'file:///${runner}';await runBounded({executable:process.execPath,args:['-e','setInterval(()=>{},1000)'],cwd:process.cwd(),timeoutSeconds:30},${JSON.stringify(path.join(dir,"inner"))});`);
- const outer=await runBounded({executable:process.execPath,args:[script],cwd:dir,timeoutSeconds:4},path.join(dir,"outer"));assert.equal(outer.exitCode,124);assert.equal(outer.cleanupConfirmed,true);
+ const outer=await runBounded({executable:process.execPath,args:[script],cwd:dir,timeoutSeconds:4},path.join(dir,"outer"));
+ // A 125 here means the supervisor did not return within its watchdog. Carry the
+ // evidence into the assertion so a CI failure explains itself instead of only
+ // showing "125 !== 124".
+ const evidence=JSON.stringify({exitCode:outer.exitCode,reason:outer.reason,cleanupConfirmed:outer.cleanupConfirmed,durationMs:outer.durationMs,failure:outer.failure??null});
+ assert.equal(outer.exitCode,124,evidence);assert.equal(outer.cleanupConfirmed,true,evidence);
  const recovered=reconcileOwnedCommands(path.join(dir,"inner"));assert.equal(recovered.recovered.length,1);const inner=JSON.parse(fs.readFileSync(path.join(dir,"inner",recovered.recovered[0]!),"utf8"));assert.equal(inner.exitCode,125);assert.equal(inner.cleanupConfirmed,true);
 });

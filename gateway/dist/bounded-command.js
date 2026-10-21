@@ -29,24 +29,34 @@ export async function runBounded(spec, directory, options = {}) {
     if (process.platform === "win32") {
         const specFile = base + ".spec.json";
         writePrivateJson(specFile, { ...spec, stdout, stderr, timeoutMs: Math.ceil(timeoutMs), cancelFile: options.cancelFile });
-        outcome = await new Promise((resolve, reject) => {
+        outcome = await new Promise((resolve) => {
             const helper = fileURLToPath(new URL("../scripts/bounded-job.ps1", import.meta.url));
             const child = spawn(windowsPowerShellPath(), ["-NoProfile", "-NonInteractive", "-File", helper, "-SpecFile", specFile], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
             writePrivateJson(record, { ...spec, startedAt, before, state: "running", stdout, stderr, supervisorPid: child.pid, supervisorSpec: specFile, ownership: "windows_job_object" });
-            let out = "", err = "";
+            let out = "", err = "", watchdogFired = false, helperExitCode = null;
+            const spawnedAt = Date.now();
+            const evidence = () => ({ watchdogFired, helperExitCode, elapsedMs: Date.now() - spawnedAt, stdoutBytes: out.length, stderrTail: err.slice(-600) });
+            const fail = (reason) => resolve({ exitCode: 125, reason, cleanupConfirmed: false, failure: evidence() });
             child.stdout.on("data", b => out += String(b));
             child.stderr.on("data", b => err += String(b));
-            const watchdog = setTimeout(() => child.kill(), timeoutMs + 20000);
-            child.once("error", e => { clearTimeout(watchdog); reject(e); });
-            child.once("exit", code => { clearTimeout(watchdog); try {
+            // The supervisor enforces the command's own timeout; this watchdog only
+            // catches a supervisor that never returns. Its margin has to cover the
+            // supervisor's startup, which is why a firing watchdog is recorded.
+            const watchdog = setTimeout(() => { watchdogFired = true; child.kill(); }, timeoutMs + 20000);
+            child.once("error", e => { clearTimeout(watchdog); fail(`Job supervisor could not be started: ${String(e)}`); });
+            child.once("exit", code => {
+                clearTimeout(watchdog);
+                helperExitCode = code;
                 if (code !== 0)
-                    throw Error(err.slice(-2000) || "Job supervisor failed");
-                resolve(JSON.parse(out.trim()));
-            }
-            catch (e) {
-                reject(e);
-            } });
-        }).catch(error => ({ exitCode: 125, reason: String(error), cleanupConfirmed: false }));
+                    return fail(`Job supervisor exited ${code}: ${err.slice(-2000) || "no stderr"}`);
+                try {
+                    resolve(JSON.parse(out.trim()));
+                }
+                catch {
+                    fail(`Job supervisor did not return a JSON result: ${err.slice(-2000) || "no stderr"}`);
+                }
+            });
+        });
     }
     else {
         const out = fs.openSync(stdout, "w"), err = fs.openSync(stderr, "w");

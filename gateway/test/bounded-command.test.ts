@@ -33,3 +33,20 @@ test("normal exit still cleans detached descendants and records current source h
 test("report reserve forbids new commands without extending the deadline",async t=>{
  const dir=fixture(t);await assert.rejects(()=>runBounded({executable:process.execPath,args:[],cwd:dir,timeoutSeconds:5},dir,{reportBy:new Date(Date.now()-1).toISOString()}),/Report reserve/);
 });
+test("a supervisor that cannot start reports why instead of a bare 125",{skip:process.platform!=="win32"},async t=>{
+ // A real file that is not an executable makes CreateProcess fail inside the
+ // supervisor, so the parent sees a non-zero helper exit. The failure must
+ // carry the helper exit code, the elapsed time and the stderr tail; without
+ // them a 125 cannot be told apart from a slow or hung supervisor.
+ const dir=fixture(t),notAProgram=path.join(dir,"not-a-program.txt");
+ fs.writeFileSync(notAProgram,"this file is not an executable");
+ const r=await runBounded({executable:notAProgram,args:[],cwd:dir,timeoutSeconds:5},dir);
+ assert.equal(r.exitCode,125,JSON.stringify(r));assert.equal(r.cleanupConfirmed,false);
+ assert.ok(r.failure,"a failed supervisor must carry evidence");
+ assert.equal(r.failure!.watchdogFired,false,"the supervisor exited, so the watchdog did not fire");
+ assert.equal(r.failure!.helperExitCode,1,"the supervisor should report a PowerShell failure exit code");
+ assert.ok(r.failure!.elapsedMs>=0);
+ assert.ok(r.failure!.stderrTail.length>0,"the supervisor stderr tail must be kept");
+ assert.ok(r.failure!.stderrTail.length<=600,"the stderr tail must stay bounded");
+ assert.match(r.reason,/Job supervisor exited 1/);
+});
