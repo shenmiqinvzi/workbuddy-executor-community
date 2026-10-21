@@ -16,6 +16,8 @@ import { ensureWorkspace, listWorkspaces, listModels } from "./workspace-manager
 import { loadDotEnv } from "./env.js";
 import { runtimeVersion } from "./runtime-version.js";
 import { progressDelta } from "./progress-summary.js";
+import { registerTaskProjectionTool } from "./task-view-reader.js";
+import { runsDirectory } from "./run-journal.js";
 
 // Load this installation's .env so the MCP host does not have to export it or
 // run the POSIX launcher. Explicit host variables always win.
@@ -135,6 +137,11 @@ const summaryCursors = new Map<string,number>();
 function jsonResult(value: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
 }
+// Read-only projection of stored records. It reuses this process's store and
+// runs directory, and never constructs a store, creates a directory, syncs or
+// dispatches anything.
+registerTaskProjectionTool(server, { store, runsDir: runsDirectory(config) });
+
 await server.connect(new StdioServerTransport());
 process.once("SIGINT", () => { store.close(); process.exit(0); });
 process.once("SIGTERM", () => { store.close(); process.exit(0); });
