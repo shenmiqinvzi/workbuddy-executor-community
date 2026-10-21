@@ -33,6 +33,10 @@ jobs:
         run: |
           git diff --exit-code -- dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Type check the TaskView contract sources and tests
+        run: npm run typecheck:task-view
+      - name: TaskView contract and state derivation tests
+        run: node --import ./test/support/typescript-loader.mjs --test test/task-view.test.ts test/task-view-state.test.ts test/task-view-actions.test.ts test/task-view-adapter.test.ts
       - name: Verify executor skill copies
         working-directory: .
         run: |

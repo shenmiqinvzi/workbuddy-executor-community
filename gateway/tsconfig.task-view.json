@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022", "DOM"],
+    "types": ["node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": [
+    "test/task-view.test.ts",
+    "test/fixtures/task-view-samples.ts",
+    "test/task-view-state.test.ts",
+    "test/task-view-actions.test.ts",
+    "test/task-view-adapter.test.ts",
+    "src/task-view.ts",
+    "src/task-view-state.ts",
+    "src/task-view-actions.ts",
+    "src/task-view-adapter.ts"
+  ]
+}
