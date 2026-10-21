@@ -20,6 +20,7 @@
     "test/task-view-reader.test.ts",
     "test/report-authentication.test.ts",
     "test/task-contract.test.ts",
+    "test/support/contract-race-worker.ts",
     "src/task-view.ts",
     "src/task-view-state.ts",
     "src/task-view-actions.ts",

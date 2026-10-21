@@ -18,13 +18,23 @@
 /** The only contract schema version this build accepts. */
 export declare const TASK_CONTRACT_SCHEMA_VERSION = "workbuddy-executor/vnext-1";
 /**
- * Server policy. Never a client field, and never derived from a request: a
- * client may ask for more attempts, but the effective limit is the smaller of
- * the request and this policy.
+ * Server policy for the attempt budget.
+ *
+ * Supplied by the service that owns the configuration, never read from the
+ * environment inside the storage layer and never accepted from a client. The
+ * effective limit is min(request, policy) so a request can only lower its own
+ * budget.
  */
-export declare const TASK_CONTRACT_POLICY: Readonly<{
-    maxAttempts: 3;
-}>;
+export interface TaskContractPolicy {
+    maxAttempts: number;
+}
+/**
+ * The one place the policy is derived from the service configuration, so the
+ * contract and the coordinator's retry limit cannot disagree.
+ */
+export declare function policyFromConfig(config: {
+    maxTaskAttempts?: number;
+}): TaskContractPolicy;
 /** Documented limits from the interface contract, section 2. */
 export declare const TASK_CONTRACT_LIMITS: Readonly<{
     titleCharacters: 120;
@@ -61,7 +71,7 @@ export interface NormalizedTaskContract {
     requiredChecks: TaskContractCheck[];
 }
 /** Stable rejection codes. A code never changes meaning once published. */
-export type TaskContractRejectionCode = "not_an_object" | "unknown_field" | "unsupported_schema_version" | "invalid_type" | "invalid_length" | "invalid_value" | "too_many_items" | "duplicate_check_id" | "invalid_scope_path" | "check_conclusion_not_allowed" | "too_large";
+export type TaskContractRejectionCode = "not_an_object" | "unknown_field" | "unsupported_schema_version" | "invalid_type" | "invalid_length" | "invalid_value" | "too_many_items" | "duplicate_check_id" | "invalid_scope_path" | "check_conclusion_not_allowed" | "too_large" | "task_mismatch" | "objective_mismatch";
 export interface TaskContractRejection {
     code: TaskContractRejectionCode;
     field: string;
@@ -86,7 +96,7 @@ export declare function taskContractHash(contract: NormalizedTaskContract): stri
  */
 export declare function agreementVersionFor(taskId: string, contractHash: string): string;
 /** The effective attempt budget: the smaller of the request and the policy. */
-export declare function effectiveMaxAttempts(requested: number): number;
+export declare function effectiveMaxAttempts(requested: number, policy: TaskContractPolicy): number;
 /** The immutable record as it is stored and read back. */
 export interface PersistedTaskContract {
     taskId: string;
@@ -104,7 +114,42 @@ export interface PersistedTaskContract {
     createdAt: string;
 }
 /** Build the record for a validated contract. */
-export declare function persistedTaskContract(contract: NormalizedTaskContract, contractHash: string, createdAt: string): PersistedTaskContract;
+export declare function persistedTaskContract(contract: NormalizedTaskContract, contractHash: string, createdAt: string, policy: TaskContractPolicy): PersistedTaskContract;
+/** Why a stored contract cannot be trusted. */
+export type TaskContractIntegrityProblem = "shape" | "identity" | "schema" | "digest" | "agreement_version" | "attempt_budget";
+export interface TaskContractIntegrity {
+    problem: TaskContractIntegrityProblem;
+    detail: string;
+}
+/** The stored columns as they come back from the database. */
+export interface StoredContractRow {
+    taskId: string;
+    agreementVersion: string;
+    contractHash: string;
+    schemaVersion: string;
+    contract: unknown;
+    requestedMaxAttempts: number;
+    policyMaxAttempts: number;
+    effectiveMaxAttempts: number;
+    createdAt: string;
+}
+/**
+ * Re-verify a stored contract instead of trusting it.
+ *
+ * A row is only usable when its content still validates, still belongs to this
+ * task and schema, still hashes to the recorded digest, still derives the
+ * recorded agreement version, and still carries budget metadata consistent with
+ * its own terms. A record that fails any of these is reported as a specific
+ * integrity problem: it is never returned as a normal contract and never
+ * treated as "this task has no contract".
+ */
+export declare function verifyPersistedContract(row: StoredContractRow): {
+    ok: true;
+    record: PersistedTaskContract;
+} | {
+    ok: false;
+    integrity: TaskContractIntegrity;
+};
 /**
  * Validate and normalize a submitted contract.
  *

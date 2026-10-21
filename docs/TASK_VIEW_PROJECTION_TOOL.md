@@ -63,6 +63,7 @@ workbuddy_get_task_projection({ taskId: string })
 | `task_not_found` | 存储中没有该 taskId |
 | `invalid_attempt_id` | `task.attemptId` 存在但不符合 `RunJournal` 接受的 `^run-[a-f0-9-]{36}$`，或解析后不在 runs 目录内；**不读任何文件**，也不当作"没有当前 attempt" |
 | `store_unavailable` | `store.get` / `getContract` / `store.listAttempts` / 末次 `store.get` 抛错；不伪装成 `task_not_found` 或"没有约定"，错误信息不含数据库内容或本机路径 |
+| `contract_integrity` | 存在约定记录，但内容、摘要、版本或预算元数据已不一致；`field` 指明 `contract.shape` / `contract.identity` / `contract.schema` / `contract.digest` / `contract.agreement_version` / `contract.attempt_budget`。不自动修复、不补写，也不当作"没有约定" |
 | `read_conflict` | 读取期间当前 attempt 变化（或任务消失），拒绝拼接两轮记录 |
 | `state_corrupt` / `cancel_corrupt` | 文件存在但不是 JSON 对象，或**字段类型不符**（见下） |
 | `state_unreadable` / `cancel_unreadable` | 非 ENOENT 的读取失败（权限、路径类型等） |

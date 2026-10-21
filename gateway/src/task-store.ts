@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { LocalMessage } from "./workbuddy-client.js";
-import { persistedTaskContract, type NormalizedTaskContract, type PersistedTaskContract } from "./task-contract.js";
+import { persistedTaskContract, validateTaskContract, verifyPersistedContract, type NormalizedTaskContract, type PersistedTaskContract, type TaskContractIntegrity, type TaskContractPolicy, type TaskContractRejection } from "./task-contract.js";
 
 export type TaskState = "queued" | "working" | "completed" | "blocked" | "failed" | "cancelled" | "needs_review" | "accepted";
 
@@ -59,7 +59,14 @@ export type TaskContractCreateResult =
   | { status: "created"; task: StoredTask; record: PersistedTaskContract }
   | { status: "existing_same"; task: StoredTask; record: PersistedTaskContract }
   | { status: "conflict"; task: StoredTask; record: PersistedTaskContract }
-  | { status: "task_without_contract"; task: StoredTask };
+  | { status: "task_without_contract"; task: StoredTask }
+  | { status: "rejected"; rejection: TaskContractRejection };
+
+/** What a contract read found, keeping "no contract" apart from "broken". */
+export type TaskContractRead =
+  | { state: "found"; record: PersistedTaskContract }
+  | { state: "absent" }
+  | { state: "integrity_failure"; integrity: TaskContractIntegrity };
 
 export interface AttemptReservation {  attemptId: string;
   messageId: string;
@@ -215,28 +222,42 @@ export class TaskStore {
   /**
    * Read the stored contract for a task.
    *
-   * A plain read: it initializes nothing, migrates nothing and never backfills
-   * a contract for a task that has none. Absence means the task predates the
-   * contract, not that its current fields can stand in for one.
+   * A plain read: it initializes nothing, migrates nothing, repairs nothing and
+   * never backfills a contract for a task that has none. A row that parses but
+   * no longer verifies is reported as an integrity failure, which is not the
+   * same answer as "this task has no contract".
    */
-  getContract(taskId: string): PersistedTaskContract | undefined {
+  getContract(taskId: string): TaskContractRead {
     const row = this.db.prepare("SELECT * FROM task_contracts WHERE task_id = ?").get(taskId) as Record<string, unknown> | undefined;
-    if (!row) return undefined;
-    return {
+    if (!row) return { state: "absent" };
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(String(row.contract_json));
+    } catch {
+      return { state: "integrity_failure", integrity: { problem: "shape", detail: "the stored contract is not valid JSON" } };
+    }
+    const verified = verifyPersistedContract({
       taskId: String(row.task_id),
       agreementVersion: String(row.agreement_version),
       contractHash: String(row.contract_hash),
       schemaVersion: String(row.schema_version),
-      contract: JSON.parse(String(row.contract_json)) as NormalizedTaskContract,
+      contract: parsed,
       requestedMaxAttempts: Number(row.requested_max_attempts),
       policyMaxAttempts: Number(row.policy_max_attempts),
       effectiveMaxAttempts: Number(row.effective_max_attempts),
       createdAt: String(row.created_at),
-    };
+    });
+    if (!verified.ok) return { state: "integrity_failure", integrity: verified.integrity };
+    return { state: "found", record: verified.record };
   }
 
   /**
    * Create a task and its initial contract as one unit.
+   *
+   * The submitted contract is validated and normalized here, and the digest is
+   * computed from that normalized content, so a caller cannot pass a digest
+   * that does not describe what is being stored. Idempotency is then decided by
+   * comparing computed digests, never by a caller-supplied value.
    *
    * The task row, the attempt snapshot and the contract are written inside a
    * single transaction, so a failure leaves neither half behind. Idempotency is
@@ -246,18 +267,34 @@ export class TaskStore {
    * transaction is needed.
    */
   createTaskWithContract(
-    task: Omit<StoredTask, "createdAt" | "updatedAt"> & { createdAt?: string },
-    contract: NormalizedTaskContract,
-    contractHash: string,
+    task: Omit<StoredTask, "createdAt" | "updatedAt" | "objective"> & { createdAt?: string; objective?: string },
+    submitted: unknown,
+    policy: TaskContractPolicy,
   ): TaskContractCreateResult {
-    if (contract.taskId !== task.taskId) throw new Error("The contract belongs to another task");
+    // Validation happens before the transaction opens, so a rejected contract
+    // cannot leave a partial write behind.
+    const validated = validateTaskContract(submitted);
+    if (!validated.ok) return { status: "rejected", rejection: validated.rejection };
+    const contract = validated.contract;
+    const contractHash = validated.contractHash;
+
+    if (contract.taskId !== task.taskId) {
+      return { status: "rejected", rejection: { code: "task_mismatch", field: "taskId", message: "The contract belongs to another task." } };
+    }
+    // The objective is one fact recorded in two places; it may be omitted (it is
+    // then derived from the contract) but it may not contradict it.
+    if (task.objective !== undefined && task.objective !== contract.objective) {
+      return { status: "rejected", rejection: { code: "objective_mismatch", field: "objective", message: "The task objective and the contract objective must be the same fact." } };
+    }
+    const objective = contract.objective;
+
     return this.transaction(() => {
       const now = task.createdAt ?? new Date().toISOString();
       const inserted = this.db.prepare(`INSERT INTO tasks (task_id, message_id, objective, workspace, state, created_at, updated_at, last_message_id, report_json, cancel_note,
         review_note, reviewed_at, constraints_json, acceptance_commands_json, session_id, runtime_source, attempt_id, attempt, last_event_seq, artifacts_json, evidence_json, blocking_reason, submission_hash)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(task_id) DO NOTHING`).run(
-        task.taskId, task.messageId, task.objective, task.workspace ?? null, task.state, now, now,
+        task.taskId, task.messageId, objective, task.workspace ?? null, task.state, now, now,
         task.lastMessageId ?? task.messageId, json(task.report), task.cancelNote ?? null,
         task.reviewNote ?? null, task.reviewedAt ?? null, json(task.constraints), json(task.acceptanceCommands),
         task.sessionId ?? null, task.runtimeSource ?? null, task.attemptId ?? null, task.attempt ?? null, task.lastEventSeq ?? null,
@@ -266,19 +303,26 @@ export class TaskStore {
       if (Number(inserted.changes) > 0) {
         const stored = this.get(task.taskId)!;
         this.saveAttempt(stored);
-        const record = persistedTaskContract(contract, contractHash, now);
+        const record = persistedTaskContract(contract, contractHash, now, policy);
         this.db.prepare(`INSERT INTO task_contracts (task_id, agreement_version, contract_hash, schema_version, contract_json,
           requested_max_attempts, policy_max_attempts, effective_max_attempts, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
           record.taskId, record.agreementVersion, record.contractHash, record.schemaVersion, JSON.stringify(record.contract),
           record.requestedMaxAttempts, record.policyMaxAttempts, record.effectiveMaxAttempts, record.createdAt,
         );
-        return { status: "created", task: stored, record: this.getContract(task.taskId)! };
+        const written = this.getContract(task.taskId);
+        if (written.state !== "found") throw new Error("The contract just written did not verify");
+        return { status: "created", task: stored, record: written.record };
       }
       const existing = this.get(task.taskId)!;
-      const record = this.getContract(task.taskId);
-      if (!record) return { status: "task_without_contract", task: existing };
-      if (record.contractHash !== contractHash) return { status: "conflict", task: existing, record };
-      return { status: "existing_same", task: existing, record };
+      const read = this.getContract(task.taskId);
+      if (read.state === "absent") return { status: "task_without_contract", task: existing };
+      // A stored contract that no longer verifies must not be compared by its
+      // recorded digest and then reported as "the same terms".
+      if (read.state === "integrity_failure") {
+        return { status: "rejected", rejection: { code: "invalid_value", field: "contractHash", message: `The stored contract failed integrity: ${read.integrity.problem}.` } };
+      }
+      if (read.record.contractHash !== contractHash) return { status: "conflict", task: existing, record: read.record };
+      return { status: "existing_same", task: existing, record: read.record };
     });
   }
 

@@ -31,7 +31,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { StoredAttempt, StoredTask } from "./task-store.js";
+import type { StoredAttempt, StoredTask, TaskContractRead } from "./task-store.js";
 import type { PersistedTaskContract } from "./task-contract.js";
 import type { RunSnapshot } from "./run-journal.js";
 import {
@@ -52,8 +52,12 @@ import { REPORT_AUTHENTICATION_FORMAT } from "./report-authentication.js";
 export interface TaskProjectionStore {
   get(taskId: string): StoredTask | undefined;
   listAttempts(taskId: string): StoredAttempt[];
-  /** The stored initial contract, or undefined when the task predates one. */
-  getContract(taskId: string): PersistedTaskContract | undefined;
+  /**
+   * The stored initial contract, verified. `absent` means the task predates
+   * contracts; an `integrity_failure` means a record exists but cannot be
+   * trusted, which is not the same answer.
+   */
+  getContract(taskId: string): TaskContractRead;
 }
 
 /** Everything the reader is allowed to touch. */
@@ -70,6 +74,7 @@ export type TaskProjectionFailureCode =
   | "invalid_attempt_id"
   | "read_conflict"
   | "store_unavailable"
+  | "contract_integrity"
   | "state_unreadable"
   | "state_corrupt"
   | "cancel_unreadable"
@@ -356,10 +361,17 @@ export function readTaskProjection(sources: TaskProjectionSources, taskId: strin
   }
 
   // The contract is read once, before any attempt work. Its absence is a
-  // normal state for an older task; a read failure is not.
+  // normal state for an older task; a read failure or a record that no longer
+  // verifies is not.
   let contract: PersistedTaskContract | null = null;
   try {
-    contract = sources.store.getContract(taskId) ?? null;
+    const read = sources.store.getContract(taskId);
+    if (read.state === "integrity_failure") {
+      // A record exists but cannot be trusted. Returning null would claim the
+      // task has no contract, and returning the record would endorse it.
+      return failure("contract_integrity", taskId, null, `contract.${read.integrity.problem}`, `The stored contract failed integrity: ${read.integrity.detail}. It is not repaired or rewritten here.`);
+    }
+    contract = read.state === "found" ? read.record : null;
   } catch {
     return failure("store_unavailable", taskId, null, "store.getContract", "Reading the task contract failed; this is not reported as a task without one.");
   }

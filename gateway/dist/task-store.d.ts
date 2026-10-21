@@ -1,5 +1,5 @@
 import type { LocalMessage } from "./workbuddy-client.js";
-import { type NormalizedTaskContract, type PersistedTaskContract } from "./task-contract.js";
+import { type PersistedTaskContract, type TaskContractIntegrity, type TaskContractPolicy, type TaskContractRejection } from "./task-contract.js";
 export type TaskState = "queued" | "working" | "completed" | "blocked" | "failed" | "cancelled" | "needs_review" | "accepted";
 export interface StoredTask {
     taskId: string;
@@ -62,6 +62,19 @@ export type TaskContractCreateResult = {
 } | {
     status: "task_without_contract";
     task: StoredTask;
+} | {
+    status: "rejected";
+    rejection: TaskContractRejection;
+};
+/** What a contract read found, keeping "no contract" apart from "broken". */
+export type TaskContractRead = {
+    state: "found";
+    record: PersistedTaskContract;
+} | {
+    state: "absent";
+} | {
+    state: "integrity_failure";
+    integrity: TaskContractIntegrity;
 };
 export interface AttemptReservation {
     attemptId: string;
@@ -105,13 +118,19 @@ export declare class TaskStore {
     /**
      * Read the stored contract for a task.
      *
-     * A plain read: it initializes nothing, migrates nothing and never backfills
-     * a contract for a task that has none. Absence means the task predates the
-     * contract, not that its current fields can stand in for one.
+     * A plain read: it initializes nothing, migrates nothing, repairs nothing and
+     * never backfills a contract for a task that has none. A row that parses but
+     * no longer verifies is reported as an integrity failure, which is not the
+     * same answer as "this task has no contract".
      */
-    getContract(taskId: string): PersistedTaskContract | undefined;
+    getContract(taskId: string): TaskContractRead;
     /**
      * Create a task and its initial contract as one unit.
+     *
+     * The submitted contract is validated and normalized here, and the digest is
+     * computed from that normalized content, so a caller cannot pass a digest
+     * that does not describe what is being stored. Idempotency is then decided by
+     * comparing computed digests, never by a caller-supplied value.
      *
      * The task row, the attempt snapshot and the contract are written inside a
      * single transaction, so a failure leaves neither half behind. Idempotency is
@@ -120,9 +139,10 @@ export declare class TaskStore {
      * racing on one task id therefore cannot both create it, and no nested
      * transaction is needed.
      */
-    createTaskWithContract(task: Omit<StoredTask, "createdAt" | "updatedAt"> & {
+    createTaskWithContract(task: Omit<StoredTask, "createdAt" | "updatedAt" | "objective"> & {
         createdAt?: string;
-    }, contract: NormalizedTaskContract, contractHash: string): TaskContractCreateResult;
+        objective?: string;
+    }, submitted: unknown, policy: TaskContractPolicy): TaskContractCreateResult;
     listTasks(options?: {
         state?: TaskState;
         states?: TaskState[];

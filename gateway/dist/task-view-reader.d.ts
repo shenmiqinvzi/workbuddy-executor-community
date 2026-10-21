@@ -27,7 +27,7 @@
  * cannot supply a path.
  */
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { StoredAttempt, StoredTask } from "./task-store.js";
+import type { StoredAttempt, StoredTask, TaskContractRead } from "./task-store.js";
 import type { PersistedTaskContract } from "./task-contract.js";
 import { type TaskViewAdapterResult } from "./task-view-adapter.js";
 /**
@@ -40,8 +40,12 @@ import { type TaskViewAdapterResult } from "./task-view-adapter.js";
 export interface TaskProjectionStore {
     get(taskId: string): StoredTask | undefined;
     listAttempts(taskId: string): StoredAttempt[];
-    /** The stored initial contract, or undefined when the task predates one. */
-    getContract(taskId: string): PersistedTaskContract | undefined;
+    /**
+     * The stored initial contract, verified. `absent` means the task predates
+     * contracts; an `integrity_failure` means a record exists but cannot be
+     * trusted, which is not the same answer.
+     */
+    getContract(taskId: string): TaskContractRead;
 }
 /** Everything the reader is allowed to touch. */
 export interface TaskProjectionSources {
@@ -51,7 +55,7 @@ export interface TaskProjectionSources {
     runsDir: string;
 }
 /** Stable failure codes. A code never changes meaning once published. */
-export type TaskProjectionFailureCode = "task_not_found" | "invalid_attempt_id" | "read_conflict" | "store_unavailable" | "state_unreadable" | "state_corrupt" | "cancel_unreadable" | "cancel_corrupt";
+export type TaskProjectionFailureCode = "task_not_found" | "invalid_attempt_id" | "read_conflict" | "store_unavailable" | "contract_integrity" | "state_unreadable" | "state_corrupt" | "cancel_unreadable" | "cancel_corrupt";
 /** The task identity the query was able to establish. */
 export interface TaskProjectionIdentity {
     taskId: string;

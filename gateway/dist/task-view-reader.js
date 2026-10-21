@@ -254,10 +254,17 @@ export function readTaskProjection(sources, taskId) {
         return failure("task_not_found", taskId, null, "taskId", "No stored task has this id.");
     }
     // The contract is read once, before any attempt work. Its absence is a
-    // normal state for an older task; a read failure is not.
+    // normal state for an older task; a read failure or a record that no longer
+    // verifies is not.
     let contract = null;
     try {
-        contract = sources.store.getContract(taskId) ?? null;
+        const read = sources.store.getContract(taskId);
+        if (read.state === "integrity_failure") {
+            // A record exists but cannot be trusted. Returning null would claim the
+            // task has no contract, and returning the record would endorse it.
+            return failure("contract_integrity", taskId, null, `contract.${read.integrity.problem}`, `The stored contract failed integrity: ${read.integrity.detail}. It is not repaired or rewritten here.`);
+        }
+        contract = read.state === "found" ? read.record : null;
     }
     catch {
         return failure("store_unavailable", taskId, null, "store.getContract", "Reading the task contract failed; this is not reported as a task without one.");

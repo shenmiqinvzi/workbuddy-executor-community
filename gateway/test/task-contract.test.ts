@@ -1,10 +1,10 @@
 /**
  * The immutable task contract: validation, normalization and persistence.
  *
- * The store tests use a temporary database. The concurrency test opens two
- * independent connections to the same file, which is the case a single
- * process-local lock would not cover. Nothing here touches a real database,
- * dispatches work or executes a check command.
+ * The store tests use a temporary database. The concurrency test spawns two
+ * worker processes that open their own connections and start on a shared
+ * barrier, so the contention is real rather than a sequential call pair.
+ * Nothing here touches a real database, dispatches work or executes a check.
  */
 
 import assert from "node:assert/strict";
@@ -12,22 +12,25 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { spawn, type ChildProcess } from "node:child_process";
+import { DatabaseSync } from "node:sqlite";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { DatabaseSync } from "node:sqlite";
 import { TaskStore } from "../src/task-store.js";
 import { readTaskProjection, registerTaskProjectionTool, type TaskProjectionSources } from "../src/task-view-reader.js";
 import {
-  TASK_CONTRACT_POLICY,
   TASK_CONTRACT_SCHEMA_VERSION,
   agreementVersionFor,
   persistedTaskContract,
+  policyFromConfig,
   validateTaskContract,
   type NormalizedTaskContract,
+  type TaskContractPolicy,
 } from "../src/task-contract.js";
 
 const TASK_ID = "contract-task";
+const DEFAULT_POLICY: TaskContractPolicy = { maxAttempts: 3 };
 
 /** A valid submitted contract. */
 function submission(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -165,7 +168,6 @@ test("scope and check order do not change the digest, and nothing is dropped", (
     ],
   });
   assert.equal(left.contractHash, right.contractHash);
-  // Reordering normalizes; it never truncates.
   assert.equal(right.contract.requiredChecks.length, 2);
   assert.deepEqual(right.contract.requiredChecks.map(check => check.id), ["discount-contract", "normal-behavior"]);
   assert.deepEqual(right.contract.scope.allowedChanges, ["src/Discount.java", "test/DiscountTest.java"]);
@@ -200,18 +202,25 @@ test("the agreement version is stable, task-bound and derived from the digest", 
   assert.equal(agreementVersionFor(TASK_ID, contractHash), agreementVersionFor(TASK_ID, contractHash));
   assert.notEqual(agreementVersionFor(TASK_ID, contractHash), agreementVersionFor("other-task", contractHash));
   assert.match(agreementVersionFor(TASK_ID, contractHash), /^av1-[a-f0-9]{32}$/);
-  const record = persistedTaskContract(contract, contractHash, "2026-01-01T00:00:00.000Z");
+  const record = persistedTaskContract(contract, contractHash, "2026-01-01T00:00:00.000Z", DEFAULT_POLICY);
   assert.equal(record.agreementVersion, agreementVersionFor(TASK_ID, contractHash));
 });
 
 test("the effective attempt budget is the smaller of the request and the policy", () => {
   const { contract, contractHash } = accepted({ maxAttempts: 9 });
-  const record = persistedTaskContract(contract, contractHash, "2026-01-01T00:00:00.000Z");
+  const record = persistedTaskContract(contract, contractHash, "2026-01-01T00:00:00.000Z", { maxAttempts: 1 });
   assert.equal(record.requestedMaxAttempts, 9);
-  assert.equal(record.policyMaxAttempts, TASK_CONTRACT_POLICY.maxAttempts);
-  assert.equal(record.effectiveMaxAttempts, TASK_CONTRACT_POLICY.maxAttempts);
+  assert.equal(record.policyMaxAttempts, 1);
+  assert.equal(record.effectiveMaxAttempts, 1, "a request of 9 under a policy of 1 is still 1");
   const small = accepted({ maxAttempts: 1 });
-  assert.equal(persistedTaskContract(small.contract, small.contractHash, "x").effectiveMaxAttempts, 1);
+  assert.equal(persistedTaskContract(small.contract, small.contractHash, "x", { maxAttempts: 9 }).effectiveMaxAttempts, 1);
+});
+
+test("the policy comes from the service configuration", () => {
+  assert.equal(policyFromConfig({ maxTaskAttempts: 1 }).maxAttempts, 1);
+  assert.equal(policyFromConfig({ maxTaskAttempts: 9 }).maxAttempts, 9);
+  assert.equal(policyFromConfig({}).maxAttempts, 3, "the documented default");
+  assert.equal(policyFromConfig({ maxTaskAttempts: 0 }).maxAttempts, 3, "a nonsensical value falls back");
 });
 
 /* ------------------------------------------------------------------ *
@@ -234,53 +243,106 @@ function tempStore(t: { after: (fn: () => void) => void }): { store: TaskStore; 
 }
 
 function taskRow(taskId = TASK_ID) {
-  return { taskId, messageId: "msg-1", objective: "fixture", workspace: "E:/fixture", state: "queued" as const };
+  return { taskId, messageId: "msg-1", workspace: "E:/fixture", state: "queued" as const };
+}
+
+function found(store: TaskStore, taskId = TASK_ID) {
+  const read = store.getContract(taskId);
+  assert.equal(read.state, "found", read.state === "integrity_failure" ? `${read.integrity.problem}: ${read.integrity.detail}` : read.state);
+  if (read.state !== "found") throw new Error("expected a contract");
+  return read.record;
 }
 
 test("the first save creates the task and the contract together", t => {
   const { store } = tempStore(t);
-  const { contract, contractHash } = accepted();
-  const result = store.createTaskWithContract(taskRow(), contract, contractHash);
+  const result = store.createTaskWithContract(taskRow(), submission(), DEFAULT_POLICY);
   assert.equal(result.status, "created");
   assert.ok(store.get(TASK_ID));
-  const record = store.getContract(TASK_ID)!;
-  assert.equal(record.contractHash, contractHash);
-  assert.equal(record.agreementVersion, agreementVersionFor(TASK_ID, contractHash));
-  assert.deepEqual(record.contract, contract);
+  const record = found(store);
+  assert.equal(record.contractHash, accepted().contractHash, "the digest describes the submitted content");
+  assert.equal(record.agreementVersion, agreementVersionFor(TASK_ID, record.contractHash));
+  assert.deepEqual(record.contract, accepted().contract);
+});
+
+test("the digest is computed from the input, not supplied by the caller", t => {
+  const { store } = tempStore(t);
+  store.createTaskWithContract(taskRow(), submission(), DEFAULT_POLICY);
+  const original = found(store);
+
+  // Changing the terms but claiming the old identity is a conflict, because the
+  // method hashes what it was actually given. There is no digest parameter to
+  // lie with.
+  const changed = store.createTaskWithContract(taskRow(), submission({ title: "改变后的标题" }), DEFAULT_POLICY);
+  assert.equal(changed.status, "conflict");
+  assert.equal(found(store).contractHash, original.contractHash);
+  assert.equal(found(store).contract.title, "修复折扣边界");
+
+  // The same change expressed as the identical content is still the same record.
+  assert.equal(store.createTaskWithContract(taskRow(), submission(), DEFAULT_POLICY).status, "existing_same");
+});
+
+test("an illegal submitted object is rejected before anything is written", t => {
+  const { store } = tempStore(t);
+  for (const submitted of [null, undefined, "contract", 42, [], {}, { ...submission(), schemaVersion: "v9" }, { ...submission(), taskId: "another-task" }]) {
+    const result = store.createTaskWithContract(taskRow(), submitted, DEFAULT_POLICY);
+    assert.equal(result.status, "rejected", `expected rejection for ${JSON.stringify(submitted)}`);
+    assert.equal(store.get(TASK_ID), undefined, "no task row may survive a rejected contract");
+    assert.equal(store.getContract(TASK_ID).state, "absent", "no contract may survive a rejected contract");
+  }
+});
+
+test("a task objective that contradicts the contract is refused", t => {
+  const { store } = tempStore(t);
+  const result = store.createTaskWithContract({ ...taskRow(), objective: "另一个目标" }, submission(), DEFAULT_POLICY);
+  assert.equal(result.status, "rejected");
+  if (result.status !== "rejected") return;
+  assert.equal(result.rejection.code, "objective_mismatch");
+  assert.equal(store.get(TASK_ID), undefined);
+  assert.equal(store.getContract(TASK_ID).state, "absent");
+});
+
+test("the task objective is derived from the contract when omitted", t => {
+  const { store } = tempStore(t);
+  const result = store.createTaskWithContract(taskRow(), submission(), DEFAULT_POLICY);
+  assert.equal(result.status, "created");
+  const contractObjective = accepted().contract.objective;
+  assert.equal(store.get(TASK_ID)!.objective, contractObjective);
+  assert.equal(store.get(TASK_ID)!.objective, found(store).contract.objective);
 });
 
 test("an identical retry returns the original record and creates nothing", t => {
   const { store } = tempStore(t);
-  const { contract, contractHash } = accepted();
-  const first = store.createTaskWithContract(taskRow(), contract, contractHash);
+  const first = store.createTaskWithContract(taskRow(), submission(), DEFAULT_POLICY);
   assert.equal(first.status, "created");
-  const second = store.createTaskWithContract(taskRow(), contract, contractHash);
+  const second = store.createTaskWithContract(taskRow(), submission(), DEFAULT_POLICY);
   assert.equal(second.status, "existing_same");
   if (first.status !== "created" || second.status !== "existing_same") return;
   assert.deepEqual(second.record, first.record);
-  assert.equal(store.getContract(TASK_ID)!.createdAt, first.record.createdAt);
+  assert.equal(found(store).createdAt, first.record.createdAt);
 });
 
-test("different terms are a conflict and never overwrite the stored contract", t => {
+test("a later policy change does not rewrite an existing budget", t => {
   const { store } = tempStore(t);
-  const original = accepted();
-  store.createTaskWithContract(taskRow(), original.contract, original.contractHash);
-  const changed = accepted({ title: "另一个标题" });
-  const result = store.createTaskWithContract(taskRow(), changed.contract, changed.contractHash);
-  assert.equal(result.status, "conflict");
-  const stored = store.getContract(TASK_ID)!;
-  assert.equal(stored.contractHash, original.contractHash);
-  assert.equal(stored.contract.title, original.contract.title);
+  const first = store.createTaskWithContract(taskRow(), submission({ maxAttempts: 9 }), { maxAttempts: 1 });
+  assert.equal(first.status, "created");
+  if (first.status !== "created") return;
+  assert.equal(first.record.effectiveMaxAttempts, 1);
+
+  // The service policy is raised afterwards and the same contract is retried.
+  const retried = store.createTaskWithContract(taskRow(), submission({ maxAttempts: 9 }), { maxAttempts: 5 });
+  assert.equal(retried.status, "existing_same");
+  if (retried.status !== "existing_same") return;
+  assert.deepEqual(retried.record, first.record, "the stored policy snapshot must not be recomputed");
+  assert.equal(retried.record.policyMaxAttempts, 1);
+  assert.equal(retried.record.effectiveMaxAttempts, 1);
 });
 
 test("a repeated request cannot raise an existing budget", t => {
   const { store } = tempStore(t);
-  const small = accepted({ maxAttempts: 1 });
-  store.createTaskWithContract(taskRow(), small.contract, small.contractHash);
-  const raised = accepted({ maxAttempts: 3 });
-  const result = store.createTaskWithContract(taskRow(), raised.contract, raised.contractHash);
-  assert.equal(result.status, "conflict");
-  assert.equal(store.getContract(TASK_ID)!.effectiveMaxAttempts, 1);
+  store.createTaskWithContract(taskRow(), submission({ maxAttempts: 1 }), DEFAULT_POLICY);
+  const raised = store.createTaskWithContract(taskRow(), submission({ maxAttempts: 3 }), DEFAULT_POLICY);
+  assert.equal(raised.status, "conflict");
+  assert.equal(found(store).effectiveMaxAttempts, 1);
 });
 
 test("the version and digest survive a restart", t => {
@@ -291,110 +353,253 @@ test("the version and digest survive a restart", t => {
     for (const store of opened) { try { store.close(); } catch { /* closed */ } }
     fs.rmSync(directory, { recursive: true, force: true });
   });
-  const { contract, contractHash } = accepted();
-
   const first = new TaskStore(file);
   opened.push(first);
-  first.createTaskWithContract(taskRow(), contract, contractHash);
-  const before = first.getContract(TASK_ID)!;
+  first.createTaskWithContract(taskRow(), submission(), DEFAULT_POLICY);
+  const before = found(first);
   first.close();
 
   const second = new TaskStore(file);
   opened.push(second);
-  assert.deepEqual(second.getContract(TASK_ID), before);
+  assert.deepEqual(found(second), before);
 });
 
 test("an existing task without a contract is reported, never backfilled", t => {
   const { store } = tempStore(t);
-  // A task created the old way: no contract row.
   store.createOrGet({ ...taskRow(), objective: "旧任务的目标", acceptanceCommands: ["npm test"], submissionHash: "a".repeat(64) });
-  assert.equal(store.getContract(TASK_ID), undefined);
+  assert.deepEqual(store.getContract(TASK_ID), { state: "absent" });
 
-  const { contract, contractHash } = accepted();
-  const result = store.createTaskWithContract(taskRow(), contract, contractHash);
+  const result = store.createTaskWithContract(taskRow(), submission(), DEFAULT_POLICY);
   assert.equal(result.status, "task_without_contract");
-  assert.equal(store.getContract(TASK_ID), undefined, "the query must not manufacture a contract");
-  // The old fields are untouched too.
+  assert.deepEqual(store.getContract(TASK_ID), { state: "absent" }, "the query must not manufacture a contract");
   assert.equal(store.get(TASK_ID)!.submissionHash, "a".repeat(64));
-});
-
-test("a contract is never written for another task's row", t => {
-  const { store } = tempStore(t);
-  const { contract, contractHash } = accepted();
-  assert.throws(() => store.createTaskWithContract(taskRow("other-task"), contract, contractHash), /another task/);
-  assert.equal(store.get("other-task"), undefined);
-  assert.equal(store.getContract("other-task"), undefined);
-});
-
-test("a rejected second creation rolls back without leaving a half row", t => {
-  const { store } = tempStore(t);
-  const first = accepted();
-  store.createTaskWithContract(taskRow(), first.contract, first.contractHash);
-
-  const second = accepted({ title: "重复创建" });
-  const again = store.createTaskWithContract(taskRow(), second.contract, second.contractHash);
-  assert.equal(again.status, "conflict");
-  // The rejected transaction left the original row and contract exactly as they were.
-  assert.equal(store.get(TASK_ID)!.objective, "fixture");
-  assert.equal(store.getContract(TASK_ID)!.contractHash, first.contractHash);
 });
 
 test("a failure inside the composite write rolls the task row back", t => {
   const { store } = tempStore(t);
   const shared = "run-11111111-1111-1111-1111-111111111111";
-  // Task A already owns this attempt identity.
-  store.createOrGet({ ...taskRow("task-a"), attemptId: shared, attempt: 1 });
+  store.createOrGet({ ...taskRow("task-a"), objective: "任务 A", attemptId: shared, attempt: 1 });
   assert.ok(store.get("task-a"));
 
-  // Task B arrives claiming the same attempt identity. The task row insert wins,
-  // then the attempt snapshot is rejected, so the whole create must be undone.
-  const { contract, contractHash } = accepted({ taskId: "task-b" });
+  // The attempt snapshot is rejected inside the transaction, after the task row,
+  // so the whole create must roll back. An internal invariant failure surfaces
+  // as a thrown error rather than a caller-facing rejection.
   assert.throws(
-    () => store.createTaskWithContract({ ...taskRow("task-b"), attemptId: shared, attempt: 1 }, contract, contractHash),
+    () => store.createTaskWithContract(
+      { ...taskRow("task-b"), attemptId: shared, attempt: 1 },
+      submission({ taskId: "task-b" }),
+      DEFAULT_POLICY,
+    ),
     /another task/,
   );
   assert.equal(store.get("task-b"), undefined, "the task row must be rolled back");
-  assert.equal(store.getContract("task-b"), undefined, "no contract may remain");
-  // The other task is untouched.
+  assert.deepEqual(store.getContract("task-b"), { state: "absent" });
   assert.ok(store.get("task-a"));
 });
 
 test("a contract row cannot outlive its task", t => {
   const { store, file } = tempStore(t);
-  const { contract, contractHash } = accepted();
-  store.createTaskWithContract(taskRow(), contract, contractHash);
+  store.createTaskWithContract(taskRow(), submission(), DEFAULT_POLICY);
   const raw = new DatabaseSync(file);
   try {
     assert.throws(() => raw.exec("DELETE FROM tasks WHERE task_id = 'contract-task'"), /FOREIGN KEY/i);
   } finally {
     raw.close();
   }
-  assert.ok(store.get(TASK_ID), "the task survives the refused delete");
-  assert.ok(store.getContract(TASK_ID));
+  assert.ok(store.get(TASK_ID));
+  assert.ok(found(store));
 });
 
-test("two connections racing on one task id create exactly once", t => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "task-contract-race-"));
-  const file = path.join(directory, "tasks.sqlite");
-  const left = new TaskStore(file);
-  const right = new TaskStore(file);
-  t.after(() => {
-    try { left.close(); } catch { /* closed */ }
-    try { right.close(); } catch { /* closed */ }
-    fs.rmSync(directory, { recursive: true, force: true });
+/* ------------------------------------------------------------------ *
+ * Stored records are re-verified on read
+ * ------------------------------------------------------------------ */
+
+/** Rewrite one column of the stored contract row. */
+function tamperRow(file: string, change: (row: Record<string, unknown>) => void): void {
+  const raw = new DatabaseSync(file);
+  try {
+    const row = raw.prepare("SELECT * FROM task_contracts WHERE task_id = ?").get(TASK_ID) as Record<string, unknown>;
+    change(row);
+    raw.prepare(`UPDATE task_contracts SET contract_json = ?, contract_hash = ?, agreement_version = ?, schema_version = ?,
+      requested_max_attempts = ?, policy_max_attempts = ?, effective_max_attempts = ? WHERE task_id = ?`).run(
+      String(row.contract_json), String(row.contract_hash), String(row.agreement_version), String(row.schema_version),
+      Number(row.requested_max_attempts), Number(row.policy_max_attempts), Number(row.effective_max_attempts), TASK_ID,
+    );
+  } finally {
+    raw.close();
+  }
+}
+
+test("a stored contract whose content changed is an integrity failure", t => {
+  const { store, file } = tempStore(t);
+  store.createTaskWithContract(taskRow(), submission(), DEFAULT_POLICY);
+  tamperRow(file, row => {
+    const parsed = JSON.parse(String(row.contract_json));
+    parsed.title = "被改写";
+    row.contract_json = JSON.stringify(parsed);
+  });
+  const read = store.getContract(TASK_ID);
+  assert.equal(read.state, "integrity_failure");
+  if (read.state !== "integrity_failure") return;
+  assert.equal(read.integrity.problem, "digest");
+});
+
+test("a stored digest that no longer matches is an integrity failure", t => {
+  const { store, file } = tempStore(t);
+  store.createTaskWithContract(taskRow(), submission(), DEFAULT_POLICY);
+  tamperRow(file, row => { row.contract_hash = "0".repeat(64); });
+  const read = store.getContract(TASK_ID);
+  assert.equal(read.state, "integrity_failure");
+  if (read.state !== "integrity_failure") return;
+  assert.equal(read.integrity.problem, "digest");
+});
+
+test("a forged agreement version is an integrity failure", t => {
+  const { store, file } = tempStore(t);
+  store.createTaskWithContract(taskRow(), submission(), DEFAULT_POLICY);
+  tamperRow(file, row => { row.agreement_version = "av1-" + "1".repeat(32); });
+  const read = store.getContract(TASK_ID);
+  assert.equal(read.state, "integrity_failure");
+  if (read.state !== "integrity_failure") return;
+  assert.equal(read.integrity.problem, "agreement_version");
+});
+
+test("inconsistent budget metadata is an integrity failure", t => {
+  const { store, file } = tempStore(t);
+  store.createTaskWithContract(taskRow(), submission({ maxAttempts: 3 }), { maxAttempts: 1 });
+  tamperRow(file, row => { row.effective_max_attempts = 3; });
+  const read = store.getContract(TASK_ID);
+  assert.equal(read.state, "integrity_failure");
+  if (read.state !== "integrity_failure") return;
+  assert.equal(read.integrity.problem, "attempt_budget");
+});
+
+test("a requested limit that disagrees with the contract is an integrity failure", t => {
+  const { store, file } = tempStore(t);
+  store.createTaskWithContract(taskRow(), submission({ maxAttempts: 2 }), DEFAULT_POLICY);
+  tamperRow(file, row => { row.requested_max_attempts = 3; row.effective_max_attempts = 3; });
+  const read = store.getContract(TASK_ID);
+  assert.equal(read.state, "integrity_failure");
+  if (read.state !== "integrity_failure") return;
+  assert.equal(read.integrity.problem, "attempt_budget");
+});
+
+test("a schema version that disagrees with the record is an integrity failure", t => {
+  const { store, file } = tempStore(t);
+  store.createTaskWithContract(taskRow(), submission(), DEFAULT_POLICY);
+  tamperRow(file, row => { row.schema_version = "workbuddy-executor/vnext-9"; });
+  const read = store.getContract(TASK_ID);
+  assert.equal(read.state, "integrity_failure");
+  if (read.state !== "integrity_failure") return;
+  assert.equal(read.integrity.problem, "schema");
+});
+
+/* ------------------------------------------------------------------ *
+ * Real concurrency
+ * ------------------------------------------------------------------ */
+
+function pause(milliseconds: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, milliseconds));
+}
+
+/**
+ * Start one worker process per contract on a shared barrier and return their
+ * results. Every worker opens its own connection and waits for the same start
+ * signal, so they contend for the task id instead of taking turns.
+ */
+async function raceContracts(
+  directory: string,
+  contracts: unknown[],
+  policy: TaskContractPolicy,
+  dbFile = path.join(directory, "tasks.sqlite"),
+): Promise<Array<Record<string, unknown>>> {
+  const barrier = path.join(directory, "barrier");
+  fs.mkdirSync(barrier, { recursive: true });
+  const policyFile = path.join(directory, "policy.json");
+  fs.writeFileSync(policyFile, JSON.stringify(policy));
+  // Create the schema before the workers start, so they contend over the
+  // creation rather than over opening a brand-new database file.
+  const seed = new TaskStore(dbFile);
+  seed.close();
+
+  const children: ChildProcess[] = [];
+  const outputs: string[] = [];
+  const errors: string[] = [];
+  contracts.forEach((contract, slot) => {
+    const contractFile = path.join(directory, `contract-${slot}.json`);
+    fs.writeFileSync(contractFile, JSON.stringify(contract));
+    const out = path.join(directory, `out-${slot}.json`);
+    outputs.push(out);
+    const child = spawn(process.execPath, [
+      "--import", "./test/support/typescript-loader.mjs",
+      path.resolve("test/support/contract-race-worker.ts"),
+      "--db", dbFile, "--barrier", barrier, "--slot", String(slot),
+      "--task", TASK_ID, "--contract", contractFile, "--policy", policyFile, "--out", out,
+    ], { cwd: process.cwd(), stdio: ["ignore", "ignore", "pipe"] });
+    child.stderr?.on("data", chunk => errors.push(`[worker ${slot}] ${String(chunk).trim()}`));
+    children.push(child);
   });
 
-  const { contract, contractHash } = accepted();
-  const a = left.createTaskWithContract(taskRow(), contract, contractHash);
-  const b = right.createTaskWithContract(taskRow(), contract, contractHash);
-  const created = [a.status, b.status].filter(status => status === "created").length;
-  assert.equal(created, 1, `exactly one creation expected, got ${a.status} and ${b.status}`);
-  assert.equal([a.status, b.status].filter(status => status === "existing_same").length, 1);
+  try {
+    // Wait until every worker has opened its connection and is parked.
+    const deadline = Date.now() + 120_000;
+    while (!children.every((_, slot) => fs.existsSync(path.join(barrier, `${slot}.ready`)))) {
+      if (Date.now() > deadline) throw new Error(`workers did not reach the barrier: ${errors.join("\n")}`);
+      await pause(10);
+    }
+    fs.writeFileSync(path.join(barrier, "go"), "");
+    await Promise.all(children.map(child => new Promise<void>(resolve => { child.once("exit", () => resolve()); })));
+    return outputs.map((output, slot) => {
+      if (!fs.existsSync(output)) throw new Error(`worker ${slot} produced no result file: ${errors.join("\n")}`);
+      return JSON.parse(fs.readFileSync(output, "utf8")) as Record<string, unknown>;
+    });
+  } finally {
+    for (const child of children) if (child.exitCode === null) child.kill();
+  }
+}
 
-  // A different contract on a second connection is a conflict, not an overwrite.
-  const changed = accepted({ title: "并发改标题" });
-  assert.equal(right.createTaskWithContract(taskRow(), changed.contract, changed.contractHash).status, "conflict");
-  assert.equal(left.getContract(TASK_ID)!.contractHash, contractHash);
+test("two processes racing with identical terms create exactly once", async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "task-contract-race-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+
+  const results = await raceContracts(directory, [submission(), submission()], DEFAULT_POLICY);
+  const statuses = results.map(result => String(result.status ?? result.error));
+  assert.equal(statuses.filter(status => status === "created").length, 1, `exactly one creation expected, got ${statuses.join(", ")}`);
+  assert.equal(statuses.filter(status => status === "existing_same").length, 1, `exactly one existing_same expected, got ${statuses.join(", ")}`);
+  assert.equal(statuses.filter(status => status.startsWith("error")).length, 0, `workers must not fail: ${JSON.stringify(results)}`);
+
+  const store = new TaskStore(path.join(directory, "tasks.sqlite"));
+  try {
+    assert.ok(store.get(TASK_ID), "the task exists");
+    const record = found(store);
+    assert.equal(record.contractHash, accepted().contractHash);
+    assert.equal(store.get(TASK_ID)!.objective, record.contract.objective);
+  } finally {
+    store.close();
+  }
+});
+
+test("two processes racing with different terms produce one winner and one conflict", async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "task-contract-race-diff-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+
+  const results = await raceContracts(directory, [submission(), submission({ title: "另一个标题" })], DEFAULT_POLICY);
+  const statuses = results.map(result => String(result.status ?? result.error));
+  assert.equal(statuses.filter(status => status === "created").length, 1, `one winner expected, got ${statuses.join(", ")}`);
+  assert.equal(statuses.filter(status => status === "conflict").length, 1, `one conflict expected, got ${statuses.join(", ")}`);
+
+  const store = new TaskStore(path.join(directory, "tasks.sqlite"));
+  try {
+    const record = found(store);
+    // Exactly one of the two contracts is stored, whole, and it matches the task row.
+    assert.ok(
+      record.contractHash === accepted().contractHash || record.contractHash === accepted({ title: "另一个标题" }).contractHash,
+      "the stored contract must be one of the submitted contracts, not a mixture",
+    );
+    assert.equal(store.get(TASK_ID)!.objective, record.contract.objective);
+  } finally {
+    store.close();
+  }
 });
 
 /* ------------------------------------------------------------------ *
@@ -403,25 +608,24 @@ test("two connections racing on one task id create exactly once", t => {
 
 test("the projection carries the stored contract", t => {
   const { store } = tempStore(t);
-  const { contract, contractHash } = accepted();
-  store.createTaskWithContract(taskRow(), contract, contractHash);
+  store.createTaskWithContract(taskRow(), submission(), DEFAULT_POLICY);
+  const expected = accepted();
 
   const sources: TaskProjectionSources = { store, runsDir: path.join(path.dirname(store.file), "runs") };
   const result = readTaskProjection(sources, TASK_ID);
   assert.equal(result.ok, true);
   if (!result.ok) return;
   assert.ok(result.contract, "a stored contract must be returned");
-  assert.equal(result.contract!.contractHash, contractHash);
-  assert.equal(result.contract!.agreementVersion, agreementVersionFor(TASK_ID, contractHash));
-  assert.deepEqual(result.contract!.contract, contract);
-  // Still not a full TaskView.
+  assert.equal(result.contract!.contractHash, expected.contractHash);
+  assert.equal(result.contract!.agreementVersion, agreementVersionFor(TASK_ID, expected.contractHash));
+  assert.deepEqual(result.contract!.contract, expected.contract);
   assert.equal(result.projection.actionFacts, null);
   assert.deepEqual(result.projection.allowedActions, ["export"]);
 });
 
 test("an old task projects with contract null", t => {
   const { store } = tempStore(t);
-  store.createOrGet(taskRow());
+  store.createOrGet({ ...taskRow(), objective: "旧任务的目标" });
   const sources: TaskProjectionSources = { store, runsDir: path.join(path.dirname(store.file), "runs") };
   const result = readTaskProjection(sources, TASK_ID);
   assert.equal(result.ok, true);
@@ -429,9 +633,25 @@ test("an old task projects with contract null", t => {
   assert.equal(result.contract, null, "absence is reported as null, not as an error");
 });
 
+test("a corrupted stored contract is a structured error, not no contract", t => {
+  const { store, file } = tempStore(t);
+  store.createTaskWithContract(taskRow(), submission(), DEFAULT_POLICY);
+  tamperRow(file, row => {
+    const parsed = JSON.parse(String(row.contract_json));
+    parsed.title = "被改写";
+    row.contract_json = JSON.stringify(parsed);
+  });
+  const sources: TaskProjectionSources = { store, runsDir: path.join(path.dirname(store.file), "runs") };
+  const result = readTaskProjection(sources, TASK_ID);
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.equal(result.code, "contract_integrity");
+  assert.equal(result.field, "contract.digest", "the failure names which invariant broke");
+});
+
 test("a contract read failure is structured, not reported as no contract", t => {
   const { store } = tempStore(t);
-  store.createOrGet(taskRow());
+  store.createOrGet({ ...taskRow(), objective: "旧任务的目标" });
   const failing: TaskProjectionSources = {
     store: {
       get: id => store.get(id),
@@ -450,8 +670,7 @@ test("a contract read failure is structured, not reported as no contract", t => 
 
 test("the registered tool returns the contract", async t => {
   const { store } = tempStore(t);
-  const { contract, contractHash } = accepted();
-  store.createTaskWithContract(taskRow(), contract, contractHash);
+  store.createTaskWithContract(taskRow(), submission(), DEFAULT_POLICY);
 
   const server = new McpServer({ name: "contract-test", version: "0.0.0" });
   registerTaskProjectionTool(server, { store, runsDir: path.join(path.dirname(store.file), "runs") });
@@ -464,8 +683,32 @@ test("the registered tool returns the contract", async t => {
     const text = (response.content as Array<{ type: string; text?: string }>).find(part => part.type === "text")?.text ?? "{}";
     const payload = JSON.parse(text);
     assert.equal(payload.ok, true);
-    assert.equal(payload.contract.contractHash, contractHash);
+    assert.equal(payload.contract.contractHash, accepted().contractHash);
     assert.equal(payload.contract.contract.requiredChecks.length, 2);
+  } finally {
+    await client.close();
+    await server.close();
+  }
+});
+
+test("the registered tool reports a corrupted contract as an error", async t => {
+  const { store, file } = tempStore(t);
+  store.createTaskWithContract(taskRow(), submission(), DEFAULT_POLICY);
+  tamperRow(file, row => { row.contract_hash = "0".repeat(64); });
+
+  const server = new McpServer({ name: "contract-corrupt", version: "0.0.0" });
+  registerTaskProjectionTool(server, { store, runsDir: path.join(path.dirname(store.file), "runs") });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await server.connect(serverTransport);
+  const client = new Client({ name: "contract-corrupt-client", version: "0.0.0" });
+  await client.connect(clientTransport);
+  try {
+    const response = await client.callTool({ name: "workbuddy_get_task_projection", arguments: { taskId: TASK_ID } });
+    const text = (response.content as Array<{ type: string; text?: string }>).find(part => part.type === "text")?.text ?? "{}";
+    const payload = JSON.parse(text);
+    assert.equal(payload.ok, false);
+    assert.equal(payload.code, "contract_integrity");
+    assert.equal(payload.contract, undefined, "no contract may be returned for a record that failed verification");
   } finally {
     await client.close();
     await server.close();
@@ -474,8 +717,7 @@ test("the registered tool returns the contract", async t => {
 
 test("the query writes neither the task, the contract nor any run file", t => {
   const { store } = tempStore(t);
-  const { contract, contractHash } = accepted();
-  store.createTaskWithContract(taskRow(), contract, contractHash);
+  store.createTaskWithContract(taskRow(), submission(), DEFAULT_POLICY);
   const runsDir = path.join(path.dirname(store.file), "runs");
   const sources: TaskProjectionSources = { store, runsDir };
 

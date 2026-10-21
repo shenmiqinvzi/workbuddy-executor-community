@@ -19,11 +19,14 @@ import crypto from "node:crypto";
 /** The only contract schema version this build accepts. */
 export const TASK_CONTRACT_SCHEMA_VERSION = "workbuddy-executor/vnext-1";
 /**
- * Server policy. Never a client field, and never derived from a request: a
- * client may ask for more attempts, but the effective limit is the smaller of
- * the request and this policy.
+ * The one place the policy is derived from the service configuration, so the
+ * contract and the coordinator's retry limit cannot disagree.
  */
-export const TASK_CONTRACT_POLICY = Object.freeze({ maxAttempts: 3 });
+export function policyFromConfig(config) {
+    const configured = config.maxTaskAttempts;
+    const maxAttempts = typeof configured === "number" && Number.isInteger(configured) && configured >= 1 ? configured : 3;
+    return { maxAttempts };
+}
 /** Documented limits from the interface contract, section 2. */
 export const TASK_CONTRACT_LIMITS = Object.freeze({
     titleCharacters: 120,
@@ -224,11 +227,11 @@ export function agreementVersionFor(taskId, contractHash) {
     return `av1-${crypto.createHash("sha256").update(`${taskId}\n${contractHash}`).digest("hex").slice(0, 32)}`;
 }
 /** The effective attempt budget: the smaller of the request and the policy. */
-export function effectiveMaxAttempts(requested) {
-    return Math.min(requested, TASK_CONTRACT_POLICY.maxAttempts);
+export function effectiveMaxAttempts(requested, policy) {
+    return Math.min(requested, policy.maxAttempts);
 }
 /** Build the record for a validated contract. */
-export function persistedTaskContract(contract, contractHash, createdAt) {
+export function persistedTaskContract(contract, contractHash, createdAt, policy) {
     return {
         taskId: contract.taskId,
         agreementVersion: agreementVersionFor(contract.taskId, contractHash),
@@ -236,9 +239,61 @@ export function persistedTaskContract(contract, contractHash, createdAt) {
         schemaVersion: contract.schemaVersion,
         contract,
         requestedMaxAttempts: contract.maxAttempts,
-        policyMaxAttempts: TASK_CONTRACT_POLICY.maxAttempts,
-        effectiveMaxAttempts: effectiveMaxAttempts(contract.maxAttempts),
+        policyMaxAttempts: policy.maxAttempts,
+        effectiveMaxAttempts: effectiveMaxAttempts(contract.maxAttempts, policy),
         createdAt,
+    };
+}
+/**
+ * Re-verify a stored contract instead of trusting it.
+ *
+ * A row is only usable when its content still validates, still belongs to this
+ * task and schema, still hashes to the recorded digest, still derives the
+ * recorded agreement version, and still carries budget metadata consistent with
+ * its own terms. A record that fails any of these is reported as a specific
+ * integrity problem: it is never returned as a normal contract and never
+ * treated as "this task has no contract".
+ */
+export function verifyPersistedContract(row) {
+    const fail = (problem, detail) => ({ ok: false, integrity: { problem, detail } });
+    const revalidated = validateTaskContract(row.contract);
+    if (!revalidated.ok)
+        return fail("shape", `stored contract is not valid: ${revalidated.rejection.field} ${revalidated.rejection.code}`);
+    const contract = revalidated.contract;
+    if (contract.taskId !== row.taskId)
+        return fail("identity", "the stored contract names another task");
+    if (contract.schemaVersion !== row.schemaVersion)
+        return fail("schema", "the stored schema version differs from the contract");
+    if (revalidated.contractHash !== row.contractHash)
+        return fail("digest", "the stored contract no longer hashes to the recorded digest");
+    const expectedVersion = agreementVersionFor(row.taskId, row.contractHash);
+    if (expectedVersion !== row.agreementVersion)
+        return fail("agreement_version", "the agreement version does not derive from the stored digest");
+    if (!Number.isInteger(row.requestedMaxAttempts) || row.requestedMaxAttempts < 1) {
+        return fail("attempt_budget", "the recorded requested limit is not a positive integer");
+    }
+    if (row.requestedMaxAttempts !== contract.maxAttempts) {
+        return fail("attempt_budget", "the recorded requested limit differs from the contract terms");
+    }
+    if (!Number.isInteger(row.policyMaxAttempts) || row.policyMaxAttempts < 1) {
+        return fail("attempt_budget", "the recorded policy limit is not a positive integer");
+    }
+    if (!Number.isInteger(row.effectiveMaxAttempts) || row.effectiveMaxAttempts !== Math.min(row.requestedMaxAttempts, row.policyMaxAttempts)) {
+        return fail("attempt_budget", "the effective limit is not the smaller of the request and the policy");
+    }
+    return {
+        ok: true,
+        record: {
+            taskId: row.taskId,
+            agreementVersion: row.agreementVersion,
+            contractHash: row.contractHash,
+            schemaVersion: row.schemaVersion,
+            contract,
+            requestedMaxAttempts: row.requestedMaxAttempts,
+            policyMaxAttempts: row.policyMaxAttempts,
+            effectiveMaxAttempts: row.effectiveMaxAttempts,
+            createdAt: row.createdAt,
+        },
     };
 }
 /**

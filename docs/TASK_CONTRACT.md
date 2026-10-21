@@ -63,20 +63,42 @@
 
 ## 幂等与不可变
 
+**摘要由存储层自己算，不是调用方给的。** 创建入口接收**未校验的原始约定**，先校验、规范化，
+再按实际内容计算 `contractHash`，然后用这个计算结果判断幂等与冲突。因此不存在"改内容复用旧摘要"
+的路径，也没有可被伪造成全零的摘要参数。非法对象（`null`、字符串、数组、缺字段、错版本、
+别的 taskId）在开事务**之前**就被拒绝，不会留下任务行、attempt 或约定。
+
 以 `taskId` 为键，用主键冲突而非“先查后写”判定：
 
 | 情形 | 结果 |
 |---|---|
 | 首次保存 | `created`，任务行与约定在同一事务内一起提交 |
-| 同 `taskId` 且规范化约定相同 | `existing_same`，返回原记录，`created:false`，不写任何东西 |
+| 同 `taskId` 且规范化约定相同 | `existing_same`，返回原记录，不写任何东西 |
 | 同 `taskId` 但内容不同 | `conflict`，**不覆盖**原记录 |
 | 旧任务已存在但无约定 | `task_without_contract`，**不补建** |
+| 已存约定读取时完整性失败 | `rejected`（不按摘要比较，也不当作冲突） |
 | 旧任务已存在且已有约定，新请求更大预算 | `conflict`（预算属于约定内容，因此**不能**通过重复请求提高） |
 
 首次保存后 `agreementVersion` 与 `contractHash` 不再变化。
 
+### 任务行与约定的一致性
+
+`objective` 是同一个事实的两处记录。`createTaskWithContract` 的 `objective` 可以**省略**
+（此时从约定派生），但不能与约定不同 —— 不同直接 `objective_mismatch` 拒绝，
+不会分别保存两个互相矛盾的任务目标。
+
+`workspaceId` 与任务行的 `workspace` 路径**属于不同概念**：前者是约定里的项目标识，
+后者是本机目录。本轮不做字符串比较，也不做默认映射，**不假装**已经完成工作区登记验证。
+
 **旧数据兼容**：`submissionHash`、`objective`、`acceptanceCommands` 都**不是**约定，不会被拼装成
 约定。旧任务读到的 `contract` 为 `null`。
+
+## 服务端政策
+
+`maxAttempts` 的政策值来自服务配置 `maxTaskAttempts`（`policyFromConfig`），
+由服务内部上下文**传入**创建入口；存储层不读环境变量，客户端也不能提供政策字段。
+创建时把政策**快照**写进记录（`policy_max_attempts`），有效上限为
+`min(请求, 政策快照)`。**后续重试不会重算政策**，因此调高配置不会提高已有任务的预算。
 
 ## 并发与原子性
 
@@ -85,21 +107,41 @@
 因此两个独立连接竞争同一 `taskId` 时只有一个 `created`，另一个读到 `existing_same`，
 不需要嵌套事务，也不依赖先查后写。任一步失败则整体回滚，不会留下半个任务或半份约定。
 
-## 只读读取
+并发由**独立进程**验证：两个 worker 各自打开自己的 SQLite 连接，在共享起跑点后同时争用同一
+`taskId`。结果：相同内容恰好一次 `created`、一次 `existing_same`；不同内容一个 `created`、
+一个 `conflict`，最终任务与约定成对存在且内容是提交的完整一份，没有混合。
 
-`TaskStore.getContract(taskId)` 是纯 SELECT：不初始化、不迁移、不补写。
+## 只读读取（含完整性校验）
+
+`TaskStore.getContract(taskId)` 是纯 SELECT：不初始化、不迁移、不修复、不补写。
+读到的一行**不是**解析后就信任，而是重新核验：
+
+1. 内容结构仍然合法（重新走一遍校验与规范化）；
+2. `taskId`、`schemaVersion` 与行内其他列一致；
+3. 重算摘要等于 `contract_hash`；
+4. `agreementVersion` 等于由 (taskId, 摘要) 的派生值；
+5. `requested_max_attempts` 等于约定自身的 `maxAttempts`；
+6. `policy/effective_max_attempts` 为正整数，且 `effective === min(requested, policy)`。
+
+结果三态：`found`（返回记录）、`absent`（旧任务，无约定）、`integrity_failure`（有记录但不可信，
+带具体问题 `shape` / `identity` / `schema` / `digest` / `agreement_version` / `attempt_budget`）。
+**损坏记录不会以"没有约定"返回**：查询工具返回结构化 `contract_integrity` 错误并指明是哪个不变量
+被破坏，也不自动修复或补写。
 
 `workbuddy_get_task_projection` 的返回值新增 `contract`：
 
 - 有真实约定 → 返回其 `agreementVersion`、`contractHash`、`schemaVersion` 与完整内容；
 - 旧任务无约定 → `contract: null`；
-- 读取失败 → 结构化 `store_unavailable`（`field: "store.getContract"`），**不伪装成没有约定**。
+- 记录损坏 → `contract_integrity` 结构化错误；
+- 读取抛错 → `store_unavailable`（`field: "store.getContract"`）。
 
 查询不调用 `sync`、不派工、不修改任务或运行文件。这仍不是完整 vNext TaskView：
 `actionFacts` 保持 `null`，`allowedActions` 保持只有 `export`。
 
 ## 尚未完成
 
-- 未接入真实派工；本轮不新增公开写工具，创建方法只在服务内部可用。
+- 未接入真实派工；本轮不新增公开写工具。`createTaskWithContract` 只在服务内部可用，
+  政策由调用方（将来的写入口）用 `policyFromConfig(config)` 提供，本轮无生产调用点。
 - 未实现范围检查、模型政策核验、检查执行与独立验收——这些依赖后续阶段。
 - `effectiveMaxAttempts` 目前只被记录，尚未用于实际的轮次准入。
+- `workspaceId` 尚未与任何真实工作区登记关联。

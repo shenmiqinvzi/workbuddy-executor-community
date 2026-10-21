@@ -101,7 +101,7 @@ function storeOf(value: StoredTask | undefined, attempts: StoredAttempt[], contr
     },
     getContract(id: string) {
       calls.push("getContract");
-      return value && id === value.taskId ? contract : undefined;
+      return value && id === value.taskId && contract ? { state: "found" as const, record: contract } : { state: "absent" as const };
     },
   };
 }
@@ -287,7 +287,7 @@ test("a change of the current attempt during the read is reported as a conflict"
         return [attemptRow()];
       },
       getContract() {
-        return undefined;
+        return { state: "absent" };
       },
     };
     const result = readTaskProjection({ store, runsDir }, TASK_ID);
@@ -311,7 +311,7 @@ test("a task that disappears during the read is reported as a conflict", () => {
         return [attemptRow()];
       },
       getContract() {
-        return undefined;
+        return { state: "absent" };
       },
     };
     const result = readTaskProjection({ store, runsDir }, TASK_ID);
@@ -577,7 +577,7 @@ test("a failing task read is a store error, not a missing task", () => {
       return [];
     },
     getContract() {
-      return undefined;
+      return { state: "absent" };
     },
   };
   const result = readTaskProjection({ store, runsDir: "unused" }, TASK_ID);
@@ -598,7 +598,7 @@ test("a failing attempt list read is a store error", () => {
       throw new Error("disk I/O error");
     },
     getContract() {
-      return undefined;
+      return { state: "absent" };
     },
   };
   const result = readTaskProjection({ store, runsDir: "unused" }, TASK_ID);
@@ -622,7 +622,7 @@ test("a failing final re-read is a store error", () => {
         return [attemptRow()];
       },
       getContract() {
-        return undefined;
+        return { state: "absent" };
       },
     };
     const result = readTaskProjection({ store, runsDir }, TASK_ID);
@@ -709,7 +709,7 @@ test("the registered tool returns a structured response when the store throws", 
         return [];
       },
       getContract() {
-        return undefined;
+        return { state: "absent" };
       },
     };
     const { payload } = await callRegisteredTool({ store, runsDir }, TASK_ID);
