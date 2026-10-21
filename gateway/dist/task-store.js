@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { persistedTaskContract } from "./task-contract.js";
 export class TaskStore {
     file;
     db;
@@ -52,6 +53,18 @@ export class TaskStore {
         FOREIGN KEY(task_id) REFERENCES tasks(task_id)
       );
       CREATE INDEX IF NOT EXISTS task_attempts_by_task ON task_attempts(task_id, attempt);
+      CREATE TABLE IF NOT EXISTS task_contracts (
+        task_id TEXT PRIMARY KEY,
+        agreement_version TEXT NOT NULL,
+        contract_hash TEXT NOT NULL,
+        schema_version TEXT NOT NULL,
+        contract_json TEXT NOT NULL,
+        requested_max_attempts INTEGER NOT NULL,
+        policy_max_attempts INTEGER NOT NULL,
+        effective_max_attempts INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(task_id) REFERENCES tasks(task_id)
+      );
     `);
         // Preserve old task history; extend pre-review-loop databases in place.
         this.transaction(() => {
@@ -105,6 +118,65 @@ export class TaskStore {
     get(taskId) {
         const row = this.db.prepare("SELECT * FROM tasks WHERE task_id = ?").get(taskId);
         return row ? rowToTask(row) : undefined;
+    }
+    /**
+     * Read the stored contract for a task.
+     *
+     * A plain read: it initializes nothing, migrates nothing and never backfills
+     * a contract for a task that has none. Absence means the task predates the
+     * contract, not that its current fields can stand in for one.
+     */
+    getContract(taskId) {
+        const row = this.db.prepare("SELECT * FROM task_contracts WHERE task_id = ?").get(taskId);
+        if (!row)
+            return undefined;
+        return {
+            taskId: String(row.task_id),
+            agreementVersion: String(row.agreement_version),
+            contractHash: String(row.contract_hash),
+            schemaVersion: String(row.schema_version),
+            contract: JSON.parse(String(row.contract_json)),
+            requestedMaxAttempts: Number(row.requested_max_attempts),
+            policyMaxAttempts: Number(row.policy_max_attempts),
+            effectiveMaxAttempts: Number(row.effective_max_attempts),
+            createdAt: String(row.created_at),
+        };
+    }
+    /**
+     * Create a task and its initial contract as one unit.
+     *
+     * The task row, the attempt snapshot and the contract are written inside a
+     * single transaction, so a failure leaves neither half behind. Idempotency is
+     * decided by the primary key rather than by a prior read: the insert either
+     * wins or conflicts, and only the winner writes a contract. Two connections
+     * racing on one task id therefore cannot both create it, and no nested
+     * transaction is needed.
+     */
+    createTaskWithContract(task, contract, contractHash) {
+        if (contract.taskId !== task.taskId)
+            throw new Error("The contract belongs to another task");
+        return this.transaction(() => {
+            const now = task.createdAt ?? new Date().toISOString();
+            const inserted = this.db.prepare(`INSERT INTO tasks (task_id, message_id, objective, workspace, state, created_at, updated_at, last_message_id, report_json, cancel_note,
+        review_note, reviewed_at, constraints_json, acceptance_commands_json, session_id, runtime_source, attempt_id, attempt, last_event_seq, artifacts_json, evidence_json, blocking_reason, submission_hash)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(task_id) DO NOTHING`).run(task.taskId, task.messageId, task.objective, task.workspace ?? null, task.state, now, now, task.lastMessageId ?? task.messageId, json(task.report), task.cancelNote ?? null, task.reviewNote ?? null, task.reviewedAt ?? null, json(task.constraints), json(task.acceptanceCommands), task.sessionId ?? null, task.runtimeSource ?? null, task.attemptId ?? null, task.attempt ?? null, task.lastEventSeq ?? null, json(task.artifacts), json(task.evidence), task.blockingReason ?? null, task.submissionHash ?? null);
+            if (Number(inserted.changes) > 0) {
+                const stored = this.get(task.taskId);
+                this.saveAttempt(stored);
+                const record = persistedTaskContract(contract, contractHash, now);
+                this.db.prepare(`INSERT INTO task_contracts (task_id, agreement_version, contract_hash, schema_version, contract_json,
+          requested_max_attempts, policy_max_attempts, effective_max_attempts, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(record.taskId, record.agreementVersion, record.contractHash, record.schemaVersion, JSON.stringify(record.contract), record.requestedMaxAttempts, record.policyMaxAttempts, record.effectiveMaxAttempts, record.createdAt);
+                return { status: "created", task: stored, record: this.getContract(task.taskId) };
+            }
+            const existing = this.get(task.taskId);
+            const record = this.getContract(task.taskId);
+            if (!record)
+                return { status: "task_without_contract", task: existing };
+            if (record.contractHash !== contractHash)
+                return { status: "conflict", task: existing, record };
+            return { status: "existing_same", task: existing, record };
+        });
     }
     listTasks(options = {}) {
         const states = options.states ?? (options.state ? [options.state] : []);

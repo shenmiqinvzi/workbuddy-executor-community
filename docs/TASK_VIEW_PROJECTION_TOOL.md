@@ -14,7 +14,7 @@ workbuddy_get_task_projection({ taskId: string })
 
 ## 返回结构
 
-成功：
+成功（节选）：
 
 ```jsonc
 {
@@ -22,6 +22,17 @@ workbuddy_get_task_projection({ taskId: string })
   "readOnly": true,
   "snapshotOnly": true,
   "task": { "taskId": "...", "attemptId": "run-...", "attempt": 1, "state": "cancelled" },
+  "contract": {                        // 旧任务为 null
+    "taskId": "...",
+    "agreementVersion": "av1-...",
+    "contractHash": "...",
+    "schemaVersion": "workbuddy-executor/vnext-1",
+    "contract": { /* 规范化后的初始约定 */ },
+    "requestedMaxAttempts": 3,
+    "policyMaxAttempts": 3,
+    "effectiveMaxAttempts": 3,
+    "createdAt": "..."
+  },
   "projection": {
     "facts": { /* TaskDisplayFacts */ },
     "displayState": "cancelled",
@@ -32,6 +43,9 @@ workbuddy_get_task_projection({ taskId: string })
   "runtime": { "packageVersion": "...", "release": "...", "codeHash": "..." }
 }
 ```
+
+`contract` 只证明**约定条款已被保存**。它不证明范围检查、模型核验、任何检查执行或独立审查
+已经发生；`requiredChecks` 是检查定义而不是结果。见 [TASK_CONTRACT.md](TASK_CONTRACT.md)。
 
 `projection` 是适配器的完整结果，`gaps` 原样保留。不补造 `revision`、`reviewId`、
 约定版本或源码摘要；`actionFacts` 本轮恒为 `null`，`allowedActions` 恒为 `["export"]`。
@@ -48,7 +62,7 @@ workbuddy_get_task_projection({ taskId: string })
 |---|---|
 | `task_not_found` | 存储中没有该 taskId |
 | `invalid_attempt_id` | `task.attemptId` 存在但不符合 `RunJournal` 接受的 `^run-[a-f0-9-]{36}$`，或解析后不在 runs 目录内；**不读任何文件**，也不当作"没有当前 attempt" |
-| `store_unavailable` | `store.get` / `store.listAttempts` / 末次 `store.get` 抛错；不伪装成 `task_not_found`，错误信息不含数据库内容或本机路径 |
+| `store_unavailable` | `store.get` / `getContract` / `store.listAttempts` / 末次 `store.get` 抛错；不伪装成 `task_not_found` 或"没有约定"，错误信息不含数据库内容或本机路径 |
 | `read_conflict` | 读取期间当前 attempt 变化（或任务消失），拒绝拼接两轮记录 |
 | `state_corrupt` / `cancel_corrupt` | 文件存在但不是 JSON 对象，或**字段类型不符**（见下） |
 | `state_unreadable` / `cancel_unreadable` | 非 ENOENT 的读取失败（权限、路径类型等） |
@@ -85,6 +99,7 @@ workbuddy_get_task_projection({ taskId: string })
 | 数据 | 来源 | 说明 |
 |---|---|---|
 | 任务 | `TaskStore.get(taskId)` | 服务已持有的实例，查询不新建 store |
+| 初始约定 | `TaskStore.getContract(taskId)` | 纯 SELECT；旧任务为 `null`，不补建 |
 | 当前轮次 | `TaskStore.listAttempts(taskId)` 中 `attemptId === task.attemptId` 的行 | 只用 `task.attemptId` 选择，不提升历史行 |
 | 运行快照 | `<runsDir>/<attemptId>/state.json` | `runsDir` 来自服务配置；路径前先校验 attemptId |
 | 取消记录 | `<runsDir>/<attemptId>/cancel.json` | 同上 |

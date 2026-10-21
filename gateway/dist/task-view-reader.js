@@ -253,6 +253,15 @@ export function readTaskProjection(sources, taskId) {
     if (!task) {
         return failure("task_not_found", taskId, null, "taskId", "No stored task has this id.");
     }
+    // The contract is read once, before any attempt work. Its absence is a
+    // normal state for an older task; a read failure is not.
+    let contract = null;
+    try {
+        contract = sources.store.getContract(taskId) ?? null;
+    }
+    catch {
+        return failure("store_unavailable", taskId, null, "store.getContract", "Reading the task contract failed; this is not reported as a task without one.");
+    }
     const attemptId = nonBlank(task.attemptId) ? task.attemptId.trim() : null;
     // A present but unusable attempt id is a malformed record, not a task with no
     // current attempt. No path is built from it and no file is read.
@@ -278,7 +287,7 @@ export function readTaskProjection(sources, taskId) {
     // records the gap, and no directory is touched.
     if (!attemptId || !runDir) {
         const projection = adaptTaskViewFacts({ task, attempt: null, snapshot: null, cancellation: null });
-        return { ok: true, readOnly: true, snapshotOnly: true, task: identity, projection };
+        return { ok: true, readOnly: true, snapshotOnly: true, task: identity, contract, projection };
     }
     const state = readRunFile(path.join(runDir, "state.json"), "state", snapshotShapeProblem);
     if (!state.ok)
@@ -309,7 +318,7 @@ export function readTaskProjection(sources, taskId) {
         snapshot: state.value,
         cancellation: cancel.value,
     });
-    return { ok: true, readOnly: true, snapshotOnly: true, task: identity, projection };
+    return { ok: true, readOnly: true, snapshotOnly: true, task: identity, contract, projection };
 }
 function jsonResult(value) {
     return { content: [{ type: "text", text: JSON.stringify(value, null, 2) }] };

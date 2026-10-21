@@ -35,8 +35,8 @@ export declare function diagnose(options?: DiscoveryOptions & {
         application: "environment" | "detected" | "missing" | "ambiguous";
         config: "environment" | "detected" | "missing" | "ambiguous";
     };
-    connection: "unavailable" | "not_checked" | "bridge_missing" | "verified";
-    modelPolicy: "blocked" | "unknown" | "not_checked" | "verified";
+    connection: "verified" | "unavailable" | "not_checked" | "bridge_missing";
+    modelPolicy: "blocked" | "unknown" | "verified" | "not_checked";
     login: string;
     quota: string;
     taskExecutionVerified: boolean;

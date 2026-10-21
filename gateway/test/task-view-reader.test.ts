@@ -26,6 +26,7 @@ import {
 } from "../src/task-view-reader.js";
 import type { StoredAttempt, StoredTask } from "../src/task-store.js";
 import type { RunSnapshot } from "../src/run-journal.js";
+import type { PersistedTaskContract } from "../src/task-contract.js";
 
 const TASK_ID = "task-reader-1";
 const ATTEMPT_ID = "run-33333333-3333-3333-3333-333333333333";
@@ -86,7 +87,7 @@ interface RecordingStore extends TaskProjectionStore {
   calls: string[];
 }
 
-function storeOf(value: StoredTask | undefined, attempts: StoredAttempt[]): RecordingStore {
+function storeOf(value: StoredTask | undefined, attempts: StoredAttempt[], contract?: PersistedTaskContract): RecordingStore {
   const calls: string[] = [];
   return {
     calls,
@@ -97,6 +98,10 @@ function storeOf(value: StoredTask | undefined, attempts: StoredAttempt[]): Reco
     listAttempts(id: string) {
       calls.push("listAttempts");
       return value && id === value.taskId ? attempts : [];
+    },
+    getContract(id: string) {
+      calls.push("getContract");
+      return value && id === value.taskId ? contract : undefined;
     },
   };
 }
@@ -281,6 +286,9 @@ test("a change of the current attempt during the read is reported as a conflict"
       listAttempts() {
         return [attemptRow()];
       },
+      getContract() {
+        return undefined;
+      },
     };
     const result = readTaskProjection({ store, runsDir }, TASK_ID);
     assert.equal(result.ok, false);
@@ -301,6 +309,9 @@ test("a task that disappears during the read is reported as a conflict", () => {
       },
       listAttempts() {
         return [attemptRow()];
+      },
+      getContract() {
+        return undefined;
       },
     };
     const result = readTaskProjection({ store, runsDir }, TASK_ID);
@@ -323,12 +334,12 @@ test("the query writes nothing to the runs directory", () => {
   });
 });
 
-test("the query reads only get and listAttempts from the store", () => {
+test("the query reads only get, listAttempts and getContract from the store", () => {
   withRunsDir(runsDir => {
     writeRun(runsDir, { state: snapshot() });
     const recording = storeOf(task(), [attemptRow()]);
     readTaskProjection({ store: recording, runsDir }, TASK_ID);
-    assert.deepEqual([...new Set(recording.calls)], ["get", "listAttempts"]);
+    assert.deepEqual([...new Set(recording.calls)], ["get", "getContract", "listAttempts"]);
   });
 });
 
@@ -338,7 +349,7 @@ test("the query never reaches for a synchronising or native entry point", () => 
     const base = storeOf(task(), [attemptRow()]);
     const guarded = new Proxy(base, {
       get(target, property, receiver) {
-        if (property === "get" || property === "listAttempts" || property === "calls") {
+        if (property === "get" || property === "listAttempts" || property === "getContract" || property === "calls") {
           return Reflect.get(target, property, receiver);
         }
         throw new Error(`unexpected store access: ${String(property)}`);
@@ -565,6 +576,9 @@ test("a failing task read is a store error, not a missing task", () => {
     listAttempts() {
       return [];
     },
+    getContract() {
+      return undefined;
+    },
   };
   const result = readTaskProjection({ store, runsDir: "unused" }, TASK_ID);
   assert.equal(result.ok, false);
@@ -582,6 +596,9 @@ test("a failing attempt list read is a store error", () => {
     },
     listAttempts() {
       throw new Error("disk I/O error");
+    },
+    getContract() {
+      return undefined;
     },
   };
   const result = readTaskProjection({ store, runsDir: "unused" }, TASK_ID);
@@ -603,6 +620,9 @@ test("a failing final re-read is a store error", () => {
       },
       listAttempts() {
         return [attemptRow()];
+      },
+      getContract() {
+        return undefined;
       },
     };
     const result = readTaskProjection({ store, runsDir }, TASK_ID);
@@ -687,6 +707,9 @@ test("the registered tool returns a structured response when the store throws", 
       },
       listAttempts() {
         return [];
+      },
+      getContract() {
+        return undefined;
       },
     };
     const { payload } = await callRegisteredTool({ store, runsDir }, TASK_ID);

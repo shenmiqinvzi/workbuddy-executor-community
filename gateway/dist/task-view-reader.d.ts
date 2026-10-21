@@ -28,6 +28,7 @@
  */
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { StoredAttempt, StoredTask } from "./task-store.js";
+import type { PersistedTaskContract } from "./task-contract.js";
 import { type TaskViewAdapterResult } from "./task-view-adapter.js";
 /**
  * The store surface the reader needs.
@@ -39,6 +40,8 @@ import { type TaskViewAdapterResult } from "./task-view-adapter.js";
 export interface TaskProjectionStore {
     get(taskId: string): StoredTask | undefined;
     listAttempts(taskId: string): StoredAttempt[];
+    /** The stored initial contract, or undefined when the task predates one. */
+    getContract(taskId: string): PersistedTaskContract | undefined;
 }
 /** Everything the reader is allowed to touch. */
 export interface TaskProjectionSources {
@@ -62,6 +65,13 @@ export interface TaskProjectionSuccess {
     readOnly: true;
     snapshotOnly: true;
     task: TaskProjectionIdentity;
+    /**
+     * The immutable initial contract, or null for a task that predates one.
+     * A stored contract proves the terms were persisted; it does not prove that a
+     * scope check, model verification, any check execution or independent review
+     * has happened.
+     */
+    contract: PersistedTaskContract | null;
     projection: TaskViewAdapterResult;
 }
 /**

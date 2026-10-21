@@ -32,6 +32,7 @@ import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { StoredAttempt, StoredTask } from "./task-store.js";
+import type { PersistedTaskContract } from "./task-contract.js";
 import type { RunSnapshot } from "./run-journal.js";
 import {
   adaptTaskViewFacts,
@@ -51,6 +52,8 @@ import { REPORT_AUTHENTICATION_FORMAT } from "./report-authentication.js";
 export interface TaskProjectionStore {
   get(taskId: string): StoredTask | undefined;
   listAttempts(taskId: string): StoredAttempt[];
+  /** The stored initial contract, or undefined when the task predates one. */
+  getContract(taskId: string): PersistedTaskContract | undefined;
 }
 
 /** Everything the reader is allowed to touch. */
@@ -86,6 +89,13 @@ export interface TaskProjectionSuccess {
   readOnly: true;
   snapshotOnly: true;
   task: TaskProjectionIdentity;
+  /**
+   * The immutable initial contract, or null for a task that predates one.
+   * A stored contract proves the terms were persisted; it does not prove that a
+   * scope check, model verification, any check execution or independent review
+   * has happened.
+   */
+  contract: PersistedTaskContract | null;
   projection: TaskViewAdapterResult;
 }
 
@@ -345,6 +355,15 @@ export function readTaskProjection(sources: TaskProjectionSources, taskId: strin
     return failure("task_not_found", taskId, null, "taskId", "No stored task has this id.");
   }
 
+  // The contract is read once, before any attempt work. Its absence is a
+  // normal state for an older task; a read failure is not.
+  let contract: PersistedTaskContract | null = null;
+  try {
+    contract = sources.store.getContract(taskId) ?? null;
+  } catch {
+    return failure("store_unavailable", taskId, null, "store.getContract", "Reading the task contract failed; this is not reported as a task without one.");
+  }
+
   const attemptId = nonBlank(task.attemptId) ? task.attemptId.trim() : null;
 
   // A present but unusable attempt id is a malformed record, not a task with no
@@ -378,7 +397,7 @@ export function readTaskProjection(sources: TaskProjectionSources, taskId: strin
   // records the gap, and no directory is touched.
   if (!attemptId || !runDir) {
     const projection = adaptTaskViewFacts({ task, attempt: null, snapshot: null, cancellation: null });
-    return { ok: true, readOnly: true, snapshotOnly: true, task: identity, projection };
+    return { ok: true, readOnly: true, snapshotOnly: true, task: identity, contract, projection };
   }
 
   const state = readRunFile<RunSnapshot>(path.join(runDir, "state.json"), "state", snapshotShapeProblem);
@@ -416,7 +435,7 @@ export function readTaskProjection(sources: TaskProjectionSources, taskId: strin
     snapshot: state.value,
     cancellation: cancel.value,
   });
-  return { ok: true, readOnly: true, snapshotOnly: true, task: identity, projection };
+  return { ok: true, readOnly: true, snapshotOnly: true, task: identity, contract, projection };
 }
 
 function jsonResult(value: unknown) {

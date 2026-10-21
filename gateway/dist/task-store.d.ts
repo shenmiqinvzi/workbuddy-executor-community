@@ -1,4 +1,5 @@
 import type { LocalMessage } from "./workbuddy-client.js";
+import { type NormalizedTaskContract, type PersistedTaskContract } from "./task-contract.js";
 export type TaskState = "queued" | "working" | "completed" | "blocked" | "failed" | "cancelled" | "needs_review" | "accepted";
 export interface StoredTask {
     taskId: string;
@@ -39,6 +40,29 @@ type NullableTaskFields = "report" | "reviewNote" | "reviewedAt" | "sessionId" |
 export type TaskUpdate = Partial<Pick<StoredTask, "state" | "messageId" | "lastMessageId">> & {
     [Field in NullableTaskFields]?: StoredTask[Field] | null;
 };
+/**
+ * The outcome of creating a task together with its initial contract.
+ *
+ * `task_without_contract` is the legacy case: the task already exists from a
+ * build that stored no contract. It is reported as itself and never repaired
+ * from the task's current objective or acceptance commands.
+ */
+export type TaskContractCreateResult = {
+    status: "created";
+    task: StoredTask;
+    record: PersistedTaskContract;
+} | {
+    status: "existing_same";
+    task: StoredTask;
+    record: PersistedTaskContract;
+} | {
+    status: "conflict";
+    task: StoredTask;
+    record: PersistedTaskContract;
+} | {
+    status: "task_without_contract";
+    task: StoredTask;
+};
 export interface AttemptReservation {
     attemptId: string;
     messageId: string;
@@ -78,6 +102,27 @@ export declare class TaskStore {
         created: boolean;
     };
     get(taskId: string): StoredTask | undefined;
+    /**
+     * Read the stored contract for a task.
+     *
+     * A plain read: it initializes nothing, migrates nothing and never backfills
+     * a contract for a task that has none. Absence means the task predates the
+     * contract, not that its current fields can stand in for one.
+     */
+    getContract(taskId: string): PersistedTaskContract | undefined;
+    /**
+     * Create a task and its initial contract as one unit.
+     *
+     * The task row, the attempt snapshot and the contract are written inside a
+     * single transaction, so a failure leaves neither half behind. Idempotency is
+     * decided by the primary key rather than by a prior read: the insert either
+     * wins or conflicts, and only the winner writes a contract. Two connections
+     * racing on one task id therefore cannot both create it, and no nested
+     * transaction is needed.
+     */
+    createTaskWithContract(task: Omit<StoredTask, "createdAt" | "updatedAt"> & {
+        createdAt?: string;
+    }, contract: NormalizedTaskContract, contractHash: string): TaskContractCreateResult;
     listTasks(options?: {
         state?: TaskState;
         states?: TaskState[];
