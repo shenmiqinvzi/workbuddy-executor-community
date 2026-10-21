@@ -196,13 +196,13 @@
     },
     {
       "path": "dist/bounded-command.js",
-      "sha256": "d0b9447217047fdbaa3ac7814bf6ccbf2dcfe8b8b1e2a1e49d09120d516a584f",
-      "bytes": 5832
+      "sha256": "a0535573286c6b849228746ddbd81fd06e4801ddfd29569510833dfb59fd2c9f",
+      "bytes": 5852
     },
     {
       "path": "dist/bounded-command.js.map",
-      "sha256": "8e698feb824905838e34e2480dd910e6fa3c7cf999cdd4feb59922ae628c417f",
-      "bytes": 6676
+      "sha256": "21a06b575ba4a4cf9af5e55c381f261ace243bc6b38d0fdf37b86025a153824f",
+      "bytes": 6701
     },
     {
       "path": "dist/brief-result.d.ts",
@@ -391,13 +391,13 @@
     },
     {
       "path": "dist/desktop-queue.js",
-      "sha256": "fc73f4d10f5f94873cf6a687a7b35f9f1ce1247f54b027b2149efccee919b64f",
-      "bytes": 53479
+      "sha256": "32edaf0f6f36fa8446c43694d5bb6c4a84170534d8adc562ad02c7610302a6b2",
+      "bytes": 54423
     },
     {
       "path": "dist/desktop-queue.js.map",
-      "sha256": "24483419c525bb7e7c72f6e8a08999504cbd34c5f863d2575543f05857b27b21",
-      "bytes": 44849
+      "sha256": "6eb2bfe048bd4d879d65defecfc755e8dff55387a4f6d0db675328e9b53c1bc2",
+      "bytes": 44993
     },
     {
       "path": "dist/desktop-runtime.d.ts",
@@ -536,7 +536,7 @@
     },
     {
       "path": "dist/persistent-service.d.ts",
-      "sha256": "810a9401073888766bb0b18eb9cd0d4c95c4960e7d325afa0cf1cc83c3c1b9f4",
+      "sha256": "3a3423f2f527664fd24ae66f760265efec11a58192727ca22f9869f5f2983379",
       "bytes": 4898
     },
     {
@@ -701,8 +701,8 @@
     },
     {
       "path": "dist/run-journal.d.ts",
-      "sha256": "94f33d59163341b9dbd8f49a9167b219f1879e526b017680f094dea4aa0675e4",
-      "bytes": 3626
+      "sha256": "abf867ea8cfda403655f1430511077a4534f61a3a2f4e440e4b1347f55455dff",
+      "bytes": 3986
     },
     {
       "path": "dist/run-journal.js",
@@ -711,7 +711,7 @@
     },
     {
       "path": "dist/run-journal.js.map",
-      "sha256": "df5a0efd5cf2aa81fb007cb65702950e212c1dea40522571edb3c1ff03503f9a",
+      "sha256": "c1ce0207314411dad438ad406554a0490c7a2f7371353fafc34206345e59f3da",
       "bytes": 11414
     },
     {
@@ -821,18 +821,18 @@
     },
     {
       "path": "dist/task-view-adapter.d.ts",
-      "sha256": "4f8d5e37034030e958297b36a0e194835b66d866ddc2c14cacb0610d7828cce1",
-      "bytes": 6715
+      "sha256": "eca76c0ff430b848a1e5f5cf52f3bff3fd2638b4e4e87ec134ff572d796a1021",
+      "bytes": 6872
     },
     {
       "path": "dist/task-view-adapter.js",
-      "sha256": "9449878e8d81e6d822b9618ee07eaaeeae029a0201fb5cc800dd938ee5777b43",
-      "bytes": 20440
+      "sha256": "8cea59be70d84b1e4d50f76c2d59dd597a38dcec11c7d9423541026ca4e06108",
+      "bytes": 23607
     },
     {
       "path": "dist/task-view-adapter.js.map",
-      "sha256": "2489b4e4ffbec94e80f424eda7cfade701b55b63113c8952d6871ce327376b2e",
-      "bytes": 11992
+      "sha256": "2a0bd3a67b7cecb221b5b465af6428fa81c69e7e5b385db4a038dda7c256a2e7",
+      "bytes": 13723
     },
     {
       "path": "dist/task-view-reader.d.ts",
@@ -841,13 +841,13 @@
     },
     {
       "path": "dist/task-view-reader.js",
-      "sha256": "844cd1432c67f4760e0f9be0a9262f034cabd904b95f148722c40ffada9a3728",
-      "bytes": 13046
+      "sha256": "f15cc0f2172f6e2ab717196523bd4353db4b81aea286ae7c9884ce3b7dd3a194",
+      "bytes": 14309
     },
     {
       "path": "dist/task-view-reader.js.map",
-      "sha256": "b7f63fe5aa583121ea557d8059a3d6160b69dc934d581718f7b21a0d8d80906d",
-      "bytes": 8331
+      "sha256": "30234b83e1f80cb203bfc10b4bec6923bc0083bccc1cef66e73b2b9c39a7e088",
+      "bytes": 9001
     },
     {
       "path": "dist/task-view-state.d.ts",
@@ -1191,8 +1191,8 @@
     },
     {
       "path": "src/bounded-command.ts",
-      "sha256": "df27f38528d9d50cc6813ecf623fb091e4b3c04d6f7e04190843a10d7ac17dcd",
-      "bytes": 6140
+      "sha256": "43e052986eed8ec1a58980c1905e3b3b6199de72984624f87611ebea5d998ea6",
+      "bytes": 6159
     },
     {
       "path": "src/brief-result.ts",
@@ -1256,8 +1256,8 @@
     },
     {
       "path": "src/desktop-queue.ts",
-      "sha256": "fd620d82ba7d62de645feabba804c79007422cc7d5d3b2b088dfd11ef60dc0d0",
-      "bytes": 50887
+      "sha256": "3474c5d63d8a0bf3982e9385e8962a7b99b1ae0156bc0ae31ba8919b7dc9e29e",
+      "bytes": 51740
     },
     {
       "path": "src/desktop-runtime.ts",
@@ -1361,8 +1361,8 @@
     },
     {
       "path": "src/run-journal.ts",
-      "sha256": "4c23cd4a524eeb9da1274abc8dc03b92bd0a1debbabf32b61f7ee881ff82f0bf",
-      "bytes": 13065
+      "sha256": "4454228d9c3766ad251c6a8f1c2c84e489db19a3db4986c6bb626626207d8723",
+      "bytes": 13420
     },
     {
       "path": "src/run-worker.ts",
@@ -1401,13 +1401,13 @@
     },
     {
       "path": "src/task-view-adapter.ts",
-      "sha256": "b506854406ff582b04d9668a0d08d587d6e3ea38dd01b0a3c8af9e59085ae8c9",
-      "bytes": 24656
+      "sha256": "387f920f48ddf9c5bd17b237914ac9b616a9d7be22e0a49f37367a8a01b9e6b8",
+      "bytes": 27973
     },
     {
       "path": "src/task-view-reader.ts",
-      "sha256": "ec2c35b6505a4282ce235ade9041214f9e54dc6cd0aa36f8f6b3cfb725a3f19f",
-      "bytes": 15713
+      "sha256": "4d1b9b8febb46dc99b9b013f102c3c35a3ea5422be09e7f139685a61679d5795",
+      "bytes": 16823
     },
     {
       "path": "src/task-view-state.ts",
@@ -1586,8 +1586,8 @@
     },
     {
       "path": "test/task-view-adapter.test.ts",
-      "sha256": "34186f7fa3476568048e333c55f24c4dc7cd5a1a1b7ef79b807dc8f64adfbf21",
-      "bytes": 31523
+      "sha256": "3bde9c76949915b5d8c459964f1b9fd4b2b98ba447533131511ed947931c0c2f",
+      "bytes": 31675
     },
     {
       "path": "test/task-view-reader.test.ts",
@@ -1621,8 +1621,8 @@
     },
     {
       "path": "tsconfig.task-view.json",
-      "sha256": "248c3f4ee82d8d538d675f31be4cab0465d5b87d01a49a27c8e8f36908184a04",
-      "bytes": 691
+      "sha256": "d82db7ca277c2c6b7a40d4cee3743c854ec75377fe8b49352c6e0092a0d386d6",
+      "bytes": 769
     },
     {
       "path": "verify-snapshot.mjs",

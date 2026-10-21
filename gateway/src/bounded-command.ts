@@ -55,7 +55,7 @@ export async function runBounded(spec:CommandSpec, directory:string, options:{ca
       writePrivateJson(record,{...spec,startedAt,before,state:"running",stdout,stderr,supervisorPid:child.pid,supervisorSpec:specFile,ownership:"windows_job_object"});
       let out="",err="",watchdogFired=false,helperExitCode:number|null=null;
       const spawnedAt=Date.now();
-      const evidence=():CommandFailureEvidence=>({watchdogFired,helperExitCode,elapsedMs:Date.now()-spawnedAt,stdoutBytes:out.length,stderrTail:err.slice(-600)});
+      const evidence=():CommandFailureEvidence=>({watchdogFired,helperExitCode,elapsedMs:Date.now()-spawnedAt,stdoutBytes:Buffer.byteLength(out,"utf8"),stderrTail:err.slice(-600)});
       const fail=(reason:string)=>resolve({exitCode:125,reason,cleanupConfirmed:false,failure:evidence()});
       child.stdout.on("data",b=>out+=String(b));child.stderr.on("data",b=>err+=String(b));
       // The supervisor enforces the command's own timeout; this watchdog only
