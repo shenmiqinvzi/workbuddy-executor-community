@@ -561,6 +561,58 @@ test("explicit idle recovery preserves failure and artifacts; only a new same-ta
   assert.equal((await f.coordinator.sync(claim.taskId)).state, "needs_review");
 });
 
+async function expiredUnclaimed(f: ReturnType<typeof fixture>) {
+  const journal = await f.send();
+  journal.save({ ...journal.snapshot()!, deadline: new Date(Date.now() - 1000).toISOString() });
+  const task = await f.coordinator.sync(journal.snapshot()!.taskId);
+  assert.equal(task.state, "blocked");
+  return { journal, input: { taskId: task.taskId, attemptId: journal.attemptId, reason: "Service was absent; original session is idle and no native wake or claim exists" } };
+}
+
+test("unclaimed expired recovery preserves failure without inventing a claim or result", async t => {
+  const f = fixture(t);
+  const { journal, input } = await expiredUnclaimed(f);
+  const previousError = journal.snapshot()!.error;
+  const previousResults = journal.events(0, Infinity).filter(event => event.type === "result");
+  assert.equal(f.coordinator.executionStatus(input.taskId).remoteStopped, false);
+  assert.equal((await recoverExpiredAttempt(f.config, f.registration, f.trigger, input)).taskCompleted, false);
+  assert.equal(f.coordinator.executionStatus(input.taskId).remoteStopped, true);
+  assert.equal(journal.snapshot()!.status, "blocked");
+  assert.equal(journal.snapshot()!.error, previousError);
+  assert.equal(journal.snapshot()!.runtimeSource, undefined);
+  assert.equal(fs.existsSync(path.join(journal.dir, "claim.json")), false);
+  assert.equal(fs.existsSync(path.join(journal.dir, "wake.json")), false);
+  assert.equal(f.trigger.wakes.length, 0);
+  assert.deepEqual(journal.events(0, Infinity).filter(event => event.type === "result"), previousResults);
+  assert.equal((await recoverExpiredAttempt(f.config, f.registration, f.trigger, input)).alreadyRecovered, true);
+});
+
+test("unclaimed expired recovery refuses every existing wake, even rejected delivery", async t => {
+  const f = fixture(t);
+  const { journal, input } = await expiredUnclaimed(f);
+  for (const state of ["submitting", "submitted", "uncertain", "rejected"]) {
+    writePrivateJson(path.join(journal.dir, "wake.json"), { version: 1, state, sessionId: input.taskId, attemptId: input.attemptId });
+    await assert.rejects(() => recoverExpiredAttempt(f.config, f.registration, f.trigger, input), /Unclaimed recovery requires no native delivery or execution evidence/);
+    assert.equal(f.coordinator.executionStatus(input.taskId).remoteStopped, false);
+  }
+});
+
+test("unclaimed expired recovery refuses execution, report or native failure evidence", async t => {
+  const f = fixture(t);
+  const { journal, input } = await expiredUnclaimed(f);
+  const original = journal.snapshot()!;
+  for (const extra of [
+    { runtimeSource: "desktop_queue" },
+    { reportDigest: "existing-report-digest" },
+    { nativeFailure: { wakeId: "wake-existing", error: "500 provider error", observedAt: new Date().toISOString() } },
+    { stopControl: { state: "requested" as const, requestedAt: new Date().toISOString(), issuedAt: new Date().toISOString() } },
+  ]) {
+    journal.save({ ...original, ...extra });
+    await assert.rejects(() => recoverExpiredAttempt(f.config, f.registration, f.trigger, input), /Unclaimed recovery requires no native delivery or execution evidence/);
+    assert.equal(f.coordinator.executionStatus(input.taskId).remoteStopped, false);
+  }
+});
+
 test("recovery refuses busy, waiting-input, offline or changed native workspace", async (t) => {
   const f = fixture(t);
   const { journal, input } = await expiredClaim(f);
