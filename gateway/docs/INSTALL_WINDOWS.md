@@ -63,9 +63,17 @@ node scripts/doctor.mjs --live
 
 请求超时、回执丢失、归属变化或仍有活动时保持 `stop_unconfirmed`，重连不重发取消请求，也不放行下一任务。`execution.stopControl` 和 `execution.nativeStopCheck` 提供请求与连续观察记录；单次空闲恢复和报告恢复工具不能绕过新版失败轮次的停止门槛。旧版本保存的历史停止记录不会被本次源码修改自动重新核验。
 
+部分原生版本会在工具结束后补发参数完整事件：同一工具先出现 `failed` 等终态，随后又出现带 `codebuddy.ai/toolArgumentsComplete=true` 的 `tool_call/pending`。历史解析仅在工具 ID、工具名、会话请求、模型请求及唤醒请求身份全部匹配时保留已有终态；缺少或不同身份、普通待执行事件、后续执行中更新及其他工具仍会阻止停止确认。原生权限、执行中标志、团队和后台任务检查继续生效。
+
+该解析版本使用 `historyRevision=2`。重启后的持久历史可能省略唤醒字段；仅双方都明确标记 `mode=history`、各有数值 offset，且工具 ID、工具名、会话请求、模型请求及非空原生 requestId 全部匹配时，才识别这种参数补全事件。缺少历史标记、单方仍有唤醒字段或请求身份不匹配时继续等待，不推断停止。
+
+旧桥接的在途活动仍被保留并检查，因此旧桥接已因残留历史显示忙时，热加载新文件不会自动解除阻塞；不要修改任务库或强行关闭应用来制造停止证明。修复须另行安排部署与原生界面确认，当前任务及其原报告、超时和取消结果保持原样。
+
 旧版本因后到错误覆盖了报告时，可用 `workbuddy_reconcile_report`，提供原 taskId、当前 attemptId 与核查原因。它核对现有报告摘要、原生最近唤醒身份、当前原生空闲和命令清理证据，仅恢复到待审查，不重发任务、不延长预算、不自动验收；原报告和失败事件都保留。当前聊天仍是旧内存版本时，可通过本机 `scripts/workbuddy-call.mjs` 启动器调用该工具。
 
 当前 MCP 的相关可选返回字段如下；未观察到的证据省略，不推断为成功：
+
+共享服务兼容层在 `get_task`、`wait` 返回 `statusView`，在 `list_tasks` 返回对应的 `statusViews`。每项包含 `taskId`、`attemptId`、`sessionId`、`businessState`、`displayState`、`remoteStopped`、`allowedActions` 与 `lastObservedAt`。它是现有任务的保守投影，尚不是设计中的完整 vNext TaskView；操作执行时仍由 coordinator 重新核验。原生失败后的停止未确认也显示为 `waiting_stop`，不要求先有人工取消请求；不会因此开放返工或验收。报告恢复同样经过共享服务入口。
 
 | 字段 | 含义 |
 |---|---|
@@ -77,6 +85,8 @@ node scripts/doctor.mjs --live
 `workbuddy_reconcile_report` 输入为 `{taskId, attemptId, reason, detail?}`：`attemptId` 必须是当前 `run-<UUID>`，`reason` 为非空核查说明（最长2000字符），`detail` 为 `brief` 或 `full`。成功只表示已有报告恢复到 `needs_review`，`taskCompleted=false`；仍须核对返回的 `task`、`execution` 和当前成果后另行验收。
 
 本次本机真实样本与回归测试的脱敏边界记录见 [原生停止验证摘要](native-stop-verification.json)。
+
+历史参数事件兼容修复的部署与原任务第3轮真实验收记录见 [本机历史解析修复复验](native-history-deployment-verification.json)；它记录实际运行哈希、预期超时124、清理和停止证据，并保留前两轮失败，不能代替异机验收。
 
 ## 5. 升级、回退和卸载
 

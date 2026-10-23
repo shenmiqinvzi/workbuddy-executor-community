@@ -1,0 +1,57 @@
+{
+  "kind": "same_machine_real_windows_verification",
+  "date": "2026-10-20",
+  "baseCommit": "d84936a03962fad548d75425cdce00c6d08b5da2",
+  "localPatch": "native-history-argument-completion-v2",
+  "runtimeCodeHash": "8110503b3ad6134ea8f44540d5c7ba8fb121488497ee61ed9e82bdaa1391a0c6",
+  "historyRevision": 2,
+  "deployedToDedicatedTestGateway": true,
+  "mcpAndPersistentServiceRuntimeMatched": true,
+  "approvedModel": {"id": "deepseek-v4.1-flash", "observedCredits": "x0.00"},
+  "realTimeoutTask": {
+    "sameOriginalTaskAndSession": true,
+    "attempt": 3,
+    "runtimeSource": "desktop_queue",
+    "authenticatedReportDigestVerified": true,
+    "commandExitCode": 124,
+    "reason": "timeout",
+    "commandTimeoutSeconds": 3,
+    "durationMsIncludingStartupAndCleanup": 4952,
+    "ownership": "windows_job_object",
+    "cleanupConfirmed": true,
+    "ownedSamplePidExited": true,
+    "protectedFileUnchanged": true,
+    "unexpectedBusinessFiles": 0,
+    "remoteStopped": true,
+    "freshNativeIdleObservations": 2,
+    "backendActivityTimestampStable": true,
+    "latestWakeIdentityMatched": true,
+    "noCorrelatedNativeFailure": true,
+    "state": "accepted",
+    "previousTwoBlockedAttemptsAndReportsPreserved": true,
+    "expectedNonzeroRecordNotCitedAsPassingValidation": true
+  },
+  "isolatedRegressions": {"tests": 102, "passed": 96, "failed": 0, "skippedMacOs": 6, "buildExitCode": 0},
+  "actualNativeEventOfflineReplays": [
+    {"schema": "live", "events": 4, "originalParser": "busy", "candidateParser": "idle"},
+    {"schema": "persisted_history", "events": 2, "originalParser": "busy", "candidateParser": "idle"}
+  ],
+  "deployment": {
+    "originalFilesBackedUp": true,
+    "serviceExecutableAndArgumentsOwnershipVerified": true,
+    "nativeApplicationRestartedByUser": true,
+    "nativeApplicationForceStoppedByCodex": false,
+    "configurationHashesUnchanged": true,
+    "taskDatabaseManuallyEdited": false,
+    "otherGatewayInstallationsUpdated": false,
+    "finalPersistentServiceStatus": "no_task"
+  },
+  "boundaries": [
+    "This is same-machine verification, not acceptance on a second physical Windows machine.",
+    "The previous blocked attempts remain blocked. Only the current third attempt was accepted.",
+    "Exit 124 is the expected exception in this timeout rehearsal; it is not presented as an exit-zero business test.",
+    "Provider HTTP 429, native permission/input recovery and full-task deadline shutdown remain unverified on this repaired runtime.",
+    "Execution was verified on the recorded base plus this source patch; runtimeCodeHash identifies the deployed code independently of subsequent Git commit metadata.",
+    "Credentials, session contents and machine-specific path lists are excluded."
+  ]
+}

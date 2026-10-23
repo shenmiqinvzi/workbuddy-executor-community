@@ -2,7 +2,7 @@
 
 让 Codex 与桌面 WorkBuddy 协作完成本地开发任务：Codex 明确范围、监督并独立验收，WorkBuddy 负责适合委派的实现、测试和资料整理。
 
-本项目由仓库维护者独立开发和维护，当前产品目标仅为 Windows。欢迎通过 Issue 提供场景和问题，也可提交 PR；路线、实现与合并由维护者决定，不设置共同负责人或固定开发分工。
+当前产品目标仅为 Windows。仓库维护者负责路线、集成与发布，欢迎通过 Issue 提供场景、认领具体任务并提交 PR；任务状态与交付在对应 Issue/PR 中跟踪。
 
 项目正在整理开放协作入口；统一开源许可证尚待明确，来源与授权事实见 [授权和许可说明](AUTHORIZATION.md)。本仓库是面向社区的公开版本。
 
@@ -26,12 +26,16 @@
 |---|---|
 | 使用需求、灵感和故障反馈 | [创建 Issue](https://github.com/shenmiqinvzi/workbuddy-executor-community/issues/new/choose) |
 | 阶段目标与可参与方向 | [公开路线图](ROADMAP.md) |
+| 已完成、待交付与下一步 | [开发进度](docs/PROGRESS.md) |
 | 待实现的架构与约束 | [总体设计](docs/DEVELOPMENT_DESIGN.md) |
 | 服务、状态及指标约定 | [接口契约](docs/INTERFACE_CONTRACT.md) |
 | 版本行为验收标准 | [验收场景](docs/ACCEPTANCE.md) |
 | 已有修复与验证历史 | [更新记录](CHANGELOG.md) |
+| 前端只读模拟原型 | [设计任务书](docs/FRONTEND_TASK_PANEL_DESIGN.md) · [Issue #6](https://github.com/shenmiqinvzi/workbuddy-executor-community/issues/6) |
 
-设计中的本地面板、统一接口和自动指标等 vNext 目标尚待实现；文档存在不代表能力已部署。公开路线图不包含个人分工、投入时间或内部排期。
+共享任务服务的基础兼容层已接入 MCP，提供保守的任务状态和允许操作视图，并保留原生错误、报告恢复与停止核验规则。整合分支已完成独立部署和本机真实验证：正常小代码任务验收通过，MCP重连、正式取消均有实际证据；历史pending误判修复后，原超时演练第3轮已验收，前两轮失败保留。详见[修复部署记录](gateway/docs/native-history-deployment-verification.json)。完整 vNext 契约、本地 HTTP/面板和自动指标仍待实现，开发分支尚未合并main。
+
+下一优先项是统一任务视图与本地只读接口；前端只读模拟原型已通过 Issue #6 发布并指派，尚未记录实现PR或验收。当前阶段与待办统一见[开发进度](docs/PROGRESS.md)。
 
 ## 验证与已知限制
 
