@@ -2,6 +2,14 @@
 
 以下为既有修复和实验记录；其中的日期、平台和样本限制适用于当时的验证，不代表所有环境均已通过。当前入口见 [README](README.md)。
 
+## 2026-10-20 历史状态修复部署、本机复验与前端任务发布
+
+修复同一工具已结束后被迟到参数pending事件覆盖的问题，并兼容原生重启后省略唤醒字段的持久历史。只在工具与请求身份匹配、历史标记满足要求时保留终态；未知身份、真实活动、原生权限及旧桥接在途状态继续保守拦截。修复提交为`f6efbf7`，已在独立测试网关部署，historyRevision=2。
+
+原命令超时任务沿同一taskId/session第3轮真实执行并独立验收：预期退出124、Windows Job清理成功、样本PID退出、两次原生idle与停止证明匹配，保护文件未变；前两轮失败和报告保留。聚焦回归102项，96通过、0失败、6项macOS跳过，构建退出0。见[脱敏部署记录](gateway/docs/native-history-deployment-verification.json)。这属于本机真实验证，不代表第二台Windows或所有异常通过。
+
+前端只读模拟原型设计与产品背景已在`02a3e1c`发布，并建立[Issue #6](https://github.com/shenmiqinvzi/workbuddy-executor-community/issues/6)。任务明确10种状态、16个合成场景和20项验收，当前已指派、待交付，不记为面板已实现或已联调。统一任务视图与本地只读HTTP为下一优先项；离线诊断误报、完整跨入口排他、自动范围、真实异常及异机验证继续跟踪。总览见[开发进度](docs/PROGRESS.md)。
+
 ## 2026-10-18 社区版 Windows 部署改造
 
 0.7.1 增加配置探测、Windows 只读诊断、plan/install/upgrade/uninstall、MCP 配置片段和本地验收报告；移除安装说明中的个人路径，发布 ZIP 不再依赖外部压缩程序。相关回归 145 项，139 通过、6 项平台跳过、零失败；实际发布包隔离安装与 stdio MCP 握手通过。第二台物理机器的原生业务验收仍待取得，未更新现有运行网关。详见 [验证范围](gateway/docs/PORTABILITY_VERIFICATION_2026-10-18.md)。

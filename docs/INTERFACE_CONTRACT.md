@@ -1,6 +1,6 @@
 # WorkBuddy Executor vNext 接口契约
 
-契约版本：`workbuddy-executor/vnext-1`。状态：设计基线，尚未实现。服务实现、mock 与客户端共同依据本文件。改动 enum、字段含义、动作或指标口径时先更新本文件及对应 fixture，再合并实现。可选字段用 null 明示未知，不使用字符串 NA 或 0 替代未知。
+契约版本：`workbuddy-executor/vnext-1`。状态：完整目标契约尚未实现；现有MCP只有基础statusView，不能等同于本文的完整TaskView。本次仅同步实现状态，未改变协议语义。具体阶段见[开发进度](PROGRESS.md)，前端合成样本任务见[Issue #6](https://github.com/shenmiqinvzi/workbuddy-executor-community/issues/6)。服务实现、mock与客户端共同依据本文件；改动enum、字段含义、动作或指标口径时先更新本文及对应fixture，再合并实现。可选字段用null明示未知，不使用字符串NA或0替代未知。
 
 ## 1. 入口与兼容方式
 

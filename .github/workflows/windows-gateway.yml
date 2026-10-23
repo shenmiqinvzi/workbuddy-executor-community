@@ -33,6 +33,10 @@ jobs:
         run: |
           git diff --exit-code -- dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Type check the TaskView contract sources and tests
+        run: npm run typecheck:task-view
+      - name: TaskView contract, derivation and report authentication tests
+        run: node --import ./test/support/typescript-loader.mjs --test test/task-view.test.ts test/task-view-state.test.ts test/task-view-actions.test.ts test/task-view-adapter.test.ts test/task-view-reader.test.ts test/report-authentication.test.ts test/task-contract.test.ts
       - name: Verify executor skill copies
         working-directory: .
         run: |
@@ -43,4 +47,4 @@ jobs:
             if ($source -cne $bundled) { throw "Executor skill copy differs: $file" }
           }
       - name: Deployment, packaging and execution regressions
-        run: node --import ./test/support/typescript-loader.mjs --test test/deployment.test.ts test/package.test.ts test/desktop-queue.test.ts test/persistent-service.test.ts test/native-desktop-trigger.test.ts test/native-renderer-url.test.ts test/windows-startup.test.ts test/native-turn-failure.test.ts test/native-failure-diagnostic.test.ts test/brief-result.test.ts test/workspace-workers.test.ts test/inspect-task.test.ts test/task-store.test.ts test/coordinator.test.ts test/queue-reliability.test.ts test/reliability-v2.test.ts test/bounded-command.test.ts test/command-cleanup.test.ts test/native-process.test.ts
+        run: node --import ./test/support/typescript-loader.mjs --test test/deployment.test.ts test/package.test.ts test/desktop-queue.test.ts test/persistent-service.test.ts test/native-desktop-trigger.test.ts test/native-renderer-url.test.ts test/windows-startup.test.ts test/native-turn-failure.test.ts test/native-failure-diagnostic.test.ts test/brief-result.test.ts test/task-application-service.test.ts test/backend-integration.test.ts test/workspace-workers.test.ts test/inspect-task.test.ts test/task-store.test.ts test/coordinator.test.ts test/queue-reliability.test.ts test/reliability-v2.test.ts test/bounded-command.test.ts test/command-cleanup.test.ts test/native-process.test.ts

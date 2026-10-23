@@ -143,7 +143,7 @@ test("MCP schemas expose optional brief and full still retrieves complete durabl
   t.after(async () => { await client.close(); store.close(); fs.rmSync(directory, { recursive: true, force: true }); });
   await client.connect(transport);
   const tools = await client.listTools();
-  const detailedTools = ["health", "send_task", "get_task", "wait", "list_tasks", "get_messages", "continue_task", "accept_task", "cancel_task"];
+  const detailedTools = ["health", "send_task", "get_task", "wait", "list_tasks", "get_messages", "continue_task", "accept_task", "cancel_task", "reconcile_report"];
   for (const suffix of detailedTools) {
     const schema = tools.tools.find((entry) => entry.name === `workbuddy_${suffix}`)!.inputSchema;
     assert.deepEqual((schema.properties?.detail as any)?.enum, ["full", "brief"]);
@@ -169,6 +169,8 @@ test("MCP schemas expose optional brief and full still retrieves complete durabl
   assert.equal(explicitFull.messages.length, 100);
   const compact = await call("workbuddy_get_task", { taskId: stored.taskId, detail: "brief", sinceEventSeq:0 });
   assert.equal(compact.task.attemptId, stored.attemptId);
+  assert.equal(compact.statusView.taskId, stored.taskId);
+  assert.deepEqual(compact.statusView.allowedActions, []);
   assert.equal(compact.task.latestReport.reportTruncated, true);
   assert.deepEqual(compact.task.artifacts, stored.artifacts);
   assert.ok(JSON.stringify(compact).length < JSON.stringify(explicitFull).length / 100);
@@ -184,6 +186,8 @@ test("MCP schemas expose optional brief and full still retrieves complete durabl
   const listed = await call("workbuddy_list_tasks", { detail: "brief" });
   assert.equal(listed.tasks[0].taskId, stored.taskId);
   assert.equal("objective" in listed.tasks[0], false);
+  assert.equal(listed.statusViews[0].taskId, stored.taskId);
+  assert.deepEqual(listed.statusViews[0].allowedActions, []);
   const duplicate = await call("workbuddy_send_task", { taskId: stored.taskId, objective: stored.objective, detail: "brief" });
   assert.equal(duplicate.created, false);
   assert.equal("objective" in duplicate.task, false);
@@ -213,4 +217,21 @@ test("MCP schemas expose optional brief and full still retrieves complete durabl
   await nativeIdle;
   assert.equal(settled.execution.remoteStopped, true);
   assert.equal(settled.task.state, "needs_review");
+
+  const journal = new RunJournal(path.join(directory, "runs"), attemptId);
+  journal.save({ ...journal.snapshot()!, status: "blocked", error: "429 too many requests", nativeStoppedAt: undefined, nativeStopSource: undefined,
+    nativeFailure: { wakeId: `wake-${attemptId}`, error: "429 too many requests", observedAt: new Date().toISOString() } });
+  journal.append("result", "TASK_STATUS: blocked\n429 too many requests", { status: "blocked", sessionId: "native-session", runtimeSource: "desktop_queue" });
+  const failedTurn = await call("workbuddy_get_task", { taskId: claim.taskId, detail: "brief" });
+  assert.equal(failedTurn.execution.cancellationRequested, false);
+  assert.equal(failedTurn.statusView.displayState, "waiting_stop");
+  assert.deepEqual(failedTurn.statusView.allowedActions, []);
+  const waitStarted = Date.now();
+  const stillStopping = await call("workbuddy_wait", { taskId: claim.taskId, timeoutSeconds: 1, detail: "brief" });
+  assert.ok(Date.now() - waitStarted >= 800, "an unresolved native failure remains in bounded wait without requiring operator cancellation");
+  assert.equal(stillStopping.execution.remoteStopped, false);
+  assert.equal(stillStopping.statusView.displayState, "waiting_stop");
+  const refusedRecovery = await call("workbuddy_reconcile_report", { taskId: claim.taskId, attemptId: "run-00000000-0000-4000-8000-000000000099", reason: "synthetic stale attempt", detail: "brief" });
+  assert.equal(refusedRecovery.ok, false);
+  assert.match(refusedRecovery.error, /current task attempt/);
 });

@@ -17,7 +17,7 @@ const WINDOWS = process.platform === "win32";
 export const RENDERER_BRIDGE = String.raw`(async function(){
   const requestedFreeModel="";
   const previous=globalThis.__codexNativeQueueBridgeV2;
-  if(previous?.revision===7&&previous.policyRevision===1&&previous.stopRevision===2&&previous.failureRevision===1){
+  if(previous?.revision===7&&previous.policyRevision===1&&previous.stopRevision===2&&previous.failureRevision===1&&previous.historyRevision===2){
     previous.configurePolicy(requestedFreeModel);
     return true;
   }
@@ -90,8 +90,24 @@ export const RENDERER_BRIDGE = String.raw`(async function(){
     // Native terminal status can mask hasActiveToolCalls. Retain unfinished
     // calls from the raw view history rather than trusting the derived flag.
     const tools=new Map();
-    for(const event of session.eventHistory||[]){const u=event?.update;if(u&&['tool_call','tool_call_update'].includes(u.sessionUpdate)&&typeof u.toolCallId==='string')tools.set(u.toolCallId,typeof u.status==='string'?u.status:tools.get(u.toolCallId)||'pending');}
-    const unfinishedTools=[...tools.values()].some(status=>!['completed','failed','cancelled'].includes(status));
+    for(const event of session.eventHistory||[]){
+      const u=event?.update;
+      if(!u||!['tool_call','tool_call_update'].includes(u.sessionUpdate)||typeof u.toolCallId!=='string')continue;
+      const prior=tools.get(u.toolCallId),meta=u._meta;
+      // Argument completion can arrive after the result, replaying a pending
+      // tool_call. Only that exact invocation's terminal result takes priority.
+      const matches=key=>typeof meta?.[key]==='string'&&meta[key].length>0&&meta[key]===prior?.meta?.[key];
+      const wakeKey='codebuddy.ai/messageRequestId',replay=meta?.['codebuddy.ai'],priorReplay=prior?.meta?.['codebuddy.ai'];
+      // Persisted history omits wake metadata. Require two explicitly marked
+      // history events and the same nonempty native request ID in that case.
+      const sameRequest=matches(wakeKey)||(meta?.[wakeKey]===undefined&&prior?.meta?.[wakeKey]===undefined&&
+        replay?.mode==='history'&&priorReplay?.mode==='history'&&Number.isFinite(replay.offset)&&Number.isFinite(priorReplay.offset)&&matches('codebuddy.ai/requestId'));
+      const sameInvocation=sameRequest&&['codebuddy.ai/toolName','codebuddy.ai/conversationRequestId','codebuddy.ai/modelRequestId'].every(matches);
+      if(u.sessionUpdate==='tool_call'&&u.status==='pending'&&meta?.['codebuddy.ai/toolArgumentsComplete']===true&&
+          prior&&['completed','failed','cancelled'].includes(prior.status)&&sameInvocation)continue;
+      tools.set(u.toolCallId,{status:typeof u.status==='string'?u.status:prior?.status||'pending',meta:meta??prior?.meta});
+    }
+    const unfinishedTools=[...tools.values()].some(tool=>!['completed','failed','cancelled'].includes(tool.status));
     const team=session.teamRuntime;
     const unfinishedTeam=team&&(team.hasActiveMembers||team.teamTrulyIdle===false||(team.teamActive===true&&team.teamTrulyIdle!==true));
     if(outgoing.has(sid)||active.some(s=>(s.sessionId||s.id)===sid||samePath(s.cwd,session.cwd))||session.isProcessing||session.stopRequested||session.hasActiveTeamMembers||session.hasActiveToolCalls||unfinishedTools||unfinishedTeam||session.hasRunningBackgroundTasks||session.hasActiveChildAgents)return {...observation,state:'busy',reason:'Native WorkBuddy session is active'};
@@ -185,7 +201,7 @@ export const RENDERER_BRIDGE = String.raw`(async function(){
     if(result?.error||result?.success===false)throw Error('Native cancellation rejected');
     return {requested:true,sessionId:sid,wakeId};
   };
-  globalThis.__codexNativeQueueBridgeV2={revision:7,policyRevision:1,stopRevision:2,failureRevision:1,get freeModel(){return freeModel;},configurePolicy,inspect,findWake,wakeIdle,createWorker,listModels,setModel,cancelAttempt,close:()=>{mc.port1.close();legacy?.close?.();}};
+  globalThis.__codexNativeQueueBridgeV2={revision:7,policyRevision:1,stopRevision:2,failureRevision:1,historyRevision:2,get freeModel(){return freeModel;},configurePolicy,inspect,findWake,wakeIdle,createWorker,listModels,setModel,cancelAttempt,close:()=>{mc.port1.close();legacy?.close?.();}};
   return true;
   })();
   globalThis.__codexNativeQueueBridgeInstall=installation;

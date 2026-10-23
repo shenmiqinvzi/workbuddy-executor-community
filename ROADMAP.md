@@ -1,10 +1,10 @@
 # 公开路线图
 
-方向：可靠执行、可验证交付、清晰接管、可复现安装。以下均为 vNext 待实现或待验证目标，既有能力以 [README](README.md)和验证记录为准；这里不包含个人分工、工时或内部排期。
+方向：可靠执行、可验证交付、清晰接管、可复现安装。以下为 vNext 阶段目标，基础共享服务兼容层已接入MCP并有本机真实验证，其余能力继续按各项目标实现和验证。阶段现状统一见[开发进度](docs/PROGRESS.md)，具体任务和负责人见对应Issue/PR；本文不登记个人工时或内部排期。
 
-2026-10-19 修订：本版只开发和验收 Windows。仓库保留的上游其他平台代码不代表本项目支持那些平台，也不列入当前路线图。
+2026-10-23 修订：本版只开发和验收 Windows。PR #8 已合并；共享服务与只读投影在集成分支完成整合，当前状态及未完成项见[开发进度](docs/PROGRESS.md)。仓库保留的上游其他平台代码不代表本项目支持那些平台，也不列入当前路线图。
 
-维护者独立安排开发顺序。场景、复现、建议及可选 PR 记录在对应 Issue/PR，避免在多份文档中维护冲突状态；外部参与不构成共同维护或固定分工。
+维护者结合Issue/PR安排集成顺序，贡献者可认领边界明确的任务；具体任务状态在Issue/PR跟踪，避免在多份文档中重复维护个人安排。
 
 | 阶段 | 目标 | 实施内容 | 完成依据 |
 |---|---|---|---|
@@ -18,6 +18,15 @@
 | 可复现安装 | Windows 诊断与发布流程 | 新机安装反馈、路径配置、使用文档 | 第二台 Windows 可复现，源码和运行版本可对应 |
 | 持续验证 | Windows CI | 构建、适用回归、技能与发布清单一致性 | 自动结果可追溯；真实桌面与第二台 Windows 实机结果单独登记 |
 
-实现依据为 [总体设计](docs/DEVELOPMENT_DESIGN.md)、[接口契约](docs/INTERFACE_CONTRACT.md)和 [验收场景](docs/ACCEPTANCE.md)。Windows 部署改造已合并，自动回归由 Windows CI 检查；使用方法见 [Windows 安装指南](gateway/docs/INSTALL_WINDOWS.md)。第二台 Windows 物理机器的真实验收仍待取得。接下来完成共享服务、排他规则与面板；新能力经过真实 Windows 验证后才写成“已支持”。
+实现依据为 [总体设计](docs/DEVELOPMENT_DESIGN.md)、[接口契约](docs/INTERFACE_CONTRACT.md)和 [验收场景](docs/ACCEPTANCE.md)。Windows 部署改造已合并；共享服务基础层、停止安全与历史回放兼容修复已在开发分支整合、独立部署，并完成正常任务和修复后命令超时的本机真实验收。完整跨入口排他、契约与面板仍未完成；不能把样本验收当作全部vNext通过。第二台 Windows 物理机器验收继续由[Issue #3](https://github.com/shenmiqinvzi/workbuddy-executor-community/issues/3)跟踪。
+
+## 当前推进顺序
+
+1. 统一完整TaskView与本地只读HTTP：下一优先项，当前尚未完成实现。
+2. 前端只读模拟原型：设计已发布，[Issue #6](https://github.com/shenmiqinvzi/workbuddy-executor-community/issues/6)已指派、待交付，可与后端独立推进。
+3. 离线诊断误报、完整跨入口幂等/排他、自动范围与旧改动保护：按[进度清单](docs/PROGRESS.md)逐项补齐。
+4. 补真实异常、第二台Windows验收，再做前后端联调、PR/CI与发布集成。
+
+前端原型只使用合成数据；真实接入和写操作分别验收。当前[PR #4](https://github.com/shenmiqinvzi/workbuddy-executor-community/pull/4)仍为开放草稿，文档同步不表示开发分支已经合并main。
 
 多执行器、云端团队协作、并行派工等想法可以讨论，暂不作为本版发布条件。新增方向先说明用户场景、收益、依赖和验证方式，维护者再决定是否纳入版本。

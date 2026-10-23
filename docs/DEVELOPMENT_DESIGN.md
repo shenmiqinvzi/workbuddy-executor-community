@@ -1,6 +1,6 @@
 # WorkBuddy Executor 下一阶段总体设计
 
-设计修订：2026-10-19。原始代码基线：`332d2dd`；Windows 部署改造：PR #1，已合并至 `main`。状态：待实现的 vNext 设计；代码合并不代表本机已部署或跨机器验证。
+设计修订：2026-10-20。原始代码基线：`332d2dd`；Windows 部署改造：PR #1，已合并至 `main`。状态：vNext目标设计，部分基础已实现并完成本机样本验收，完整目标仍待实现。阶段现状与证据见[开发进度](PROGRESS.md)；代码合并不自动代表部署或跨机器验证。
 
 本文记录可供社区讨论和实现的技术设计。[接口契约](INTERFACE_CONTRACT.md)规定数据与操作语义，[公开路线图](../ROADMAP.md)列出阶段目标，[验收场景](ACCEPTANCE.md)规定行为标准。本文不包含个人分工或内部排期。
 
@@ -14,7 +14,7 @@ vNext 只面向 Windows，保持本地单用户、Codex MCP、WorkBuddy desktop-
 
 | 当前事实 | 下一步与支持门槛 |
 |---|---|
-| Windows 安装改造 PR #1 已合并，提供路径探测、安装维护、只读诊断与隔离验证；Windows CI 已运行；第二台物理机器真实验收待完成 | 保留 Windows 回归，完成真实任务闭环与第二台 Windows 实机验收，记录版本、架构及证据 |
+| Windows安装改造已合并；整合分支正常小代码任务、本机MCP重连与正式取消已有实际证据；historyRevision=2修复已部署，原命令超时演练第3轮accepted | 补完整TaskView、本地HTTP与前端；真实权限/输入等待、修复版整任务到期及第二台Windows验收仍待完成 |
 
 先推进共享服务、持久排他和任务视图，再接本地 HTTP 与面板。安装与诊断只按 Windows 验收；不为了扩展平台而推迟 Windows 的真实闭环。
 
@@ -25,6 +25,7 @@ macOS、Linux、多执行器平台、云端团队协作、跨机器共享任务�
 现有实现包含：
 
 - `gateway/src/coordinator.ts`：初始请求指纹、同任务返工、认证报告验收、引用验证记录复核。
+- `gateway/src/task-application-service.ts`：共享服务基础兼容层，MCP 任务操作和报告恢复经此入口调用原 coordinator；`statusView` 保守显示任务状态与允许操作，原生错误后停止未确认时保持 `waiting_stop`。这尚不是完整 vNext TaskView，也未接入本地 HTTP。
 - `task-store.ts`、`run-journal.ts`、`desktop-queue.ts`、`persistent-service.ts`：任务与轮次记录、原生执行和停止证据。
 - `native-desktop-trigger.ts`、`native-ownership.ts`：原生身份与归属检查。
 - `server.ts` 与 `scripts/workbuddy-call.mjs`：MCP 与官方调用入口。
@@ -74,7 +75,9 @@ flowchart LR
 
 Windows 的配置探测、进程身份、原生停止证明、后台服务和安装入口须保留明确边界；免费政策、去重、轮次、验收和指标共用同一套程序规则。不另建两套 coordinator 或 UI 状态机。无法取得停止证据时，保持停止不明及排他。
 
-模块按共享应用服务、契约、执行适配和视图区分；反馈与提交方式见贡献指南。设计中的新模块、端点和命令均未实现。
+模块按共享应用服务、契约、执行适配和视图区分；反馈与提交方式见贡献指南。共享服务与MCP状态视图基础兼容层已实现，完整契约、操作记录、HTTP端点及面板仍待实现。整合分支已取得独立部署和本机真实样本证据，见[修复部署复验](../gateway/docs/native-history-deployment-verification.json)；这不覆盖完整vNext或异机验收。
+
+前端原型的[设计任务书](FRONTEND_TASK_PANEL_DESIGN.md)已发布并通过[Issue #6](https://github.com/shenmiqinvzi/workbuddy-executor-community/issues/6)指派，当前仅为只读mock任务。下一后端优先项是完整任务视图与只读HTTP，尚未完成真实面板联调。
 
 ## 5. 任务约定与文件范围
 

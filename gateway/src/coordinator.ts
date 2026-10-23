@@ -169,11 +169,14 @@ export class TaskCoordinator {
     if (!task.attemptId || !/^run-[a-f0-9-]{36}$/.test(task.attemptId)) return { state: "unknown", remoteStopped: false };
     const snapshot = task.attemptId ? this.client.runSnapshot(task.attemptId) : undefined;
     if (!snapshot) return { state: "unknown", remoteStopped: false };
+    // A reused or corrupt journal cannot prove that this task's native turn stopped.
+    if (snapshot.taskId !== task.taskId || snapshot.attemptId !== task.attemptId ||
+        (task.sessionId && snapshot.sessionId !== task.sessionId)) return { state: "unknown", remoteStopped: false };
     const remoteStopped = (snapshot.driver === "desktop-queue" || task.runtimeSource === "desktop_queue" ? hasNativeStopEvidence(snapshot) : Boolean(snapshot.stopReason)) && ["needs_review", "blocked", "failed", "cancelled"].includes(snapshot.status);
     const cancellationRequested = task.attemptId ? new RunJournal(runsDirectory(this.config), task.attemptId).cancellationRequested() : false;
     return {
       state: remoteStopped ? "stopped" : cancellationRequested || snapshot.nativeFailure ? "stop_unconfirmed" : snapshot.nativeHealth?.state === "offline" ? "session_offline" : snapshot.waitingInput ? "waiting_input" : snapshot.reportDigest ? "report_received" : snapshot.status,
-      remoteStopped, cancellationRequested, stopReason: snapshot.stopReason, observedAt: snapshot.nativeStoppedAt ?? snapshot.updatedAt,
+      remoteStopped, cancellationRequested, reportDigestPresent: Boolean(snapshot.reportDigest), stopReason: snapshot.stopReason, observedAt: snapshot.nativeStoppedAt ?? snapshot.updatedAt,
       deadline: snapshot.deadline, claimDeadline: snapshot.claimDeadline,
       reportBy: snapshot.reportBy, progress: snapshot.progress, stopControl: snapshot.stopControl,
       nativeHealth:snapshot.nativeHealth, nativeRateLimit:snapshot.nativeRateLimit, postReportFailure:snapshot.postReportFailure,

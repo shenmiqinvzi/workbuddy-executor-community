@@ -9,6 +9,7 @@ import { sameExecutable, windowsProcessTable } from "./native-process.js";
 import { DurableRuns, RunJournal, runsDirectory, writePrivateJson, hasNativeStopEvidence } from "./run-journal.js";
 import { TaskStore } from "./task-store.js";
 import { diagnoseNativeFailure } from "./native-turn-failure.js";
+import { REPORT_AUTHENTICATION_FORMAT, reportDigest } from "./report-authentication.js";
 const SOURCE = "desktop_queue";
 const TERMINAL = new Set(["needs_review", "blocked", "failed", "cancelled"]);
 /** Prove the helper was launched by the native desktop app, not a standalone CLI or Codex. */
@@ -381,10 +382,8 @@ export class DesktopQueue {
     }
     report(input) {
         const actor = this.verifyActor();
-        const fields = [input.status, input.text, input.artifacts];
-        if (input.validationRecords?.length)
-            fields.push(input.validationRecords);
-        const digest = crypto.createHash("sha256").update(JSON.stringify(fields)).digest("hex");
+        // One digest implementation for the writer and the reader.
+        const digest = reportDigest({ status: input.status, text: input.text, artifacts: input.artifacts, validationRecords: input.validationRecords });
         return this.mutateClaim(input, actor, (journal, snapshot) => {
             if (!input.text.trim())
                 throw new Error("A real WorkBuddy result is required; an empty report cannot complete a task");
@@ -415,7 +414,22 @@ export class DesktopQueue {
             }
             const status = journal.cancellationRequested() ? "cancelled" : input.status === "completed" ? "needs_review" : input.status;
             const stopReason = status === "cancelled" ? "cancelled" : input.status === "completed" ? "end_turn" : input.status;
-            journal.save({ ...snapshot, status, text: input.text, stopReason, artifacts: input.artifacts, reportDigest: digest, validationRecords: input.validationRecords, waitingInput: false, nativeStoppedAt: undefined, nativeStopSource: undefined });
+            // The report and the proof that its origin was verified are written by one
+            // save, and only here: the identity, lease, deadline and validation checks
+            // above have already succeeded, and this is the branch that records an
+            // on-time report. The replay and late-report branches never write it, so a
+            // proof cannot be manufactured after the fact.
+            journal.save({ ...snapshot, status, text: input.text, stopReason, artifacts: input.artifacts, reportDigest: digest, validationRecords: input.validationRecords, waitingInput: false, nativeStoppedAt: undefined, nativeStopSource: undefined,
+                reportAuthentication: {
+                    formatVersion: REPORT_AUTHENTICATION_FORMAT,
+                    taskId: snapshot.taskId,
+                    attemptId: input.attemptId,
+                    sessionId: input.sessionId,
+                    runtimeSource: SOURCE,
+                    reportedStatus: input.status,
+                    reportDigest: digest,
+                    authenticatedAt: new Date().toISOString(),
+                } });
             journal.append("result", input.text.slice(0, 1_000_000), { status, artifacts: input.artifacts, sessionId: input.sessionId, runtimeSource: SOURCE, stopReason });
             return { ok: true, status };
         }, true);
@@ -596,10 +610,9 @@ export class DesktopQueue {
         if (!snapshot.reportDigest || !snapshot.text?.trim() || snapshot.runtimeSource !== SOURCE || journal.cancellationRequested() ||
             !snapshot.deadline || !Number.isFinite(Date.parse(snapshot.deadline)))
             return;
-        const fields = ["completed", snapshot.text, snapshot.artifacts ?? []];
-        if (snapshot.validationRecords?.length)
-            fields.push(snapshot.validationRecords);
-        if (crypto.createHash("sha256").update(JSON.stringify(fields)).digest("hex") !== snapshot.reportDigest)
+        // Same digest implementation as report(); the originally reported status
+        // here is known to have been "completed".
+        if (reportDigest({ status: "completed", text: snapshot.text, artifacts: snapshot.artifacts ?? [], validationRecords: snapshot.validationRecords }) !== snapshot.reportDigest)
             return;
         const event = journal.events(0, Infinity).find(event => event.type === "result" && event.metadata?.status === "needs_review" &&
             event.metadata.sessionId === snapshot.sessionId && event.metadata.runtimeSource === SOURCE && event.text === snapshot.text &&
