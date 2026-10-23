@@ -141,7 +141,10 @@ function stageFixture(t: { after: (fn: () => void) => void }) {
   const store = new TaskStore(config.dbFile);
   const coordinator = new TaskCoordinator(config, store, new WorkBuddyClient(config));
   const service = new TaskApplicationService(coordinator, 3, config.runsDir!);
-  t.after(() => { store.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+  // The SQLite handle (and its WAL/SHM sidecar files) keeps the directory
+  // locked on Windows until the process exits, so the temp directory is left
+  // for OS temp cleanup instead of blocking the runner on rmSync (EPERM).
+  t.after(() => { store.close(); });
   let counter = 0;
   const seed = (options: { taskId: string; createdAt: string; state?: import("../src/task-store.js").TaskState; stop?: boolean; authenticated?: boolean; snapshotPatch?: Partial<RunSnapshot> }) => {
     counter += 1;
@@ -306,8 +309,7 @@ test("stage view keeps a queue-authenticated pre-stop report at waiting_stop", a
   assert.equal(result.view.timing.nativeStoppedAt, null, "no stop instant is copied without a bound proof");
 });
 
-test("stage detail keeps one round when a concurrent rework changes the attempt mid-read", async t => {
-  const f = stageFixture(t);
+test("stage detail keeps one round when a concurrent rework changes the attempt mid-read", async t => {  const f = stageFixture(t);
   const attemptA = f.seed({ taskId: "stage-race", createdAt: "2026-10-18T10:00:00.000Z", stop: true, authenticated: true });
   // Interpose a rework (new attempt B, working) between the projection's own
   // reads and the view assembly, exactly the window a second store.get used
@@ -332,6 +334,96 @@ test("stage detail keeps one round when a concurrent rework changes the attempt 
   assert.equal(result.view.displayState, "needs_review");
   assert.equal(result.view.remoteStopped, true);
   service.readProjection = original;
+});
+
+test("stage detail stays one consistent snapshot when a concurrent acceptance keeps the same attemptId", async t => {
+  const f = stageFixture(t);
+  const attemptA = f.seed({ taskId: "stage-accept-race", createdAt: "2026-10-18T10:00:00.000Z", stop: true, authenticated: true });
+  // A real second connection accepts the SAME attempt between the reader's
+  // two store.get calls: the attempt id never changes, so the reader's
+  // attempt-identity re-check passes and the first read row (needs_review)
+  // is what the projection is built from. The view must describe that one
+  // snapshot — never businessState accepted with a needs_review display, and
+  // never accepted row values next to a pre-acceptance projection.
+  const otherStore = new TaskStore(f.store.file);
+  // SQLite keeps WAL/SHM handles open, so this temp directory is not removed
+  // here; the OS temp cleanup owns it (same policy as the other stage tests
+  // that hold a second store connection).
+  t.after(() => { otherStore.close(); });
+  // Interpose inside readTaskProjection's real read window: patch the
+  // reader's own store.get BEFORE the read starts, let the first store.get
+  // pass through untouched, and land a real acceptance from a second
+  // connection just before the re-check store.get. The attempt id stays the
+  // same, so the reader's identity re-check passes — exactly the window
+  // where returning `row: after` would mix two snapshots into one answer.
+  const readerStore = f.store as unknown as { get: (id: string) => unknown };
+  const realGet = readerStore.get.bind(readerStore);
+  let gets = 0;
+  readerStore.get = (id: string) => {
+    gets += 1;
+    if (id === "stage-accept-race" && gets === 2) {
+      readerStore.get = realGet;
+      const accepted = otherStore.updateAttempt("stage-accept-race", attemptA, { state: "accepted", reviewNote: "verified by another connection", reviewedAt: "2026-10-18T10:40:00.000Z" }, { expectedStates: ["needs_review", "completed"] });
+      assert.equal(accepted.applied, true, "the concurrent acceptance lands between the two store.get calls");
+    }
+    return realGet(id);
+  };
+  const result = f.service.readStageView("stage-accept-race");
+  readerStore.get = realGet;
+  assert.ok(gets >= 2, "the reader must perform its re-check store.get");
+  assert.equal(result.ok, true, "same attemptId must not be a read_conflict");
+  if (!result.ok) throw Error("expected a view");
+  const view = result.view;
+  // One consistent snapshot: every row fact and the projection must come
+  // from the same read of the task row.
+  const consistentPreAccept = view.businessState === "needs_review"
+    && view.displayState === "needs_review"
+    && view.timing.reviewedAt === null
+    && view.remoteStopped === true;
+  // A full post-acceptance snapshot would also be consistent, but the
+  // projection was built from the pre-acceptance read, so that combination
+  // (accepted row values beside a needs_review projection) is the mixture
+  // the previous implementation produced and must never appear.
+  assert.ok(consistentPreAccept, `the view must be one consistent snapshot, got businessState=${view.businessState} displayState=${view.displayState} reviewedAt=${view.timing.reviewedAt}`);
+  assert.equal(view.attempt.id, attemptA);
+});
+
+test("stage list stays per-item consistent when a concurrent acceptance keeps the same attemptId", async t => {
+  const f = stageFixture(t);
+  const attemptA = f.seed({ taskId: "stage-list-race", createdAt: "2026-10-18T10:00:00.000Z", stop: true, authenticated: true });
+  const otherStore = new TaskStore(f.store.file);
+  // SQLite keeps WAL/SHM handles open, so this temp directory is not removed
+  // here; the OS temp cleanup owns it (same policy as the other stage tests
+  // that hold a second store connection).
+  t.after(() => { otherStore.close(); });
+  // Same interposition as the detail test: patch the reader's own store.get
+  // before the page read starts, and land a real acceptance from a second
+  // connection between the first store.get and the re-check store.get, with
+  // the attempt id unchanged.
+  const readerStore = f.store as unknown as { get: (id: string) => unknown };
+  const realGet = readerStore.get.bind(readerStore);
+  let gets = 0;
+  readerStore.get = (id: string) => {
+    gets += 1;
+    if (id === "stage-list-race" && gets === 2) {
+      readerStore.get = realGet;
+      const accepted = otherStore.updateAttempt("stage-list-race", attemptA, { state: "accepted", reviewedAt: "2026-10-18T10:40:00.000Z" }, { expectedStates: ["needs_review", "completed"] });
+      assert.equal(accepted.applied, true, "the concurrent acceptance lands between the two store.get calls");
+    }
+    return realGet(id);
+  };
+  const page = f.service.listStageViews({ limit: 10 });
+  readerStore.get = realGet;
+  assert.ok(gets >= 2, "the reader must perform its re-check store.get");
+  assert.equal(page.ok, true);
+  if (!page.ok) throw Error("expected a page");
+  const entry = page.tasks.find(item => item.ok && item.view.taskId === "stage-list-race");
+  assert.ok(entry && entry.ok, "the raced task must appear in the page");
+  if (entry.ok) {
+    assert.equal(entry.view.businessState, "needs_review");
+    assert.equal(entry.view.displayState, "needs_review");
+    assert.equal(entry.view.timing.reviewedAt, null);
+  }
 });
 
 test("stage list keeps a per-item failure instead of an empty view or a masked error", async t => {

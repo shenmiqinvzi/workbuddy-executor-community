@@ -96,11 +96,12 @@ export interface TaskProjectionSuccess {
   task: TaskProjectionIdentity;
   /**
    * The task row this projection was actually built from: the first
-   * `store.get` read, re-checked against the current attempt after the run
-   * files were read. Callers that need row facts (workspace path, binding,
-   * createdAt, reviewedAt) must use this row instead of fetching the task
-   * again, because a second read can already describe a later attempt; using
-   * it would mix two rounds into one answer.
+   * `store.get` read, whose attempt identity is re-checked against a second
+   * read before the facts are assembled. Callers that need row facts
+   * (workspace path, binding, createdAt, reviewedAt) must use this row
+   * instead of fetching the task again, because a second read can already
+   * describe newer row values (a concurrent acceptance with the same
+   * attemptId); using it would mix two snapshots into one answer.
    */
   row: StoredTask;
   /**
@@ -461,9 +462,13 @@ export function readTaskProjection(sources: TaskProjectionSources, taskId: strin
     snapshot: state.value,
     cancellation: cancel.value,
   });
-  // `row` is the re-checked task row (identical to `after` here), so callers
-  // never need a second store.get that could observe a newer attempt.
-  return { ok: true, readOnly: true, snapshotOnly: true, task: identity, row: after, contract, projection };
+  // `row` is the task row the projection was actually built from (`task`,
+  // the first store.get). The re-read `after` row is only used for the
+  // attempt-identity conflict check above: even with the same attemptId a
+  // concurrent acceptance can change state/reviewedAt between the two reads,
+  // and returning `after` here would mix the projected (old) facts with the
+  // newer row values into one contradictory answer.
+  return { ok: true, readOnly: true, snapshotOnly: true, task: identity, row: task, contract, projection };
 }
 
 function jsonResult(value: unknown) {

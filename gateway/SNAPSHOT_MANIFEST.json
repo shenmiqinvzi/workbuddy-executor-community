@@ -883,18 +883,18 @@
     },
     {
       "path": "dist/task-view-reader.d.ts",
-      "sha256": "a60ff08cbe715f0b5f77bc4f6615ce08ddec5db26f3965472bb570be6e745915",
-      "bytes": 5885
+      "sha256": "f6809f397824e0d7a60599a73f75db00e09c9cee4ad22339b77dded55b1cba18",
+      "bytes": 5967
     },
     {
       "path": "dist/task-view-reader.js",
-      "sha256": "7fa01eb7a9e3167e0690364f2f0c07a3ef73905fafa3bbabf7f4d86805ec15ab",
-      "bytes": 15544
+      "sha256": "982e851c9b12883aa2e9bc977b358a3808f29bbf845778c277d6e0f97cd2c141",
+      "bytes": 15832
     },
     {
       "path": "dist/task-view-reader.js.map",
-      "sha256": "2d66cb87b10f9b90ea55a429ad9ef6683f18cc97b2be14975488031345140d45",
-      "bytes": 9767
+      "sha256": "3c994ab4d1ae04cb7b0364d34b47427635f3701021324b4ba22847431e369fbe",
+      "bytes": 9819
     },
     {
       "path": "dist/task-view-stage.d.ts",
@@ -1528,8 +1528,8 @@
     },
     {
       "path": "src/task-view-reader.ts",
-      "sha256": "5de2d6123c68bf6f8addbc2a9b0b04d803fb6fd7637d8c053ce60b1078f85c29",
-      "bytes": 19352
+      "sha256": "cc795daa92316c67d00cffe04a4149ec578bc7ddec8f230df2268dc4c49f3280",
+      "bytes": 19712
     },
     {
       "path": "src/task-view-stage.ts",
@@ -1733,8 +1733,8 @@
     },
     {
       "path": "test/task-application-service.test.ts",
-      "sha256": "693793bbcb661a352027164a2f84b191c162d3d7a5a0b3b727fb1c6594129eb6",
-      "bytes": 21639
+      "sha256": "812ab5904af7e6c3a4d23a02ec303346dc2de4e301e196c2799f0b016f35f2f7",
+      "bytes": 27143
     },
     {
       "path": "test/task-contract.test.ts",

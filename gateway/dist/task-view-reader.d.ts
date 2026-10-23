@@ -71,11 +71,12 @@ export interface TaskProjectionSuccess {
     task: TaskProjectionIdentity;
     /**
      * The task row this projection was actually built from: the first
-     * `store.get` read, re-checked against the current attempt after the run
-     * files were read. Callers that need row facts (workspace path, binding,
-     * createdAt, reviewedAt) must use this row instead of fetching the task
-     * again, because a second read can already describe a later attempt; using
-     * it would mix two rounds into one answer.
+     * `store.get` read, whose attempt identity is re-checked against a second
+     * read before the facts are assembled. Callers that need row facts
+     * (workspace path, binding, createdAt, reviewedAt) must use this row
+     * instead of fetching the task again, because a second read can already
+     * describe newer row values (a concurrent acceptance with the same
+     * attemptId); using it would mix two snapshots into one answer.
      */
     row: StoredTask;
     /**

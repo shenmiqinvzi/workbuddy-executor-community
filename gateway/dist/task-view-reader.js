@@ -325,9 +325,13 @@ export function readTaskProjection(sources, taskId) {
         snapshot: state.value,
         cancellation: cancel.value,
     });
-    // `row` is the re-checked task row (identical to `after` here), so callers
-    // never need a second store.get that could observe a newer attempt.
-    return { ok: true, readOnly: true, snapshotOnly: true, task: identity, row: after, contract, projection };
+    // `row` is the task row the projection was actually built from (`task`,
+    // the first store.get). The re-read `after` row is only used for the
+    // attempt-identity conflict check above: even with the same attemptId a
+    // concurrent acceptance can change state/reviewedAt between the two reads,
+    // and returning `after` here would mix the projected (old) facts with the
+    // newer row values into one contradictory answer.
+    return { ok: true, readOnly: true, snapshotOnly: true, task: identity, row: task, contract, projection };
 }
 function jsonResult(value) {
     return { content: [{ type: "text", text: JSON.stringify(value, null, 2) }] };

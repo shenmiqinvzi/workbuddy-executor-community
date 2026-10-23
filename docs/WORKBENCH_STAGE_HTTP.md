@@ -56,7 +56,7 @@
 | 方法与路径 | 状态 | 说明 |
 |---|---|---|
 | GET `/workbench/v1/health` | 200 | `{schemaVersion, ready, runtime, capacity, modelPolicy, capabilities, unavailable}`。`ready` 仅表示本进程共享服务已打开存储;`capabilities.nativePermissionResponse/nativeSessionNavigation` 恒 `false`(未独立验证);`modelPolicy.nativeModelBound` 恒 `false`(无已验证模型绑定);`capacity.occupiedByTaskId` 为 `null`(排他租约属 T4,不猜测占用者)。健康检查不派工 |
-| GET `/workbench/v1/tasks?limit=&afterTaskId=` | 200 | `{schemaVersion, unavailable, tasks: StageTaskView[], nextAfterTaskId}` |
+| GET `/workbench/v1/tasks?limit=&afterTaskId=` | 200 | `{schemaVersion, unavailable, tasks: StageListItem[], nextAfterTaskId}`。每个条目是二选一:成功 `{ok:true, taskId, view: StageTaskView}`;该任务投影失败时保留原样 `{ok:false, taskId, code, field, message}`(如 `state_corrupt`),绝不抹成空视图。页级失败(存储不可读、非法游标)仍走错误 envelope,`store_unavailable`→503、`invalid_cursor`→400,HTTP 错误码大写(`STORE_UNAVAILABLE`),服务层错误码小写(`store_unavailable`) |
 | GET `/workbench/v1/tasks/:taskId` | 200 | 单个 `StageTaskView` 快照 |
 | GET `/workbench/v1/tasks/:taskId/events` | 501 | `EVENTS_NOT_IMPLEMENTED`:跨轮次持久游标与原生事件去重来源(T2)不存在,不伪造空事件流 |
 | GET `/workbench/v1/tasks/:taskId/export` | 501 | `EXPORT_NOT_IMPLEMENTED`:待真实产物来源(T6) |
