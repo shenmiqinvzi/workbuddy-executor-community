@@ -87,6 +87,23 @@ export class TaskCoordinator {
     const messages = await this.client.messages({ afterMessageId: task.lastMessageId, limit });
     if (!messages.length) return task;
     this.store.addMessages(taskId, messages);
+    // Mirror per-attempt journal events into the persistent task event stream.
+    // Dedup is by attempt+type+journal seq, so replaying the same native event
+    // never produces a second logical event. This mirrors only; it fabricates
+    // no events for gaps and writes nothing on plain reads without messages.
+    const journalEvents = messages
+      .filter((message) => {
+        const meta = message.metadata ?? {};
+        return typeof meta.eventSeq === "number" && typeof meta.type === "string" &&
+          (!task.attemptId || !meta.attemptId || meta.attemptId === task.attemptId);
+      })
+      .map((message) => {
+        const meta = message.metadata ?? {};
+        return { seq: Number(meta.eventSeq), type: String(meta.type), createdAt: message.created_at ?? new Date(0).toISOString(), metadata: meta };
+      });
+    if (journalEvents.length && task.attemptId) {
+      this.store.mirrorJournalEvents(taskId, journalEvents, { attemptId: task.attemptId, actor: "workbuddy" });
+    }
     const patch: TaskUpdate = {};
     for (const message of messages) {
       const meta = message.metadata ?? {};
@@ -155,6 +172,11 @@ export class TaskCoordinator {
     if (!task.attemptId) throw new Error("Legacy tasks cannot be accepted without a durable desktop execution attempt");
     const accepted = this.store.updateAttempt(taskId, task.attemptId, { state: "accepted", evidence: [...evidence, ...artifactEvidence], artifacts: [...new Set([...(task.artifacts ?? []), ...artifactPaths])], reviewNote: note, reviewedAt: new Date().toISOString() }, { expectedStates: ["needs_review", "completed"] });
     if (!accepted.applied) throw new Error("Task changed during review; inspect the current attempt before acceptance");
+    this.store.appendTaskEvent({
+      taskId, attemptId: task.attemptId, type: "task_closed",
+      occurredAt: accepted.task.reviewedAt ?? accepted.task.updatedAt, observedAt: accepted.task.updatedAt,
+      actor: "codex", payload: { closedAs: "accepted", attempt: accepted.task.attempt ?? null }, sourceRef: null,
+    });
     return accepted.task;
   }
   respond(taskId: string, decision: "allow_once" | "reject_once" | "cancel" | "submit", content?: Record<string, unknown>) {

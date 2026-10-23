@@ -1,5 +1,5 @@
 import type { TaskCoordinator, SendTaskInput } from "./coordinator.js";
-import type { StoredTask } from "./task-store.js";
+import type { StoredTask, StoredTaskEvent } from "./task-store.js";
 import { readTaskProjection } from "./task-view-reader.js";
 import { stageTaskViewFromProjection, STAGE_TASK_VIEW_UNAVAILABLE, STAGE_TASK_VIEW_SCHEMA_VERSION, type StageTaskView } from "./task-view-stage.js";
 
@@ -203,8 +203,40 @@ export class TaskApplicationService {
     };
   }
 
-  send(input: SendTaskInput) { return this.coordinator.send(input); }
-  continue(input: Parameters<TaskCoordinator["continue"]>[0]) { return this.coordinator.continue(input); }
+  /**
+   * Read the persistent task event stream (T2).
+   *
+   * Pure read: afterEventId is exclusive (0 = from the beginning), limit is
+   * bounded 1-200 (default 100), events ascend by the monotonic per-task
+   * eventId, and nothing is written — a missing task is a task_not_found
+   * failure, never an implicit creation. nextEventId is null when the page
+   * already reached the end of the stream.
+   */
+  listTaskEvents(taskId: string, options: { afterEventId?: number; limit?: number } = {}):
+    { ok: true; events: StoredTaskEvent[]; nextEventId: number | null }
+    | { ok: false; code: "task_not_found" | "invalid_task_id" | "invalid_cursor" | "store_unavailable"; field: string; message: string } {
+    if (typeof taskId !== "string" || taskId.length === 0 || taskId.length > 200) {
+      return { ok: false, code: "invalid_task_id", field: "taskId", message: "The task id must be 1-200 characters." };
+    }
+    const afterEventId = options.afterEventId ?? 0;
+    if (!Number.isInteger(afterEventId) || afterEventId < 0) {
+      return { ok: false, code: "invalid_cursor", field: "afterEventId", message: "afterEventId must be a non-negative integer." };
+    }
+    const limit = options.limit ?? 100;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
+      return { ok: false, code: "invalid_cursor", field: "limit", message: "limit must be an integer between 1 and 200." };
+    }
+    try {
+      const task = this.coordinator.store.get(taskId);
+      if (!task) return { ok: false, code: "task_not_found", field: "taskId", message: "No stored task has this id; events are never fabricated for one." };
+      const page = this.coordinator.store.listTaskEvents(taskId, { afterEventId, limit });
+      return { ok: true, events: page.events, nextEventId: page.nextEventId };
+    } catch {
+      return { ok: false, code: "store_unavailable", field: "store.listTaskEvents", message: "Reading the event stream failed; this is not reported as an empty stream." };
+    }
+  }
+
+  send(input: SendTaskInput) { return this.coordinator.send(input); }  continue(input: Parameters<TaskCoordinator["continue"]>[0]) { return this.coordinator.continue(input); }
   accept(...args: Parameters<TaskCoordinator["accept"]>) { return this.coordinator.accept(...args); }
   cancel(...args: Parameters<TaskCoordinator["cancel"]>) { return this.coordinator.cancel(...args); }
   respond(...args: Parameters<TaskCoordinator["respond"]>) { return this.coordinator.respond(...args); }

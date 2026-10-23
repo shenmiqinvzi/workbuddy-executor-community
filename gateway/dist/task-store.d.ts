@@ -27,6 +27,11 @@ export interface StoredTask {
     artifacts?: string[];
     evidence?: string[];
     blockingReason?: string;
+    /**
+     * Persistent, unguessable view revision. Regenerated inside the same
+     * transaction whenever a persisted fact changes; never derived from time.
+     */
+    revision?: string;
 }
 export interface TaskReport {
     status?: string;
@@ -40,6 +45,26 @@ type NullableTaskFields = "report" | "reviewNote" | "reviewedAt" | "sessionId" |
 export type TaskUpdate = Partial<Pick<StoredTask, "state" | "messageId" | "lastMessageId">> & {
     [Field in NullableTaskFields]?: StoredTask[Field] | null;
 };
+/**
+ * A persisted task event: one logical fact about a task, identified by a
+ * monotonically increasing eventId across all attempts of that task.
+ *
+ * `eventId` is allocated per task inside the writing transaction. Native
+ * per-attempt sequences are preserved as `payload.nativeEventSeq`; replaying
+ * the same native event must not create a second logical event (deduplicated
+ * by sourceRef).
+ */
+export interface StoredTaskEvent {
+    taskId: string;
+    eventId: number;
+    attemptId: string | null;
+    type: string;
+    occurredAt: string;
+    observedAt: string;
+    actor: string;
+    payload: Record<string, unknown>;
+    sourceRef: string | null;
+}
 /**
  * The outcome of creating a task together with its initial contract.
  *
@@ -108,6 +133,53 @@ export declare class TaskStore {
     private readonly db;
     constructor(file: string);
     close(): void;
+    /**
+     * Append one logical task event with a monotonic per-task eventId.
+     *
+     * When `sourceRef` is set and already stored for this task, the event is a
+     * replay of something already recorded: nothing is inserted and the existing
+     * event is returned (idempotent dedup, contract :150). Otherwise the eventId
+     * is allocated as MAX(event_id)+1 for the task inside the current
+     * transaction.
+     */
+    appendTaskEvent(event: Omit<StoredTaskEvent, "eventId"> & {
+        eventId?: number;
+    }): StoredTaskEvent;
+    /** Transaction-aware core of appendTaskEvent; caller must hold a transaction. */
+    private appendTaskEventInTransaction;
+    /**
+     * Mirror per-attempt journal events into the persistent task event stream.
+     *
+     * Each journal event keeps its per-attempt sequence as the dedup key
+     * (`attemptId:type:journal:seq`), so re-syncing the same native event never
+     * produces a second logical event. Returns the events actually appended
+     * (replays are omitted), in journal order.
+     */
+    mirrorJournalEvents(taskId: string, events: Array<{
+        seq: number;
+        type: string;
+        createdAt: string;
+        metadata?: Record<string, unknown>;
+    }>, context: {
+        attemptId: string;
+        actor: string;
+        observedAt?: string;
+    }): StoredTaskEvent[];
+    /**
+     * Read the persistent event stream for a task, ascending by eventId.
+     *
+     * afterEventId is exclusive (0 = from the beginning); limit is bounded to
+     * 200 per the events contract. Read-only: it writes nothing.
+     */
+    listTaskEvents(taskId: string, options?: {
+        afterEventId?: number;
+        limit?: number;
+    }): {
+        events: StoredTaskEvent[];
+        nextEventId: number | null;
+    };
+    /** Whether the task has any persistent event with eventId > afterEventId. */
+    hasTaskEventAfter(taskId: string, afterEventId: number): boolean;
     createOrGet(task: Omit<StoredTask, "createdAt" | "updatedAt"> & {
         createdAt?: string;
     }): {

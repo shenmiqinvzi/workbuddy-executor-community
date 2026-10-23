@@ -1,5 +1,5 @@
 import type { TaskCoordinator, SendTaskInput } from "./coordinator.js";
-import type { StoredTask } from "./task-store.js";
+import type { StoredTask, StoredTaskEvent } from "./task-store.js";
 import { STAGE_TASK_VIEW_UNAVAILABLE, STAGE_TASK_VIEW_SCHEMA_VERSION, type StageTaskView } from "./task-view-stage.js";
 /** A conservative status projection for existing tasks. This is not the vNext TaskView. */
 export interface TaskStatusView {
@@ -124,6 +124,28 @@ export declare class TaskApplicationService {
         limit: number;
         afterTaskId?: string;
     }): StageListResult | StageListFailure;
+    /**
+     * Read the persistent task event stream (T2).
+     *
+     * Pure read: afterEventId is exclusive (0 = from the beginning), limit is
+     * bounded 1-200 (default 100), events ascend by the monotonic per-task
+     * eventId, and nothing is written — a missing task is a task_not_found
+     * failure, never an implicit creation. nextEventId is null when the page
+     * already reached the end of the stream.
+     */
+    listTaskEvents(taskId: string, options?: {
+        afterEventId?: number;
+        limit?: number;
+    }): {
+        ok: true;
+        events: StoredTaskEvent[];
+        nextEventId: number | null;
+    } | {
+        ok: false;
+        code: "task_not_found" | "invalid_task_id" | "invalid_cursor" | "store_unavailable";
+        field: string;
+        message: string;
+    };
     send(input: SendTaskInput): Promise<{
         ok: boolean;
         created: boolean;

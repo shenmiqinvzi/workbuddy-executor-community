@@ -161,8 +161,9 @@ try {
   const health = await request(port, { path: "/workbench/v1/health" });
   const healthBody = JSON.parse(health.body);
   step("health", {
-    ok: health.status === 200 && healthBody.ready === true && healthBody.schemaVersion === "workbuddy-executor/stage-1"
-      && healthBody.capabilities.nativePermissionResponse === false && healthBody.capabilities.nativeSessionNavigation === false,
+    ok: health.status === 200 && healthBody.ready === true && healthBody.schemaVersion === "workbuddy-executor/stage-2"
+      && healthBody.capabilities.nativePermissionResponse === false && healthBody.capabilities.nativeSessionNavigation === false
+      && healthBody.capabilities.readOnlyHttp === true && healthBody.capabilities.taskEventsHttp === true,
     status: health.status, ready: healthBody.ready, capabilities: healthBody.capabilities,
   });
 
@@ -191,7 +192,8 @@ try {
   const detailBody = JSON.parse(detail.body);
   step("detail-cancelled-with-proof", {
     ok: detail.status === 200 && detailBody.displayState === "cancelled" && detailBody.remoteStopped === true
-      && detailBody.revision === null && detailBody.timing.nativeStoppedAt === "2026-10-18T10:30:00.000Z"
+      && typeof detailBody.revision === "string" && detailBody.revision.length > 0
+      && detailBody.timing.nativeStoppedAt === "2026-10-18T10:30:00.000Z"
       && detailBody.timing.attemptDeadlineAt === null && detailBody.metrics === null
       && detailBody.workspace.id === null && detailBody.allowedActions.length === 0,
     displayState: detailBody.displayState, remoteStopped: detailBody.remoteStopped,
@@ -231,7 +233,21 @@ try {
   step("list-bad-cursor-400", { ok: badCursor.status === 400 && JSON.parse(badCursor.body).error.code === "INVALID_CURSOR", status: badCursor.status });
 
   const events = await request(port, { path: "/workbench/v1/tasks/smoke-task-a/events" });
-  step("events-501", { ok: events.status === 501 && JSON.parse(events.body).error.code === "EVENTS_NOT_IMPLEMENTED", status: events.status });
+  const eventsBody = JSON.parse(events.body);
+  const eventList = Array.isArray(eventsBody.events) ? eventsBody.events : [];
+  const eventIds = eventList.map((e) => e.eventId);
+  const idsStrictlyRising = eventIds.every((id, i) => i === 0 || id > eventIds[i - 1]);
+  const eventShapesOk = eventList.every((e) => typeof e.eventId === "number" && typeof e.type === "string"
+    && typeof e.occurredAt === "string" && typeof e.observedAt === "string" && typeof e.actor === "string"
+    && e.payload !== null && typeof e.payload === "object");
+  step("events-listed", {
+    ok: events.status === 200 && eventList.length > 0 && idsStrictlyRising && eventShapesOk
+      && (eventsBody.nextEventId === null || typeof eventsBody.nextEventId === "number"),
+    status: events.status, count: eventList.length, nextEventId: eventsBody.nextEventId,
+  });
+
+  const eventsBadCursor = await request(port, { path: "/workbench/v1/tasks/smoke-task-a/events?afterEventId=zero" });
+  step("events-bad-cursor-400", { ok: eventsBadCursor.status === 400 && JSON.parse(eventsBadCursor.body).error.code === "INVALID_CURSOR", status: eventsBadCursor.status });
 
   const exportAttempt = await request(port, { path: "/workbench/v1/tasks/smoke-task-a/export" });
   step("export-501", { ok: exportAttempt.status === 501, status: exportAttempt.status });

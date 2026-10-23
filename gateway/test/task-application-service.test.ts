@@ -185,8 +185,9 @@ test("stage detail keeps stored facts, gaps and unknown values without inventing
   assert.equal(result.ok, true);
   if (!result.ok) throw Error("expected a view");
   const view = result.view;
-  assert.equal(result.schemaVersion, "workbuddy-executor/stage-1");
-  assert.equal(view.revision, null, "no persisted revision is invented (T2)");
+  assert.equal(result.schemaVersion, "workbuddy-executor/stage-2");
+  assert.equal(typeof view.revision, "string", "T2 persists a revision for rows that have fact changes");
+  assert.notEqual(view.revision, null, "no persisted revision is invented; the seeded row earned one");
   assert.equal(view.title, null, "the objective is not relabelled as a title");
   assert.deepEqual(view.workspace, { id: null, displayName: null, storedPath: f.dir });
   assert.deepEqual(view.allowedActions, []);
@@ -204,7 +205,7 @@ test("stage detail keeps stored facts, gaps and unknown values without inventing
   assert.equal(view.timing.terminalDecisionAt, null);
   assert.equal(view.timing.closedAt, null);
   assert.equal(typeof view.timing.lastObservedAt, "string", "lastObservedAt is the stored save time");
-  assert.ok(result.unavailable.includes("revision_persistent_unavailable"));
+  assert.ok(result.unavailable.includes("title_unavailable"), "title stays unavailable; the objective is not relabelled");
   assert.ok(result.unavailable.includes("metrics_unavailable"));
 
   // The projection keeps its action-capability gaps; none of the unavailable
@@ -472,4 +473,125 @@ test("stage list reports a store failure as store_unavailable, never as a cursor
     assert.equal(probeFailure.code, "store_unavailable");
     assert.equal(probeFailure.field, "store.hasTaskAfterCursor");
   }
+});
+
+// ---------------------------------------------------------------------------
+// T2: persistent task events and revision.
+// ---------------------------------------------------------------------------
+
+test("task events stay monotonic across attempts, dedup journal replays and resume after a restart", async t => {
+  const f = stageFixture(t);
+  const attemptA = f.seed({ taskId: "stage-events", createdAt: "2026-10-18T10:00:00.000Z", stop: true, authenticated: true });
+  const attemptB = f.seed({ taskId: "stage-events", createdAt: "2026-10-18T10:00:00.000Z", state: "working" });
+
+  // Journal mirror: the same native event seq replays idempotently (dedup by
+  // attemptId+type+journal:seq), and a second attempt continues the cursor
+  // without restarting at 1.
+  const journalA = [
+    { seq: 1, type: "status", createdAt: "2026-10-18T10:05:00.000Z", metadata: { text: "waking worker" } },
+    { seq: 2, type: "result", createdAt: "2026-10-18T10:06:00.000Z", metadata: { text: "report ready" } },
+  ];
+  const firstPass = f.store.mirrorJournalEvents("stage-events", journalA, { attemptId: attemptA, actor: "workbuddy" });
+  assert.equal(firstPass.length, 2, "two fresh journal events append");
+  const replay = f.store.mirrorJournalEvents("stage-events", journalA, { attemptId: attemptA, actor: "workbuddy" });
+  assert.equal(replay.length, 0, "the same journal events replay to zero new events");
+  const journalB = [
+    { seq: 1, type: "status", createdAt: "2026-10-18T11:05:00.000Z", metadata: { text: "rework round" } },
+  ];
+  const secondPass = f.store.mirrorJournalEvents("stage-events", journalB, { attemptId: attemptB, actor: "workbuddy" });
+  assert.equal(secondPass.length, 1, "the second attempt's journal appends");
+
+  const page = f.store.listTaskEvents("stage-events", { afterEventId: 0, limit: 200 });
+  assert.ok(page.events.length >= 3, `seed+mirror events exist, got ${page.events.length}`);
+  const ids = page.events.map(event => event.eventId);
+  assert.deepEqual(ids, [...ids].sort((a, b) => a - b), "eventIds ascend");
+  assert.equal(new Set(ids).size, ids.length, "eventIds are unique");
+  // Monotonic across attempts: the cursor is one shared per-task sequence.
+  // attempt-B events (seeds and mirrors alike) are appended after every
+  // attempt-A event that already exists, and the mirror of a late journal
+  // page never renumbers to a per-attempt 1. Anchor on the last attempt-A
+  // event present before the attempt-B mirror: everything belonging to
+  // attempt B must exceed the maximum attempt-A id.
+  const attemptBIds = page.events.filter(event => event.attemptId === attemptB).map(event => event.eventId);
+  const attemptAIds = page.events.filter(event => event.attemptId === attemptA).map(event => event.eventId);
+  assert.ok(attemptBIds.length > 0 && attemptAIds.length > 0, "both attempts have events");
+  const maxAttemptAId = Math.max(...attemptAIds);
+  assert.ok(secondPass.every(event => event.eventId > maxAttemptAId), "the second attempt's mirrored events continue the shared cursor past every attempt-A event");
+  assert.ok(Math.min(...attemptBIds) >= Math.min(...attemptAIds), "per-task ascending order holds");
+  const mirrored = page.events.find(event => event.attemptId === attemptB && event.type === "status");
+  assert.ok(mirrored, "the attempt-B journal event is mirrored");
+  if (mirrored) {
+    assert.equal(mirrored.payload.nativeEventSeq, 1, "the native per-attempt seq is preserved as payload.nativeEventSeq");
+    assert.ok(typeof mirrored.sourceRef === "string" && mirrored.sourceRef.includes("journal:1"), "the dedup source ref names the journal seq");
+  }
+
+  // Cursor paging resumes: afterEventId is exclusive.
+  const anchor = page.events[1]!;
+  const rest = f.store.listTaskEvents("stage-events", { afterEventId: anchor.eventId, limit: 200 });
+  assert.equal(rest.events[0]?.eventId, anchor.eventId + 1, "afterEventId is exclusive; the next page starts at anchor+1");
+  assert.equal(rest.events.some(event => event.eventId === anchor.eventId), false, "the anchor itself is not re-served");
+
+  // Restart: a fresh store instance over the same file reads the same stream.
+  const reopened = new TaskStore(f.store.file);
+  t.after(() => { reopened.close(); });
+  const afterRestart = reopened.listTaskEvents("stage-events", { afterEventId: 0, limit: 200 });
+  assert.deepEqual(afterRestart.events.map(event => event.eventId), ids, "the persisted stream survives a restart");
+  // And continues monotonically from the persisted maximum.
+  const appended = reopened.appendTaskEvent({ taskId: "stage-events", attemptId: attemptB, type: "recovery_recorded", occurredAt: "2026-10-18T12:00:00.000Z", observedAt: "2026-10-18T12:00:00.000Z", actor: "gateway", payload: {}, sourceRef: null });
+  assert.equal(appended.eventId, Math.max(...ids) + 1, "a new event continues the persisted maximum");
+});
+
+test("listTaskEvents refuses missing tasks and bad cursors and never writes", async t => {
+  const f = stageFixture(t);
+  const missing = f.service.listTaskEvents("no-such-task", {});
+  assert.equal(missing.ok, false);
+  if (missing.ok) throw Error("expected failure");
+  assert.equal(missing.code, "task_not_found");
+
+  const badCursor = f.service.listTaskEvents("stage-a", { afterEventId: -1 });
+  assert.equal(badCursor.ok, false);
+  if (badCursor.ok) throw Error("expected failure");
+  assert.equal(badCursor.code, "invalid_cursor");
+
+  const badLimit = f.service.listTaskEvents("stage-a", { limit: 201 });
+  assert.equal(badLimit.ok, false);
+  if (badLimit.ok) throw Error("expected failure");
+  assert.equal(badLimit.code, "invalid_cursor");
+
+  const badId = f.service.listTaskEvents("", {});
+  assert.equal(badId.ok, false);
+  if (badId.ok) throw Error("expected failure");
+  assert.equal(badId.code, "invalid_task_id");
+});
+
+test("revision persists per fact change, is unguessable and never time-derived, and pure polls change nothing", async t => {
+  const f = stageFixture(t);
+  const attemptA = f.seed({ taskId: "stage-revision", createdAt: "2026-10-18T10:00:00.000Z", stop: true, authenticated: true });
+  const before = f.store.get("stage-revision")!;
+  assert.ok(before.revision, "the seeded fact changes earned a revision");
+  const first = before.revision!;
+
+  // A pure read/poll (updateAttempt with only lastMessageId/lastEventSeq —
+  // the sync path) must not regenerate the revision or emit a fact event.
+  const eventsBeforePoll = f.store.listTaskEvents("stage-revision", { afterEventId: 0, limit: 200 }).events.length;
+  f.store.updateAttempt("stage-revision", attemptA, { lastEventSeq: 99 });
+  const afterPoll = f.store.get("stage-revision")!;
+  assert.equal(afterPoll.revision, first, "a pure poll keeps the revision");
+  const eventsAfterPoll = f.store.listTaskEvents("stage-revision", { afterEventId: 0, limit: 200 }).events.length;
+  assert.equal(eventsAfterPoll, eventsBeforePoll, "a pure poll emits no fact event");
+
+  // A real fact change (state) regenerates the revision and emits one event.
+  f.store.update("stage-revision", { state: "cancelled" });
+  const afterChange = f.store.get("stage-revision")!;
+  assert.notEqual(afterChange.revision, first, "a fact change regenerates the revision");
+  assert.ok(afterChange.revision, "the new revision persists");
+  // Uniqueness/unguessability shape: base64url, 16 chars from 12 bytes, no
+  // timestamp prefix (two consecutive revisions share no structure).
+  assert.match(afterChange.revision!, /^[A-Za-z0-9_-]{16}$/);
+  const events = f.store.listTaskEvents("stage-revision", { afterEventId: 0, limit: 200 }).events;
+  assert.equal(events.length, eventsAfterPoll + 1, "one fact event for the state change");
+  const last = events.at(-1)!;
+  assert.equal(last.type, "task_state_changed");
+  assert.equal(last.actor, "gateway");
+  assert.ok("after" in last.payload && "before" in last.payload, "the fact event names before and after signatures");
 });

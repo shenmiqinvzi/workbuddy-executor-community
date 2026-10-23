@@ -1,8 +1,8 @@
 /**
- * Stage-1 read-only HTTP task view (schema `workbuddy-executor/stage-1`).
+ * Stage-2 read-only HTTP task view (schema `workbuddy-executor/stage-2`).
  *
  * Contract source: docs/INTERFACE_CONTRACT.md; stage scope fixed by the
- * 2026-10-23 development handoff, task T1.
+ * 2026-10-23 development handoff, tasks T1/T2.
  *
  * This file declares the stage response shape and its mapping from the
  * read-only projection, and nothing else: no transport, no store, no clock.
@@ -11,10 +11,11 @@
  * section 3), stated field by field so the stage response can never be
  * mistaken for the contract's complete view:
  *
- *   - `revision` is always null. Storage keeps no persisted view revision;
- *     the stored agreementVersion and contractHash belong to the initial
- *     contract, not to view revisions, and neither is reused as one. A
- *     persistent revision arrives with T2.
+ *   - `revision` carries the stored persisted view revision when one exists
+ *     (T2: regenerated in the same transaction as every fact change,
+ *     unguessable, not time-derived); null when the row predates it. The
+ *     stored agreementVersion and contractHash belong to the initial
+ *     contract, not to view revisions, and neither is reused as one.
  *   - `title` is null. Storage has no title field; the objective is not
  *     silently re-labelled as one.
  *   - `workspace` carries id/displayName null plus the stored directory path
@@ -43,10 +44,9 @@
  * Unknown values are null, never 0, never "NA", per the contract preamble.
  */
 /** Stage schema marker. Distinct from the full `workbuddy-executor/vnext-1`. */
-export const STAGE_TASK_VIEW_SCHEMA_VERSION = "workbuddy-executor/stage-1";
+export const STAGE_TASK_VIEW_SCHEMA_VERSION = "workbuddy-executor/stage-2";
 /** Task-level fields the stage view cannot establish, named for the client. */
 export const STAGE_TASK_VIEW_UNAVAILABLE = [
-    "revision_persistent_unavailable",
     "title_unavailable",
     "workspace_binding_unavailable",
     "blocker_unavailable",
@@ -80,7 +80,7 @@ export function stageTaskViewFromProjection(input) {
     return {
         schemaVersion: STAGE_TASK_VIEW_SCHEMA_VERSION,
         taskId: task.taskId,
-        revision: null,
+        revision: task.revision ?? null,
         title: null,
         workspace: { id: null, displayName: null, storedPath: task.workspace ?? null },
         attempt: {

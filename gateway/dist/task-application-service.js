@@ -136,6 +136,38 @@ export class TaskApplicationService {
             nextAfterTaskId: next,
         };
     }
+    /**
+     * Read the persistent task event stream (T2).
+     *
+     * Pure read: afterEventId is exclusive (0 = from the beginning), limit is
+     * bounded 1-200 (default 100), events ascend by the monotonic per-task
+     * eventId, and nothing is written — a missing task is a task_not_found
+     * failure, never an implicit creation. nextEventId is null when the page
+     * already reached the end of the stream.
+     */
+    listTaskEvents(taskId, options = {}) {
+        if (typeof taskId !== "string" || taskId.length === 0 || taskId.length > 200) {
+            return { ok: false, code: "invalid_task_id", field: "taskId", message: "The task id must be 1-200 characters." };
+        }
+        const afterEventId = options.afterEventId ?? 0;
+        if (!Number.isInteger(afterEventId) || afterEventId < 0) {
+            return { ok: false, code: "invalid_cursor", field: "afterEventId", message: "afterEventId must be a non-negative integer." };
+        }
+        const limit = options.limit ?? 100;
+        if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
+            return { ok: false, code: "invalid_cursor", field: "limit", message: "limit must be an integer between 1 and 200." };
+        }
+        try {
+            const task = this.coordinator.store.get(taskId);
+            if (!task)
+                return { ok: false, code: "task_not_found", field: "taskId", message: "No stored task has this id; events are never fabricated for one." };
+            const page = this.coordinator.store.listTaskEvents(taskId, { afterEventId, limit });
+            return { ok: true, events: page.events, nextEventId: page.nextEventId };
+        }
+        catch {
+            return { ok: false, code: "store_unavailable", field: "store.listTaskEvents", message: "Reading the event stream failed; this is not reported as an empty stream." };
+        }
+    }
     send(input) { return this.coordinator.send(input); }
     continue(input) { return this.coordinator.continue(input); }
     accept(...args) { return this.coordinator.accept(...args); }

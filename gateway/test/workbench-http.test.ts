@@ -158,7 +158,7 @@ test("health, list and detail answer from stored facts only", async t => {
   assert.equal(healthBody.capacity.limit, 1);
   assert.equal(healthBody.capabilities.nativePermissionResponse, false);
   assert.equal(healthBody.capabilities.nativeSessionNavigation, false);
-  assert.equal(healthBody.capabilities.taskEventsHttp, false);
+  assert.equal(healthBody.capabilities.taskEventsHttp, true);
 
   const list = await request(port, { path: "/workbench/v1/tasks" });
   assert.equal(list.status, 200);
@@ -168,7 +168,8 @@ test("health, list and detail answer from stored facts only", async t => {
   assert.equal(listBody.tasks[0].view.taskId, "task-a");
   assert.equal(listBody.tasks[0].view.displayState, "cancelled");
   assert.equal(listBody.tasks[0].view.remoteStopped, true);
-  assert.equal(listBody.tasks[0].view.revision, null);
+  assert.equal(typeof listBody.tasks[0].view.revision, "string", "T2: fact changes persist a revision");
+  assert.notEqual(listBody.tasks[0].view.revision, null);
   assert.equal(listBody.tasks[1].ok, true);
   assert.equal(listBody.tasks[1].view.displayState, "unknown", "no live observation is claimed from a stored snapshot");
   assert.equal(listBody.tasks[1].view.remoteStopped, false, "stop proof absent is a confirmed false, not null");
@@ -266,16 +267,13 @@ test("access boundary: foreign Host, cross-origin Origin and non-GET methods are
   assert.equal(postEvents.status, 405);
 });
 
-test("events, export and workspaces stay explicitly closed (501), unknown paths 404", async t => {
+test("export and workspaces stay explicitly closed (501), unknown paths 404", async t => {
   const f = fixture(t);
   f.seedTask({ taskId: "closed-task", createdAt: "2026-10-18T10:00:00.000Z", state: "working" });
   const { server, port, close } = await startServer(f.service);
   t.after(close);
 
-  const events = await request(port, { path: "/workbench/v1/tasks/closed-task/events?afterEventId=0&limit=100" });
-  assert.equal(events.status, 501);
-  assert.equal(JSON.parse(events.body).error.code, "EVENTS_NOT_IMPLEMENTED");
-
+  // T2 opened the read-only event stream; export and workspaces stay closed.
   const exportBody = await request(port, { path: "/workbench/v1/tasks/closed-task/export" });
   assert.equal(exportBody.status, 501);
   assert.equal(JSON.parse(exportBody.body).error.code, "EXPORT_NOT_IMPLEMENTED");

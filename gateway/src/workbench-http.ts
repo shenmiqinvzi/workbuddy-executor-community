@@ -90,7 +90,7 @@ export function workbenchHealth(input: { runtime: { release: string; packageVers
       nativePermissionResponse: false,
       nativeSessionNavigation: false,
       readOnlyHttp: true,
-      taskEventsHttp: false,
+      taskEventsHttp: true,
     },
     unavailable: [...STAGE_TASK_VIEW_UNAVAILABLE],
   };
@@ -111,9 +111,9 @@ export interface WorkbenchHealth {
     /** Contract section 1: false until verified; this stage cannot verify them. */
     nativePermissionResponse: false;
     nativeSessionNavigation: false;
-    /** Stage-1 surface facts. */
+    /** Stage surface facts: T2 opens the read-only event stream. */
     readOnlyHttp: true;
-    taskEventsHttp: false;
+    taskEventsHttp: true;
   };
   unavailable: typeof STAGE_TASK_VIEW_UNAVAILABLE;
 }
@@ -328,9 +328,36 @@ export class WorkbenchHttpServer {
         this.send(response, 200, result.view);
         return;
       }
-      // Events stay closed until the durable cursor and dedup source exist (T2).
-      if (/^\/workbench\/v1\/tasks\/[^/]+\/events$/.test(pathname)) {
-        this.refuse(response, 501, "EVENTS_NOT_IMPLEMENTED", "Task events require the durable cross-attempt cursor and native-event dedup source (stage T2).");
+      // T2 opens the read-only event stream: afterEventId exclusive cursor,
+      // limit 1-200 (default 100), ascending eventId, nothing written.
+      const eventsMatch = /^\/workbench\/v1\/tasks\/([^/]+)\/events$/.exec(pathname);
+      if (eventsMatch) {
+        const taskId = decodeURIComponent(eventsMatch[1]!);
+        if (taskId.length === 0 || taskId.length > 200) {
+          this.refuse(response, 400, "INVALID_TASK_ID", "The task id must be 1-200 characters.");
+          return;
+        }
+        const afterEventIdRaw = url.searchParams.get("afterEventId");
+        if (afterEventIdRaw !== null && !/^\d+$/.test(afterEventIdRaw)) {
+          this.refuse(response, 400, "INVALID_CURSOR", "afterEventId must be a non-negative integer.");
+          return;
+        }
+        const limitRaw = url.searchParams.get("limit");
+        if (limitRaw !== null && !/^\d{1,4}$/.test(limitRaw)) {
+          this.refuse(response, 400, "INVALID_CURSOR", "limit must be an integer between 1 and 200.");
+          return;
+        }
+        const afterEventId = afterEventIdRaw === null ? 0 : parseInt(afterEventIdRaw, 10);
+        const limit = limitRaw === null ? 100 : parseInt(limitRaw, 10);
+        const result = this.options.service.listTaskEvents(taskId, { afterEventId, limit });
+        if (!result.ok) {
+          const status = result.code === "task_not_found" ? 404
+            : result.code === "invalid_task_id" || result.code === "invalid_cursor" ? 400
+            : 503;
+          this.refuse(response, status, result.code.toUpperCase(), result.message, taskId);
+          return;
+        }
+        this.send(response, 200, { events: result.events, nextEventId: result.nextEventId });
         return;
       }
       if (/^\/workbench\/v1\/tasks\/[^/]+\/export$/.test(pathname)) {

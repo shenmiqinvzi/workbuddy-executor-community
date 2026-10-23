@@ -83,9 +83,9 @@ export interface WorkbenchHealth {
         /** Contract section 1: false until verified; this stage cannot verify them. */
         nativePermissionResponse: false;
         nativeSessionNavigation: false;
-        /** Stage-1 surface facts. */
+        /** Stage surface facts: T2 opens the read-only event stream. */
         readOnlyHttp: true;
-        taskEventsHttp: false;
+        taskEventsHttp: true;
     };
     unavailable: typeof STAGE_TASK_VIEW_UNAVAILABLE;
 }
