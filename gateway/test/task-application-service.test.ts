@@ -30,8 +30,8 @@ test("two service instances reuse one task identity and dispatch only once", asy
   const secondStore = new TaskStore(config.dbFile);
   t.after(() => { secondStore.close(); firstStore.close(); fs.rmSync(dir, { recursive: true, force: true }); });
   const client = new SnapshotClient(config);
-  const first = new TaskApplicationService(new TaskCoordinator(config, firstStore, client), 3);
-  const second = new TaskApplicationService(new TaskCoordinator(config, secondStore, client), 3);
+  const first = new TaskApplicationService(new TaskCoordinator(config, firstStore, client), 3, config.runsDir);
+  const second = new TaskApplicationService(new TaskCoordinator(config, secondStore, client), 3, config.runsDir);
   const input = { taskId: "same-task", objective: "fix a file", workspace: dir, sessionId: "session-one" };
   const results = await Promise.all([first.send(input), second.send(input)]);
   assert.equal(results.filter(result => result.created).length, 1);
@@ -47,8 +47,8 @@ test("separate entry point services agree and never offer review actions before 
   const secondStore = new TaskStore(config.dbFile);
   t.after(() => { secondStore.close(); firstStore.close(); fs.rmSync(dir, { recursive: true, force: true }); });
   const client = new SnapshotClient(config);
-  const first = new TaskApplicationService(new TaskCoordinator(config, firstStore, client), 3);
-  const second = new TaskApplicationService(new TaskCoordinator(config, secondStore, client), 3);
+  const first = new TaskApplicationService(new TaskCoordinator(config, firstStore, client), 3, config.runsDir);
+  const second = new TaskApplicationService(new TaskCoordinator(config, secondStore, client), 3, config.runsDir);
   firstStore.createOrGet({ taskId: "one", messageId: "pending", objective: "fix it", state: "queued", sessionId: "session-one" });
   const attemptId = "run-00000000-0000-4000-8000-000000000001";
   firstStore.beginAttempt("one", { attemptId, messageId: attemptId, sessionId: "session-one" });

@@ -15,7 +15,10 @@ export interface TaskStatusView {
 export declare class TaskApplicationService {
     private readonly coordinator;
     private readonly maxAttempts;
-    constructor(coordinator: TaskCoordinator, maxAttempts: number);
+    private readonly runsDir;
+    constructor(coordinator: TaskCoordinator, maxAttempts: number, runsDir: string);
+    /** Stored facts only: deliberately bypasses every synchronising coordinator method. */
+    readProjection(taskId: string): import("./task-view-reader.js").TaskProjectionResult;
     send(input: SendTaskInput): Promise<{
         ok: boolean;
         created: boolean;

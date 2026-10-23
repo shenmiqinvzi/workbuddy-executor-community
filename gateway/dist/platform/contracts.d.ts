@@ -10,23 +10,23 @@ export declare const requestSchema: z.ZodObject<{
     constraints: z.ZodDefault<z.ZodArray<z.ZodString, "many">>;
     timeoutSeconds: z.ZodDefault<z.ZodNumber>;
 }, "strict", z.ZodTypeAny, {
+    timeoutSeconds: number;
     constraints: string[];
     task: string;
     output: "text" | "artifacts" | "json";
-    timeoutSeconds: number;
     provider: string;
     sessionId?: string | undefined;
-    workspace?: string | undefined;
     model?: string | undefined;
+    workspace?: string | undefined;
     idempotencyKey?: string | undefined;
 }, {
     task: string;
     sessionId?: string | undefined;
+    timeoutSeconds?: number | undefined;
+    model?: string | undefined;
     constraints?: string[] | undefined;
     workspace?: string | undefined;
-    model?: string | undefined;
     output?: "text" | "artifacts" | "json" | undefined;
-    timeoutSeconds?: number | undefined;
     provider?: string | undefined;
     idempotencyKey?: string | undefined;
 }>;

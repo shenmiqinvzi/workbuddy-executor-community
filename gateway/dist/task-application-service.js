@@ -1,10 +1,17 @@
+import { readTaskProjection } from "./task-view-reader.js";
 /** The MCP entry point and future local HTTP adapter share this service. */
 export class TaskApplicationService {
     coordinator;
     maxAttempts;
-    constructor(coordinator, maxAttempts) {
+    runsDir;
+    constructor(coordinator, maxAttempts, runsDir) {
         this.coordinator = coordinator;
         this.maxAttempts = maxAttempts;
+        this.runsDir = runsDir;
+    }
+    /** Stored facts only: deliberately bypasses every synchronising coordinator method. */
+    readProjection(taskId) {
+        return readTaskProjection({ store: this.coordinator.store, runsDir: this.runsDir }, taskId);
     }
     send(input) { return this.coordinator.send(input); }
     continue(input) { return this.coordinator.continue(input); }

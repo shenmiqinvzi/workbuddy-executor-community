@@ -33,9 +33,9 @@
 | 已有修复与验证历史 | [更新记录](CHANGELOG.md) |
 | 前端只读模拟原型 | [设计任务书](docs/FRONTEND_TASK_PANEL_DESIGN.md) · [Issue #6](https://github.com/shenmiqinvzi/workbuddy-executor-community/issues/6) |
 
-共享任务服务的基础兼容层已接入 MCP，提供保守的任务状态和允许操作视图，并保留原生错误、报告恢复与停止核验规则。整合分支已完成独立部署和本机真实验证：正常小代码任务验收通过，MCP重连、正式取消均有实际证据；历史pending误判修复后，原超时演练第3轮已验收，前两轮失败保留。详见[修复部署记录](gateway/docs/native-history-deployment-verification.json)。完整 vNext 契约、本地 HTTP/面板和自动指标仍待实现，开发分支尚未合并main。
+本集成分支以已合并 PR #8 的 Windows 部署修复为基线，整合 PR #4 的共享任务服务与 PR #7 的只读任务投影、报告认证和初始约定持久化。MCP 的执行入口和只读投影均通过 TaskApplicationService；投影保持存储快照语义，只开放 export，不触发同步、派工或写入。完整 vNext 契约、本地 HTTP/面板和自动指标仍待实现。
 
-下一优先项是统一任务视图与本地只读接口；前端只读模拟原型已通过 Issue #6 发布并指派，尚未记录实现PR或验收。当前阶段与待办统一见[开发进度](docs/PROGRESS.md)。
+本次整合尚未部署到运行网关，历史版本的本机实测不自动算作当前版本通过。下一优先项是完整任务视图与本地只读接口；前端交付由 Issue #6 跟踪，完整异机验收由 Issue #3 跟踪。当前状态、历史证据及待办统一见[开发进度](docs/PROGRESS.md)。
 
 ## 验证与已知限制
 

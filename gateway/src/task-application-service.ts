@@ -1,5 +1,6 @@
 import type { TaskCoordinator, SendTaskInput } from "./coordinator.js";
 import type { StoredTask } from "./task-store.js";
+import { readTaskProjection } from "./task-view-reader.js";
 
 /** A conservative status projection for existing tasks. This is not the vNext TaskView. */
 export interface TaskStatusView {
@@ -15,7 +16,12 @@ export interface TaskStatusView {
 
 /** The MCP entry point and future local HTTP adapter share this service. */
 export class TaskApplicationService {
-  constructor(private readonly coordinator: TaskCoordinator, private readonly maxAttempts: number) {}
+  constructor(private readonly coordinator: TaskCoordinator, private readonly maxAttempts: number, private readonly runsDir: string) {}
+
+  /** Stored facts only: deliberately bypasses every synchronising coordinator method. */
+  readProjection(taskId: string) {
+    return readTaskProjection({ store: this.coordinator.store, runsDir: this.runsDir }, taskId);
+  }
 
   send(input: SendTaskInput) { return this.coordinator.send(input); }
   continue(input: Parameters<TaskCoordinator["continue"]>[0]) { return this.coordinator.continue(input); }

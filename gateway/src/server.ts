@@ -17,6 +17,8 @@ import { ensureWorkspace, listWorkspaces, listModels } from "./workspace-manager
 import { loadDotEnv } from "./env.js";
 import { runtimeVersion } from "./runtime-version.js";
 import { progressDelta } from "./progress-summary.js";
+import { registerTaskProjectionTool } from "./task-view-reader.js";
+import { runsDirectory } from "./run-journal.js";
 
 // Load this installation's .env so the MCP host does not have to export it or
 // run the POSIX launcher. Explicit host variables always win.
@@ -25,7 +27,7 @@ const config = loadConfig();
 const client = new WorkBuddyClient(config);
 const store = new TaskStore(config.dbFile);
 const coordinator = new TaskCoordinator(config, store, client);
-const tasks = new TaskApplicationService(coordinator, config.maxTaskAttempts ?? 3);
+const tasks = new TaskApplicationService(coordinator, config.maxTaskAttempts ?? 3, runsDirectory(config));
 const server = new McpServer({ name: "codex-workbuddy-gateway", version: runtimeVersion.packageVersion });
 const timeout = z.number().int().positive().max(86_400).optional();
 const taskId = z.string().min(1).max(200);
@@ -145,6 +147,11 @@ const summaryCursors = new Map<string,number>();
 function jsonResult(value: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
 }
+// Read-only projection of stored records. It reuses this process's store and
+// runs directory, and never constructs a store, creates a directory, syncs or
+// dispatches anything.
+registerTaskProjectionTool(server, tasks);
+
 await server.connect(new StdioServerTransport());
 process.once("SIGINT", () => { store.close(); process.exit(0); });
 process.once("SIGTERM", () => { store.close(); process.exit(0); });

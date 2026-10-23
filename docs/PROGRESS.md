@@ -1,97 +1,42 @@
-# 开发进度与下一步
+# 后端集成进度
 
-更新日期：2026-10-20（Asia/Shanghai）。本文汇总当前实现、实际验证和待办；具体任务进展与负责人以对应 Issue/PR 为准，不登记个人工时或内部排期。
+更新日期：2026-10-23（Asia/Shanghai）。本页记录集成分支的源码与验证边界；运行网关、前端和异机验收分别核对。
 
-## 1. 当前结论
+## 当前状态
 
-**Windows 本机真实执行闭环已通过；前端只读原型任务已发布；下一步优先补齐统一任务视图与本地只读接口。**
+PR [#8](https://github.com/shenmiqinvzi/workbuddy-executor-community/pull/8) 已合并 main（`4ccba60`）。本分支以此为基线，整合 PR [#4](https://github.com/shenmiqinvzi/workbuddy-executor-community/pull/4)（`a970cb5`）和 PR [#7](https://github.com/shenmiqinvzi/workbuddy-executor-community/pull/7)（`1e7115a`）。集成分支存在不等于已合并 main 或已部署。
 
-已完成的真实样本不代表完整 vNext、面板联调、所有异常或第二台 Windows 已通过。
-
-| 工作项 | 当前状态 | 依据与边界 |
+| 能力 | 本次整合结果 | 仍需区分的边界 |
 |---|---|---|
-| Windows 可迁移安装与诊断基础 | 已实现并有隔离及本机证据 | [安装指南](../gateway/docs/INSTALL_WINDOWS.md)；第二台物理机器仍待验证。 |
-| 共享任务服务基础兼容层 | 已实现并接入 MCP | TaskApplicationService 与 statusView 已有；完整 TaskView、持久 revision、跨不同任务的共享容量约束未完成。 |
-| 整合分支正常小代码任务 | 本机真实验收通过 | WorkBuddy 第1轮领取并修复实现；测试文件未变；修复前退出1，独立复测退出0、5/5通过，最终accepted。 |
-| MCP 执行中断开重连 | 本机实际观察通过 | 原任务、轮次、会话及绝对期限保持，无替代任务或重复投递。 |
-| 正式取消与命令清理 | 本机实际验证通过 | 原生领取后正式取消，有回执；命令130、Job清理成功、remoteStopped=true。 |
-| 工具结束后历史pending误判 | 已修复、部署并真实复验 | historyRevision=2；覆盖实时事件和重启后持久历史，原任务第3轮accepted。 |
-| 命令超时演练 | 本机真实验收通过 | 预期124、reason=timeout、Job清理成功、样本PID退出；两次原生idle，前两轮失败/报告保留。 |
-| 前端原型设计 | 文档已发布 | [详细任务书](FRONTEND_TASK_PANEL_DESIGN.md)，10种状态、16个模拟场景、20项验收。 |
-| 前端只读模拟原型 | 已发布并指派，待交付 | [Issue #6](https://github.com/shenmiqinvzi/workbuddy-executor-community/issues/6) 开放中；本次核对尚未发现前端实现PR或验收记录，不记为已完成或已联调。 |
-| 完整统一任务视图与本地只读HTTP | 下一优先项，未开始本轮实现 | 目标契约已有，实际接口尚未完成；先准备health、列表、详情与事件读取。 |
-| 离线诊断认证误报 | 已定位，待修复 | 带validationRecords的已认证报告可能在离线入口显示未认证；实际MCP验收与此误报分开。 |
-| 完整跨入口幂等/排他、范围自动检查 | 部分基础已有，vNext待补齐 | 不能把现有MCP守卫或人工样本范围核对当作完整跨入口与自动范围能力。 |
-| 自动指标、面板联调与发布集成 | 待实施 | 不宣称已生成完整成本统计、前端接入或新发布包。 |
-| 第二台Windows物理机器 | 待设备、待验证 | [Issue #3](https://github.com/shenmiqinvzi/workbuddy-executor-community/issues/3)仍开放；本机、隔离与CI均不能替代。 |
+| Windows 部署兼容 | 保留中文/空格/短路径 renderer 匹配、UTF-8 进程查询、Unicode 自启动脚本和受限超时恢复修复 | 实机登录自启和完整异机验收仍待补充 |
+| 共享任务服务 | MCP 执行入口及只读投影均经过 TaskApplicationService | statusView 是兼容摘要，不是完整 vNext TaskView |
+| 只读任务投影 | 服务与 MCP 复用同一存储实例和明确的 runsDir；不调用 sync 或 executionStatus，不修改记录 | 只读取保存的快照；无实时观测，allowedActions 仅 export |
+| 报告认证 | 按时通过队列身份、租约和验证引用检查的报告保存认证记录；读取重算摘要 | 历史无认证记录保持 unknown；认证不等于独立验收 |
+| 初始 TaskContract | 不可变保存、规范化、摘要、幂等与完整性核验已整合 | 尚无真实派工调用点；effectiveMaxAttempts 未用于轮次准入，workspaceId 未绑定真实工作区 |
+| 跨模块回归 | 新增真实队列代码路径到共享服务及 MCP 的合成集成测试 | 注入原生 actor 的测试不是真实桌面或异机证据 |
 
-## 2. 已验证的版本与证据
+## 验证方式
 
-| 版本/记录 | 说明 |
-|---|---|
-| `d84936a` | 共享服务与main安全修复的整合基线。正常任务、重连、取消样本的整合部署基于此版本。 |
-| `f6efbf7` | 历史参数事件兼容修复及脱敏验证记录，已推送开发分支。 |
-| `02a3e1c` | 前端设计与产品背景文档提交；Issue #6链接到该固定版本，便于交接。 |
-| `feat/shared-task-service` | 当前集成开发分支；[PR #4](https://github.com/shenmiqinvzi/workbuddy-executor-community/pull/4)仍为开放草稿、未合并main。 |
+- 从合并后的 TypeScript 源码统一构建 dist，重新生成版本控制文件快照；不手工合并编译代码。
+- 类型检查覆盖 TaskView、共享任务服务及集成测试。
+- Windows CI 同时运行任务视图/认证/约定测试，以及部署、共享服务、队列、停止、恢复、Job 清理等回归；具体提交、数量与结果以集成 PR 的实际运行记录为准。
+- 集成测试检查：报告到达但未停止时等待停止；停止后可进入待审查；报告篡改不被提升为待审查；服务与 MCP 返回一致的快照；读取前后数据库和所有执行文件哈希不变。
+- 本次没有重新部署、重启 WorkBuddy 或派发真实任务。已有历史实测不自动转移成集成版本的实测结果。
 
-修复版实际运行哈希：
+## 下一步
 
-```text
-8110503b3ad6134ea8f44540d5c7ba8fb121488497ee61ed9e82bdaa1391a0c6
-```
+1. 补齐完整 TaskView 与本地只读 HTTP 的列表、详情和事件接口，保留 unknown 与陈旧快照语义。
+2. 持久 revision、reviewId 与审查证据绑定。
+3. 将约定接入真实派工、工作区身份和轮次预算准入。
+4. 跨入口、跨不同任务的容量排他，以及真实文件范围/原有改动保护。
+5. 对接前端只读原型（[Issue #6](https://github.com/shenmiqinvzi/workbuddy-executor-community/issues/6)），再做真实读取联调。
+6. 在隔离部署中补当前集成版本的真实桌面验证；继续补完整异机验收（[Issue #3](https://github.com/shenmiqinvzi/workbuddy-executor-community/issues/3)）。
 
-该哈希标识当时部署的执行代码；后续仅文档提交不代表网关重新部署。完整源码提交与已安装的skill、运行网关、MCP进程仍须分别核对。
+以上均为待办，不表示本次已经提供 HTTP 服务、完整执行约束或已完成面板。
 
-- [修复前的整合部署观察与候选回归](../gateway/docs/native-history-verification.json)：包含正常任务、取消和最初超时阻塞事实，属于历史阶段记录。
-- [修复部署及第3轮真实验收](../gateway/docs/native-history-deployment-verification.json)：记录historyRevision=2、精确免费模型、报告认证、清理与停止证据。
-- 修复版聚焦回归：102项，96通过、0失败、6项macOS跳过；构建退出0。
-- 发布前快照核验：300个文件哈希匹配。这不是300项业务测试，也不等同于最新提交的远程CI结果。
-- 重连事实为本机实际观察；原始身份与完整日志保留本机，不在公共文档重复。
+## 历史验证与实机反馈
 
-## 3. 下一步顺序
-
-### P1：统一任务视图和本地只读接口
-
-目标是让前端随后能替换mock读取真实任务事实：
-
-1. 对齐[目标契约](INTERFACE_CONTRACT.md)，明确当前statusView到完整TaskView的字段差异。
-2. 明确目标正文、进度摘要与报告等详情字段的正式来源；不让前端自造wire字段。
-3. 补齐统一读取模型，保留unknown、null、时间、轮次和证据含义。
-4. 实现本地只读health、任务列表、详情、事件接口；读取不触发模型请求或第二条派工链路。
-5. 核对本地访问边界、乱序/断线恢复及MCP与HTTP展示一致性。
-
-这仍是待实施任务；本文不表示规划端口或端点已经可用。
-
-### 可独立推进：前端只读模拟原型
-
-按[Issue #6](https://github.com/shenmiqinvzi/workbuddy-executor-community/issues/6)及[任务书](FRONTEND_TASK_PANEL_DESIGN.md)实施。当前阶段使用合成数据，不依赖真实WorkBuddy、数据库或HTTP服务；先交结构与数据，再交主流程、异常和验收记录。负责人及实现进度只在Issue/PR跟踪。
-
-### 后续任务
-
-| 顺序 | 任务 | 完成门槛 |
-|---|---|---|
-| P2 | 修复离线诊断误报 | 正常验证引用被正确识别；篡改仍拒绝；兼容旧报告并保持只读。 |
-| P3 | 完整跨入口排他与幂等 | MCP/HTTP/多进程并发不重复派工，不操作旧轮次，不因结果不明释放工作流。 |
-| P4 | 自动文件范围与旧改动保护 | 覆盖增删改/重命名、Windows路径与junction、旧改动冲突；不夸大为OS沙箱。 |
-| P5 | 补真实异常及异机验收 | 权限/输入等待、修复版整任务到期、恢复场景与第二台Windows分别留证；真实429仅在实际遇到且条件允许时记录，不为覆盖主动消耗或绕过政策。 |
-| P6 | 前后端联调及版本集成 | 对照合成场景接真实读取；完整vNext约束、PR/CI与发布包核对；版本和运行产物可对应。 |
-
-这些是优先顺序，不代表已经创建相应Issue、开始编码或约定工期。
-
-## 4. 实际验证与尚未验证
-
-| 类别 | 已有证据 | 不能据此宣称 |
-|---|---|---|
-| 本机真实桌面 | 正常任务、MCP重连、正式取消、修复后的命令超时及独立验收 | 第二台机器、所有异常都通过。 |
-| 自动/Mock回归 | 身份、停止、历史回放、权限/失联等受控用例 | 实际平台已触发真实429或原生权限等待。 |
-| 本机隔离安装 | 安装、构建、诊断、包/快照与独立配置检查 | 异机恢复、独立操作者复现、最新版本全部升级/卸载场景通过。 |
-| 前端设计与Issue | 任务边界、合成场景、验收清单和任务分配 | 前端已实现、已接真实网关或具备网页原生代批能力。 |
-
-当前修复版仍未验证：真实平台429、原生权限/输入等待及恢复、整个任务绝对期限到期收尾、第二台Windows物理机器。历史版本的相关记录保留原结论，不自动转移为当前修复版通过。
-
-## 5. 文档维护规则
-
-- 本文维护阶段状态；[路线图](../ROADMAP.md)维护目标，[总体设计](DEVELOPMENT_DESIGN.md)维护架构，[接口契约](INTERFACE_CONTRACT.md)维护协议。
-- Issue/PR维护具体交付和负责人。Issue已指派不等于已开工，文档已发布不等于程序已实现，提交已推送不等于main已合并或现有安装已更新。
-- 已发生的失败、迟到报告及历史验证保持原样；新增证据通过新记录说明后续进展。
-- 更新状态时附实现、PR或验证依据；只有计划而没有结果的项目保持待实施，不填写估算完成百分比。
+- 2026-10-20 共享服务历史分支的正常任务、重连、取消及修复后超时样本，见[原始阶段摘要](../gateway/docs/native-history-verification.json)和[当时部署复验](../gateway/docs/native-history-deployment-verification.json)。这些记录保留当时版本、失败和修复边界。
+- 2026-10-21～22 的[提交者实机反馈](https://github.com/shenmiqinvzi/workbuddy-executor-community/issues/3#issuecomment-6343397605)记录修复后的正常任务与同任务返工；完整安装、取消、执行中重连、升级卸载、deployment-check 及设备关系仍需补充。
+- 上述反馈中的 WorkBuddy 会话标题可见而对话内容不可见问题仍未解决；没有将其写成已通过。
+- 旧离线诊断对含 validationRecords 报告的认证误报仍是独立待核查项；新的只读投影认证不自动证明旧离线入口已修复。
