@@ -2,6 +2,7 @@ import type { Config } from "./config.js";
 import type { NativeDesktopTrigger } from "./persistent-service.js";
 export declare const RENDERER_BRIDGE: string;
 export declare function rendererBridgeForFreeModel(model: string): string;
+export declare function matchesNativeRendererFileUrl(url: string | undefined, archivePath: string): boolean;
 export interface NativeDesktopProcessControl {
     run(file: string, args: string[], timeoutMs: number): string;
     launch(executable: string, cdpPort: number): void;

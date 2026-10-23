@@ -541,7 +541,8 @@ export class DesktopQueue {
         const request = journal.request();
         const claim = readJson<Claim>(path.join(journal.dir, "claim.json"));
         if (!task || task.attemptId !== input.attemptId || task.sessionId !== input.sessionId || task.state !== "blocked") throw new Error("Recovery requires the current blocked task attempt and its original session");
-        if (!snapshot || snapshot.driver !== "desktop-queue" || snapshot.taskId !== input.taskId || snapshot.sessionId !== input.sessionId || snapshot.status !== "blocked" || (claim && claim.sessionId !== input.sessionId)) throw new Error("Recovery requires a blocked desktop queue attempt in its original session");
+        if (!snapshot || snapshot.driver !== "desktop-queue" || snapshot.taskId !== input.taskId || snapshot.attemptId !== input.attemptId || snapshot.sessionId !== input.sessionId || snapshot.status !== "blocked" || (claim && claim.sessionId !== input.sessionId)) throw new Error("Recovery requires a blocked desktop queue attempt in its original session");
+        if (request.taskId !== input.taskId || request.attemptId !== input.attemptId) throw new Error("Recovery request identity does not match the original task attempt");
         // A service can disappear before any native delivery. Such an attempt
         // has no lease to close, but still needs the same fresh idle check.
         // Any delivery/execution evidence keeps unclaimed recovery forbidden.
@@ -551,7 +552,8 @@ export class DesktopQueue {
         }
         if (task.workspace !== input.workspace || request.workspace !== input.workspace || request.sessionId !== input.sessionId) throw new Error("Recovery workspace or session does not match the original task");
         const cancellation = readJson<{ reason?: string }>(path.join(journal.dir, "cancel.json"));
-        if (!snapshot.deadline || Date.parse(snapshot.deadline) > Date.now() || (cancellation && cancellation.reason !== "deadline")) throw new Error("Only an expired attempt without an operator cancellation can be recovered");
+        const deadline = Date.parse(snapshot.deadline ?? "");
+        if (!Number.isFinite(deadline) || deadline > Date.now() || (cancellation && cancellation.reason !== "deadline")) throw new Error("Only an expired attempt without an operator cancellation can be recovered");
         if (snapshot.nativeFailure && !hasNativeStopEvidence(snapshot)) throw new Error("Native failure stop is unconfirmed; a one-time idle recovery cannot bypass cancellation acknowledgement and stable idle checks");
         if (snapshot.stopReason === "native_idle_verified") return { ok: true, alreadyRecovered: true };
         if (snapshot.stopReason) throw new Error("This attempt already has a terminal stop reason");

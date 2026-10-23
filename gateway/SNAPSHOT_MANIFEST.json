@@ -1,9 +1,9 @@
 {
   "format": 1,
-  "capturedAt": "2026-10-19T11:52:33.941Z",
+  "capturedAt": "2026-10-23T00:33:24.560Z",
   "upstream": "https://github.com/dudu555-djiao/codex-workbuddy-gateway",
   "upstreamCommit": "fbaaa2ef6d6cb59f48b953a1f27058202a81553f",
-  "snapshot": "2026-10-19-community-native-stop-safety",
+  "snapshot": "2026-10-23-windows-local-deployment",
   "packageVersion": "0.7.1",
   "exclusions": [
     ".git",
@@ -21,7 +21,8 @@
     "Frozen historical benchmark results remain unchanged; installation fixtures do not establish second-machine native execution.",
     "Second physical Windows deployment remains pending; see docs/portability-verification.json.",
     "Native failure diagnosis, authenticated report preservation/reconciliation and failed-turn stop confirmation were integrated after source review and isolated Windows regressions.",
-    "Same-computer real desktop sample passed on its first attempt; HTTP 429 was not triggered in that sample. See docs/native-stop-verification.json for boundaries."
+    "Same-computer real desktop sample passed on its first attempt; HTTP 429 was not triggered in that sample. See docs/native-stop-verification.json for boundaries.",
+    "Windows Unicode path, renderer URL, startup encoding and bounded unclaimed recovery fixes integrated with rebuilt compiler output; this snapshot does not establish full second-machine acceptance."
   ],
   "files": [
     {
@@ -386,18 +387,18 @@
     },
     {
       "path": "dist/desktop-queue.d.ts",
-      "sha256": "f283effd02d26586fe8cf2acb58d6ca7da47b029da1fc2720942691ebea6d10d",
-      "bytes": 3785
+      "sha256": "09870ec67b29bb5924f478c9b238e415450f32823b86f2dce28613d449ad8239",
+      "bytes": 3897
     },
     {
       "path": "dist/desktop-queue.js",
-      "sha256": "fc73f4d10f5f94873cf6a687a7b35f9f1ce1247f54b027b2149efccee919b64f",
-      "bytes": 53479
+      "sha256": "71a86b153c4923e54d39a377c15806b4dfe5766324830b02b04b77f20422a977",
+      "bytes": 55585
     },
     {
       "path": "dist/desktop-queue.js.map",
-      "sha256": "24483419c525bb7e7c72f6e8a08999504cbd34c5f863d2575543f05857b27b21",
-      "bytes": 44849
+      "sha256": "4f7cf88c4ebce56ad0e22cdf7ae17be942fdadc945cae6e5902a28f81c4aba17",
+      "bytes": 46275
     },
     {
       "path": "dist/desktop-runtime.d.ts",
@@ -476,18 +477,18 @@
     },
     {
       "path": "dist/native-desktop-trigger.d.ts",
-      "sha256": "b684af76c84547c87d9fa8c79a22edbd49ca452ac9509cb92be25d7395921794",
-      "bytes": 2871
+      "sha256": "50815c84f339e0e5c6f3c6f9e01ada17ac28258051aae61c19daf2adeb02bae8",
+      "bytes": 2980
     },
     {
       "path": "dist/native-desktop-trigger.js",
-      "sha256": "892e90e69a2c9440e0195f10f5de983f4c5bf0c4c45ecbabd3dd4c9e7b117e55",
-      "bytes": 34012
+      "sha256": "2cedea524bf663eea22318776ea13a5ecb49e8860c4a7c277f2e117df6b86b8c",
+      "bytes": 34601
     },
     {
       "path": "dist/native-desktop-trigger.js.map",
-      "sha256": "393f6a53d148025dcf6ce67ff2cf531d9f34c2d25560ec0ad5c79eec218bfcfe",
-      "bytes": 18411
+      "sha256": "0d6aa5c7a3f81beab7aebe0eb6495c8d59cd107163f8965872414ebc4a71c619",
+      "bytes": 18841
     },
     {
       "path": "dist/native-ownership.d.ts",
@@ -511,13 +512,13 @@
     },
     {
       "path": "dist/native-process.js",
-      "sha256": "cfcc2ad2995d86021c6c044318fb980bdde6fccc6829af51bd1b9047f2335b47",
-      "bytes": 2329
+      "sha256": "453ade4861179d680092d934fa19990729d4f662db4965116c79d237d3abb4c6",
+      "bytes": 2558
     },
     {
       "path": "dist/native-process.js.map",
-      "sha256": "6c72a46d7c85efdb84fb6b1200d6b4c1332693b49b909154c4f207a6a73ee0b0",
-      "bytes": 2145
+      "sha256": "3c8beef3d6e5e2f62fbe0e2d04e6535e509ca0de40f331be2cfd1197e28c1342",
+      "bytes": 2171
     },
     {
       "path": "dist/native-turn-failure.d.ts",
@@ -761,18 +762,18 @@
     },
     {
       "path": "dist/service-cli.d.ts",
-      "sha256": "96cbd411afafd0df4bb86505e4910ac09954f8b13f47f81b76247e40f74a4dee",
-      "bytes": 2007
+      "sha256": "7d29e00bee1710ffbbca7da404a0884f974277bd379ae51b0258a7e9848c459b",
+      "bytes": 2199
     },
     {
       "path": "dist/service-cli.js",
-      "sha256": "4c75fd4a316a6a9af350e5e7ff697f83720bff92cee6ebc2a77ed6ea8df746e5",
-      "bytes": 23426
+      "sha256": "ee4757be676e6e7ba1bc832a140f562b4e336471410fa61a4d2cf140c4fe7404",
+      "bytes": 23701
     },
     {
       "path": "dist/service-cli.js.map",
-      "sha256": "7ae1ba41f2d7e74419b6a653e85896dfb32451397dec70269e5d690c85586268",
-      "bytes": 22813
+      "sha256": "58986f0455c3432a30fdc8150493cb5b0ac86be665743004f3703c2d8cb8680e",
+      "bytes": 23015
     },
     {
       "path": "dist/setup.d.ts",
@@ -1176,8 +1177,8 @@
     },
     {
       "path": "src/desktop-queue.ts",
-      "sha256": "fd620d82ba7d62de645feabba804c79007422cc7d5d3b2b088dfd11ef60dc0d0",
-      "bytes": 50887
+      "sha256": "397df17b115afc73fdc455590abf290732cb1ef13c5efd3f92a94f7a7f9ab8fb",
+      "bytes": 52890
     },
     {
       "path": "src/desktop-runtime.ts",
@@ -1206,8 +1207,8 @@
     },
     {
       "path": "src/native-desktop-trigger.ts",
-      "sha256": "e64f61853bdac9a70e4b2ae8eb1b55314c243f103e41f00938b983b91267c8c5",
-      "bytes": 33644
+      "sha256": "5e61d4d619df62b33271b2710ceb10a21686ec2045a0d3a85621cda5aa084c12",
+      "bytes": 34205
     },
     {
       "path": "src/native-ownership.ts",
@@ -1216,8 +1217,8 @@
     },
     {
       "path": "src/native-process.ts",
-      "sha256": "71eeaf9945291c2c370acc7518463430a7b80dffb2053a92ab7ae23f9c23a9c1",
-      "bytes": 2386
+      "sha256": "bae6772b69b1204d0196c7d6db8cdf65d07839b21a39a11c8a916bf3c0d8f161",
+      "bytes": 2611
     },
     {
       "path": "src/native-turn-failure.ts",
@@ -1301,8 +1302,8 @@
     },
     {
       "path": "src/service-cli.ts",
-      "sha256": "8d32da5d09aa2d749dbe04eb35c60d4202b4ce4ab77881ababfc147e78ee3834",
-      "bytes": 23824
+      "sha256": "4d4f26e0c17c2919fd09abdda041514995c2b0066554e024a7f7e41c2ae5b645",
+      "bytes": 24128
     },
     {
       "path": "src/setup.ts",
@@ -1386,8 +1387,8 @@
     },
     {
       "path": "test/desktop-queue.test.ts",
-      "sha256": "b3a160cb023b9f7bad3fa2c891880f17c6c8e142fd9162f5b92c333d0f60ffe1",
-      "bytes": 16984
+      "sha256": "c46a111942ed6a37e398bb10f27a128b1680102f190b919da22273e3ae48d098",
+      "bytes": 18549
     },
     {
       "path": "test/inspect-task.test.ts",
@@ -1411,8 +1412,13 @@
     },
     {
       "path": "test/native-process.test.ts",
-      "sha256": "786025bc94a3869717d90a50152d0caa59ee1b88bd143360c9858e0e4e5622f3",
-      "bytes": 1472
+      "sha256": "9b548269f3ce139605f8e2f5cbd1efa949c43e61e167838ea7d9e71d6b2e3d3e",
+      "bytes": 2784
+    },
+    {
+      "path": "test/native-renderer-url.test.ts",
+      "sha256": "350ec823a931d643e9a1eae2389e9365223cf1e003b12ccc2876e0b12e68472f",
+      "bytes": 1602
     },
     {
       "path": "test/native-turn-failure.test.ts",
@@ -1426,8 +1432,8 @@
     },
     {
       "path": "test/persistent-service.test.ts",
-      "sha256": "9aec979d23e2194ff7b417708e2e527ba0afe581f88bf27619e1164fa120173b",
-      "bytes": 55118
+      "sha256": "9f37a5ec5298b0fc8ac02fdb3dadce0a50da79ff0168fbc060aceca893859782",
+      "bytes": 59976
     },
     {
       "path": "test/platform.test.ts",
@@ -1468,6 +1474,11 @@
       "path": "test/task-store.test.ts",
       "sha256": "b6ad9208b0d86add172ae764b58a5dc0d0b70e8f799479c1f7f28e408f408c63",
       "bytes": 12149
+    },
+    {
+      "path": "test/windows-startup.test.ts",
+      "sha256": "d626717cc61789a4b7d1328fe535d0a3360b558267b3d8ab8044ff41e0840ccf",
+      "bytes": 1721
     },
     {
       "path": "test/workbuddy-client.test.ts",

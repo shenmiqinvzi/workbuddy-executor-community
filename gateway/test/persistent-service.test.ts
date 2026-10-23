@@ -613,6 +613,35 @@ test("unclaimed expired recovery refuses execution, report or native failure evi
   }
 });
 
+test("unclaimed recovery refuses mismatched persisted task and attempt identities", async t => {
+  const f = fixture(t);
+  const { journal, input } = await expiredUnclaimed(f);
+  const original = journal.snapshot()!;
+  const request = journal.request();
+  for (const [record, field, value] of [
+    ["state", "attemptId", RunJournal.newId()],
+    ["request", "attemptId", RunJournal.newId()],
+    ["request", "taskId", "different-task"],
+  ] as const) {
+    journal.save(original);
+    writePrivateJson(path.join(journal.dir, "request.json"), request);
+    if (record === "state") journal.save({ ...original, [field]: value });
+    else writePrivateJson(path.join(journal.dir, "request.json"), { ...request, [field]: value });
+    await assert.rejects(() => recoverExpiredAttempt(f.config, f.registration, f.trigger, input), /identity|original|attempt/i);
+    assert.equal(f.coordinator.executionStatus(input.taskId).remoteStopped, false);
+    assert.equal(fs.existsSync(path.join(journal.dir, "recovery.json")), false);
+  }
+});
+
+test("unclaimed recovery requires a valid elapsed deadline", async t => {
+  const f = fixture(t);
+  const { journal, input } = await expiredUnclaimed(f);
+  journal.save({ ...journal.snapshot()!, deadline: "invalid-deadline" });
+  await assert.rejects(() => recoverExpiredAttempt(f.config, f.registration, f.trigger, input), /expired|deadline/i);
+  assert.equal(f.coordinator.executionStatus(input.taskId).remoteStopped, false);
+  assert.equal(fs.existsSync(path.join(journal.dir, "recovery.json")), false);
+});
+
 test("recovery refuses busy, waiting-input, offline or changed native workspace", async (t) => {
   const f = fixture(t);
   const { journal, input } = await expiredClaim(f);
