@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import type { execFileSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 import test from "node:test";
 import { windowsProcessTable, windowsPowerShellPath } from "../src/native-process.js";
@@ -26,4 +26,23 @@ test("failed ancestry inspection propagates the error without an unsafe fallback
   const run = (() => { calls++; throw Object.assign(new Error("EBUSY fixture"), { code: "EBUSY" }); }) as typeof execFileSync;
   assert.throws(() => windowsProcessTable(run), /EBUSY/);
   assert.equal(calls, 1);
+});
+
+test("hidden Windows process inspection preserves Chinese executable paths with a legacy console encoding", { skip: process.platform !== "win32" }, () => {
+  const executable = "C:\\Users\\测试用户\\AppData\\Local\\Programs\\WorkBuddyAI\\WorkBuddyAI.exe";
+  const query = "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,ExecutablePath,CommandLine | ConvertTo-Json -Compress -Depth 3";
+  const fixture = JSON.stringify([{ ProcessId: 42420, ParentProcessId: 1, ExecutablePath: executable, CommandLine: `\"${executable}\"` }]);
+  const run = ((file: string, args: string[], options: object) => {
+    const commandIndex = args.indexOf("-Command") + 1;
+    assert.ok(commandIndex > 0);
+    assert.ok(args[commandIndex]!.includes(query));
+    const synthetic = args[commandIndex]!.replace(query, `Write-Output '${fixture.replaceAll("'", "''")}'`);
+    const actualArgs = [...args];
+    actualArgs[commandIndex] = "[Console]::OutputEncoding = [Text.Encoding]::GetEncoding(936); " + synthetic;
+    return execFileSync(file, actualArgs, { ...options, stdio: ["ignore", "pipe", "pipe"] });
+  }) as typeof execFileSync;
+  const rows = windowsProcessTable(run);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]!.exe, executable);
+  assert.equal(rows[0]!.commandLine, `\"${executable}\"`);
 });

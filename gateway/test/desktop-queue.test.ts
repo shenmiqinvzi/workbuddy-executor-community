@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import { loadConfig, type Config } from "../src/config.js";
-import { DesktopQueue, assertDesktopCaller } from "../src/desktop-queue.js";
+import { DesktopQueue, assertDesktopCaller, windowsWorkerCommand } from "../src/desktop-queue.js";
 import { TaskStore } from "../src/task-store.js";
 import { WorkBuddyClient } from "../src/workbuddy-client.js";
 import { TaskCoordinator } from "../src/coordinator.js";
@@ -144,9 +144,30 @@ test("bootstrap instructions do not pretend to start a worker and preserve quote
   assert.equal(prepared.started, false);
   assert.equal(prepared.workspace, f.dir);
   assert.match(prepared.prompt, /claim --session-id 'unit-session'/);
+  assert.match(prepared.prompt, /```bash/);
+  assert.match(prepared.prompt, /不要沿用历史命令/);
+  if (process.platform === "win32") assert.match(prepared.prompt, /cd '[^\n]+' && '[^\n]+' '[^\n]+' claim/);
   assert.match(prepared.prompt, /成功回报后也结束/);
   assert.doesNotMatch(prepared.prompt, /连续重试 4 次/);
   assert.throws(() => f.queue.prepare("missing-session"), /not registered/);
+});
+
+test("Windows worker command anchors the workspace and shortens the helper path", () => {
+  const command = windowsWorkerCommand(
+    "C:/Program Files/nodejs/node.exe",
+    "C:/Users/中文/project/workbuddy-executor-community/gateway/dist/desktop-worker-cli.js",
+    "C:/Users/中文/project/work/sample",
+  );
+  assert.equal(command, "cd 'C:/Users/中文/project/work/sample' && 'C:/Program Files/nodejs/node.exe' '../../workbuddy-executor-community/gateway/dist/desktop-worker-cli.js'");
+  assert.doesNotMatch(command, /work\/workbuddy-executor-community/);
+});
+
+test("Windows worker command quotes shell characters and preserves a different drive", () => {
+  const command = windowsWorkerCommand("C:/Program Files/nodejs/node.exe", "D:/gateway ' $()/dist/desktop-worker-cli.js", "C:/sample ' $()/work");
+  assert.equal(command, "cd 'C:/sample '\\'' $()/work' && 'C:/Program Files/nodejs/node.exe' 'D:/gateway '\\'' $()/dist/desktop-worker-cli.js'");
+  assert.throws(() => windowsWorkerCommand("node", "C:/gateway/worker.js", "C:/sample"), /absolute Windows paths/);
+  assert.throws(() => windowsWorkerCommand("C:/node.exe", "worker.js", "C:/sample"), /absolute Windows paths/);
+  assert.throws(() => windowsWorkerCommand("C:/node.exe", "C:/gateway/worker.js", "sample"), /absolute Windows paths/);
 });
 
 test("file-based reporting preserves quoted paths, multiline text and shell metacharacters without shell interpolation", async t => {

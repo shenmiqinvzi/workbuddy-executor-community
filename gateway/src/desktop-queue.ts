@@ -108,6 +108,17 @@ function locked<T>(file: string, action: () => T): T {
   finally { fs.closeSync(fd); fs.rmSync(file, { force: true }); }
 }
 
+export function windowsWorkerCommand(nodeBin: string, helperFile: string, workspace: string): string {
+  if (![nodeBin, helperFile, workspace].every(value => path.win32.isAbsolute(value))) {
+    throw new Error("Worker command requires absolute Windows paths");
+  }
+  const quote = (value: string) => `'${value.replaceAll("\\", "/").replaceAll("'", "'\\''")}'`;
+  // Anchor the native shell before using the shorter relative path. A helper
+  // on another volume remains absolute, as required by Windows path semantics.
+  const helper = path.win32.relative(workspace, helperFile);
+  return `cd ${quote(workspace)} && ${quote(nodeBin)} ${quote(helper)}`;
+}
+
 export class DesktopQueue {
   readonly root: string;
   private readonly listenersDir: string;
@@ -123,8 +134,11 @@ export class DesktopQueue {
     // Node command that works from its own shell tool on either platform.
     // Forward slashes keep the command valid in both bash and Windows shells.
     const winPath = (value: string) => value.replaceAll("\\", "/");
+    const helperFile = fileURLToPath(new URL("../dist/desktop-worker-cli.js", import.meta.url));
     const helper = process.platform === "win32"
-      ? `${quote(winPath(process.execPath))} ${quote(winPath(fileURLToPath(new URL("../dist/desktop-worker-cli.js", import.meta.url))))}`
+      ? evidence.cwd && path.isAbsolute(evidence.cwd)
+        ? windowsWorkerCommand(process.execPath, helperFile, evidence.cwd)
+        : `${quote(winPath(process.execPath))} ${quote(winPath(helperFile))}`
       : quote(fileURLToPath(new URL("../bin/workbuddy-worker", import.meta.url)));
     if (persistent) {
       if (!evidence.cwd || !path.isAbsolute(evidence.cwd)) throw new Error("Persistent setup needs the native session's absolute workspace");
@@ -133,7 +147,10 @@ export class DesktopQueue {
         : quote(fileURLToPath(new URL("../bin/workbuddy-service", import.meta.url)));
       return { sessionId, workspace: evidence.cwd, started: false, mode: "persistent", prompt: `请一次性配置本桌面会话为 Codex 的常驻执行会话。会话 ID：${sessionId}。用户授权安装本机服务，并在需要启用原生接口时、其他任务结束后自动重启 WorkBuddy 一次。\n请用你自己的 Bash 工具执行：\n${process.platform === "win32" ? service : quote(service)} install --session-id ${quote(sessionId)} --workspace ${quote(evidence.cwd)} --cdp-port 18491\n安装完成只回报安装状态或真实错误，结束当前回复。不要启动无限 claim，不改桥接器源码，不写其他成果或记忆，不改变权限设置。服务会保存会话绑定、按真实队列自动唤起本会话，退出和重开后无需再次粘贴。安装成功不等于任务通过；后续仍需实际领取、产物和验收证明。需要登录或原生权限时如实说明。` };
     }
-    return { sessionId, workspace: evidence.cwd, started: false, prompt: `仅执行本次领取的任务，不沿用此前会话的构建、清理或排障计划。会话 ID：${sessionId}。\n使用自己的 Bash 工具执行（不能由 Codex 代执行）：\n${helper} claim --session-id ${quote(sessionId)} --wait-seconds 0\n返回 status=task 后按 prompt 执行。完成时用 Write 工具在 reporting.resultFile 写 JSON：{"status":"completed|blocked|failed","text":"实际修改、检查结果及遗留问题","artifacts":["实际绝对路径"]}，然后原样执行 reporting.command。不要自行拼接租约、长文本或路径参数。空报告和计划不能报 completed。\n回报失败只允许原命令原样重试一次；仍失败就保留文件并结束，说明错误，不排障网关、不读源码、不改权限、不换 shell、不重做任务。权限等待或服务错误时停止并说明。status=retry 表示空队列，直接结束；成功回报后也结束，不再 claim 或循环等待。` };
+    // The native model sees this before it can claim and read review feedback.
+    const claimCommand = `\`\`\`bash\n${helper} claim --session-id ${quote(sessionId)} --wait-seconds 0\n\`\`\``;
+    const claimInstructions = `下方是网关按真实安装位置生成的完整领取命令，逐字执行。不要沿用历史命令、从工作目录推测或增删路径层级。\n${claimCommand}`;
+    return { sessionId, workspace: evidence.cwd, started: false, prompt: `仅执行本次领取的任务，不沿用此前会话的构建、清理或排障计划。会话 ID：${sessionId}。\n使用自己的 Bash 工具执行（不能由 Codex 代执行）：\n${claimInstructions}\n返回 status=task 后按 prompt 执行。完成时用 Write 工具在 reporting.resultFile 写 JSON：{"status":"completed|blocked|failed","text":"实际修改、检查结果及遗留问题","artifacts":["实际绝对路径"]}，然后原样执行 reporting.command。不要自行拼接租约、长文本或路径参数。空报告和计划不能报 completed。\n回报失败只允许原命令原样重试一次；仍失败就保留文件并结束，说明错误，不排障网关、不读源码、不改权限、不换 shell、不重做任务。权限等待或服务错误时停止并说明。status=retry 表示空队列，直接结束；成功回报后也结束，不再 claim 或循环等待。` };
   }
   listeners(): Array<{sessionId: string; workspace?: string; ready: boolean; source: string}> {
     if (!fs.existsSync(this.listenersDir)) return [];
@@ -513,7 +530,7 @@ export class DesktopQueue {
     journal.append("status", "Authenticated worker report preserved; a later native error is recorded separately. Independent review is still required.",
       {status:"needs_review",sessionId:snapshot.sessionId,runtimeSource:SOURCE,reportPreserved:true,postReportFailure:warning,reconciliationReason});
   }
-  /** Close an expired lease after a separate native idle check. This is NOT a worker result. */
+  /** Close an expired attempt after a separate native idle check. This is NOT a worker result. */
   confirmExpiredStop(input: { taskId: string; attemptId: string; sessionId: string; workspace: string; observedAt: string; reason: string }): { ok: true; alreadyRecovered: boolean } {
     const journal = new RunJournal(this.root, input.attemptId);
     return locked(path.join(this.root, "queue-session-locks", `${key(input.sessionId)}.lock`), () => locked(path.join(journal.dir, "queue-write.lock"), () => {
@@ -524,10 +541,19 @@ export class DesktopQueue {
         const request = journal.request();
         const claim = readJson<Claim>(path.join(journal.dir, "claim.json"));
         if (!task || task.attemptId !== input.attemptId || task.sessionId !== input.sessionId || task.state !== "blocked") throw new Error("Recovery requires the current blocked task attempt and its original session");
-        if (!snapshot || snapshot.driver !== "desktop-queue" || snapshot.taskId !== input.taskId || snapshot.sessionId !== input.sessionId || snapshot.status !== "blocked" || !claim || claim.sessionId !== input.sessionId) throw new Error("Recovery requires a claimed, blocked desktop queue attempt");
+        if (!snapshot || snapshot.driver !== "desktop-queue" || snapshot.taskId !== input.taskId || snapshot.attemptId !== input.attemptId || snapshot.sessionId !== input.sessionId || snapshot.status !== "blocked" || (claim && claim.sessionId !== input.sessionId)) throw new Error("Recovery requires a blocked desktop queue attempt in its original session");
+        if (request.taskId !== input.taskId || request.attemptId !== input.attemptId) throw new Error("Recovery request identity does not match the original task attempt");
+        // A service can disappear before any native delivery. Such an attempt
+        // has no lease to close, but still needs the same fresh idle check.
+        // Any delivery/execution evidence keeps unclaimed recovery forbidden.
+        if (!claim && (fs.existsSync(path.join(journal.dir, "wake.json")) || snapshot.runtimeSource ||
+            snapshot.nativeFailure || snapshot.reportDigest || snapshot.stopControl?.issuedAt)) {
+          throw new Error("Unclaimed recovery requires no native delivery or execution evidence");
+        }
         if (task.workspace !== input.workspace || request.workspace !== input.workspace || request.sessionId !== input.sessionId) throw new Error("Recovery workspace or session does not match the original task");
         const cancellation = readJson<{ reason?: string }>(path.join(journal.dir, "cancel.json"));
-        if (!snapshot.deadline || Date.parse(snapshot.deadline) > Date.now() || (cancellation && cancellation.reason !== "deadline")) throw new Error("Only an expired attempt without an operator cancellation can be recovered");
+        const deadline = Date.parse(snapshot.deadline ?? "");
+        if (!Number.isFinite(deadline) || deadline > Date.now() || (cancellation && cancellation.reason !== "deadline")) throw new Error("Only an expired attempt without an operator cancellation can be recovered");
         if (snapshot.nativeFailure && !hasNativeStopEvidence(snapshot)) throw new Error("Native failure stop is unconfirmed; a one-time idle recovery cannot bypass cancellation acknowledgement and stable idle checks");
         if (snapshot.stopReason === "native_idle_verified") return { ok: true, alreadyRecovered: true };
         if (snapshot.stopReason) throw new Error("This attempt already has a terminal stop reason");

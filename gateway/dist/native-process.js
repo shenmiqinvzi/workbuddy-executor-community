@@ -10,7 +10,9 @@ export function windowsPowerShellPath() {
     return path.win32.join(process.env.SystemRoot ?? process.env.WINDIR ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
 }
 export function windowsProcessTable(run = execFileSync) {
-    const script = "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,ExecutablePath,CommandLine | ConvertTo-Json -Compress -Depth 3";
+    // Hidden Windows PowerShell may use the system legacy code page. Match the
+    // UTF-8 decoder below so non-ASCII executable paths retain their identity.
+    const script = "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,ExecutablePath,CommandLine | ConvertTo-Json -Compress -Depth 3";
     const output = String(run(windowsPowerShellPath(), ["-NoProfile", "-NonInteractive", "-Command", script], {
         encoding: "utf8",
         windowsHide: true,

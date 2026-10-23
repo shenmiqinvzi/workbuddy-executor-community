@@ -27,6 +27,8 @@ export declare function installService(options: InstallServiceOptions, run?: Lau
     configFile: string;
     restartWorkBuddyRequired: boolean;
 };
+/** WSH requires a Unicode BOM to preserve paths beyond the system code page. */
+export declare function windowsStartupScript(projectDir: string, nodeBin: string, configFile: string): Buffer;
 /**
  * Windows has no launchd. The same supervision loop runs as a detached Node
  * process, started now and re-started at logon through the Startup folder.

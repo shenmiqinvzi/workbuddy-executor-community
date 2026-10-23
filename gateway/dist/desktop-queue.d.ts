@@ -22,6 +22,7 @@ export interface QueueTask {
 }
 /** Prove the helper was launched by the native desktop app, not a standalone CLI or Codex. */
 export declare function assertDesktopCaller(config: Config): DesktopActor;
+export declare function windowsWorkerCommand(nodeBin: string, helperFile: string, workspace: string): string;
 export declare class DesktopQueue {
     private readonly config;
     private readonly verifyActor;
@@ -98,7 +99,7 @@ export declare class DesktopQueue {
     };
     private completedReportBeforeFailure;
     private preserveReportedFailure;
-    /** Close an expired lease after a separate native idle check. This is NOT a worker result. */
+    /** Close an expired attempt after a separate native idle check. This is NOT a worker result. */
     confirmExpiredStop(input: {
         taskId: string;
         attemptId: string;

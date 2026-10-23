@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { execFileSync, spawn } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 import { hasProcess, sameExecutable, windowsProcessTable } from "./native-process.js";
@@ -188,6 +189,24 @@ export const RENDERER_BRIDGE = String.raw `(async function(){
 })()`;
 export function rendererBridgeForFreeModel(model) {
     return RENDERER_BRIDGE.replace('const requestedFreeModel="";', `const requestedFreeModel=${JSON.stringify(model)};`);
+}
+export function matchesNativeRendererFileUrl(url, archivePath) {
+    if (!url)
+        return false;
+    try {
+        const candidate = new URL(url);
+        if (candidate.protocol !== "file:")
+            return false;
+        // Round-trip both paths through the same serializer: Chromium can leave
+        // unreserved characters such as a short-path tilde literal while Node
+        // escapes them. Decoding also rejects ambiguous encoded path separators.
+        const archiveUrl = pathToFileURL(archivePath).href.toLowerCase();
+        const candidateUrl = pathToFileURL(fileURLToPath(candidate)).href.toLowerCase();
+        return candidateUrl.startsWith(archiveUrl + "/");
+    }
+    catch {
+        return false;
+    }
 }
 const DEFAULT_PROCESS_CONTROL = {
     run: (file, args, timeoutMs) => execFileSync(file, args, { encoding: "utf8", timeout: timeoutMs, windowsHide: true }),
@@ -414,8 +433,8 @@ export class NativeDesktopRpcTrigger {
         const response = await fetch(`http://127.0.0.1:${this.cdpPort}/json/list`, { signal: AbortSignal.timeout(4000) });
         const targets = await response.json();
         // Windows reports the renderer as file:///D:/<app>/resources/app.asar/renderer/index.html.
-        const appAsar = path.join(path.dirname(path.resolve(this.config.cliElectronPath)), "resources", "app.asar").replaceAll("\\", "/").toLowerCase();
-        const target = targets.find((item) => item.type === "page" && typeof item.url === "string" && item.webSocketDebuggerUrl && item.url.toLowerCase().includes(appAsar) && !item.url.toLowerCase().includes("splash"));
+        const appAsar = path.join(path.dirname(path.resolve(this.config.cliElectronPath)), "resources", "app.asar");
+        const target = targets.find((item) => item.type === "page" && typeof item.url === "string" && item.webSocketDebuggerUrl && matchesNativeRendererFileUrl(item.url, appAsar) && !item.url.toLowerCase().includes("splash"));
         if (!target?.webSocketDebuggerUrl)
             throw new Error("WorkBuddy main renderer is not ready");
         const url = new URL(target.webSocketDebuggerUrl);

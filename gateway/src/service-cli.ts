@@ -132,6 +132,14 @@ function windowsStartupEntry(projectDir: string): string {
   return path.join(appData, "Microsoft", "Windows", "Start Menu", "Programs", "Startup", `${label}.vbs`);
 }
 
+/** WSH requires a Unicode BOM to preserve paths beyond the system code page. */
+export function windowsStartupScript(projectDir: string, nodeBin: string, configFile: string): Buffer {
+  const quoteVbs = (value: string) => value.replaceAll('"', '""');
+  const command = `"${nodeBin}" "${path.join(projectDir, "dist", "service-cli.js")}" run --config "${configFile}"`;
+  const script = `Set shell = CreateObject("WScript.Shell")\r\nshell.CurrentDirectory = "${quoteVbs(projectDir)}"\r\nshell.Run "${quoteVbs(command)}", 0, False\r\n`;
+  return Buffer.from("\uFEFF" + script, "utf16le");
+}
+
 function startWindowsService(registration: ServiceRegistration, configFile: string): void {
   const child = spawn(registration.nodeBin, [path.join(registration.projectDir, "dist", "service-cli.js"), "run", "--config", configFile], {
     cwd: registration.projectDir, detached: true, stdio: "ignore", windowsHide: true,
@@ -165,9 +173,7 @@ export function installServiceWindows(options: InstallServiceOptions): { ok: tru
   writePrivateJson(configFile, registration);
   const entry = windowsStartupEntry(projectDir);
   fs.mkdirSync(path.dirname(entry), { recursive: true });
-  const quoteVbs = (value: string) => value.replaceAll('"', '""');
-  const command = `"${nodeBin}" "${path.join(projectDir, "dist", "service-cli.js")}" run --config "${configFile}"`;
-  fs.writeFileSync(entry, `Set shell = CreateObject("WScript.Shell")\r\nshell.CurrentDirectory = "${quoteVbs(projectDir)}"\r\nshell.Run "${quoteVbs(command)}", 0, False\r\n`, "utf8");
+  fs.writeFileSync(entry, windowsStartupScript(projectDir, nodeBin, configFile));
   startWindowsService(registration, configFile);
   return { ok: true, registration, configFile, restartWorkBuddyRequired: false };
 }
