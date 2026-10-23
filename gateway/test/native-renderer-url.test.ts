@@ -13,6 +13,19 @@ test("native renderer recognizes encoded Chinese and space-containing installati
   assert.equal(matchesNativeRendererFileUrl(decodeURI(rendererUrl), archive), true);
 });
 
+test("native renderer normalizes encoded and literal Windows short-path tildes", () => {
+  const shortArchive = path.resolve("fixture", "USER~1", "中文 WorkBuddy", "resources", "app.asar");
+  const encoded = pathToFileURL(path.join(shortArchive, "renderer", "index.html")).href;
+  assert.equal(matchesNativeRendererFileUrl(encoded, shortArchive), true);
+  assert.equal(matchesNativeRendererFileUrl(decodeURI(encoded), shortArchive), true);
+});
+
+test("native renderer rejects encoded path separators", () => {
+  for (const separator of ["%2F", "%5C"]) {
+    assert.equal(matchesNativeRendererFileUrl(pathToFileURL(archive).href + "/renderer" + separator + "index.html", archive), false);
+  }
+});
+
 test("native renderer URL must belong to the exact application archive", () => {
   assert.equal(matchesNativeRendererFileUrl(pathToFileURL(path.join(archive + "-other", "renderer", "index.html")).href, archive), false);
   assert.equal(matchesNativeRendererFileUrl(pathToFileURL(path.join(archive, "..", "other.asar", "index.html")).href, archive), false);

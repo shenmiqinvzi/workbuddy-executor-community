@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { execFileSync, spawn } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 import type { Config } from "./config.js";
@@ -201,10 +201,12 @@ export function matchesNativeRendererFileUrl(url: string | undefined, archivePat
   try {
     const candidate = new URL(url);
     if (candidate.protocol !== "file:") return false;
-    // Chromium escapes Unicode and spaces. Compare canonical file URLs and
-    // require a child of this exact archive rather than a path substring.
+    // Round-trip both paths through the same serializer: Chromium can leave
+    // unreserved characters such as a short-path tilde literal while Node
+    // escapes them. Decoding also rejects ambiguous encoded path separators.
     const archiveUrl = pathToFileURL(archivePath).href.toLowerCase();
-    return candidate.href.toLowerCase().startsWith(archiveUrl + "/");
+    const candidateUrl = pathToFileURL(fileURLToPath(candidate)).href.toLowerCase();
+    return candidateUrl.startsWith(archiveUrl + "/");
   } catch { return false; }
 }
 

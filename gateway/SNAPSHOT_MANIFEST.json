@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "capturedAt": "2026-10-23T00:33:24.560Z",
+  "capturedAt": "2026-10-23T00:39:39.586Z",
   "upstream": "https://github.com/dudu555-djiao/codex-workbuddy-gateway",
   "upstreamCommit": "fbaaa2ef6d6cb59f48b953a1f27058202a81553f",
   "snapshot": "2026-10-23-windows-local-deployment",
@@ -482,13 +482,13 @@
     },
     {
       "path": "dist/native-desktop-trigger.js",
-      "sha256": "2cedea524bf663eea22318776ea13a5ecb49e8860c4a7c277f2e117df6b86b8c",
-      "bytes": 34601
+      "sha256": "775484b6119825c18cf1b1ce2fb9a9e61e8cbe747c39ae33ea45a51b4eddacc6",
+      "bytes": 34772
     },
     {
       "path": "dist/native-desktop-trigger.js.map",
-      "sha256": "0d6aa5c7a3f81beab7aebe0eb6495c8d59cd107163f8965872414ebc4a71c619",
-      "bytes": 18841
+      "sha256": "e7ea09e3faf590ff7c331677752347d70709fbdefa5b7bcbb4a47ee8d8ec72d8",
+      "bytes": 18925
     },
     {
       "path": "dist/native-ownership.d.ts",
@@ -1207,8 +1207,8 @@
     },
     {
       "path": "src/native-desktop-trigger.ts",
-      "sha256": "5e61d4d619df62b33271b2710ceb10a21686ec2045a0d3a85621cda5aa084c12",
-      "bytes": 34205
+      "sha256": "a28ffcf91cfaadd9be5d61beb0836ccc8b51e0a11910ffccc489852a4528c14b",
+      "bytes": 34368
     },
     {
       "path": "src/native-ownership.ts",
@@ -1417,8 +1417,8 @@
     },
     {
       "path": "test/native-renderer-url.test.ts",
-      "sha256": "350ec823a931d643e9a1eae2389e9365223cf1e003b12ccc2876e0b12e68472f",
-      "bytes": 1602
+      "sha256": "d31b0ff3394dbf39aea54dd4fdf246cc953f0645f2cbcf8937b05fb46dc29cc1",
+      "bytes": 2300
     },
     {
       "path": "test/native-turn-failure.test.ts",
