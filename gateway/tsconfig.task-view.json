@@ -29,6 +29,9 @@
     "src/task-view-actions.ts",
     "src/task-view-adapter.ts",
     "src/task-view-reader.ts",
+    "src/task-view-stage.ts",
+    "src/workbench-http.ts",
+    "test/workbench-http.test.ts",
     "src/report-authentication.ts",
     "src/task-contract.ts"
   ]

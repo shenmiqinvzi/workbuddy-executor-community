@@ -222,6 +222,49 @@ export class TaskStore {
       ORDER BY updated_at DESC, task_id ASC LIMIT ? OFFSET ?`).all(...states, boundedLimit(options.limit ?? 100), Math.max(0, Math.floor(options.offset ?? 0)));
         return rows.map(rowToTask);
     }
+    /**
+     * Stage read path for the stable list contract: `created_at` ascending with
+     * `task_id` as the tiebreaker, bounded by a keyset cursor instead of an
+     * offset, so concurrent updates cannot shift rows between pages.
+     *
+     * This deliberately does not replace listTasks: the existing MCP list keeps
+     * its updated_at DESC + offset behaviour unchanged, and callers must not
+     * silently switch between the two orders. createdAt is compared as stored
+     * text; every writer in this build stores Date.toISOString() values, so the
+     * byte order is the chronological order.
+     *
+     * Read-only: it writes nothing, never repairs stored timestamps and never
+     * touches the filesystem.
+     */
+    listTasksByCreatedCursor(options) {
+        const bounded = Math.min(Math.max(Math.floor(options.limit), 1), 500);
+        if (options.afterTaskId === undefined) {
+            const rows = this.db.prepare("SELECT * FROM tasks ORDER BY created_at ASC, task_id ASC LIMIT ?").all(bounded);
+            return { tasks: rows.map(rowToTask), anchorFound: true };
+        }
+        const anchor = this.db.prepare("SELECT created_at FROM tasks WHERE task_id = ?").get(options.afterTaskId);
+        if (!anchor)
+            return { tasks: [], anchorFound: false };
+        const rows = this.db.prepare(`SELECT * FROM tasks WHERE created_at > ? OR (created_at = ? AND task_id > ?)
+      ORDER BY created_at ASC, task_id ASC LIMIT ?`).all(anchor.created_at, anchor.created_at, options.afterTaskId, bounded);
+        return { tasks: rows.map(rowToTask), anchorFound: true };
+    }
+    /**
+     * Whether at least one task sorts strictly after the cursor row.
+     *
+     * The read is one indexed lookup, so the list entry can promise "there is
+     * another page" only when one really exists; a full final page then ends
+     * with nextAfterTaskId null instead of a cursor the client must try once
+     * and learn was empty.
+     */
+    hasTaskAfterCursor(afterTaskId) {
+        const anchor = this.db.prepare("SELECT created_at FROM tasks WHERE task_id = ?").get(afterTaskId);
+        if (!anchor)
+            return false;
+        const row = this.db.prepare(`SELECT 1 AS one FROM tasks WHERE created_at > ? OR (created_at = ? AND task_id > ?) LIMIT 1`)
+            .get(anchor.created_at, anchor.created_at, afterTaskId);
+        return row !== undefined;
+    }
     /** Reserve before spawning a worker, atomically across MCP processes. */
     beginAttempt(taskId, reservation) {
         if (!reservation.attemptId || !reservation.messageId)

@@ -149,6 +149,36 @@ export declare class TaskStore {
         limit?: number;
         offset?: number;
     }): StoredTask[];
+    /**
+     * Stage read path for the stable list contract: `created_at` ascending with
+     * `task_id` as the tiebreaker, bounded by a keyset cursor instead of an
+     * offset, so concurrent updates cannot shift rows between pages.
+     *
+     * This deliberately does not replace listTasks: the existing MCP list keeps
+     * its updated_at DESC + offset behaviour unchanged, and callers must not
+     * silently switch between the two orders. createdAt is compared as stored
+     * text; every writer in this build stores Date.toISOString() values, so the
+     * byte order is the chronological order.
+     *
+     * Read-only: it writes nothing, never repairs stored timestamps and never
+     * touches the filesystem.
+     */
+    listTasksByCreatedCursor(options: {
+        limit: number;
+        afterTaskId?: string;
+    }): {
+        tasks: StoredTask[];
+        anchorFound: boolean;
+    };
+    /**
+     * Whether at least one task sorts strictly after the cursor row.
+     *
+     * The read is one indexed lookup, so the list entry can promise "there is
+     * another page" only when one really exists; a full final page then ends
+     * with nextAfterTaskId null instead of a cursor the client must try once
+     * and learn was empty.
+     */
+    hasTaskAfterCursor(afterTaskId: string): boolean;
     /** Reserve before spawning a worker, atomically across MCP processes. */
     beginAttempt(taskId: string, reservation: AttemptReservation): StoredTask;
     update(taskId: string, patch: TaskUpdate): StoredTask;
