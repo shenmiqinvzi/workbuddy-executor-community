@@ -305,3 +305,79 @@ test("stage view keeps a queue-authenticated pre-stop report at waiting_stop", a
   assert.equal(result.view.remoteStopped, false);
   assert.equal(result.view.timing.nativeStoppedAt, null, "no stop instant is copied without a bound proof");
 });
+
+test("stage detail keeps one round when a concurrent rework changes the attempt mid-read", async t => {
+  const f = stageFixture(t);
+  const attemptA = f.seed({ taskId: "stage-race", createdAt: "2026-10-18T10:00:00.000Z", stop: true, authenticated: true });
+  // Interpose a rework (new attempt B, working) between the projection's own
+  // reads and the view assembly, exactly the window a second store.get used
+  // to open. The view must describe attempt A only.
+  const original = f.service.readProjection.bind(f.service);
+  const service = f.service as unknown as { readProjection: (taskId: string) => unknown };
+  service.readProjection = (taskId: string) => {
+    const result = original(taskId) as { ok: boolean };
+    if (result.ok) {
+      const attemptB = `run-b0000000-0000-4000-8000-${"1".padStart(12, "0")}`;
+      f.store.beginAttempt("stage-race", { attemptId: attemptB, messageId: "msg-stage-race", sessionId: "session-stage-1" });
+      f.store.update("stage-race", { state: "working" });
+      f.store.updateAttempt("stage-race", attemptB, { state: "working", runtimeSource: "desktop_queue" });
+    }
+    return result;
+  };
+  const result = f.service.readStageView("stage-race");
+  assert.equal(result.ok, true);
+  if (!result.ok) throw Error("expected a view");
+  assert.equal(result.view.attempt.id, attemptA, "the view describes the projected round, not a later one");
+  assert.equal(result.view.businessState, "needs_review");
+  assert.equal(result.view.displayState, "needs_review");
+  assert.equal(result.view.remoteStopped, true);
+  service.readProjection = original;
+});
+
+test("stage list keeps a per-item failure instead of an empty view or a masked error", async t => {
+  const f = stageFixture(t);
+  f.seed({ taskId: "stage-list-ok", createdAt: "2026-10-18T10:00:00.000Z", stop: true, authenticated: true });
+  f.seed({ taskId: "stage-list-bad", createdAt: "2026-10-18T11:00:00.000Z" });
+  const attemptId = f.store.get("stage-list-bad")!.attemptId!;
+  fs.writeFileSync(path.join(f.dir, "runs", attemptId, "state.json"), "{not json");
+  const result = f.service.listStageViews({ limit: 10 });
+  assert.equal(result.ok, true);
+  if (!result.ok) throw Error("expected a page");
+  assert.equal(result.tasks.length, 2);
+  const good = result.tasks[0]!;
+  assert.equal(good.ok, true);
+  if (good.ok) {
+    assert.equal(good.view.taskId, "stage-list-ok");
+    assert.equal(good.view.displayState, "needs_review");
+  }
+  const bad = result.tasks[1]!;
+  assert.equal(bad.ok, false, "the corrupt record is reported, not turned into displayState null");
+  if (!bad.ok) {
+    assert.equal(bad.taskId, "stage-list-bad");
+    assert.equal(bad.code, "state_corrupt");
+    assert.equal(bad.field, "state.json");
+  }
+});
+
+test("stage list reports a store failure as store_unavailable, never as a cursor error", async t => {
+  const f = stageFixture(t);
+  f.seed({ taskId: "stage-store-fail", createdAt: "2026-10-18T10:00:00.000Z", state: "working" });
+  const store = f.store as unknown as { listTasksByCreatedCursor: () => never; hasTaskAfterCursor: () => never };
+  store.listTasksByCreatedCursor = () => { throw new Error("database is locked"); };
+  const listFailure = f.service.listStageViews({ limit: 10 });
+  assert.equal(listFailure.ok, false);
+  if (!listFailure.ok) {
+    assert.equal(listFailure.code, "store_unavailable");
+    assert.equal(listFailure.field, "store.listTasksByCreatedCursor");
+  }
+  // The next-page probe fails the same way.
+  const workingStore = f.store as unknown as { listTasksByCreatedCursor: () => unknown };
+  workingStore.listTasksByCreatedCursor = () => ({ tasks: f.store.get("stage-store-fail") ? [f.store.get("stage-store-fail")] : [], anchorFound: true });
+  store.hasTaskAfterCursor = () => { throw new Error("database is locked"); };
+  const probeFailure = f.service.listStageViews({ limit: 10 });
+  assert.equal(probeFailure.ok, false);
+  if (!probeFailure.ok) {
+    assert.equal(probeFailure.code, "store_unavailable");
+    assert.equal(probeFailure.field, "store.hasTaskAfterCursor");
+  }
+});

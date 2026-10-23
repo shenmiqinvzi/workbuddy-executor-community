@@ -43,11 +43,36 @@ export interface StageListResult {
     snapshotOnly: true;
     schemaVersion: typeof STAGE_TASK_VIEW_SCHEMA_VERSION;
     unavailable: typeof STAGE_TASK_VIEW_UNAVAILABLE;
-    /** Task ids in stable order; the cursor echoes the last id of this page. */
-    tasks: StageTaskView[];
-    /** The cursor to pass as afterTaskId, or null when this page is the last. */
+    /**
+     * One entry per listed task, in stable order. A failed entry keeps the
+     * projection's failure code instead of an empty view; it never masks its
+     * neighbours.
+     */
+    tasks: StageListItem[];
+    /** The cursor to pass as afterTaskId, or null when no next page exists. */
     nextAfterTaskId: string | null;
 }
+/** A request-level list failure. Store failures are never cursor errors. */
+export type StageListFailure = {
+    ok: false;
+    readOnly: true;
+    snapshotOnly: true;
+    code: "invalid_cursor" | "store_unavailable";
+    field: string;
+    message: string;
+};
+/** One list entry: either a stage view or the preserved projection failure. */
+export type StageListItem = {
+    ok: true;
+    taskId: string;
+    view: StageTaskView;
+} | {
+    ok: false;
+    taskId: string;
+    code: string;
+    field: string;
+    message: string;
+};
 /** The MCP entry point and future local HTTP adapter share this service. */
 export declare class TaskApplicationService {
     private readonly coordinator;
@@ -61,9 +86,12 @@ export declare class TaskApplicationService {
      *
      * It reuses readProjection's store and run-file reads — the same snapshot
      * semantics, the same failure codes, the same attempt re-check — and maps
-     * the result into the stage view. Like readProjection it never calls sync,
-     * executionStatus, checkWorker or any dispatching entry point, creates no
-     * store and writes nothing.
+     * the result into the stage view. The view is built from the task row the
+     * projection itself verified (`projection.row`): a second store.get here
+     * could already describe a later attempt after a concurrent rework, which
+     * would mix two rounds into one answer, so no second read happens. Like
+     * readProjection this never calls sync, executionStatus, checkWorker or any
+     * dispatching entry point, creates no store and writes nothing.
      */
     readStageView(taskId: string): StageReadResult;
     /**
@@ -72,24 +100,30 @@ export declare class TaskApplicationService {
      * Ordering is created_at ASC + task_id ASC (the contract's stable cursor
      * order), read through TaskStore.listTasksByCreatedCursor. The existing MCP
      * list (updated_at DESC + offset) is deliberately untouched and is not
-     * called from here. The views are assembled from per-task stage reads, so a
-     * page is a sequence of snapshots read one after another, not one
-     * transaction; a task changing mid-page shows its newer facts and never a
-     * fabricated mixture.
+     * called from here.
+     *
+     * Failure policy (no silent swallow):
+     *   - A store failure while reading the page, while probing the next-page
+     *     cursor, or while reading any single task's row is a structured
+     *     STORE_UNAVAILABLE failure for the whole request, never an empty page
+     *     or a cursor error.
+     *   - A per-task projection failure (corrupt record, unreadable file,
+     *     contract integrity, mid-read attempt change, ...) is preserved
+     *     per item: the item keeps its taskId plus the projection's failure
+     *     code/field/message instead of a fabricated empty view, so a client can
+     *     tell environment damage apart from data it asked for. An item-level
+     *     failure never masks the rest of the page.
+     *   - Cursor problems stay invalid_cursor and map to HTTP 400.
+     *
+     * Each item's view is built from the row its own readProjection verified
+     * (projection.row), so a concurrent rework between the page read and the
+     * item read yields that task's consistent single-round snapshot — or an
+     * explicit read_conflict from the reader — never a mixture of two rounds.
      */
     listStageViews(options: {
         limit: number;
         afterTaskId?: string;
-    }): StageListResult | {
-        ok: false;
-        readOnly: true;
-        snapshotOnly: true;
-        code: "invalid_cursor";
-        field: string;
-        message: string;
-    };
-    /** The already-fetched task row for a projection that just read it. */
-    private requireStoredTask;
+    }): StageListResult | StageListFailure;
     send(input: SendTaskInput): Promise<{
         ok: boolean;
         created: boolean;

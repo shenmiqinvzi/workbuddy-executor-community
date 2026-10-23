@@ -44,6 +44,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { TaskApplicationService } from "./task-application-service.js";
 import { STAGE_TASK_VIEW_SCHEMA_VERSION, STAGE_TASK_VIEW_UNAVAILABLE, type StageTaskView } from "./task-view-stage.js";
+import type { StageListItem } from "./task-application-service.js";
 
 /** Default local port for the workbench HTTP surface (contract section 1). */
 export const WORKBENCH_DEFAULT_PORT = 18493;
@@ -52,9 +53,15 @@ export const WORKBENCH_DEFAULT_PORT = 18493;
 export function workbenchPortFromEnv(env: NodeJS.ProcessEnv = process.env): number {
   const raw = env.WORKBUDDY_WORKBENCH_PORT?.trim();
   if (!raw) return WORKBENCH_DEFAULT_PORT;
+  // The value must be a complete decimal integer: parseInt alone would accept
+  // "18493junk" or "18493.5" as 18493, silently starting on a port the
+  // operator did not configure. Whitespace was already trimmed above.
+  if (!/^\d+$/.test(raw)) {
+    throw new Error("WORKBUDDY_WORKBENCH_PORT must be a decimal integer between 1 and 65535.");
+  }
   const value = Number.parseInt(raw, 10);
   if (!Number.isInteger(value) || value < 1 || value > 65535) {
-    throw new Error("WORKBUDDY_WORKBENCH_PORT must be an integer between 1 and 65535.");
+    throw new Error("WORKBUDDY_WORKBENCH_PORT must be a decimal integer between 1 and 65535.");
   }
   return value;
 }
@@ -185,7 +192,12 @@ export function parseListQuery(query: string): { ok: true; limit: number; afterT
 export interface StageListBody {
   schemaVersion: typeof STAGE_TASK_VIEW_SCHEMA_VERSION;
   unavailable: typeof STAGE_TASK_VIEW_UNAVAILABLE;
-  tasks: StageTaskView[];
+  /**
+   * One entry per listed task. A read failure for one task keeps that entry
+   * as {ok:false, taskId, code, field, message}; it never becomes an empty
+   * view, a masked failure or an empty page.
+   */
+  tasks: StageListItem[];
   nextAfterTaskId: string | null;
 }
 
@@ -209,7 +221,6 @@ function statusForStageFailure(code: string): number {
       return 500;
   }
 }
-
 export class WorkbenchHttpServer {
   private readonly server: http.Server;
   private readonly allowed: NonNullable<WorkbenchAdapterOptions["requestAllowed"]>;
@@ -293,7 +304,9 @@ export class WorkbenchHttpServer {
         if (!parsed.ok) { this.refuse(response, 400, parsed.code, parsed.message); return; }
         const result = this.options.service.listStageViews({ limit: parsed.limit, afterTaskId: parsed.afterTaskId });
         if (!result.ok) {
-          this.refuse(response, 400, result.code.toUpperCase(), result.message);
+          // A store failure is a 503, a cursor problem a 400; neither is
+          // rewritten into the other.
+          this.refuse(response, statusForStageFailure(result.code), result.code.toUpperCase(), result.message);
           return;
         }
         const body: StageListBody = { schemaVersion: result.schemaVersion, unavailable: result.unavailable, tasks: result.tasks, nextAfterTaskId: result.nextAfterTaskId };

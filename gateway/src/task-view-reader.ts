@@ -95,6 +95,15 @@ export interface TaskProjectionSuccess {
   snapshotOnly: true;
   task: TaskProjectionIdentity;
   /**
+   * The task row this projection was actually built from: the first
+   * `store.get` read, re-checked against the current attempt after the run
+   * files were read. Callers that need row facts (workspace path, binding,
+   * createdAt, reviewedAt) must use this row instead of fetching the task
+   * again, because a second read can already describe a later attempt; using
+   * it would mix two rounds into one answer.
+   */
+  row: StoredTask;
+  /**
    * The immutable initial contract, or null for a task that predates one.
    * A stored contract proves the terms were persisted; it does not prove that a
    * scope check, model verification, any check execution or independent review
@@ -414,7 +423,7 @@ export function readTaskProjection(sources: TaskProjectionSources, taskId: strin
   // records the gap, and no directory is touched.
   if (!attemptId || !runDir) {
     const projection = adaptTaskViewFacts({ task, attempt: null, snapshot: null, cancellation: null });
-    return { ok: true, readOnly: true, snapshotOnly: true, task: identity, contract, projection };
+    return { ok: true, readOnly: true, snapshotOnly: true, task: identity, row: task, contract, projection };
   }
 
   const state = readRunFile<RunSnapshot>(path.join(runDir, "state.json"), "state", snapshotShapeProblem);
@@ -452,7 +461,9 @@ export function readTaskProjection(sources: TaskProjectionSources, taskId: strin
     snapshot: state.value,
     cancellation: cancel.value,
   });
-  return { ok: true, readOnly: true, snapshotOnly: true, task: identity, contract, projection };
+  // `row` is the re-checked task row (identical to `after` here), so callers
+  // never need a second store.get that could observe a newer attempt.
+  return { ok: true, readOnly: true, snapshotOnly: true, task: identity, row: after, contract, projection };
 }
 
 function jsonResult(value: unknown) {

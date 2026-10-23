@@ -49,11 +49,30 @@ export interface StageListResult {
   snapshotOnly: true;
   schemaVersion: typeof STAGE_TASK_VIEW_SCHEMA_VERSION;
   unavailable: typeof STAGE_TASK_VIEW_UNAVAILABLE;
-  /** Task ids in stable order; the cursor echoes the last id of this page. */
-  tasks: StageTaskView[];
-  /** The cursor to pass as afterTaskId, or null when this page is the last. */
+  /**
+   * One entry per listed task, in stable order. A failed entry keeps the
+   * projection's failure code instead of an empty view; it never masks its
+   * neighbours.
+   */
+  tasks: StageListItem[];
+  /** The cursor to pass as afterTaskId, or null when no next page exists. */
   nextAfterTaskId: string | null;
 }
+
+/** A request-level list failure. Store failures are never cursor errors. */
+export type StageListFailure = {
+  ok: false;
+  readOnly: true;
+  snapshotOnly: true;
+  code: "invalid_cursor" | "store_unavailable";
+  field: string;
+  message: string;
+};
+
+/** One list entry: either a stage view or the preserved projection failure. */
+export type StageListItem =
+  | { ok: true; taskId: string; view: StageTaskView }
+  | { ok: false; taskId: string; code: string; field: string; message: string };
 
 /** The MCP entry point and future local HTTP adapter share this service. */
 export class TaskApplicationService {
@@ -69,9 +88,12 @@ export class TaskApplicationService {
    *
    * It reuses readProjection's store and run-file reads — the same snapshot
    * semantics, the same failure codes, the same attempt re-check — and maps
-   * the result into the stage view. Like readProjection it never calls sync,
-   * executionStatus, checkWorker or any dispatching entry point, creates no
-   * store and writes nothing.
+   * the result into the stage view. The view is built from the task row the
+   * projection itself verified (`projection.row`): a second store.get here
+   * could already describe a later attempt after a concurrent rework, which
+   * would mix two rounds into one answer, so no second read happens. Like
+   * readProjection this never calls sync, executionStatus, checkWorker or any
+   * dispatching entry point, creates no store and writes nothing.
    */
   readStageView(taskId: string): StageReadResult {
     if (typeof taskId !== "string" || taskId.length === 0 || taskId.length > 200) {
@@ -89,7 +111,7 @@ export class TaskApplicationService {
       snapshotOnly: true,
       schemaVersion: STAGE_TASK_VIEW_SCHEMA_VERSION,
       unavailable: [...STAGE_TASK_VIEW_UNAVAILABLE],
-      view: stageTaskViewFromProjection({ task: this.requireStoredTask(taskId), projection, contract: projection.contract }),
+      view: stageTaskViewFromProjection({ task: projection.row, projection, contract: projection.contract }),
     };
   }
 
@@ -99,12 +121,27 @@ export class TaskApplicationService {
    * Ordering is created_at ASC + task_id ASC (the contract's stable cursor
    * order), read through TaskStore.listTasksByCreatedCursor. The existing MCP
    * list (updated_at DESC + offset) is deliberately untouched and is not
-   * called from here. The views are assembled from per-task stage reads, so a
-   * page is a sequence of snapshots read one after another, not one
-   * transaction; a task changing mid-page shows its newer facts and never a
-   * fabricated mixture.
+   * called from here.
+   *
+   * Failure policy (no silent swallow):
+   *   - A store failure while reading the page, while probing the next-page
+   *     cursor, or while reading any single task's row is a structured
+   *     STORE_UNAVAILABLE failure for the whole request, never an empty page
+   *     or a cursor error.
+   *   - A per-task projection failure (corrupt record, unreadable file,
+   *     contract integrity, mid-read attempt change, ...) is preserved
+   *     per item: the item keeps its taskId plus the projection's failure
+   *     code/field/message instead of a fabricated empty view, so a client can
+   *     tell environment damage apart from data it asked for. An item-level
+   *     failure never masks the rest of the page.
+   *   - Cursor problems stay invalid_cursor and map to HTTP 400.
+   *
+   * Each item's view is built from the row its own readProjection verified
+   * (projection.row), so a concurrent rework between the page read and the
+   * item read yields that task's consistent single-round snapshot — or an
+   * explicit read_conflict from the reader — never a mixture of two rounds.
    */
-  listStageViews(options: { limit: number; afterTaskId?: string }): StageListResult | { ok: false; readOnly: true; snapshotOnly: true; code: "invalid_cursor"; field: string; message: string } {
+  listStageViews(options: { limit: number; afterTaskId?: string }): StageListResult | StageListFailure {
     const limit = Math.floor(options.limit);
     if (!Number.isFinite(limit) || limit !== Math.trunc(limit) || limit < 1 || limit > 100) {
       return { ok: false, readOnly: true, snapshotOnly: true, code: "invalid_cursor", field: "limit", message: "limit must be an integer between 1 and 100." };
@@ -116,36 +153,54 @@ export class TaskApplicationService {
     try {
       page = this.coordinator.store.listTasksByCreatedCursor({ limit, afterTaskId: options.afterTaskId });
     } catch {
-      return { ok: false, readOnly: true, snapshotOnly: true, code: "invalid_cursor", field: "afterTaskId", message: "Reading the task list failed; this is not reported as an empty list." };
+      return { ok: false, readOnly: true, snapshotOnly: true, code: "store_unavailable", field: "store.listTasksByCreatedCursor", message: "Reading the task list failed; this is not reported as an empty list." };
     }
     if (options.afterTaskId !== undefined && !page.anchorFound) {
       return { ok: false, readOnly: true, snapshotOnly: true, code: "invalid_cursor", field: "afterTaskId", message: "No stored task has this id; the cursor must name an existing task." };
     }
-    const views = page.tasks.map(task => {
-      const projection = this.readProjection(task.taskId);
-      return stageTaskViewFromProjection({ task, projection, contract: projection.ok ? projection.contract : null });
-    });
+    const items: StageListItem[] = [];
+    for (const listed of page.tasks) {
+      const projection = this.readProjection(listed.taskId);
+      if (projection.ok) {
+        items.push({
+          ok: true,
+          taskId: listed.taskId,
+          view: stageTaskViewFromProjection({ task: projection.row, projection, contract: projection.contract }),
+        });
+      } else {
+        items.push({
+          ok: false,
+          taskId: projection.taskId,
+          code: projection.code,
+          field: projection.field,
+          message: projection.message,
+        });
+      }
+    }
     const last = page.tasks.at(-1);
     // "There is another page" is answered by an extra existence probe, not by
     // page fullness, so a full final page ends with null instead of a cursor
-    // the client would have to try once and learn was empty.
-    const next = last !== undefined && this.coordinator.store.hasTaskAfterCursor(last.taskId) ? last.taskId : null;
+    // the client would have to try once and learn was empty. A probe failure
+    // is a store failure, not an answer of "no more data".
+    let next: string | null;
+    if (last === undefined) {
+      next = null;
+    } else {
+      try {
+        next = this.coordinator.store.hasTaskAfterCursor(last.taskId) ? last.taskId : null;
+      } catch {
+        return { ok: false, readOnly: true, snapshotOnly: true, code: "store_unavailable", field: "store.hasTaskAfterCursor", message: "Probing the next page failed; this is not reported as the end of the list." };
+      }
+    }
     return {
       ok: true,
       readOnly: true,
       snapshotOnly: true,
       schemaVersion: STAGE_TASK_VIEW_SCHEMA_VERSION,
       unavailable: [...STAGE_TASK_VIEW_UNAVAILABLE],
-      tasks: views,
+      tasks: items,
       nextAfterTaskId: next,
     };
-  }
-
-  /** The already-fetched task row for a projection that just read it. */
-  private requireStoredTask(taskId: string): StoredTask {
-    const task = this.coordinator.store.get(taskId);
-    if (!task) throw new Error(`Task row disappeared while reading: ${taskId}`);
-    return task;
   }
 
   send(input: SendTaskInput) { return this.coordinator.send(input); }

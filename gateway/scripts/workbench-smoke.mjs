@@ -130,7 +130,21 @@ function seed(taskId, createdAt, options = {}) {
 seed("smoke-task-a", "2026-10-18T10:00:00.000Z", { stop: true, cancel: true, authenticated: true });
 seed("smoke-task-b", "2026-10-18T11:00:00.000Z", { state: "working" });
 seed("smoke-task-c", "2026-10-18T12:00:00.000Z", { state: "working" });
-step("sample-seeded", { ok: true, tasks: 3, dir });
+// A corrupt projection record must keep its own list entry (not masked, not
+// dropped) and answer 400 on its detail read. The record is corrupted through
+// an attempt run directory holding a broken state.json.
+const corruptId = "smoke-task-corrupt";
+{
+  counter += 1;
+  const attemptId = `run-30000000-0000-4000-8000-${String(counter).padStart(12, "0")}`;
+  store.createOrGet({ taskId: corruptId, messageId: `msg-${corruptId}`, objective: "smoke corrupt", state: "queued", createdAt: "2026-10-18T13:00:00.000Z", sessionId: "smoke-session-1", runtimeSource: "desktop_queue", workspace: dir });
+  store.beginAttempt(corruptId, { attemptId, messageId: `msg-${corruptId}`, sessionId: "smoke-session-1" });
+  store.update(corruptId, { state: "needs_review" });
+  const runDir = path.join(config.runsDir, attemptId);
+  fs.mkdirSync(runDir, { recursive: true });
+  fs.writeFileSync(path.join(runDir, "state.json"), "{not-json");
+}
+step("sample-seeded", { ok: true, tasks: 4, dir });
 
 const before = { data: hashTree(dir) };
 
@@ -152,10 +166,12 @@ try {
     status: health.status, ready: healthBody.ready, capabilities: healthBody.capabilities,
   });
 
-  // list
+  // list — each entry is {ok, taskId, view} or {ok:false, taskId, code, ...};
+  // a failed read keeps its entry instead of masking the page.
+  const listOf = entry => entry.taskId ?? entry.view?.taskId;
   const list = await request(port, { path: "/workbench/v1/tasks?limit=2" });
   const listBody = JSON.parse(list.body);
-  const listIds = listBody.tasks.map(t => t.taskId);
+  const listIds = listBody.tasks.map(listOf);
   step("list-page-1", {
     ok: list.status === 200 && JSON.stringify(listIds) === JSON.stringify(["smoke-task-a", "smoke-task-b"]) && listBody.nextAfterTaskId === "smoke-task-b",
     ids: listIds, nextAfterTaskId: listBody.nextAfterTaskId,
@@ -163,9 +179,10 @@ try {
 
   const list2 = await request(port, { path: "/workbench/v1/tasks?limit=2&afterTaskId=smoke-task-b" });
   const list2Body = JSON.parse(list2.body);
+  const page2Ids = list2Body.tasks.map(listOf);
   step("list-page-2", {
-    ok: list2.status === 200 && JSON.stringify(list2Body.tasks.map(t => t.taskId)) === JSON.stringify(["smoke-task-c"]) && list2Body.nextAfterTaskId === null,
-    ids: list2Body.tasks.map(t => t.taskId), nextAfterTaskId: list2Body.nextAfterTaskId,
+    ok: list2.status === 200 && JSON.stringify(page2Ids) === JSON.stringify(["smoke-task-c", corruptId]) && list2Body.nextAfterTaskId === null,
+    ids: page2Ids, nextAfterTaskId: list2Body.nextAfterTaskId,
   });
 
   // detail with authenticated report + stop proof; cancel.json makes the
@@ -194,6 +211,21 @@ try {
   const missing = await request(port, { path: "/workbench/v1/tasks/no-such-task" });
   const missingBody = JSON.parse(missing.body);
   step("detail-404", { ok: missing.status === 404 && missingBody.error.code === "TASK_NOT_FOUND" && missingBody.view === null, status: missing.status, code: missingBody.error?.code });
+
+  // a corrupt record keeps a per-item failure in the list and a 400 detail
+  const detailCorrupt = await request(port, { path: `/workbench/v1/tasks/${corruptId}` });
+  const listCorrupt = await request(port, { path: "/workbench/v1/tasks?limit=50" });
+  const listCorruptBody = JSON.parse(listCorrupt.body);
+  const corruptEntry = listCorruptBody.tasks.find(entry => entry.taskId === corruptId);
+  step("corrupt-item-preserved", {
+    ok: detailCorrupt.status === 400
+      && listCorrupt.status === 200
+      && corruptEntry?.ok === false
+      && typeof corruptEntry.code === "string" && corruptEntry.code.length > 0
+      && listCorruptBody.tasks.every(entry => (entry.ok === true ? entry.view?.taskId : entry.taskId) != null),
+    status: detailCorrupt.status, listStatus: listCorrupt.status,
+    corruptEntryCode: corruptEntry?.code, corruptEntryMessage: corruptEntry?.message,
+  });
 
   const badCursor = await request(port, { path: "/workbench/v1/tasks?afterTaskId=missing-anchor" });
   step("list-bad-cursor-400", { ok: badCursor.status === 400 && JSON.parse(badCursor.body).error.code === "INVALID_CURSOR", status: badCursor.status });

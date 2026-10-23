@@ -16,6 +16,7 @@ import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
+import { spawn } from "node:child_process";
 import test from "node:test";
 import type { Config } from "../src/config.js";
 import { TaskCoordinator } from "../src/coordinator.js";
@@ -127,11 +128,19 @@ test("parseListQuery applies the documented defaults and bounds", () => {
   assert.equal(parseListQuery(`afterTaskId=${"x".repeat(201)}`).ok, false);
 });
 
-test("workbenchPortFromEnv honours the configured port and rejects nonsense", () => {
+test("workbenchPortFromEnv rejects partial and malformed integers, not just out-of-range ones", () => {
   assert.equal(workbenchPortFromEnv({}), WORKBENCH_DEFAULT_PORT);
   assert.equal(workbenchPortFromEnv({ WORKBUDDY_WORKBENCH_PORT: "18493" }), 18493);
   assert.throws(() => workbenchPortFromEnv({ WORKBUDDY_WORKBENCH_PORT: "0" }));
+  assert.throws(() => workbenchPortFromEnv({ WORKBUDDY_WORKBENCH_PORT: "65536" }));
   assert.throws(() => workbenchPortFromEnv({ WORKBUDDY_WORKBENCH_PORT: "not-a-port" }));
+  assert.throws(() => workbenchPortFromEnv({ WORKBUDDY_WORKBENCH_PORT: "18493junk" }), "trailing text is not a port");
+  assert.throws(() => workbenchPortFromEnv({ WORKBUDDY_WORKBENCH_PORT: "18493.5" }), "decimals are not ports");
+  assert.throws(() => workbenchPortFromEnv({ WORKBUDDY_WORKBENCH_PORT: "1.8e4" }), "scientific notation is not a port");
+  assert.equal(workbenchPortFromEnv({ WORKBUDDY_WORKBENCH_PORT: " 18493 " }), 18493, "surrounding whitespace is trimmed before validation");
+  assert.throws(() => workbenchPortFromEnv({ WORKBUDDY_WORKBENCH_PORT: "18 493" }), "internal whitespace is not a port");
+  assert.throws(() => workbenchPortFromEnv({ WORKBUDDY_WORKBENCH_PORT: "+18493" }), "a sign is not accepted");
+  assert.throws(() => workbenchPortFromEnv({ WORKBUDDY_WORKBENCH_PORT: "-1" }), "negative values are not ports");
 });
 
 test("health, list and detail answer from stored facts only", async t => {
@@ -154,13 +163,15 @@ test("health, list and detail answer from stored facts only", async t => {
   const list = await request(port, { path: "/workbench/v1/tasks" });
   assert.equal(list.status, 200);
   const listBody = JSON.parse(list.body);
-  assert.deepEqual(listBody.tasks.map((task: { taskId: string }) => task.taskId), ["task-a", "task-b"]);
-  assert.equal(listBody.nextAfterTaskId, null);
-  assert.equal(listBody.tasks[0].displayState, "cancelled");
-  assert.equal(listBody.tasks[0].remoteStopped, true);
-  assert.equal(listBody.tasks[0].revision, null);
-  assert.equal(listBody.tasks[1].displayState, "unknown", "no live observation is claimed from a stored snapshot");
-  assert.equal(listBody.tasks[1].remoteStopped, false, "stop proof absent is a confirmed false, not null");
+  // Every entry is now an envelope: ok:true carries view, ok:false a failure.
+  assert.equal(listBody.tasks[0].ok, true);
+  assert.equal(listBody.tasks[0].view.taskId, "task-a");
+  assert.equal(listBody.tasks[0].view.displayState, "cancelled");
+  assert.equal(listBody.tasks[0].view.remoteStopped, true);
+  assert.equal(listBody.tasks[0].view.revision, null);
+  assert.equal(listBody.tasks[1].ok, true);
+  assert.equal(listBody.tasks[1].view.displayState, "unknown", "no live observation is claimed from a stored snapshot");
+  assert.equal(listBody.tasks[1].view.remoteStopped, false, "stop proof absent is a confirmed false, not null");
 
   const detail = await request(port, { path: "/workbench/v1/tasks/task-a" });
   assert.equal(detail.status, 200);
@@ -188,15 +199,15 @@ test("cursor pagination is stable, re-readable, and a missing cursor is an error
   t.after(close);
 
   const page1 = JSON.parse((await request(port, { path: "/workbench/v1/tasks?limit=2" })).body);
-  assert.deepEqual(page1.tasks.map((task: { taskId: string }) => task.taskId), ["page-task-0", "page-task-1"]);
+  assert.deepEqual(page1.tasks.map((task: { taskId: string }) => task.taskId ?? (task as { view?: { taskId: string } }).view?.taskId), ["page-task-0", "page-task-1"]);
   assert.equal(page1.nextAfterTaskId, "page-task-1");
 
   const page2 = JSON.parse((await request(port, { path: "/workbench/v1/tasks?limit=2&afterTaskId=page-task-1" })).body);
-  assert.deepEqual(page2.tasks.map((task: { taskId: string }) => task.taskId), ["page-task-2", "page-task-3"]);
+  assert.deepEqual(page2.tasks.map((task: { taskId: string }) => task.taskId ?? (task as { view?: { taskId: string } }).view?.taskId), ["page-task-2", "page-task-3"]);
   assert.equal(page2.nextAfterTaskId, "page-task-3");
 
   const page3 = JSON.parse((await request(port, { path: "/workbench/v1/tasks?limit=2&afterTaskId=page-task-3" })).body);
-  assert.deepEqual(page3.tasks.map((task: { taskId: string }) => task.taskId), ["page-task-4"]);
+  assert.deepEqual(page3.tasks.map((task: { taskId: string }) => task.taskId ?? (task as { view?: { taskId: string } }).view?.taskId), ["page-task-4"]);
   assert.equal(page3.nextAfterTaskId, null);
 
   const page2again = JSON.parse((await request(port, { path: "/workbench/v1/tasks?limit=2&afterTaskId=page-task-1" })).body);
@@ -215,11 +226,12 @@ test("a full page exposes the next cursor and concurrent updates do not shift ro
   const { server, port, close } = await startServer(f.service);
   t.after(close);
   const first = JSON.parse((await request(port, { path: "/workbench/v1/tasks?limit=2" })).body);
-  assert.deepEqual(first.tasks.map((task: { taskId: string }) => task.taskId), ["shift-0", "shift-1"]);
+  const taskIdOf = (task: { taskId?: string; view?: { taskId: string } }) => task.taskId ?? task.view?.taskId;
+  assert.deepEqual(first.tasks.map(taskIdOf), ["shift-0", "shift-1"]);
   // An update between pages changes updatedAt but not the created_at order.
   f.store.update("shift-0", { reviewNote: "touched" });
   const second = JSON.parse((await request(port, { path: `/workbench/v1/tasks?limit=2&afterTaskId=${first.nextAfterTaskId}` })).body);
-  assert.deepEqual(second.tasks.map((task: { taskId: string }) => task.taskId), ["shift-2", "shift-3"]);
+  assert.deepEqual(second.tasks.map(taskIdOf), ["shift-2", "shift-3"]);
 });
 
 test("access boundary: foreign Host, cross-origin Origin and non-GET methods are refused", async t => {
@@ -304,4 +316,106 @@ test("reading over HTTP leaves every stored byte unchanged", async t => {
   await request(port, { path: "/workbench/v1/tasks/hash-task" });
   await request(port, { path: "/workbench/v1/tasks/hash-task" });
   assert.deepEqual(snapshot(), before, "GET must not write to the task database or run files");
+});
+
+/**
+ * R2 regression: the real entry subprocess, started with WORKBUDDY_DB_FILE
+ * only (no WORKBUDDY_RUNS_DIR), must resolve the runs directory like the rest
+ * of the execution chain — next to the database — and report the stored
+ * authenticated report at needs_review with the stop proof. A test that only
+ * constructs the service directly cannot see the entry's own resolution.
+ */
+test("workbench entry subprocess resolves the default runs directory next to the database", async t => {
+  // The temp directory is intentionally NOT removed in t.after: the entry
+  // subprocess may still hold its SQLite handle when the assertion finishes,
+  // and force-removing it on Windows can block the runner indefinitely. The
+  // OS temp cleaner reclaims it later; the test itself is self-contained.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "workbench-entry-"));
+  // Seed a synthetic store + runs layout exactly where the default resolution expects them.
+  const dbFile = path.join(dir, "tasks.sqlite");
+  const runsDir = path.join(dir, "runs");
+  const { execFileSync } = await import("node:child_process");
+  const seedScript = path.join(dir, "seed.mjs");
+  // Windows ESM imports need file:// URLs for absolute paths.
+  const distUrl = (module: string) => `file:///${path.join(process.cwd(), "dist", module).replaceAll("\\", "/")}`;
+  fs.writeFileSync(seedScript, `
+    import fs from "node:fs";
+    import path from "node:path";
+    import { TaskStore } from "${distUrl("task-store.js")}";
+    import { TaskCoordinator } from "${distUrl("coordinator.js")}";
+    import { TaskApplicationService } from "${distUrl("task-application-service.js")}";
+    import { WorkBuddyClient } from "${distUrl("workbuddy-client.js")}";
+    import { reportDigest } from "${distUrl("report-authentication.js")}";
+    const dir = ${JSON.stringify(dir)};
+    const config = {
+      backend: "desktop-queue", apiBaseUrl: "http://127.0.0.1/unreachable", tokenFile: path.join(dir, "c.json"),
+      dbFile: path.join(dir, "tasks.sqlite"), oauthRedirectUri: "http://127.0.0.1:0", oauthPort: 0, oauthScopes: "s",
+      requestTimeoutMs: 1000, cliElectronPath: path.join(dir, "e"), cliScriptPath: path.join(dir, "c"),
+      cliPermissionMode: "deny", acpPermissionMode: "deny", gatewayUrl: "http://127.0.0.1:0",
+      workbuddyConfigDir: path.join(dir, "wb"), runsDir: path.join(dir, "runs"),
+      taskTimeoutSeconds: 600, claimTimeoutSeconds: 60, maxTaskAttempts: 3, serviceConfigFile: path.join(dir, "p.json"),
+    };
+    const store = new TaskStore(config.dbFile);
+    const service = new TaskApplicationService(new TaskCoordinator(config, store, new WorkBuddyClient(config)), 3, config.runsDir);
+    const taskId = "entry-task";
+    const attemptId = "run-e0000000-0000-4000-8000-000000000001";
+    const sessionId = "entry-session";
+    store.createOrGet({ taskId, messageId: "m", objective: "o", state: "queued", createdAt: "2026-10-18T10:00:00.000Z", sessionId, runtimeSource: "desktop_queue", workspace: dir });
+    store.beginAttempt(taskId, { attemptId, messageId: "m", sessionId });
+    store.update(taskId, { state: "needs_review" });
+    store.updateAttempt(taskId, attemptId, { state: "needs_review", runtimeSource: "desktop_queue" });
+    const text = "TASK_STATUS: completed\\nentry"; const digest = reportDigest({ status: "completed", text, artifacts: [] });
+    fs.mkdirSync(path.join(config.runsDir, attemptId), { recursive: true });
+    fs.writeFileSync(path.join(config.runsDir, attemptId, "state.json"), JSON.stringify({
+      attemptId, taskId, status: "needs_review", driver: "desktop-queue", sessionId, runtimeSource: "desktop_queue",
+      text, reportDigest: digest, nativeStoppedAt: "2026-10-18T10:30:00.000Z", nativeStopSource: "native_idle",
+      updatedAt: "2026-10-18T10:00:00.000Z",
+      reportAuthentication: { formatVersion: 1, taskId, attemptId, sessionId, runtimeSource: "desktop_queue", reportedStatus: "completed", reportDigest: digest, authenticatedAt: "2026-10-18T10:05:00.000Z" },
+    }));
+    store.close();
+  `);
+  let seedError = "";
+  try {
+    execFileSync(process.execPath, [seedScript], { stdio: ["ignore", "ignore", "pipe"] });
+  } catch (error) {
+    seedError = String((error as { stderr?: Buffer | string }).stderr ?? error);
+  }
+  assert.equal(seedError, "", `seeding failed: ${seedError.slice(0, 400)}`);
+
+  // Start the real compiled entry with only WORKBUDDY_DB_FILE configured.
+  const port = 18765 + Math.floor(Math.random() * 1000);
+  const child = spawn(process.execPath, [path.join(process.cwd(), "dist", "workbench-entry.js")], {
+    env: {
+      ...process.env,
+      WORKBUDDY_DB_FILE: dbFile,
+      WORKBUDDY_BACKEND: "desktop-queue",
+      WORKBUDDY_WORKBENCH_PORT: String(port),
+      WORKBUDDY_CONFIG_DIR: path.join(dir, "wb"),
+      WORKBUDDY_CLI_ELECTRON: path.join(dir, "no-electron.exe"),
+      WORKBUDDY_TOKEN_FILE: path.join(dir, "credentials.json"),
+      WORKBUDDY_SERVICE_CONFIG: path.join(dir, "persistent-service.json"),
+      // WORKBUDDY_RUNS_DIR deliberately absent: the default must resolve next to the db.
+    },
+    // stdio ignored so no pipe keeps the test runner waiting after kill.
+    stdio: "ignore",
+  });
+  t.after(() => { if (child.exitCode === null && child.pid) { try { process.kill(child.pid); } catch { /* already gone */ } } });
+  const url = `http://127.0.0.1:${port}/workbench/v1/tasks/entry-task`;
+  // Poll until the server answers or the child dies; the poll is bounded so a
+  // stuck server fails the test instead of hanging it.
+  let body: { displayState?: string; remoteStopped?: boolean | null } | undefined;
+  let lastError = "";
+  for (let attempt = 0; attempt < 50; attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 200));
+    if (child.exitCode !== null) break;
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(1500) });
+      if (response.status === 200) { body = (await response.json()) as { displayState?: string; remoteStopped?: boolean | null }; break; }
+      lastError = `status ${response.status}`;
+    } catch (error) { lastError = String(error); }
+  }
+  assert.ok(body, `entry subprocess did not answer on port ${port}; last: ${lastError}; exit: ${child.exitCode}`);
+  assert.equal(body!.displayState, "needs_review", "the stored report is found through the default runs directory");
+  assert.equal(body!.remoteStopped, true);
+  assert.equal(child.exitCode, null, "the entry stays up; it did not crash resolving paths");
 });

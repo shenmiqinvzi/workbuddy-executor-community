@@ -85,7 +85,10 @@ test("shared service and MCP read the authenticated queue result without synchro
     const content = response.content as Array<{ type: string; text?: string }>;
     const payload = JSON.parse(content.find(item => item.type === "text")!.text!);
     delete payload.runtime;
-    assert.deepEqual(payload, projection);
+    // The service object carries `undefined` optional row fields; the MCP text
+    // has already dropped them via JSON. Compare the JSON round-trip so the
+    // assertion checks the wire shape, not the in-memory undefined keys.
+    assert.deepEqual(payload, JSON.parse(JSON.stringify(projection)));
   } finally {
     await client.close();
     await server.close();

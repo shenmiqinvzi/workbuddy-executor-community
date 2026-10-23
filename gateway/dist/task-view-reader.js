@@ -294,7 +294,7 @@ export function readTaskProjection(sources, taskId) {
     // records the gap, and no directory is touched.
     if (!attemptId || !runDir) {
         const projection = adaptTaskViewFacts({ task, attempt: null, snapshot: null, cancellation: null });
-        return { ok: true, readOnly: true, snapshotOnly: true, task: identity, contract, projection };
+        return { ok: true, readOnly: true, snapshotOnly: true, task: identity, row: task, contract, projection };
     }
     const state = readRunFile(path.join(runDir, "state.json"), "state", snapshotShapeProblem);
     if (!state.ok)
@@ -325,7 +325,9 @@ export function readTaskProjection(sources, taskId) {
         snapshot: state.value,
         cancellation: cancel.value,
     });
-    return { ok: true, readOnly: true, snapshotOnly: true, task: identity, contract, projection };
+    // `row` is the re-checked task row (identical to `after` here), so callers
+    // never need a second store.get that could observe a newer attempt.
+    return { ok: true, readOnly: true, snapshotOnly: true, task: identity, row: after, contract, projection };
 }
 function jsonResult(value) {
     return { content: [{ type: "text", text: JSON.stringify(value, null, 2) }] };
