@@ -1,12 +1,12 @@
 # WorkBuddy Executor vNext 接口契约
 
-契约版本：`workbuddy-executor/vnext-1`。状态：完整目标契约尚未实现；现有MCP只有基础statusView，不能等同于本文的完整TaskView。本次仅同步实现状态，未改变协议语义。具体阶段见[开发进度](PROGRESS.md)，前端合成样本任务见[Issue #6](https://github.com/shenmiqinvzi/workbuddy-executor-community/issues/6)。服务实现、mock与客户端共同依据本文件；改动enum、字段含义、动作或指标口径时先更新本文及对应fixture，再合并实现。可选字段用null明示未知，不使用字符串NA或0替代未知。
+修订日期：2026-10-25。第 1–7 节保留 `workbuddy-executor/vnext-1` 完整目标语义；当前实现为 `workbuddy-executor/stage-2` 的部分只读能力，准确响应见[阶段说明](WORKBENCH_STAGE_HTTP.md)。第 8 节新增 `workbuddy-executor/vnext-2` 多 Agent 契约草案，尚未实现或被解析器接受，不给旧 vnext-1 偷加字段。阶段状态见[进度](PROGRESS.md)，产品政策见[协作设计](COLLABORATION_DESIGN.md)。服务实现、mock 与客户端按对应版本核对；未知数值用 null，不用字符串 NA 或 0 替代。
 
 ## 1. 入口与兼容方式
 
 新增本地接口前缀为 `/workbench/v1`，不是已有 `/v1/runs`。MCP 保留现有工具名及兼容返回字段，新增的统一任务视图放入 `view` 字段；两个入口均经 TaskApplicationService。旧调用不得绕过同一排他、预算和验收规则。
 
-默认监听 `127.0.0.1:18493`，计划增加 `WORKBUDDY_WORKBENCH_PORT` 配置。它不是当前已经可用的端口。认证、Host/Origin 与内容类型检查由 HTTP 层负责；业务正确性由共享服务负责。
+stage-2 已支持监听 `127.0.0.1:18493` 与 `WORKBUDDY_WORKBENCH_PORT` 配置；是否已有运行服务取决于实际启动/部署。下表是完整目标，不代表全部已实现；写操作、workspaces/export 的当前边界见阶段说明。认证、Host/Origin 与内容类型检查由 HTTP 层负责，业务正确性由共享服务负责。
 
 | 方法与路径 | 输入/作用 |
 |---|---|
@@ -174,3 +174,80 @@ usage 区分目录费率标签、实耗额度、token 与活跃推理时间。�
 必需 code：TASK_CONFLICT、OPERATION_CONFLICT、STALE_REVISION、STALE_ATTEMPT、EXECUTOR_BUSY、MODEL_UNVERIFIED、MODEL_POLICY_BLOCKED、INPUT_REQUIRED、STOP_UNCONFIRMED、ATTEMPT_LIMIT、CANCELLED_TERMINAL、DEADLINE_EXCEEDED、SCOPE_VIOLATION、WORKSPACE_CONFLICT、EVIDENCE_STALE、CHECKS_INCOMPLETE、OUTCOME_UNKNOWN。
 
 首批 mock 必覆盖全部 10 个 displayState，并至少包含：权限详情未知、报告先于停止、过期 revision、3 轮耗尽、断线重连、取消后仍未停止、成本未知、checker_error、严格范围失败、用户旧改动冲突。mock 数据使用合成项目和身份，不含账号、真实运行目录或私有历史。
+
+## 8. 多 Agent 扩展草案（vnext-2，待实现）
+
+本节规定新设计边界，不声明新增端点已经可用。启用前须同时提交 schema、类型、合成 fixture、旧版本兼容和对应验收。stage-2 端口、响应和 GET 零任务写入规则保持不变；旧 vnext-1 解析器继续拒绝未知字段与 vnext-2。
+
+### 8.1 版本与派工约定
+
+vnext-2 保留目标/工作区/范围/检查/期限/轮次字段；把 vnext-1 顶层 `model` 替换为 `execution`，不得同时提交两套模型字段：
+
+```json
+{
+  "schemaVersion": "workbuddy-executor/vnext-2",
+  "execution": {
+    "executorId": "dsh",
+    "connectionId": "example-gateway",
+    "providerId": "example-registered-provider",
+    "modelId": "example-model",
+    "reasoningEffort": null
+  },
+  "collaboration": {
+    "planId": "example-plan",
+    "expectedPlanRevision": "example-plan-revision"
+  }
+}
+```
+
+上例仅为扩展字段片段，不是可提交的完整任务。`connectionId` 指本机登记的模型来源连接，`providerId` 指执行器内对应的原生来源路由；WorkBuddy 连接与 DSH 代理连接分别登记。ID 必须经服务端解析，不能由请求指定任意 URL、凭据或会话文件。
+
+有效模型政策快照、工作区解析、原生会话绑定、方案确认者与时间、额度准入引用均由服务端保存，不接受客户端自报 verified/free/approved 结论。模型与执行器首期在同 task 内固定，返工重新核验原绑定，不允许旧 rework 的 model 参数绕过约定。vnext-1 保持原精确免费政策与既有摘要，旧记录不由 GET 迁移。
+
+### 8.2 协作方案与确认
+
+`CollaborationPlan` 包含 planId、revision、decision=direct/delegate、mode=manual/recommend/automatic、workspaceId、目标摘要、建议 execution、理由与候选拒绝原因、policyVersion、quotaSnapshotRefs、confirmation、createdAt/expiresAt。`direct` 的 execution 为 null，不建立原生 attempt。confirmation 区分 required/authorized/rejected/expired；授权主体由可信入口记录，客户端不能通过字段自批。
+
+方案不确定时返回候选与缺口，不默认选最新 DSH 会话。manual 模式遵守已授权的明确选择；recommend 等待真实确认；automatic 必须引用有效的预授权政策。政策只授权派工范围，不授权提交、推送、部署或批准原生权限。
+
+提交引用确切方案 revision；过期、政策撤回、参数被改或方案已绑定不同 task 时拒绝。准入重新验证来源、模型与容量，持久记录 task 绑定和意图；同一已确认方案不能被两个 taskId 消费来重复派工。模型准备与派工结果不明继续保留原 operationId 和占用。
+
+### 8.3 执行器发现与模型证据
+
+候选接口（均加 `/workbench/v1` 前缀）：
+
+| 方法与路径 | 目标职责与边界 |
+|---|---|
+| GET `/executors` | 已登记执行器、兼容版本、独立能力和最后观测；不激活会话或派工 |
+| GET `/executors/:id/models` | 已采集的来源/模型目录、支持档位、核验级别与新鲜度；不切模型、不探测请求 |
+| GET `/resources/quotas` | 已保存的脱敏额度快照；不直接代理任意网关接口 |
+| GET `/collaboration-plans/:planId` | 已保存方案，未找到不代建 |
+| POST `/collaboration-plans` | 生成/保存方案；只读本地上下文和缓存元数据，不调用 worker 或额外模型 |
+| POST `/collaboration-plans/:planId/confirm` | 确认指定方案 revision；不立即开始 worker |
+| POST `/tasks`（vnext-2） | 引用方案并完成持久准入；实际模型准备/派工在受控意图后发生 |
+
+以上 POST 依赖 T4 及写操作关口，不随文档发布开放。方案创建/确认也需要鉴权、稳定 operationId、参数摘要和重放规则；并发确认使用 expectedPlanRevision，不能套用不存在的 task attempt。新的只读发现/额度接口以独立资源版本发布，不能假装 stage-2 DTO 已增加字段。
+
+执行器能力分别声明 modelCatalog/selectModel/observeEffectiveModel/cancel/proveStopped/navigateSession/automaticReview/usageAttribution。未知能力为 unavailable，不能根据模型目录推导停止或审查可用。
+
+目标 TaskView 新增 collaboration 方案引用、execution（请求/选择/实际请求模型及核验层级）、policySnapshotRef、quotaAdmissionRefs。原生 binding 含 executorId、nativeWorkflowId（无则 null）与当前 session；runtimeSource 必须来自已验证适配器标识，DSH 不能填写 desktop_queue。草案不新增 displayState；停止不明与 unknown 继续按第 3 节规则降级。
+
+### 8.4 额度快照与计量
+
+`QuotaSnapshot` 目标字段：snapshotId、connectionId、scopeId、scopeKind（gateway_pool/routed_pool/unverified）、shared、modelId、unit（tokens/credits/currency）、currency（无则 null）、valueKind（reported/estimated/unavailable）、availability（available/exhausted/unknown）、freshness（fresh/stale/unavailable）、used/budget/remaining、resetAt、sourceObservedAt、collectedAt、expiresAt、method、limitations。
+
+scopeId 是匿名稳定标识，不是密钥或原始账号。gateway_pool 只能标网关汇总；只有核验当前连接的 Key 区域/模型/账号路由后才可称 routed_pool。不同单位分行，不相加；同池引用按 scopeId 去重。耗尽状态必须有来源证据，不能由 null 或一次请求失败推断。
+
+来源观察时间无法取得时 sourceObservedAt=null，不能以采集时间冒充。freshness 按明确的最大陈旧期限计算；失联保留末次快照并标 stale。资源快照自身变化不重写已绑定 task 的 revision；新派工准入保存实际使用的快照引用和政策。快照没有原子预留上游额度的效果。
+
+单任务 usage 增加 attribution=exact/connection_only/unavailable、coverage、来源请求引用及 limitations。exact 仅在任务与请求、重试、计量记录完整关联且去重后使用；关联不全为 null，不用网关余额差代替。共享池其他客户端消耗不计为当前任务消耗；Planner/Reviewer 与 worker 分项统计。
+
+资源采集是单独后台动作，有超时、缓存、退避与凭据隔离；GET 只读本地资源快照。主动模型探测不属于 GET，也不因浏览器刷新启用。上游估算不满足硬费用限制时不可提交需要该保证的付费任务。
+
+### 8.5 事件、错误与迁移
+
+新增目标事件：collaboration_plan_recorded、collaboration_plan_authorized、execution_binding_verified、execution_binding_changed、quota_admission_recorded。派工前方案事件属于 plan 自身日志；关联 task 后引用原记录，不能假造 task attempt。额度后台采集有独立资源日志，不把每次轮询塞入任务事件。绑定变化来自实际观察，不以配置文件值充当运行证据。
+
+新增目标错误：EXECUTOR_UNAVAILABLE、EXECUTOR_CAPABILITY_MISSING、SESSION_AMBIGUOUS、MODEL_BINDING_CHANGED、PLAN_STALE、PLAN_CONFIRMATION_REQUIRED、POLICY_CHANGED、QUOTA_UNAVAILABLE、QUOTA_EXHAUSTED、COST_CONTROL_UNAVAILABLE。模型/政策/费用拒绝为 403；方案/绑定/耗尽冲突为 409；来源或必要观测不可用为 503。等待确认或额度恢复可以是合法方案状态，不一律包装为任务失败。错误 message 不含连接凭据、原始账号或私有路径。
+
+兼容验收须覆盖旧客户端对新 schema 的明确拒绝、旧报告来源保留、未绑定模型/额度的旧任务显示 null、写入迁移事务与失败回滚、备份与降级限制。不得从旧 model 字符串反推 DSH 来源、实际模型或历史额度；新增能力须逐项开关，不以 schema 名称代表执行器已通过真实验收。

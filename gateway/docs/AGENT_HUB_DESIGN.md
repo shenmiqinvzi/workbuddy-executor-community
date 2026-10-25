@@ -1,5 +1,7 @@
 # Agent Hub 设计方案
 
+> 历史设计说明（2026-10-25）：本文保留 2026-10-11 的独立 HubRun 方案作为来源记录，不是当前开发入口或发布承诺。当前多 Agent 目标以[总体设计](../../docs/DEVELOPMENT_DESIGN.md)、[协作设计](../../docs/COLLABORATION_DESIGN.md)和[接口草案](../../docs/INTERFACE_CONTRACT.md)为准：复用 TaskApplicationService/TaskStore，不建立第二套成功状态机；首期两执行器共用容量 1，不采用下文可配置并发或旧 MCP 例外；只读 events 采用当前持久游标，不承诺 SSE 已实现。原工作台可参考，不能绕过现有停止、预算或排他约束。
+
 设计日期：2026-10-11。目标：让任意项目、脚本和 Agent 方便地使用用户已有 Agent 账号的执行能力及可用额度。首期只接入 WorkBuddy；DeepSeek Harness、qodex 的具体接口及权益后续分别验证。
 
 ## 从目标推导边界

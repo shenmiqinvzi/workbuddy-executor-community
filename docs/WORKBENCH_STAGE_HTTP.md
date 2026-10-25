@@ -1,5 +1,7 @@
 # Workbench 只读 HTTP 阶段说明(stage-2,T2)
 
+2026-10-25 设计补充：新增 DSH、模型选择、协作方案和额度资源接口仅为[后续目标](COLLABORATION_DESIGN.md)。本文记录的 stage-2 响应保持不变；没有新增执行器发现、额度采集或 HTTP 写能力。客户端不能按 vnext-2 草案解码现有响应。
+
 更新日期:2026-10-25。对应实现:`gateway/src/workbench-http.ts`、`gateway/src/task-view-stage.ts`、`gateway/src/task-application-service.ts` 的只读查询、`gateway/src/task-store.ts` 的持久任务事件/revision(T2)。契约依据:[INTERFACE_CONTRACT.md](INTERFACE_CONTRACT.md)。本文描述**本阶段**实际交付的能力与限制;完整 `workbuddy-executor/vnext-1` 契约的其余部分仍待后续阶段实现,不得把本阶段响应当作完整 TaskView。
 
 ## 1. 阶段响应与完整目标 TaskView 的区别

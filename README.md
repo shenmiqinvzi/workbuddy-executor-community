@@ -1,6 +1,6 @@
 # WorkBuddy Executor
 
-让 Codex 与桌面 WorkBuddy 协作完成本地开发任务：Codex 明确范围、监督并独立验收，WorkBuddy 负责适合委派的实现、测试和资料整理。
+让 Codex 与桌面 WorkBuddy 协作完成本地开发任务：Codex 明确范围、监督并独立验收，WorkBuddy 负责适合委派的实现、测试和资料整理。新增目标是本地多 Agent 协作工作台：接入 DeepSeek Harness（DSH）、按任务选择执行模型、在用户政策内自动制定协作方案，并展示 WorkBuddy2API 提供的用量与额度信息。新增目标尚未实现。
 
 当前产品目标仅为 Windows。仓库维护者负责路线、集成与发布，欢迎通过 Issue 提供场景、认领具体任务并提交 PR；任务状态与交付在对应 Issue/PR 中跟踪。
 
@@ -28,14 +28,15 @@
 | 阶段目标与可参与方向 | [公开路线图](ROADMAP.md) |
 | 已完成、待交付与下一步 | [开发进度](docs/PROGRESS.md) |
 | 待实现的架构与约束 | [总体设计](docs/DEVELOPMENT_DESIGN.md) |
+| DSH、模型选择、自动协作与额度 | [协作设计](docs/COLLABORATION_DESIGN.md) |
 | 服务、状态及指标约定 | [接口契约](docs/INTERFACE_CONTRACT.md) |
 | 版本行为验收标准 | [验收场景](docs/ACCEPTANCE.md) |
 | 已有修复与验证历史 | [更新记录](CHANGELOG.md) |
 | 前端只读模拟原型 | [设计任务书](docs/FRONTEND_TASK_PANEL_DESIGN.md) · [Issue #6](https://github.com/shenmiqinvzi/workbuddy-executor-community/issues/6) |
 
-本集成分支以已合并 PR #8 的 Windows 部署修复为基线，整合 PR #4 的共享任务服务与 PR #7 的只读任务投影、报告认证和初始约定持久化。MCP 的执行入口和只读投影均通过 TaskApplicationService；投影保持存储快照语义，只开放 export，不触发同步、派工或写入。完整 vNext 契约、本地 HTTP/面板和自动指标仍待实现。
+本分支已完成 T1/T2：统一只读任务查询、本地 HTTP、持久事件与 revision；阶段响应为 `workbuddy-executor/stage-2`，完整 vNext 契约仍待实现。接口详情及未知字段见[阶段说明](docs/WORKBENCH_STAGE_HTTP.md)。HTTP 没有派工、取消或验收写入口；export/workspaces 仍为 501。MCP 现有执行与同步入口保持兼容，纯查询不触发派工或同步。
 
-本次整合尚未部署到运行网关，历史版本的本机实测不自动算作当前版本通过。下一优先项是完整任务视图与本地只读接口；前端交付由 Issue #6 跟踪，完整异机验收由 Issue #3 跟踪。当前状态、历史证据及待办统一见[开发进度](docs/PROGRESS.md)。
+源码交付不自动部署到运行网关，历史版本实测不自动算作当前版本通过。下一阶段为 T3：真实派工约定及模型政策、DSH 适配与 WorkBuddy2API 只读额度观测。前端交付由 Issue #6 跟踪，完整异机验收由 Issue #3 跟踪；它们不证明新增设计已经完成。当前状态与证据见[开发进度](docs/PROGRESS.md)。
 
 ## 验证与已知限制
 
