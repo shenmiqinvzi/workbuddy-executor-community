@@ -29,7 +29,10 @@ function v2(overrides: Record<string, unknown> = {}) {
 }
 
 function fixture(t: { after: (fn: () => void) => void }) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "contract-admission-"));
+  // Windows runners may expose TEMP through an 8.3 alias. The registry stores
+  // real paths, so the synthetic native registration must use that same path.
+  // Otherwise this fixture tests a workspace-binding mismatch before dispatch.
+  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "contract-admission-")));
   const project = path.join(dir, "project"); fs.mkdirSync(project);
   const config: Config = { backend: "desktop-queue", apiBaseUrl: "http://127.0.0.1:9", tokenFile: path.join(dir,"unused.json"),
     dbFile: path.join(dir,"tasks.sqlite"), runsDir: path.join(dir,"runs"), oauthRedirectUri: "http://127.0.0.1:0", oauthPort:0,
@@ -102,7 +105,7 @@ test("a historical storage-only v1 contract cannot be promoted into native rewor
 
 test("a real queue dispatch persists the selected model and the exact reserved deadline",async t=>{
   const f=fixture(t), contract=f.approved();
-  const result=await f.send(contract); assert.equal(result.ok,true); assert.equal(result.created,true);
+  const result=await f.send(contract); assert.equal(result.ok,true,JSON.stringify(result)); assert.equal(result.created,true);
   const task=f.store.get(contract.taskId)!;
   assert.equal(task.workspace,f.registration.realPath);assert.equal(task.attempt,1);
   const admission=f.store.collaboration.getTaskAdmission(task.taskId)!;
