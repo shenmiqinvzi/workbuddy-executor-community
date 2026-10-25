@@ -15,6 +15,14 @@ export interface NativeObservation {
     };
 }
 export interface NativeDesktopTrigger {
+    listModels?(sessionId?: string): Promise<{
+        models: Array<{
+            id: string;
+            credits?: unknown;
+        }>;
+        currentModel?: string;
+        sessionId?: string;
+    }>;
     inspect(sessionId: string, options?: {
         readOnly?: boolean;
     }): Promise<NativeObservation>;

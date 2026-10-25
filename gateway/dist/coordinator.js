@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { ensureWorkspace } from "./workspace-manager.js";
+import { ensureWorkspace, listModels } from "./workspace-manager.js";
 import { readDesktopSession } from "./desktop-runtime.js";
 import { readWorkspaceWorkers } from "./workspace-workers.js";
 import path from "node:path";
@@ -11,23 +11,37 @@ import { PersistentDesktopService, reconcileReportedAttempt, registeredServiceCo
 import { NativeDesktopRpcTrigger } from "./native-desktop-trigger.js";
 import { verifyValidationEvidence } from "./worker-result.js";
 import { snapshotReportDigest } from "./report-authentication.js";
+import { validateSupportedTaskContract, contractExecution } from "./task-contract.js";
+import { AdmissionError, defaultModelPolicy, enforceModelPolicy } from "./collaboration.js";
+async function observeSelectedModel(config, sessionId, model) {
+    const result = await listModels(config, sessionId);
+    const entry = result.models?.find(candidate => candidate.id === model);
+    if (!entry || result.sessionId !== sessionId || result.currentModel !== model || typeof entry.credits !== "string")
+        throw new AdmissionError("MODEL_UNVERIFIED", "The selected native session, model and zero-rate catalog entry could not be verified.");
+    return { sessionId, modelId: entry.id, selectedModel: result.currentModel, credits: entry.credits, observedAt: new Date().toISOString(), level: "selected" };
+}
 export class TaskCoordinator {
     config;
     store;
     client;
     resolveWorkspace;
-    constructor(config, store, client, resolveWorkspace = ensureWorkspace) {
+    observeModel;
+    constructor(config, store, client, resolveWorkspace = ensureWorkspace, observeModel = observeSelectedModel) {
         this.config = config;
         this.store = store;
         this.client = client;
         this.resolveWorkspace = resolveWorkspace;
+        this.observeModel = observeModel;
     }
+    modelPolicy() { return this.store.collaboration.currentPolicy(defaultModelPolicy(this.config.maxTaskAttempts ?? 3)); }
     requireDesktop() {
         if (!["desktop-acp", "desktop-queue"].includes(this.config.backend))
             throw new Error("Desktop supervision requires WORKBUDDY_BACKEND=desktop-queue or desktop-acp. CLI and hidden gateway execution do not prove execution in your WorkBuddy desktop conversation.");
     }
     async send(input) {
         this.requireDesktop();
+        if (input.contract !== undefined)
+            return this.sendWithContract(input);
         const taskId = input.taskId ?? `codex-${crypto.randomUUID()}`;
         // Hash the caller's initial contract before automatic workspace/session routing.
         const submissionHash = crypto.createHash("sha256").update(JSON.stringify({
@@ -73,15 +87,65 @@ export class TaskCoordinator {
             return reuse(initial.task);
         return this.dispatch(initial.task, buildTaskPrompt({ ...input, taskId, timeoutSeconds: input.timeoutSeconds ?? this.config.taskTimeoutSeconds ?? 1800 }), input);
     }
+    async sendWithContract(input) {
+        if (this.config.backend !== "desktop-queue")
+            throw new AdmissionError("EXECUTOR_CAPABILITY_MISSING", "Contract dispatch requires the verified desktop-queue adapter.");
+        const validated = validateSupportedTaskContract(input.contract);
+        if (!validated.ok)
+            throw new AdmissionError("INVALID_CONTRACT", `${validated.rejection.code}: ${validated.rejection.field}`);
+        const { contract, contractHash } = validated;
+        const execution = contractExecution(contract);
+        if ((input.taskId !== undefined && input.taskId !== contract.taskId) || input.objective !== contract.objective ||
+            (input.model !== undefined && input.model !== execution.modelId) || (input.timeoutSeconds !== undefined && input.timeoutSeconds !== contract.timeoutSeconds) ||
+            input.constraints !== undefined || input.acceptanceCommands !== undefined || input.sessionMode === "new")
+            throw new AdmissionError("TASK_CONFLICT", "Legacy overrides cannot change contract terms.");
+        const previous = this.store.get(contract.taskId);
+        if (previous) {
+            const saved = this.store.getContract(contract.taskId);
+            if (saved.state !== "found" || saved.record.contractHash !== contractHash || (input.sessionId !== undefined && previous.sessionId !== input.sessionId))
+                throw new AdmissionError("TASK_CONFLICT", "The task already has different or unavailable contract terms.");
+            return { ok: true, created: false, task: previous, message: "The original task is retained; no model preparation or dispatch was repeated." };
+        }
+        const policy = this.modelPolicy();
+        const admission = this.store.collaboration.prepare(contract, contractHash, policy);
+        if (input.workspace !== undefined && fs.realpathSync.native(input.workspace) !== admission.workspace.realPath)
+            throw new AdmissionError("WORKSPACE_CONFLICT", "The supplied directory differs from the registered project.");
+        const commands = contract.requiredChecks.filter(check => check.kind === "command").map(check => check.definition);
+        const constraints = [`Allowed changes: ${JSON.stringify(contract.scope.allowedChanges)}`, `Permitted metadata: ${JSON.stringify(contract.scope.permittedMetadata)}`];
+        const initial = this.store.createTaskWithContract({ taskId: contract.taskId, messageId: `pending-${contract.taskId}`, objective: contract.objective,
+            workspace: admission.workspace.realPath, constraints, acceptanceCommands: commands, sessionId: input.sessionId, state: "queued", submissionHash: contractHash }, contract, { maxAttempts: policy.maxAttempts }, policy);
+        if (initial.status === "existing_same")
+            return { ok: true, created: false, task: initial.task };
+        if (initial.status !== "created")
+            throw new AdmissionError("TASK_CONFLICT", "The task could not be created with these immutable terms.");
+        // The winning creator persists its terms BEFORE model preparation. A crash
+        // or unknown preparation result never permits a replay to prepare again.
+        try {
+            const selected = await this.resolveWorkspace(this.config, { workspace: admission.workspace.realPath, sessionId: input.sessionId, title: contract.title, model: execution.modelId, workerKey: contract.taskId });
+            if (fs.realpathSync.native(selected.workspace) !== admission.workspace.realPath)
+                throw new AdmissionError("WORKSPACE_CONFLICT", "Native routing returned a different project.");
+            this.store.update(contract.taskId, { sessionId: selected.sessionId });
+            const modelObservation = await this.observeModel(this.config, selected.sessionId, execution.modelId);
+            const task = this.requireTask(contract.taskId);
+            return await this.dispatch(task, buildTaskPrompt({ taskId: task.taskId, objective: task.objective, workspace: task.workspace, constraints, acceptanceCommands: commands, timeoutSeconds: contract.timeoutSeconds }), { sessionId: selected.sessionId, model: execution.modelId, timeoutSeconds: contract.timeoutSeconds, acceptanceCommands: commands, modelObservation });
+        }
+        catch (error) {
+            const task = this.requireTask(contract.taskId);
+            if (!task.attemptId)
+                this.store.update(task.taskId, { state: "blocked", blockingReason: "Contract preparation failed; inspect the original task before any recovery." });
+            throw error;
+        }
+    }
     async dispatch(task, prompt, input) {
         const attemptId = RunJournal.newId();
-        this.store.beginAttempt(task.taskId, { attemptId, messageId: attemptId, sessionId: input.sessionId, acceptanceCommands: input.acceptanceCommands });
+        this.store.beginAttempt(task.taskId, { attemptId, messageId: attemptId, sessionId: input.sessionId, acceptanceCommands: input.acceptanceCommands, modelObservation: input.modelObservation });
+        const reserved = this.store.collaboration.getAttempt(attemptId);
         // A reservation is not execution provenance. The actual worker supplies it.
         this.store.updateAttempt(task.taskId, attemptId, { runtimeSource: null });
         try {
             if (this.config.backend === 'desktop-queue' && input.sessionMode === 'new')
                 throw new Error("Use workspace or ensure_workspace for native project routing; sessionMode:new is not supported by the queue");
-            await this.client.sendMessage(prompt, task.workspace, input.timeoutSeconds, input.sessionId ?? task.sessionId, { taskId: task.taskId, attemptId, model: input.model, sessionMode: input.sessionMode });
+            await this.client.sendMessage(prompt, task.workspace, input.timeoutSeconds, input.sessionId ?? task.sessionId, { taskId: task.taskId, attemptId, model: input.model, sessionMode: input.sessionMode, deadline: reserved?.deadlineAt });
             // T2-R1 round 3: the queue writes the attempt's state.json during
             // dispatch, so the row must not be persisted BEHIND its own run file —
             // otherwise a plain read of a freshly dispatched task would refuse the
@@ -92,6 +156,7 @@ export class TaskCoordinator {
             const dispatched = this.store.get(task.taskId);
             if (dispatched)
                 return { ok: true, created: true, task: this.recordRunEvidence(dispatched), next: "Use bounded workbuddy_wait calls. Stop on errors, permission waits or deadline; do not redispatch or ask the worker to debug the gateway. Inspect artifacts and accept only with independent evidence." };
+            throw new Error("The reserved task disappeared during dispatch.");
         }
         catch (error) {
             const message = error instanceof Error ? error.message : String(error);
@@ -309,7 +374,11 @@ export class TaskCoordinator {
         const task = await this.sync(input.taskId);
         if (task.state === "cancelled")
             throw new Error("Cancelled tasks cannot be continued; create a new task");
-        if ((task.attempt ?? 0) >= (this.config.maxTaskAttempts ?? 3))
+        const storedContract = this.store.getContract(task.taskId);
+        if (storedContract.state === "integrity_failure")
+            throw new AdmissionError("CONTRACT_INTEGRITY", "The task contract failed integrity verification.");
+        const attemptLimit = storedContract.state === "found" ? storedContract.record.effectiveMaxAttempts : this.config.maxTaskAttempts ?? 3;
+        if ((task.attempt ?? 0) >= attemptLimit)
             throw new Error("Task attempt limit reached. Stop retrying and review the failure and existing files before changing the configured budget.");
         if (!task.sessionId)
             throw new Error("No verified desktop session is bound. Inspect the old run and start a new task with an explicit WorkBuddy sessionId.");
@@ -321,9 +390,23 @@ export class TaskCoordinator {
                 (snapshot?.driver === "desktop-queue" && ["claim.json", "wake.json"].some(file => fs.existsSync(path.join(runsDirectory(this.config), task.attemptId, file))))))
                 throw new Error("The desktop attempt stopped reporting but its execution has not been confirmed stopped. Inspect the native session before rework.");
         }
+        let modelObservation;
+        if (storedContract.state === "found") {
+            const execution = contractExecution(storedContract.record.contract);
+            if (!this.store.collaboration.getTaskAdmission(task.taskId))
+                throw new AdmissionError("MODEL_UNVERIFIED", "This historical storage-only contract has no trusted dispatch admission; it cannot be promoted by rework.");
+            if ((input.model !== undefined && input.model !== execution.modelId) || (input.timeoutSeconds !== undefined && input.timeoutSeconds !== storedContract.record.contract.timeoutSeconds) || input.acceptanceCommands !== undefined)
+                throw new AdmissionError("TASK_CONFLICT", "Rework cannot change the original model, duration or required checks.");
+            input = { ...input, model: execution.modelId, timeoutSeconds: storedContract.record.contract.timeoutSeconds };
+            const admission = this.store.collaboration.getTaskAdmission(task.taskId);
+            if (admission) {
+                enforceModelPolicy(this.store.collaboration.currentPolicy(admission.policy), execution);
+                modelObservation = await this.observeModel(this.config, task.sessionId, execution.modelId);
+            }
+        }
         const current = { ...task, acceptanceCommands: [...new Set([...(task.acceptanceCommands ?? []), ...(input.acceptanceCommands ?? [])])] };
         const prompt = buildTaskPrompt({ taskId: current.taskId, objective: current.objective, workspace: current.workspace, constraints: current.constraints, acceptanceCommands: current.acceptanceCommands, timeoutSeconds: input.timeoutSeconds ?? this.config.taskTimeoutSeconds ?? 1800 }, input.feedback);
-        return this.dispatch(current, prompt, { ...input, sessionId: current.sessionId, sessionMode: "existing" });
+        return this.dispatch(current, prompt, { ...input, modelObservation, sessionId: current.sessionId, sessionMode: "existing" });
     }
     async accept(taskId, note, evidence, artifactPaths = []) {
         this.requireDesktop();

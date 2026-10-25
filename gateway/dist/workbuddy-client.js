@@ -63,7 +63,7 @@ export class WorkBuddyClient {
             return this.acpSendMessage(content, workspace, timeoutSeconds, conversationId, options);
         if (this.config.backend === "desktop-queue") {
             const messageId = options.attemptId ?? RunJournal.newId();
-            this.desktopQueue.start({ attemptId: messageId, taskId: options.taskId ?? messageId, prompt: content, workspace, sessionId: conversationId, model: options.model, sessionMode: options.sessionMode, timeoutSeconds: timeoutSeconds ?? this.config.taskTimeoutSeconds ?? 1800 });
+            this.desktopQueue.start({ attemptId: messageId, taskId: options.taskId ?? messageId, prompt: content, workspace, sessionId: conversationId, model: options.model, sessionMode: options.sessionMode, timeoutSeconds: timeoutSeconds ?? this.config.taskTimeoutSeconds ?? 1800, deadline: options.deadline });
             return { messageId, raw: { code: 0, msg: "Task queued; native WorkBuddy must claim it before execution is confirmed.", data: { message_id: messageId } } };
         }
         const raw = await this.request("/localassistant/message", {

@@ -51,6 +51,7 @@ export declare class WorkBuddyClient {
         attemptId?: string;
         model?: string;
         sessionMode?: "existing" | "new";
+        deadline?: string;
     }): Promise<{
         messageId: string;
         raw: WorkBuddyEnvelope<{

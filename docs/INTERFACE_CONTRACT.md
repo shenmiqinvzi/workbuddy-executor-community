@@ -1,6 +1,6 @@
 # WorkBuddy Executor vNext 接口契约
 
-修订日期：2026-10-25。第 1–7 节保留 `workbuddy-executor/vnext-1` 完整目标语义；当前实现为 `workbuddy-executor/stage-2` 的部分只读能力，准确响应见[阶段说明](WORKBENCH_STAGE_HTTP.md)。第 8 节新增 `workbuddy-executor/vnext-2` 多 Agent 契约草案，尚未实现或被解析器接受，不给旧 vnext-1 偷加字段。阶段状态见[进度](PROGRESS.md)，产品政策见[协作设计](COLLABORATION_DESIGN.md)。服务实现、mock 与客户端按对应版本核对；未知数值用 null，不用字符串 NA 或 0 替代。
+修订日期：2026-10-25。第 1–7 节保留 `workbuddy-executor/vnext-1` 完整目标语义；HTTP 当前为 `workbuddy-executor/stage-2` 的部分只读能力，准确响应见[阶段说明](WORKBENCH_STAGE_HTTP.md)。第 8 节为 `workbuddy-executor/vnext-2` 多 Agent 目标；T3a 已实现显式版本分派和内部派工准入，其余目标尚未实现，不给旧 vnext-1 偷加字段。阶段状态见[进度](PROGRESS.md)，产品政策见[协作设计](COLLABORATION_DESIGN.md)。服务实现、mock 与客户端按对应版本核对；未知数值用 null，不用字符串 NA 或 0 替代。
 
 ## 1. 入口与兼容方式
 
@@ -176,6 +176,8 @@ usage 区分目录费率标签、实耗额度、token 与活跃推理时间。�
 首批 mock 必覆盖全部 10 个 displayState，并至少包含：权限详情未知、报告先于停止、过期 revision、3 轮耗尽、断线重连、取消后仍未停止、成本未知、checker_error、严格范围失败、用户旧改动冲突。mock 数据使用合成项目和身份，不含账号、真实运行目录或私有历史。
 
 ## 8. 多 Agent 扩展草案（vnext-2，待实现）
+
+T3a 更新：vnext-2 的校验/持久化、工作区与政策准入、方案绑定、固定轮次/期限已在内部服务和兼容 MCP 参数实现，见[实现说明](T3A_DISPATCH_ADMISSION.md)。本节的发现/额度/方案 HTTP、新 TaskView、自动调度与 DSH 仍为目标；不能据此宣称整节已实现。
 
 本节规定新设计边界，不声明新增端点已经可用。启用前须同时提交 schema、类型、合成 fixture、旧版本兼容和对应验收。stage-2 端口、响应和 GET 零任务写入规则保持不变；旧 vnext-1 解析器继续拒绝未知字段与 vnext-2。
 

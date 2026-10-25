@@ -1,6 +1,8 @@
 # 多 Agent 协作、模型选择与额度观测设计
 
-修订日期：2026-10-25。状态：新增目标设计，尚未实现。当前可用能力仍以 [PROGRESS.md](PROGRESS.md) 与 [stage-2 HTTP](WORKBENCH_STAGE_HTTP.md) 为准；本文不修改已安装技能、DSH 配置或运行网关。
+修订日期：2026-10-25。状态：完整目标设计，T3a 契约准入基础已实现，其余新增目标尚未交付。当前可用能力以 [PROGRESS.md](PROGRESS.md) 与 [stage-2 HTTP](WORKBENCH_STAGE_HTTP.md) 为准；本文不修改已安装技能、DSH 配置或运行网关。
+
+T3a 实现进度：契约派工基础已落地，准确范围和兼容行为见[T3a 说明](T3A_DISPATCH_ADMISSION.md)。下文描述完整目标；DSH、额度、自动策略与面板模式尚未交付，不把已实现的存储/准入推导为完整协作能力。
 
 ## 1. 产品目标与对象
 

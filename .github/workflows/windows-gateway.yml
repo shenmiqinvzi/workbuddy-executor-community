@@ -36,7 +36,7 @@ jobs:
       - name: Type check the TaskView contract sources and tests
         run: npm run typecheck:task-view
       - name: TaskView contract, derivation and report authentication tests
-        run: node --import ./test/support/typescript-loader.mjs --test test/task-view.test.ts test/task-view-state.test.ts test/task-view-actions.test.ts test/task-view-adapter.test.ts test/task-view-reader.test.ts test/report-authentication.test.ts test/task-contract.test.ts
+        run: node --import ./test/support/typescript-loader.mjs --test test/task-view.test.ts test/task-view-state.test.ts test/task-view-actions.test.ts test/task-view-adapter.test.ts test/task-view-reader.test.ts test/report-authentication.test.ts test/task-contract.test.ts test/t3-admission.test.ts
       - name: Verify executor skill copies
         working-directory: .
         run: |

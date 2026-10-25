@@ -18,6 +18,7 @@
 import crypto from "node:crypto";
 /** The only contract schema version this build accepts. */
 export const TASK_CONTRACT_SCHEMA_VERSION = "workbuddy-executor/vnext-1";
+export const TASK_CONTRACT_V2_SCHEMA_VERSION = "workbuddy-executor/vnext-2";
 /**
  * The one place the policy is derived from the service configuration, so the
  * contract and the coordinator's retry limit cannot disagree.
@@ -256,7 +257,7 @@ export function persistedTaskContract(contract, contractHash, createdAt, policy)
  */
 export function verifyPersistedContract(row) {
     const fail = (problem, detail) => ({ ok: false, integrity: { problem, detail } });
-    const revalidated = validateTaskContract(row.contract);
+    const revalidated = validateSupportedTaskContract(row.contract);
     if (!revalidated.ok)
         return fail("shape", `stored contract is not valid: ${revalidated.rejection.field} ${revalidated.rejection.code}`);
     const contract = revalidated.contract;
@@ -365,5 +366,73 @@ export function validateTaskContract(input) {
         return reject("too_large", "contract", `The normalized contract must be at most ${TASK_CONTRACT_LIMITS.serializedBytes} bytes.`);
     }
     return { ok: true, contract, contractHash: taskContractHash(contract) };
+}
+/** Explicit version dispatch; the v1-only parser above intentionally stays strict. */
+export function validateSupportedTaskContract(input) {
+    if (!isObject(input) || input.schemaVersion !== TASK_CONTRACT_V2_SCHEMA_VERSION)
+        return validateTaskContract(input);
+    const allowed = new Set([...TOP_LEVEL_FIELDS].filter(key => key !== "model").concat("execution", "collaboration"));
+    const unknown = checkUnknownFields(input, allowed, "contract");
+    if (unknown)
+        return { ok: false, rejection: unknown };
+    if (!isObject(input.execution))
+        return reject("invalid_type", "execution", "execution must be an object.");
+    const executionUnknown = checkUnknownFields(input.execution, new Set(["executorId", "connectionId", "providerId", "modelId", "reasoningEffort"]), "execution");
+    if (executionUnknown)
+        return { ok: false, rejection: executionUnknown };
+    if (input.execution.executorId !== "workbuddy" && input.execution.executorId !== "dsh")
+        return reject("invalid_value", "execution.executorId", "Unsupported executor.");
+    const selection = { executorId: input.execution.executorId, connectionId: "", providerId: "", modelId: "", reasoningEffort: null };
+    for (const key of ["connectionId", "providerId", "modelId"]) {
+        const parsed = text(input.execution[key], `execution.${key}`, TASK_CONTRACT_LIMITS.identifierCharacters);
+        if ("rejection" in parsed)
+            return { ok: false, rejection: parsed.rejection };
+        if (parsed.value.trim() !== parsed.value)
+            return reject("invalid_value", `execution.${key}`, "Identifiers must not have surrounding whitespace.");
+        selection[key] = parsed.value;
+    }
+    if (input.execution.reasoningEffort !== null) {
+        const effort = text(input.execution.reasoningEffort, "execution.reasoningEffort", 40);
+        if ("rejection" in effort)
+            return { ok: false, rejection: effort.rejection };
+        selection.reasoningEffort = effort.value;
+    }
+    if (!isObject(input.collaboration))
+        return reject("invalid_type", "collaboration", "collaboration must be an object.");
+    const planUnknown = checkUnknownFields(input.collaboration, new Set(["planId", "expectedPlanRevision"]), "collaboration");
+    if (planUnknown)
+        return { ok: false, rejection: planUnknown };
+    const planId = text(input.collaboration.planId, "collaboration.planId", TASK_CONTRACT_LIMITS.identifierCharacters);
+    const revision = text(input.collaboration.expectedPlanRevision, "collaboration.expectedPlanRevision", TASK_CONTRACT_LIMITS.identifierCharacters);
+    if ("rejection" in planId)
+        return { ok: false, rejection: planId.rejection };
+    if ("rejection" in revision)
+        return { ok: false, rejection: revision.rejection };
+    const { execution: _execution, collaboration: _collaboration, ...common } = input;
+    const base = validateTaskContract({ ...common, schemaVersion: TASK_CONTRACT_SCHEMA_VERSION, model: selection.modelId });
+    if (!base.ok)
+        return base;
+    const { model: _model, ...terms } = base.contract;
+    const contract = {
+        ...terms, schemaVersion: TASK_CONTRACT_V2_SCHEMA_VERSION, execution: selection,
+        collaboration: { planId: planId.value, expectedPlanRevision: revision.value },
+    };
+    if (Buffer.byteLength(canonicalJson(contract), "utf8") > TASK_CONTRACT_LIMITS.serializedBytes)
+        return reject("too_large", "contract", "The normalized contract exceeds the byte limit.");
+    return { ok: true, contract, contractHash: taskContractHash(contract) };
+}
+export function contractExecution(contract) {
+    return "execution" in contract ? contract.execution : {
+        executorId: "workbuddy", connectionId: "local-workbuddy", providerId: "workbuddy-native", modelId: contract.model, reasoningEffort: null,
+    };
+}
+/** Plan terms exclude task identity and the plan reference, avoiding a circular digest. */
+export function collaborationTermsHash(contract) {
+    const { taskId: _taskId, ...terms } = contract;
+    if ("collaboration" in terms) {
+        const { collaboration: _plan, ...proposal } = terms;
+        return crypto.createHash("sha256").update(canonicalJson(proposal)).digest("hex");
+    }
+    return crypto.createHash("sha256").update(canonicalJson(terms)).digest("hex");
 }
 //# sourceMappingURL=task-contract.js.map

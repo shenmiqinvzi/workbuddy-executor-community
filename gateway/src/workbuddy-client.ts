@@ -78,13 +78,13 @@ export class WorkBuddyClient {
     return { online: raw.data?.online === true, raw };
   }
 
-  async sendMessage(content: string, workspace?: string, timeoutSeconds?: number, conversationId?: string, options: { taskId?: string; attemptId?: string; model?: string; sessionMode?: "existing" | "new" } = {}): Promise<{ messageId: string; raw: WorkBuddyEnvelope<{ message_id: string }> }> {
+  async sendMessage(content: string, workspace?: string, timeoutSeconds?: number, conversationId?: string, options: { taskId?: string; attemptId?: string; model?: string; sessionMode?: "existing" | "new"; deadline?: string } = {}): Promise<{ messageId: string; raw: WorkBuddyEnvelope<{ message_id: string }> }> {
     if (this.config.backend === "cli") return this.cliSendMessage(content, workspace);
     if (this.config.backend === "gateway") return this.gatewaySendMessage(content, workspace, timeoutSeconds, conversationId);
     if (this.config.backend === "desktop-acp") return this.acpSendMessage(content, workspace, timeoutSeconds, conversationId, options);
     if (this.config.backend === "desktop-queue") {
       const messageId = options.attemptId ?? RunJournal.newId();
-      this.desktopQueue.start({ attemptId: messageId, taskId: options.taskId ?? messageId, prompt: content, workspace, sessionId: conversationId, model: options.model, sessionMode: options.sessionMode, timeoutSeconds: timeoutSeconds ?? this.config.taskTimeoutSeconds ?? 1800 });
+      this.desktopQueue.start({ attemptId: messageId, taskId: options.taskId ?? messageId, prompt: content, workspace, sessionId: conversationId, model: options.model, sessionMode: options.sessionMode, timeoutSeconds: timeoutSeconds ?? this.config.taskTimeoutSeconds ?? 1800, deadline: options.deadline });
       return { messageId, raw: { code: 0, msg: "Task queued; native WorkBuddy must claim it before execution is confirmed.", data: { message_id: messageId } } };
     }
     const raw = await this.request<WorkBuddyEnvelope<{ message_id: string }>>("/localassistant/message", {

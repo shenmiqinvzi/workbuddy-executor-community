@@ -22,8 +22,8 @@ export declare const requestSchema: z.ZodObject<{
 }, {
     task: string;
     sessionId?: string | undefined;
-    timeoutSeconds?: number | undefined;
     model?: string | undefined;
+    timeoutSeconds?: number | undefined;
     constraints?: string[] | undefined;
     workspace?: string | undefined;
     output?: "text" | "artifacts" | "json" | undefined;

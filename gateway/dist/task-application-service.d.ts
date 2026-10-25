@@ -79,6 +79,15 @@ export declare class TaskApplicationService {
     private readonly maxAttempts;
     private readonly runsDir;
     constructor(coordinator: TaskCoordinator, maxAttempts: number, runsDir: string);
+    /** Trusted local setup and authorization seams; no HTTP write routes. */
+    registerWorkspace(id: string, directory: string, displayName: string): import("./collaboration.js").RegisteredWorkspace;
+    createCollaborationPlan(contract: unknown, options: {
+        mode: "manual" | "recommend";
+        reason: string;
+        ttlSeconds?: number;
+    }): import("./collaboration.js").CollaborationPlan;
+    authorizeCollaborationPlan(planId: string, revision: string, source: string): import("./collaboration.js").CollaborationPlan;
+    getCollaborationPlan(planId: string): import("./collaboration.js").CollaborationPlan;
     /** Stored facts only: deliberately bypasses every synchronising coordinator method. */
     readProjection(taskId: string): import("./task-view-reader.js").TaskProjectionResult;
     /**
@@ -150,11 +159,6 @@ export declare class TaskApplicationService {
         ok: boolean;
         created: boolean;
         task: StoredTask;
-        message: string;
-    } | {
-        ok: boolean;
-        created: boolean;
-        task: StoredTask;
         next: string;
         error?: undefined;
     } | {
@@ -163,7 +167,17 @@ export declare class TaskApplicationService {
         error: string;
         created?: undefined;
         next?: undefined;
-    } | undefined>;
+    } | {
+        ok: boolean;
+        created: boolean;
+        task: StoredTask;
+        message: string;
+    } | {
+        ok: boolean;
+        created: boolean;
+        task: StoredTask;
+        message?: undefined;
+    }>;
     continue(input: Parameters<TaskCoordinator["continue"]>[0]): Promise<{
         ok: boolean;
         created: boolean;
@@ -176,7 +190,7 @@ export declare class TaskApplicationService {
         error: string;
         created?: undefined;
         next?: undefined;
-    } | undefined>;
+    }>;
     accept(...args: Parameters<TaskCoordinator["accept"]>): Promise<StoredTask>;
     cancel(...args: Parameters<TaskCoordinator["cancel"]>): Promise<{
         message: string;

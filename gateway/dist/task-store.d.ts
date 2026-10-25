@@ -1,5 +1,6 @@
 import type { LocalMessage } from "./workbuddy-client.js";
 import { type PersistedTaskContract, type TaskContractIntegrity, type TaskContractPolicy, type TaskContractRejection } from "./task-contract.js";
+import { CollaborationRegistry, type ModelPolicy, type ModelObservation } from "./collaboration.js";
 export type TaskState = "queued" | "working" | "completed" | "blocked" | "failed" | "cancelled" | "needs_review" | "accepted";
 export interface StoredTask {
     taskId: string;
@@ -125,6 +126,7 @@ export interface AttemptReservation {
     runtimeSource?: string;
     state?: "queued" | "working";
     acceptanceCommands?: string[];
+    modelObservation?: ModelObservation;
 }
 export interface StoredAttempt {
     taskId: string;
@@ -148,6 +150,7 @@ export interface StoredAttempt {
 export declare class TaskStore {
     readonly file: string;
     private readonly db;
+    readonly collaboration: CollaborationRegistry;
     constructor(file: string);
     close(): void;
     /**
@@ -241,7 +244,7 @@ export declare class TaskStore {
     createTaskWithContract(task: Omit<StoredTask, "createdAt" | "updatedAt" | "objective"> & {
         createdAt?: string;
         objective?: string;
-    }, submitted: unknown, policy: TaskContractPolicy): TaskContractCreateResult;
+    }, submitted: unknown, policy: TaskContractPolicy, admissionPolicy?: ModelPolicy): TaskContractCreateResult;
     listTasks(options?: {
         state?: TaskState;
         states?: TaskState[];

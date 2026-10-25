@@ -78,6 +78,16 @@ export type StageListItem =
 export class TaskApplicationService {
   constructor(private readonly coordinator: TaskCoordinator, private readonly maxAttempts: number, private readonly runsDir: string) {}
 
+  /** Trusted local setup and authorization seams; no HTTP write routes. */
+  registerWorkspace(id: string, directory: string, displayName: string) { return this.coordinator.store.collaboration.registerWorkspace(id, directory, displayName); }
+  createCollaborationPlan(contract: unknown, options: { mode: "manual" | "recommend"; reason: string; ttlSeconds?: number }) {
+    return this.coordinator.store.collaboration.createPlan(contract, this.coordinator.modelPolicy(), options);
+  }
+  authorizeCollaborationPlan(planId: string, revision: string, source: string) {
+    return this.coordinator.store.collaboration.authorizePlan(planId, revision, this.coordinator.modelPolicy(), source);
+  }
+  getCollaborationPlan(planId: string) { return this.coordinator.store.collaboration.getPlan(planId); }
+
   /** Stored facts only: deliberately bypasses every synchronising coordinator method. */
   readProjection(taskId: string) {
     return readTaskProjection({ store: this.coordinator.store, runsDir: this.runsDir }, taskId);
@@ -271,7 +281,9 @@ export class TaskApplicationService {
     const allowedActions: TaskStatusView["allowedActions"] = [];
     if (!terminal && task.state !== "accepted") {
       if (!stopped && !execution.cancellationRequested && ["queued", "running", "waiting_input"].includes(displayState)) allowedActions.push("cancel");
-      if (stopped && task.sessionId && (task.attempt ?? 0) < this.maxAttempts && (review || task.state === "blocked")) allowedActions.push("rework");
+      const contract = this.coordinator.store.getContract(task.taskId);
+      const attemptLimit = contract.state === "found" ? contract.record.effectiveMaxAttempts : contract.state === "absent" ? this.maxAttempts : 0;
+      if (stopped && task.sessionId && (task.attempt ?? 0) < attemptLimit && (review || task.state === "blocked")) allowedActions.push("rework");
       const reportReady = task.runtimeSource !== "desktop_queue" || ("reportDigestPresent" in execution && execution.reportDigestPresent === true);
       if (stopped && review && task.sessionId && task.report?.rawText.trim() && reportReady && ["desktop_interactive", "desktop_queue"].includes(task.runtimeSource ?? "")) allowedActions.push("accept");
     }

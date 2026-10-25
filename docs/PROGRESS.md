@@ -36,7 +36,7 @@ node verify-snapshot.mjs
 
 ## 后续顺序
 
-2026-10-25 新增产品设定已落文档，**以下均为计划，未因设计更新而实现或部署**。详见[协作设计](COLLABORATION_DESIGN.md)、[接口扩展草案](INTERFACE_CONTRACT.md#8-多-agent-扩展草案vnext-2待实现)与[新增验收场景](ACCEPTANCE.md)。
+2026-10-25：T3a 的契约派工基础已实现，详见[实现与边界](T3A_DISPATCH_ADMISSION.md)。内部服务与兼容 MCP 参数可使用登记工作区、版本化免费政策、明确授权的方案、固定模型/轮次/期限；未部署或取得真实桌面证据。T3b/T3c 及以下后续阶段仍为计划。总体目标见[协作设计](COLLABORATION_DESIGN.md)、[接口扩展](INTERFACE_CONTRACT.md#8-多-agent-扩展草案vnext-2待实现)与[验收场景](ACCEPTANCE.md)。
 
 1. T3a：初始契约接入真实派工，绑定 workspaceId、有效轮次预算、固定期限；新增协作方案和版本化模型政策。vnext-2 为草案，当前解析器仍只接受 vnext-1。
 2. T3b：DSH 适配、目标会话发现、按任务选择模型、实际请求模型核验、执行/停止/返工/独立验收闭环；插件自动审查故障单独修复，不冒充已通过。

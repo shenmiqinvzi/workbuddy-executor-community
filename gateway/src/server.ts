@@ -50,9 +50,14 @@ server.tool("workbuddy_health", "Probe the configured transport. Online means a 
 }, detail));
 
 server.tool("workbuddy_ensure_workspace", "Create or reuse a dedicated native WorkBuddy session. Use a stable workerKey such as taskId for a clean conversation in the same workspace; repeating the key reuses its reserved identity, even after uncertain creation. sessionId instead selects an existing real session. Queued tasks retain their original bindings.", {
+  workspaceId: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,199}$/).optional().describe("Optional stable project ID to register for immutable contract dispatch."),
   workspace:z.string().min(1).describe("Existing absolute project directory"),sessionId:z.string().min(1).optional(),title:z.string().min(1).max(200).optional(),model:z.string().trim().min(1).optional().describe("Optional exact native model ID. Changes require an idle session without queued tasks."),detail,
   workerKey:z.string().trim().min(1).max(200).optional().describe("Stable task-scoped key for an isolated native conversation in the same project. Reuse the exact key on reconnect. Cannot be combined with sessionId."),
-}, ({detail,...input})=>guard(()=>ensureWorkspace(config,input),detail));
+}, ({detail,workspaceId,...input})=>guard(async()=>{
+  const registration = workspaceId ? tasks.registerWorkspace(workspaceId, input.workspace, input.title ?? workspaceId) : undefined;
+  const result = await ensureWorkspace(config,input);
+  return { ...result, contractWorkspace: registration ?? null };
+},detail));
 
 server.tool("workbuddy_list_models", "Query models currently available in WorkBuddy, with optional session's selected model. Use returned IDs for model selection; availability does not prove quota or execution success.", {sessionId:z.string().min(1).optional(),detail}, ({sessionId,detail})=>guard(()=>listModels(config,sessionId),detail));
 
@@ -66,6 +71,7 @@ server.tool("workbuddy_send_task", "Reserve and dispatch a task to a verified Wo
   sessionMode: z.enum(["existing", "new"]).optional().default("existing").describe("Queue uses project routing with existing; pass workspace for automatic native creation or selection. ACP new is version-dependent."),
   model: z.string().trim().min(1).optional().describe("Exact model ID from workbuddy_list_models. Queue applies and verifies it at the next native wake; omit to use the session's selected model."),
   constraints: z.array(z.string()).max(30).optional(), acceptanceCommands: z.array(z.string()).max(30).optional(), timeoutSeconds: timeout,
+  contract: z.unknown().optional().describe("Optional immutable vnext-1/vnext-2 contract. Requires a registered workspace; vnext-2 also requires a plan authorized through the trusted application service. Do not combine with constraints/check overrides."),
   detail,
 }, ({ detail, ...input }) => guard(() => tasks.send(input), detail));
 

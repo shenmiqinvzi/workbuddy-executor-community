@@ -4,7 +4,7 @@
 [INTERFACE_CONTRACT.md](INTERFACE_CONTRACT.md) 第 2 节与
 [DEVELOPMENT_DESIGN.md](DEVELOPMENT_DESIGN.md) 第 5、7 节。
 
-2026-10-25 修订：下文记录已实现的 **vnext-1 存储行为**，不是完整真实派工准入。新增多 Agent 目标使用 vnext-2 草案，见本文末尾与[接口第 8 节](INTERFACE_CONTRACT.md#8-多-agent-扩展草案vnext-2待实现)；当前解析器仍只接受 vnext-1，不因文档增加字段而放宽。
+2026-10-25 修订：下文主体记录原有 **vnext-1 存储行为**；T3a 新增显式版本分派、vnext-2 以及真实队列准入路径，详见[T3a 实现说明](T3A_DISPATCH_ADMISSION.md)。旧 `validateTaskContract` 仍只接受 vnext-1，新的 `validateSupportedTaskContract` 才接受两个版本，不改变旧摘要。完整多 Agent 目标见[接口第 8 节](INTERFACE_CONTRACT.md#8-多-agent-扩展草案vnext-2待实现)。
 
 ## “已保存约定”不等于“已执行检查”
 
@@ -31,7 +31,7 @@
 | `task_id` | 主键，与 `tasks.task_id` 外键关联（约定不能脱离任务存在） |
 | `agreement_version` | 服务端生成的约定版本 `av1-<32hex>`，与会话/时钟/计数器无关，重启可复算 |
 | `contract_hash` | 规范化约定的 SHA-256 |
-| `schema_version` | 目前只接受 `workbuddy-executor/vnext-1` |
+| `schema_version` | 显式版本分派支持 vnext-1/vnext-2；vnext-2 创建还须有可信派工准入 |
 | `contract_json` | 规范化后的完整约定 |
 | `requested_max_attempts` | 客户端请求的轮次上限 |
 | `policy_max_attempts` | 服务端政策上限（`TASK_CONTRACT_POLICY`），**不是**客户端字段 |
@@ -90,7 +90,7 @@
 不会分别保存两个互相矛盾的任务目标。
 
 `workspaceId` 与任务行的 `workspace` 路径**属于不同概念**：前者是约定里的项目标识，
-后者是本机目录。本轮不做字符串比较，也不做默认映射，**不假装**已经完成工作区登记验证。
+后者是本机目录。纯存储接口不猜测两者映射；T3a 契约派工另经可信登记核对目录身份，不能用字符串相似或默认路径冒充登记验证。
 
 **旧数据兼容**：`submissionHash`、`objective`、`acceptanceCommands` 都**不是**约定，不会被拼装成
 约定。旧任务读到的 `contract` 为 `null`。
@@ -140,15 +140,14 @@
 查询不调用 `sync`、不派工、不修改任务或运行文件。这仍不是完整 vNext TaskView：
 `actionFacts` 保持 `null`，`allowedActions` 保持只有 `export`。
 
-## 尚未完成
+## 原存储模块边界与 T3a 更新
 
-- 未接入真实派工；本轮不新增公开写工具。`createTaskWithContract` 只在服务内部可用，
-  政策由调用方（将来的写入口）用 `policyFromConfig(config)` 提供，本轮无生产调用点。
+- T3a 已将 `createTaskWithContract` 接入带 contract 的共享服务/MCP 派工分支，先持久化再准备原生会话；没有新 HTTP 写入口。无 contract 的旧调用保持兼容。
 - 未实现范围检查、模型政策核验、检查执行与独立验收——这些依赖后续阶段。
-- `effectiveMaxAttempts` 目前只被记录，尚未用于实际的轮次准入。
-- `workspaceId` 尚未与任何真实工作区登记关联。
+- `effectiveMaxAttempts` 已用于 beginAttempt、continue 和兼容 statusView 的返工条件；不得调高全局配置扩大旧预算。
+- `workspaceId` 在契约派工路径关联已登记真实目录/设备/文件身份；单独存储约定仍不声明完成登记核验。
 
-## 多 Agent 约定演进（T3a 目标，尚未实现）
+## 多 Agent 约定演进（T3a 基础已实现，完整目标仍待交付）
 
 - 新 schema `workbuddy-executor/vnext-2` 以 execution 保存 executorId、connectionId、providerId、modelId 与可空 reasoningEffort，替换顶层 model；不混用两套模型字段。collaboration 引用已授权的 planId 和方案 revision。
 - 来源连接、会话与工作区由服务端登记解析。政策快照、原生绑定、确认者、实际模型证据和额度准入引用由可信服务记录，客户端不得提交已免费/已核验/已授权结论。
@@ -156,6 +155,6 @@
 - 方案授权与任务创建绑定须防止同一方案被不同 taskId 重复消费。派工前持久意图、模型准备、容量及结果不明恢复依赖 T4；约定存储完成不等于这些约束已经执行。
 - 请求模型、会话选中模型和请求观测模型分开保留；每份证据绑定 attempt、来源、模型、采集时间与核验层级。工作中的任务不可通过修改会话配置改变已保存约定。
 - 额度快照是具有范围/单位/期限的外部观测，不保证上游额度独占或硬费用封顶。准入保留快照引用，不将后续池余额变化算成源码/报告事实变化；单任务消耗需独立请求归因。
-- vnext-1 的规范化、agreementVersion、摘要与旧幂等键语义保持原样。vnext-2 启用时增加版本分派、fixture、事务迁移/失败回滚与备份/降级说明；不在 GET 补写，不用旧字段猜测 DSH 来源或历史实际模型。
+- vnext-1 的规范化、agreementVersion、摘要与旧幂等键语义保持原样。T3a 已增加显式版本分派、合成回归及原子准入/失败回滚；生产备份、活动任务保护和降级门禁仍须按部署阶段验证。不在 GET 补写，不用旧字段猜测 DSH 来源或历史实际模型。
 
 具体字段、协作模式、费用和绑定漂移政策以[协作设计](COLLABORATION_DESIGN.md)为准。当前已安装技能的精确免费模型限制保持有效，修改设计不自动改变运行政策。
