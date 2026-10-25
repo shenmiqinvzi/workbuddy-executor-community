@@ -101,6 +101,11 @@ export class TaskCoordinator {
     // worker's cancelled report, the native stop proof) were never delivered
     // and the task never closed.
     const terminal = task.state === "accepted" || task.state === "cancelled";
+    // Historical closed tasks can retain their durable report/messages after
+    // their run directory was removed. Do not turn reading that history into
+    // an attempt to consume a nonexistent journal. Later evidence is still
+    // collected whenever a snapshot exists for the same attempt.
+    if (terminal && (!task.attemptId || !/^run-[a-f0-9-]{36}$/.test(task.attemptId) || !this.client.runSnapshot(task.attemptId))) return task;
     const messages = await this.client.messages({ afterMessageId: task.lastMessageId, limit });
     if (!messages.length) {
       // Nothing new on the wire; still reconcile run-file evidence (a stop

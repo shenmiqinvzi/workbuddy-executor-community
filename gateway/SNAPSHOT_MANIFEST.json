@@ -258,13 +258,13 @@
     },
     {
       "path": "dist/coordinator.js",
-      "sha256": "f6f0931205d91a1ff0d2778ae0a6f549a37a281a94d5052d97684fd984a7a282",
-      "bytes": 37565
+      "sha256": "7f11e117757bc31027430aa53f8bdd05a7d85a19d34ec8dbad46799c250d562a",
+      "bytes": 38038
     },
     {
       "path": "dist/coordinator.js.map",
-      "sha256": "96ba42620f6abc7d2da0d4b6e2a66fc1600f73a447e9933fb8ca9cf51baa1faa",
-      "bytes": 28162
+      "sha256": "e2ef16fa676fe93a84d4fe45abd9404f453bbeb044819550109267374468163e",
+      "bytes": 28397
     },
     {
       "path": "dist/deepseek-client.d.ts",
@@ -393,13 +393,13 @@
     },
     {
       "path": "dist/desktop-queue.js",
-      "sha256": "5f45f11970d02c5ecbbf56700eb18742b852a346be254a0cd18d25d5d0bd34a7",
-      "bytes": 56529
+      "sha256": "37cf1d2abf4ca9d0e700f1610e2d32f068a00eb09bc66b9a49c56d33b37c5efc",
+      "bytes": 57106
     },
     {
       "path": "dist/desktop-queue.js.map",
-      "sha256": "4c1e3f21e577d45cc0828fbef600dc059095619e57f2a53e2252d75980413f67",
-      "bytes": 46419
+      "sha256": "8ae47bbd87e12d83b957271e3f3ee608c06ec3be0806189ea8f86fcdaf25d2dc",
+      "bytes": 46747
     },
     {
       "path": "dist/desktop-runtime.d.ts",
@@ -1318,8 +1318,8 @@
     },
     {
       "path": "src/coordinator.ts",
-      "sha256": "05b82f0554986328cfb1cb8e79f3b1378776cddc2af6fd3b89929189ea76fc82",
-      "bytes": 36611
+      "sha256": "999d10bb0a838031cb553788e484db75fda94abf5595e39901a1838efb792e38",
+      "bytes": 37057
     },
     {
       "path": "src/deepseek-client.ts",
@@ -1363,8 +1363,8 @@
     },
     {
       "path": "src/desktop-queue.ts",
-      "sha256": "acf31c0f0cd795b7b0979d31b6f3aa6a375d4acb8aec93e605942742792df18a",
-      "bytes": 53743
+      "sha256": "7961afbcde2e74b50071c1dd0623b6a2d81d784f44bc474155911044bbfd1eea",
+      "bytes": 54310
     },
     {
       "path": "src/desktop-runtime.ts",
@@ -1698,8 +1698,8 @@
     },
     {
       "path": "test/queue-reliability.test.ts",
-      "sha256": "b2da35e746d8e6b5e8e780d0a872cdedf00c07b592a00c2d43a54a1d2d04e102",
-      "bytes": 8162
+      "sha256": "a9b1610015a54b7b56e4e8bb3cfe39c841ce8dec367e291e3286949f3f3bc4cd",
+      "bytes": 9833
     },
     {
       "path": "test/reliability-v2.test.ts",
