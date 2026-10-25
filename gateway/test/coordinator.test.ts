@@ -252,10 +252,10 @@ test("an acceptance decision cannot overwrite a rework reserved by another MCP p
   const otherProcessStore = new TaskStore(config.dbFile);
   try {
   const reservedId = RunJournal.newId();
-  const updateAttempt = store.updateAttempt.bind(store);
-  store.updateAttempt = (taskId, attemptId, patch, options) => {
+  const acceptAttempt = store.acceptAttempt.bind(store);
+  store.acceptAttempt = (taskId, attemptId, patch, closedEvent, options) => {
     if (patch.state === "accepted") otherProcessStore.beginAttempt(taskId, { attemptId: reservedId, messageId: reservedId });
-    return updateAttempt(taskId, attemptId, patch, options);
+    return acceptAttempt(taskId, attemptId, patch, closedEvent, options);
   };
   await assert.rejects(() => coordinator.accept("video", "accept the old output", ["Old attempt was inspected"]), /changed|active|attempt|acceptance/i);
   const current = store.get("video")!;
@@ -264,4 +264,120 @@ test("an acceptance decision cannot overwrite a rework reserved by another MCP p
   assert.deepEqual(current.evidence, []);
   assert.equal(store.listAttempts("video")[0]?.state, "needs_review");
   } finally { otherProcessStore.close(); }
+});
+
+// --- T2 reacceptance regressions (R1/R2/R3 residue) ---
+
+test("terminal sync persists the consumption cursor and closes the task exactly once (T2-R3)", async (t) => {
+  const { dir, store, client, coordinator } = fixture(t);
+  await send(coordinator, dir);
+  const task = store.get("video")!;
+  const attemptId = task.attemptId!;
+  // Cancel: the business terminal state locks rework/acceptance, but evidence
+  // collection and cursor advancement must continue.
+  await coordinator.cancel("video", "operator requested");
+  // After the cancellation the worker posts progress, the cancellation report
+  // and the native idle confirmation 鈥?more journal events than fit one page.
+  client.batches.push([
+    event(task, 3, "progress 1", { type: "status" }),
+    event(task, 4, "progress 2", { type: "status" }),
+    event(task, 5, "TASK_STATUS: cancelled\nWork stopped by operator request", { type: "result", status: "cancelled" }),
+  ]);
+  client.snapshots.set(attemptId, { attemptId, taskId: "video", status: "cancelled", sessionId: "fixed-session", driver: "desktop-queue", stopReason: "native_idle_verified", nativeStoppedAt: new Date().toISOString(), nativeStopSource: "native_idle", updatedAt: new Date().toISOString() });
+  const smallPage = await coordinator.sync("video", 2);
+  assert.ok(smallPage);
+  const afterPageOne = store.get("video")!;
+  assert.equal(afterPageOne.state, "cancelled", "the business terminal state survives cursor advancement");
+  assert.notEqual(afterPageOne.lastMessageId, task.lastMessageId, "the consumption cursor advanced past the cancellation");
+  const drained = await coordinator.sync("video", 2);
+  assert.ok(drained);
+  const drainedTask = store.get("video")!;
+  assert.equal(drainedTask.state, "cancelled");
+  const closed = store.listTaskEvents("video", { limit: 200 }).events.filter((item) => item.type === "task_closed");
+  assert.equal(closed.length, 1, "task_closed is recorded exactly once despite repeated terminal syncs");
+  await coordinator.sync("video", 2);
+  assert.equal(store.listTaskEvents("video", { limit: 200 }).events.filter((item) => item.type === "task_closed").length, 1, "an extra terminal sync stays idempotent");
+});
+
+test("one sync covering waiting input, resume and the report keeps per-fact events and per-message texts (T2-R2)", async (t) => {
+  const { dir, store, client, coordinator } = fixture(t);
+  await send(coordinator, dir);
+  const task = store.get("video")!;
+  client.batches.push([
+    event(task, 2, "Approve the render export", { type: "status", status: "waiting_input" }),
+    event(task, 3, "Native execution resumed.", { type: "status", status: "working" }),
+    event(task, 4, "TASK_STATUS: completed\nUnique report text", { type: "result", status: "needs_review", artifacts: ["output.mp4"] }),
+  ]);
+  client.snapshots.set(task.attemptId!, { attemptId: task.attemptId!, taskId: "video", status: "needs_review", sessionId: "fixed-session", updatedAt: new Date().toISOString() });
+  const updated = await coordinator.sync("video");
+  assert.equal(updated?.state, "needs_review");
+  const events = store.listTaskEvents("video", { limit: 200 }).events;
+  const requested = events.filter((item) => item.type === "input_requested");
+  const resolved = events.filter((item) => item.type === "input_resolved");
+  assert.equal(requested.length, 1, "the batch records the input request");
+  assert.equal(resolved.length, 1, "the batch records the input resolution");
+  const permissionMirror = events.find((item) => item.type === "status" && item.payload.status === "waiting_input");
+  assert.ok(permissionMirror, "the permission request is mirrored");
+  assert.equal(permissionMirror.payload.text, "Approve the render export", "the request keeps its own message text");
+  const reportMirror = events.find((item) => item.type === "result");
+  assert.ok(reportMirror, "the worker result is mirrored");
+  assert.match(String(reportMirror.payload.text ?? ""), /Unique report text/, "the report mirror keeps the report text, not the first batch text");
+  const report = updated?.report ?? null;
+  assert.ok(report && report.status === "completed");
+  // The final state must not be a leftover intermediate state: needs_review,
+  // no stale blocking reason.
+  assert.equal(updated?.blockingReason ?? null, null);
+});
+
+test("tampered report authentication folds into the revision on the next sync (T2-R1)", async (t) => {
+  const { dir, store, client, coordinator } = fixture(t);
+  await send(coordinator, dir);
+  const task = store.get("video")!;
+  const attemptId = task.attemptId!;
+  finish(client, task);
+  await coordinator.sync("video");
+  client.snapshots.set(attemptId, { attemptId, taskId: "video", status: "needs_review", sessionId: "fixed-session", driver: "desktop-queue", stopReason: "native_idle_verified", nativeStoppedAt: new Date().toISOString(), nativeStopSource: "native_idle", reportDigest: "digest-before-tamper", reportAuthentication: { formatVersion: 1, taskId: "video", attemptId, sessionId: "fixed-session", runtimeSource: "desktop_queue", reportedStatus: "needs_review", reportDigest: "digest-before-tamper", authenticatedAt: new Date().toISOString() }, updatedAt: new Date().toISOString() });
+  await coordinator.sync("video");
+  const before = store.get("video")!;
+  assert.ok(before.runEvidenceDigest);
+  // Tampering with the authentication content (a legal field shape) must be
+  // visible: the digest carries the full authentication object, so the next
+  // sync rewrites the revision.
+  client.snapshots.set(attemptId, { ...client.snapshots.get(attemptId)!, reportAuthentication: { ...client.snapshots.get(attemptId)!.reportAuthentication!, reportDigest: "tampered-authentication-digest" } });
+  await coordinator.sync("video");
+  const after = store.get("video")!;
+  assert.notEqual(after.revision, before.revision, "an authentication change produces a new revision");
+  assert.notEqual(after.runEvidenceDigest, before.runEvidenceDigest);
+  // Repeating an unchanged sync stays stable.
+  await coordinator.sync("video");
+  assert.equal(store.get("video")!.revision, after.revision, "an unchanged sync does not rewrite the revision");
+});
+
+test("a new attempt's stop evidence is recorded even without intermediate polling (T2-R2)", async (t) => {
+  const { dir, store, client, coordinator } = fixture(t);
+  await send(coordinator, dir);
+  const first = store.get("video")!;
+  finish(client, first);
+  client.snapshots.set(first.attemptId!, { attemptId: first.attemptId!, taskId: "video", status: "needs_review", sessionId: "fixed-session", driver: "desktop-queue", stopReason: "native_idle_verified", nativeStoppedAt: new Date().toISOString(), nativeStopSource: "native_idle", updatedAt: new Date().toISOString() });
+  await coordinator.sync("video");
+  const firstAttemptStop = store.listTaskEvents("video", { limit: 200 }).events.filter((item) => item.type === "native_stop_confirmed" && item.attemptId === first.attemptId);
+  assert.equal(firstAttemptStop.length, 1);
+  await coordinator.continue({ taskId: "video", feedback: "rework the transition" });
+  const second = store.get("video")!;
+  assert.notEqual(second.attemptId, first.attemptId);
+  // beginAttempt clears the previous attempt's evidence; dispatch folds the
+  // NEW attempt's dispatch-stage snapshot in its place (T2-R1 round 3). The
+  // folded digest must carry NO stop proof, so it cannot suppress this
+  // round's native_stop_confirmed.
+  const folded = JSON.parse(second.runEvidenceDigest ?? "{}") as { attemptId?: string; stopped?: boolean; reportDigest?: string | null };
+  assert.equal(folded.attemptId, second.attemptId, "the folded digest belongs to the new attempt");
+  assert.equal(folded.stopped, false, "the folded digest records no stop proof");
+  assert.equal(folded.reportDigest ?? null, null, "the folded digest records no report");
+  // The next sync happens only after the new round's report and stop 鈥?the
+  // old digest must not suppress the new round's native_stop_confirmed.
+  client.batches.push([event(second, 2, "TASK_STATUS: completed\nSecond report", { type: "result", status: "needs_review", artifacts: ["output-2.mp4"] })]);
+  client.snapshots.set(second.attemptId!, { attemptId: second.attemptId!, taskId: "video", status: "needs_review", sessionId: "fixed-session", driver: "desktop-queue", stopReason: "native_idle_verified", nativeStoppedAt: new Date().toISOString(), nativeStopSource: "native_idle", updatedAt: new Date().toISOString() });
+  await coordinator.sync("video");
+  const secondAttemptStop = store.listTaskEvents("video", { limit: 200 }).events.filter((item) => item.type === "native_stop_confirmed" && item.attemptId === second.attemptId);
+  assert.equal(secondAttemptStop.length, 1, "the second attempt records its own stop confirmation");
 });

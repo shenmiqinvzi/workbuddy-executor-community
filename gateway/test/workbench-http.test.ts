@@ -19,7 +19,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import test from "node:test";
 import type { Config } from "../src/config.js";
-import { TaskCoordinator } from "../src/coordinator.js";
+import { TaskCoordinator, runEvidenceDigestOf } from "../src/coordinator.js";
 import { TaskApplicationService } from "../src/task-application-service.js";
 import type { TaskState } from "../src/task-store.js";
 import { TaskStore } from "../src/task-store.js";
@@ -89,13 +89,15 @@ function fixture(t: { after: (fn: () => void) => void }): Fixture {
       const runDir = path.join(config.runsDir!, attemptId);
       fs.mkdirSync(runDir, { recursive: true });
       const snapshot = {
-        attemptId, taskId: options.taskId, status: state, driver: "desktop-queue" as const,
+        attemptId, taskId: options.taskId, status: state === "accepted" || state === "completed" ? "needs_review" as const : state, driver: "desktop-queue" as const,
         sessionId, runtimeSource: "desktop_queue", text: "TASK_STATUS: completed\nsynthetic report",
         reportDigest: "synthetic-digest", updatedAt: options.createdAt,
         ...(options.stop ? { nativeStoppedAt: "2026-10-18T10:30:00.000Z", nativeStopSource: "native_idle" as const } : {}),
       };
       fs.writeFileSync(path.join(runDir, "state.json"), JSON.stringify(snapshot));
-      if (options.cancel) fs.writeFileSync(path.join(runDir, "cancel.json"), JSON.stringify({ requestedAt: options.createdAt, reason: "operator" }));
+      const cancellation = options.cancel ? { requestedAt: options.createdAt, reason: "operator" } : undefined;
+      if (cancellation) fs.writeFileSync(path.join(runDir, "cancel.json"), JSON.stringify(cancellation));
+      store.updateAttempt(options.taskId, attemptId, { runEvidenceDigest: runEvidenceDigestOf(snapshot, cancellation) });
     },
   };
 }
@@ -340,7 +342,7 @@ test("workbench entry subprocess resolves the default runs directory next to the
     import fs from "node:fs";
     import path from "node:path";
     import { TaskStore } from "${distUrl("task-store.js")}";
-    import { TaskCoordinator } from "${distUrl("coordinator.js")}";
+    import { TaskCoordinator, runEvidenceDigestOf } from "${distUrl("coordinator.js")}";
     import { TaskApplicationService } from "${distUrl("task-application-service.js")}";
     import { WorkBuddyClient } from "${distUrl("workbuddy-client.js")}";
     import { reportDigest } from "${distUrl("report-authentication.js")}";
@@ -370,6 +372,7 @@ test("workbench entry subprocess resolves the default runs directory next to the
       updatedAt: "2026-10-18T10:00:00.000Z",
       reportAuthentication: { formatVersion: 1, taskId, attemptId, sessionId, runtimeSource: "desktop_queue", reportedStatus: "completed", reportDigest: digest, authenticatedAt: "2026-10-18T10:05:00.000Z" },
     }));
+    store.updateAttempt(taskId, attemptId, { runEvidenceDigest: runEvidenceDigestOf(JSON.parse(fs.readFileSync(path.join(config.runsDir, attemptId, "state.json"), "utf8"))) });
     store.close();
   `);
   let seedError = "";

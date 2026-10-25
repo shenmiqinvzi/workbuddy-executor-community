@@ -253,18 +253,18 @@
     },
     {
       "path": "dist/coordinator.d.ts",
-      "sha256": "f0fe9bde5a056235202f58c36a16bf1e29da1d46256c5036495f72d263f168d8",
-      "bytes": 11724
+      "sha256": "f27f9f81c3b34c7033127d29ec2563f16c7c5f1067ac3f301035013daf84b6b7",
+      "bytes": 14090
     },
     {
       "path": "dist/coordinator.js",
-      "sha256": "1e71c8b49695eff9c5abb6a3a7714bf64b69cf3f4e5158d3daaeb7950c6d9603",
-      "bytes": 24495
+      "sha256": "f6f0931205d91a1ff0d2778ae0a6f549a37a281a94d5052d97684fd984a7a282",
+      "bytes": 37565
     },
     {
       "path": "dist/coordinator.js.map",
-      "sha256": "695f1b9ebbee1dbbd8766df0933b315285b51ba15658d8994fdfc07ae17b4cc7",
-      "bytes": 21428
+      "sha256": "96ba42620f6abc7d2da0d4b6e2a66fc1600f73a447e9933fb8ca9cf51baa1faa",
+      "bytes": 28162
     },
     {
       "path": "dist/deepseek-client.d.ts",
@@ -678,13 +678,13 @@
     },
     {
       "path": "dist/platform/workbuddy.js",
-      "sha256": "6e2ff4ae70625f5092eb7b27f7616152c084b838528c856b86be17583d7c0236",
-      "bytes": 6589
+      "sha256": "90ace6636f6725979b88c9e830fc127d89cb57f2b4ea9ddc74faf59d894758e1",
+      "bytes": 6692
     },
     {
       "path": "dist/platform/workbuddy.js.map",
-      "sha256": "fdc2b1b9357b00e68319cb648b3b26a5c3e5ef34bccf8d51a0e459ec3df04c38",
-      "bytes": 6177
+      "sha256": "495c688c34a09b13bb512a17e490ef4707aa50c6581e5036a4fb6d1ced42e7a1",
+      "bytes": 6259
     },
     {
       "path": "dist/progress-summary.d.ts",
@@ -808,8 +808,8 @@
     },
     {
       "path": "dist/task-application-service.d.ts",
-      "sha256": "b2515815cecfbb136d49bfd3715f603514c19023cdcf171ebdb3dfe3466d9fec",
-      "bytes": 17154
+      "sha256": "03f6a3b59e3e2b68744d977ecd37ada749a014b93573d037cf4da81b435e4060",
+      "bytes": 17147
     },
     {
       "path": "dist/task-application-service.js",
@@ -838,18 +838,18 @@
     },
     {
       "path": "dist/task-store.d.ts",
-      "sha256": "55953f1967eb32afe6f6fa71c3b8bb59abfd63098383c777c9df88dbf3ed7e37",
-      "bytes": 10449
+      "sha256": "37ad33130d4c175e06b01f63a80ceb97bda6d9f4fb6eef295c767f040d150a96",
+      "bytes": 12505
     },
     {
       "path": "dist/task-store.js",
-      "sha256": "1d1c79ae5183d1e68a76a86a79fd0135d3408d25e3016d5d9cd5a792099a035b",
-      "bytes": 35586
+      "sha256": "4f289dea7c9e41686ded42756b05dc734104801331c47c08637dc8c5d29e17c4",
+      "bytes": 42065
     },
     {
       "path": "dist/task-store.js.map",
-      "sha256": "52e9dc0dd57c4ca65a5e130aabdfb35c88cd1072bf66b3a959fb6c3a15b88878",
-      "bytes": 25561
+      "sha256": "9c0e46c0a02a8d8636aa013835fa67915e57360047608b7ba16f2b77959e013c",
+      "bytes": 29197
     },
     {
       "path": "dist/task-view-actions.d.ts",
@@ -883,18 +883,18 @@
     },
     {
       "path": "dist/task-view-reader.d.ts",
-      "sha256": "f6809f397824e0d7a60599a73f75db00e09c9cee4ad22339b77dded55b1cba18",
-      "bytes": 5967
+      "sha256": "6b4927429fb184338744094779750d199cd7a988023a9b7422fdc817d5a3e332",
+      "bytes": 5999
     },
     {
       "path": "dist/task-view-reader.js",
-      "sha256": "982e851c9b12883aa2e9bc977b358a3808f29bbf845778c277d6e0f97cd2c141",
-      "bytes": 15832
+      "sha256": "d4543b71beb6743c9782cf0e11627f13d866431c7c24b6e403684174e883dab5",
+      "bytes": 16885
     },
     {
       "path": "dist/task-view-reader.js.map",
-      "sha256": "3c994ab4d1ae04cb7b0364d34b47427635f3701021324b4ba22847431e369fbe",
-      "bytes": 9819
+      "sha256": "de83ce24bd000b2a1ec1863447d39ec9fcc9fbfb2a06cbe8e8c100922ef64195",
+      "bytes": 10442
     },
     {
       "path": "dist/task-view-stage.d.ts",
@@ -978,13 +978,13 @@
     },
     {
       "path": "dist/workbench-http.js",
-      "sha256": "58872b5209bed7a3c1bf2e3ce05657c322a2bf54008740eeab4faaaa98759bec",
-      "bytes": 15850
+      "sha256": "ec62287e1988649ae00d950b3568fa490b0cb1fa08bb043a18ccc935fe9314f3",
+      "bytes": 15881
     },
     {
       "path": "dist/workbench-http.js.map",
-      "sha256": "ab50b1eb356df971691411cbf783a95df461935108c28c37924be9f3dd580ebe",
-      "bytes": 11071
+      "sha256": "9d22d32c4d43f64dde78e9c2dcac29568a072b2e163adcd52c797a712f53796b",
+      "bytes": 11094
     },
     {
       "path": "dist/workbuddy-client.d.ts",
@@ -1228,8 +1228,8 @@
     },
     {
       "path": "scripts/workbench-smoke.mjs",
-      "sha256": "00f62097ea441224ad98ea2d8c31e3f7098685890b531906b46daf424121e1d9",
-      "bytes": 15678
+      "sha256": "b56240d960330c394d73f5938871931ef382a4425c0bdab0f450d096713f3cea",
+      "bytes": 16356
     },
     {
       "path": "scripts/workbuddy-call.mjs",
@@ -1318,8 +1318,8 @@
     },
     {
       "path": "src/coordinator.ts",
-      "sha256": "17ff963bf57398d62d1004b90fc27518f1c5781617330e508bb9fa72f85f197a",
-      "bytes": 23888
+      "sha256": "05b82f0554986328cfb1cb8e79f3b1378776cddc2af6fd3b89929189ea76fc82",
+      "bytes": 36611
     },
     {
       "path": "src/deepseek-client.ts",
@@ -1458,8 +1458,8 @@
     },
     {
       "path": "src/platform/workbuddy.ts",
-      "sha256": "cd90017adbde01ee68410c71d3c26ce57d8ede8cd8e66b74250e30cb2a5f66b0",
-      "bytes": 6685
+      "sha256": "1d59ab68c17e29036d115a1563458df6d2cfc5359de50af3c6eb80044f7aad8a",
+      "bytes": 6782
     },
     {
       "path": "src/progress-summary.ts",
@@ -1503,8 +1503,8 @@
     },
     {
       "path": "src/task-application-service.ts",
-      "sha256": "0276b433c52ae1db992199e694f8528173cddc351379d6b9bc667817108bf7ae",
-      "bytes": 15062
+      "sha256": "e3a26f141181d4fe7b4da93de83a5c01f69dacad00597a170dd6615f3751839d",
+      "bytes": 15055
     },
     {
       "path": "src/task-contract.ts",
@@ -1513,8 +1513,8 @@
     },
     {
       "path": "src/task-store.ts",
-      "sha256": "06f80bf65bc727dfe8f659e9c7f9ca55a86f21b61292bc08a6edb653c0d93b3e",
-      "bytes": 40704
+      "sha256": "d68d77d7582414440ef5ace248e55f18723b07e564f124b278c7a0f220c2c41b",
+      "bytes": 48043
     },
     {
       "path": "src/task-view-actions.ts",
@@ -1528,8 +1528,8 @@
     },
     {
       "path": "src/task-view-reader.ts",
-      "sha256": "cc795daa92316c67d00cffe04a4149ec578bc7ddec8f230df2268dc4c49f3280",
-      "bytes": 19712
+      "sha256": "0a5323c088176ccb89f86db3fb7e8fcb02fc240e34c93758c9f5f79ac914f4ef",
+      "bytes": 20747
     },
     {
       "path": "src/task-view-stage.ts",
@@ -1558,8 +1558,8 @@
     },
     {
       "path": "src/workbench-http.ts",
-      "sha256": "a523909d80a190dd62c19b8c14a1052cbd585e68bc5b5f6005e1bca96ed464fa",
-      "bytes": 17309
+      "sha256": "2270def6dbff085d7375c034b655cb5a61e8ef2bf05a143c77dfeb4bdd0aeedd",
+      "bytes": 17336
     },
     {
       "path": "src/workbuddy-client.ts",
@@ -1588,8 +1588,8 @@
     },
     {
       "path": "test/backend-integration.test.ts",
-      "sha256": "6ed856e4d1c0de37e90f7524f4883aae2b0b553bbd46fcf293d1c727b56a92a6",
-      "bytes": 6460
+      "sha256": "8ed4046fe55180b8a64590bc369cf13e7aeb5940b30d953b1035d987b5613904",
+      "bytes": 6356
     },
     {
       "path": "test/bounded-command.test.ts",
@@ -1608,8 +1608,8 @@
     },
     {
       "path": "test/coordinator.test.ts",
-      "sha256": "f464254e06361b2639ec9338bccc9fb75608d421f603d4ceb9f354cc0d147b02",
-      "bytes": 16748
+      "sha256": "dda5c719dbac2571003b488fd30ccbe83629d61b430e8daff272dd91ad48f1b2",
+      "bytes": 25672
     },
     {
       "path": "test/deepseek-client.test.ts",
@@ -1635,6 +1635,11 @@
       "path": "test/desktop-queue.test.ts",
       "sha256": "c46a111942ed6a37e398bb10f27a128b1680102f190b919da22273e3ae48d098",
       "bytes": 18549
+    },
+    {
+      "path": "test/evidence-consistency.test.ts",
+      "sha256": "453b64547f9590889877b83ed34879e81db05487982fec31a0bba5862cd43b47",
+      "bytes": 10613
     },
     {
       "path": "test/fixtures/task-view-samples.ts",
@@ -1703,8 +1708,8 @@
     },
     {
       "path": "test/report-authentication.test.ts",
-      "sha256": "31caa85dc46d99f209954228d69f2a8adc4836962ecac14588b032a048f18136",
-      "bytes": 29437
+      "sha256": "39d0796ec8de3cb8b1266684cf43b10e711bee43e8696f12b2bc6c7814493f94",
+      "bytes": 31740
     },
     {
       "path": "test/run-journal.test.ts",
@@ -1733,8 +1738,8 @@
     },
     {
       "path": "test/task-application-service.test.ts",
-      "sha256": "f68a1ff8cfcd48cf53d2cd9fa8782fb9b54ca70a6c1db1f5934dd3652ebfcfb6",
-      "bytes": 35224
+      "sha256": "4d349a40c3313a8929a6b8d159d4f27b5727b3327c80a2e0864c9e6d28b790a4",
+      "bytes": 46429
     },
     {
       "path": "test/task-contract.test.ts",
@@ -1743,8 +1748,8 @@
     },
     {
       "path": "test/task-store.test.ts",
-      "sha256": "b6ad9208b0d86add172ae764b58a5dc0d0b70e8f799479c1f7f28e408f408c63",
-      "bytes": 12149
+      "sha256": "ca8165ebdb5c5e45d22e7f4e114b23d4fd8e9b6be49ef324742c5697dc2168f6",
+      "bytes": 25893
     },
     {
       "path": "test/task-view-actions.test.ts",
@@ -1778,8 +1783,8 @@
     },
     {
       "path": "test/workbench-http.test.ts",
-      "sha256": "c71e219f8320e95474143903a0c7cefca26cd52f607391642400ce59af82cabc",
-      "bytes": 23410
+      "sha256": "b2a13a01416653a0a5496e7622b863b7104c7c73b96cf75a7dca0890b835984f",
+      "bytes": 23893
     },
     {
       "path": "test/workbuddy-client.test.ts",
@@ -1798,8 +1803,8 @@
     },
     {
       "path": "tsconfig.task-view.json",
-      "sha256": "13121b48c54b30effaaecca89e274ef4919989d51349316bea80b4bdd8612a23",
-      "bytes": 1093
+      "sha256": "07d62231fca5aec771aafe2440eca1117b3e9b9c3949736e597ec8cb034b9ca8",
+      "bytes": 1134
     },
     {
       "path": "verify-snapshot.mjs",

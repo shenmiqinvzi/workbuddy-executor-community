@@ -24,7 +24,7 @@
 
 以上路径均需加前缀。首版不新增网页权限批准接口。项目登记继续走经核验的本机设置/CLI，安装指南需明确这一步；HTTP 提交接口不能凭任意目录字符串绕过登记。
 
-响应形状统一：health 返回 `{schemaVersion,ready,runtime,capacity,modelPolicy,capabilities}`；capacity 为 `{limit:1,occupiedByTaskId:string|null}`；capabilities 至少有 nativePermissionResponse=false、nativeSessionNavigation=false（验证后才可变 true）。workspaces 返回 `{workspaces:[{id,displayName,displayPath}]}`；列表返回 `{tasks:TaskView[],nextAfterTaskId:string|null}`；详情直接返回 TaskView；事件返回 `{events:Event[],nextEventId:number}`。
+响应形状统一：health 返回 `{schemaVersion,ready,runtime,capacity,modelPolicy,capabilities}`；capacity 为 `{limit:1,occupiedByTaskId:string|null}`；capabilities 至少有 nativePermissionResponse=false、nativeSessionNavigation=false（验证后才可变 true）。workspaces 返回 `{workspaces:[{id,displayName,displayPath}]}`；列表返回 `{tasks:TaskView[],nextAfterTaskId:string|null}`；详情直接返回 TaskView；事件返回 `{events:Event[],nextEventId:number}`。事件游标语义：`nextEventId` 是**本次返回页的续读游标**（本页最后一条 `eventId`；空页保持请求的 `afterEventId`；空流为 `0`），逐页续读拼接即全流；它不是全流高水位标记。详情读取同时受证据一致性约束：若 run 文件事实领先于任务行持久化的证据摘要，详情返回 400 `EVIDENCE_STALE`（提示执行 sync 后重试），不返回"新事实+旧 revision"的混合答案。
 
 所有 POST 成功返回 `{schemaVersion,created,view,operation,reviewId}`，无关字段为 null。operation 为 `{id,status}`，status 为 in_progress/succeeded/failed/outcome_unknown；任务接收成功不代表执行完成。GET export 返回 MetricSummary 及交付清单，不包含原生历史。
 

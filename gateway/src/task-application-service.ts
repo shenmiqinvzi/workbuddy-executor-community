@@ -213,7 +213,7 @@ export class TaskApplicationService {
    * already reached the end of the stream.
    */
   listTaskEvents(taskId: string, options: { afterEventId?: number; limit?: number } = {}):
-    { ok: true; events: StoredTaskEvent[]; nextEventId: number | null }
+    { ok: true; events: StoredTaskEvent[]; nextEventId: number }
     | { ok: false; code: "task_not_found" | "invalid_task_id" | "invalid_cursor" | "store_unavailable"; field: string; message: string } {
     if (typeof taskId !== "string" || taskId.length === 0 || taskId.length > 200) {
       return { ok: false, code: "invalid_task_id", field: "taskId", message: "The task id must be 1-200 characters." };

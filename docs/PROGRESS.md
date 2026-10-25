@@ -1,42 +1,51 @@
-# 后端集成进度
+# 后端开发进度
 
-更新日期：2026-10-23（Asia/Shanghai）。本页记录集成分支的源码与验证边界；运行网关、前端和异机验收分别核对。
+更新日期：2026-10-25。本页区分源码能力、自动验证和运行部署。
 
-## 当前状态
+## 已合并基础
 
-PR [#8](https://github.com/shenmiqinvzi/workbuddy-executor-community/pull/8) 已合并 main（`4ccba60`）。本分支以此为基线，整合 PR [#4](https://github.com/shenmiqinvzi/workbuddy-executor-community/pull/4)（`a970cb5`）和 PR [#7](https://github.com/shenmiqinvzi/workbuddy-executor-community/pull/7)（`1e7115a`）。集成分支存在不等于已合并 main 或已部署。
+main 的集成基线为 `7c9bece`（PR #9）；PR #8 的 Windows 路径、UTF-8、启动及受限恢复修复已合并，PR #4/#7 的共享任务服务、只读投影、报告认证和不可变初始 TaskContract 已整合。存储契约尚未接入真实派工，不代表完整 vNext 已交付。
 
-| 能力 | 本次整合结果 | 仍需区分的边界 |
+## 本分支 T1 / T2
+
+| 阶段 | 实现 | 边界 |
 |---|---|---|
-| Windows 部署兼容 | 保留中文/空格/短路径 renderer 匹配、UTF-8 进程查询、Unicode 自启动脚本和受限超时恢复修复 | 实机登录自启和完整异机验收仍待补充 |
-| 共享任务服务 | MCP 执行入口及只读投影均经过 TaskApplicationService | statusView 是兼容摘要，不是完整 vNext TaskView |
-| 只读任务投影 | 服务与 MCP 复用同一存储实例和明确的 runsDir；不调用 sync 或 executionStatus，不修改记录 | 只读取保存的快照；无实时观测，allowedActions 仅 export |
-| 报告认证 | 按时通过队列身份、租约和验证引用检查的报告保存认证记录；读取重算摘要 | 历史无认证记录保持 unknown；认证不等于独立验收 |
-| 初始 TaskContract | 不可变保存、规范化、摘要、幂等与完整性核验已整合 | 尚无真实派工调用点；effectiveMaxAttempts 未用于轮次准入，workspaceId 未绑定真实工作区 |
-| 跨模块回归 | 新增真实队列代码路径到共享服务及 MCP 的合成集成测试 | 注入原生 actor 的测试不是真实桌面或异机证据 |
+| T1 统一只读查询与 HTTP | 稳定 createdAt/taskId 游标列表、详情、health；loopback 绑定、Host/Origin 校验、失败保留 | 不包装 MCP get_task 的同步入口，不启动原生执行 |
+| T2 持久事件 | SQLite 跨轮次 eventId、原生日志去重、逐条消息内容与语义事件；终态后持久推进原生消费游标 | 来源依赖受控同步，不是原生推送；缺少真实来源的事件不伪造 |
+| T2 revision | 创建即保存随机 token；任务、验收条件及运行证据变化更新版本；无变化同步稳定 | GET 零写入，证据领先返回 EVIDENCE_STALE，同轮次并发更新返回 READ_CONFLICT |
+| 关闭一致性 | 验收状态、review 事实及 task_closed 同事务提交；重复终态同步共享去重键 | 取消请求不等于原生停止，须有停止证明后关闭 |
 
-## 验证方式
+HTTP schema 为 `workbuddy-executor/stage-2`，不是完整 `workbuddy-executor/vnext-1`。接口、游标、错误和未知字段见[阶段说明](WORKBENCH_STAGE_HTTP.md)，完整目标见[接口契约](INTERFACE_CONTRACT.md)。export/workspaces 仍为 501，HTTP 没有派工、返工、取消、审查或验收写入口。
 
-- 从合并后的 TypeScript 源码统一构建 dist，重新生成版本控制文件快照；不手工合并编译代码。
-- 类型检查覆盖 TaskView、共享任务服务及集成测试。
-- Windows CI 同时运行任务视图/认证/约定测试，以及部署、共享服务、队列、停止、恢复、Job 清理等回归；具体提交、数量与结果以集成 PR 的实际运行记录为准。
-- 集成测试检查：报告到达但未停止时等待停止；停止后可进入待审查；报告篡改不被提升为待审查；服务与 MCP 返回一致的快照；读取前后数据库和所有执行文件哈希不变。
-- 本次没有重新部署、重启 WorkBuddy 或派发真实任务。已有历史实测不自动转移成集成版本的实测结果。
+## 验证与构建
 
-## 下一步
+`gateway/test/evidence-consistency.test.ts` 将独立验收标准纳入仓库：真实 HTTP 的证据领先拒绝、首次同步前执行完成、第二 SQLite 连接并发写入、同步后版本前移和稳定性、取消记录版本绑定、已绑定文件缺失、身份变更。它与事件、游标、原子回滚、报告认证回归一起进入 Windows CI。
 
-1. 补齐完整 TaskView 与本地只读 HTTP 的列表、详情和事件接口，保留 unknown 与陈旧快照语义。
-2. 持久 revision、reviewId 与审查证据绑定。
-3. 将约定接入真实派工、工作区身份和轮次预算准入。
-4. 跨入口、跨不同任务的容量排他，以及真实文件范围/原有改动保护。
-5. 对接前端只读原型（[Issue #6](https://github.com/shenmiqinvzi/workbuddy-executor-community/issues/6)），再做真实读取联调。
-6. 在隔离部署中补当前集成版本的真实桌面验证；继续补完整异机验收（[Issue #3](https://github.com/shenmiqinvzi/workbuddy-executor-community/issues/3)）。
+标准检查：
 
-以上均为待办，不表示本次已经提供 HTTP 服务、完整执行约束或已完成面板。
+```powershell
+cd gateway
+npm run build
+npm run typecheck:task-view
+node --import ./test/support/typescript-loader.mjs --test test/evidence-consistency.test.ts test/task-store.test.ts test/coordinator.test.ts test/task-application-service.test.ts test/workbench-http.test.ts
+node scripts/workbench-smoke.mjs
+node verify-snapshot.mjs
+```
 
-## 历史验证与实机反馈
+本次集成实际重新构建 dist、生成清单并核对重复构建，支持干净检出直接运行已提交入口。清单保留上游 provenance，不把本次提交冒充上游版本。检查结果属于具体提交，远端 CI 是否通过以对应运行记录为准。Windows Job/进程清理等环境敏感测试的历史失败不删除，未运行项目不计为通过。
 
-- 2026-10-20 共享服务历史分支的正常任务、重连、取消及修复后超时样本，见[原始阶段摘要](../gateway/docs/native-history-verification.json)和[当时部署复验](../gateway/docs/native-history-deployment-verification.json)。这些记录保留当时版本、失败和修复边界。
-- 2026-10-21～22 的[提交者实机反馈](https://github.com/shenmiqinvzi/workbuddy-executor-community/issues/3#issuecomment-6343397605)记录修复后的正常任务与同任务返工；完整安装、取消、执行中重连、升级卸载、deployment-check 及设备关系仍需补充。
-- 上述反馈中的 WorkBuddy 会话标题可见而对话内容不可见问题仍未解决；没有将其写成已通过。
-- 旧离线诊断对含 validationRecords 报告的认证误报仍是独立待核查项；新的只读投影认证不自动证明旧离线入口已修复。
+## 后续顺序
+
+1. T3：初始契约接入真实派工，绑定 workspaceId、有效轮次预算、固定期限与精确模型政策。
+2. T4：operationId、expectedRevision/AttemptId、跨入口持久意图/回执及共享容量。
+3. T5：文件范围清单、越界变更检查与用户原有改动保护。
+4. T6：独立检查、不可变 reviewId、源码/证据绑定与最终验收。
+5. T7：面板真实读取联调、可复算指标、发布版本核验及当前版本的真实桌面/异机验证。
+
+任何 HTTP 写入口及停止、费用、预算、排他、范围规则变更，须在对应约束具备后单独验收。源码提交不自动升级已安装技能或运行网关。
+
+## 外部验证
+
+[前端 Issue #6](https://github.com/shenmiqinvzi/workbuddy-executor-community/issues/6)和[异机验收 Issue #3](https://github.com/shenmiqinvzi/workbuddy-executor-community/issues/3)独立跟踪。已有历史正常任务/同任务返工反馈不能替代当前版本完整安装、取消后停止、执行中重连、升级卸载和登录自启的证据。
+
+会话导航可见性、旧离线诊断及真实环境验证仍需按实际样本核对。本分支的合成 native actor、SQLite 和 HTTP 测试不代表真实桌面或异机验收。

@@ -208,6 +208,7 @@ function statusForStageFailure(code: string): number {
       return 404;
     case "invalid_task_id":
     case "invalid_cursor":
+    case "evidence_stale":
     case "state_corrupt":
     case "cancel_corrupt":
       return 400;

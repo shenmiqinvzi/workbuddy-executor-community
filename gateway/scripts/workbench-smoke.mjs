@@ -123,7 +123,9 @@ function seed(taskId, createdAt, options = {}) {
     ...(options.authenticated ? { reportAuthentication: { formatVersion: 1, taskId, attemptId, sessionId, runtimeSource: "desktop_queue", reportedStatus: "completed", reportDigest, authenticatedAt: createdAt } } : {}),
   };
   fs.writeFileSync(path.join(runDir, "state.json"), JSON.stringify(snapshot));
-  if (options.cancel) fs.writeFileSync(path.join(runDir, "cancel.json"), JSON.stringify({ requestedAt: createdAt, reason: "operator" }));
+  const cancellation = options.cancel ? { requestedAt: createdAt, reason: "operator" } : undefined;
+  if (cancellation) fs.writeFileSync(path.join(runDir, "cancel.json"), JSON.stringify(cancellation));
+  store.updateAttempt(taskId, attemptId, { runEvidenceDigest: coordinatorModule.runEvidenceDigestOf(snapshot, cancellation) });
   return attemptId;
 }
 
@@ -240,11 +242,16 @@ try {
   const eventShapesOk = eventList.every((e) => typeof e.eventId === "number" && typeof e.type === "string"
     && typeof e.occurredAt === "string" && typeof e.observedAt === "string" && typeof e.actor === "string"
     && e.payload !== null && typeof e.payload === "object");
+  const lastEventId = eventIds.at(-1) ?? null;
   step("events-listed", {
     ok: events.status === 200 && eventList.length > 0 && idsStrictlyRising && eventShapesOk
-      && (eventsBody.nextEventId === null || typeof eventsBody.nextEventId === "number"),
+      && typeof eventsBody.nextEventId === "number"
+      && lastEventId !== null && eventsBody.nextEventId === lastEventId,
     status: events.status, count: eventList.length, nextEventId: eventsBody.nextEventId,
   });
+
+  const eventsExhausted = await request(port, { path: `/workbench/v1/tasks/smoke-task-a/events?afterEventId=${eventsBody.nextEventId}` });
+  step("events-exhausted-cursor", { ok: eventsExhausted.status === 200 && Array.isArray(JSON.parse(eventsExhausted.body).events) && JSON.parse(eventsExhausted.body).events.length === 0 && JSON.parse(eventsExhausted.body).nextEventId === eventsBody.nextEventId });
 
   const eventsBadCursor = await request(port, { path: "/workbench/v1/tasks/smoke-task-a/events?afterEventId=zero" });
   step("events-bad-cursor-400", { ok: eventsBadCursor.status === 400 && JSON.parse(eventsBadCursor.body).error.code === "INVALID_CURSOR", status: eventsBadCursor.status });

@@ -139,7 +139,7 @@ export declare class TaskApplicationService {
     }): {
         ok: true;
         events: StoredTaskEvent[];
-        nextEventId: number | null;
+        nextEventId: number;
     } | {
         ok: false;
         code: "task_not_found" | "invalid_task_id" | "invalid_cursor" | "store_unavailable";
@@ -154,7 +154,7 @@ export declare class TaskApplicationService {
     } | {
         ok: boolean;
         created: boolean;
-        task: StoredTask | undefined;
+        task: StoredTask;
         next: string;
         error?: undefined;
     } | {
@@ -163,11 +163,11 @@ export declare class TaskApplicationService {
         error: string;
         created?: undefined;
         next?: undefined;
-    }>;
+    } | undefined>;
     continue(input: Parameters<TaskCoordinator["continue"]>[0]): Promise<{
         ok: boolean;
         created: boolean;
-        task: StoredTask | undefined;
+        task: StoredTask;
         next: string;
         error?: undefined;
     } | {
@@ -176,7 +176,7 @@ export declare class TaskApplicationService {
         error: string;
         created?: undefined;
         next?: undefined;
-    }>;
+    } | undefined>;
     accept(...args: Parameters<TaskCoordinator["accept"]>): Promise<StoredTask>;
     cancel(...args: Parameters<TaskCoordinator["cancel"]>): Promise<{
         message: string;

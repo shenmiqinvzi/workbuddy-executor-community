@@ -32,6 +32,13 @@ export interface StoredTask {
      * transaction whenever a persisted fact changes; never derived from time.
      */
     revision?: string;
+    /**
+     * Digest of the external run evidence this task's view depends on (native
+     * stop proof, report authentication, per-attempt report digest). Changing
+     * evidence changes the view, so it is part of the fact signature (T2-R1).
+     * Written only by supervised sync/acceptance paths, never by reads.
+     */
+    runEvidenceDigest?: string;
 }
 export interface TaskReport {
     status?: string;
@@ -41,10 +48,20 @@ export interface TaskReport {
     remainingProblems?: string;
     rawText: string;
 }
-type NullableTaskFields = "report" | "reviewNote" | "reviewedAt" | "sessionId" | "runtimeSource" | "attemptId" | "attempt" | "lastEventSeq" | "artifacts" | "evidence" | "blockingReason" | "constraints" | "acceptanceCommands" | "cancelNote";
+type NullableTaskFields = "report" | "reviewNote" | "reviewedAt" | "sessionId" | "runtimeSource" | "attemptId" | "attempt" | "lastEventSeq" | "artifacts" | "evidence" | "blockingReason" | "constraints" | "acceptanceCommands" | "cancelNote" | "runEvidenceDigest";
+/**
+ * Write-path event hint, not a stored column (T2-R2): true means the patch's
+ * blockingReason came from an explicit worker input request (waiting_input or
+ * metadata.blockedReason), the only source allowed to emit input_requested.
+ * A blocked report without this hint is a worker failure and must not
+ * fabricate an input request.
+ */
+export interface TaskPatchHints {
+    inputRequested?: boolean;
+}
 export type TaskUpdate = Partial<Pick<StoredTask, "state" | "messageId" | "lastMessageId">> & {
     [Field in NullableTaskFields]?: StoredTask[Field] | null;
-};
+} & TaskPatchHints;
 /**
  * A persisted task event: one logical fact about a task, identified by a
  * monotonically increasing eventId across all attempts of that task.
@@ -160,23 +177,33 @@ export declare class TaskStore {
         type: string;
         createdAt: string;
         metadata?: Record<string, unknown>;
+        contentText?: string;
     }>, context: {
         attemptId: string;
         actor: string;
         observedAt?: string;
+        contentText?: string;
     }): StoredTaskEvent[];
     /**
      * Read the persistent event stream for a task, ascending by eventId.
      *
      * afterEventId is exclusive (0 = from the beginning); limit is bounded to
      * 200 per the events contract. Read-only: it writes nothing.
+     *
+     * nextEventId is the resumption cursor for THIS page (contract :27): the
+     * last eventId actually returned, so a consumer paging with it can never
+     * skip unread events. An empty page keeps the caller's afterEventId (the
+     * stream simply has nothing more at that position), and an empty stream
+     * yields 0. The stream-wide high-water mark is not a consumer cursor;
+     * conflating the two silently skipped events between the last page and
+     * the tail (T2-R6).
      */
     listTaskEvents(taskId: string, options?: {
         afterEventId?: number;
         limit?: number;
     }): {
         events: StoredTaskEvent[];
-        nextEventId: number | null;
+        nextEventId: number;
     };
     /** Whether the task has any persistent event with eventId > afterEventId. */
     hasTaskEventAfter(taskId: string, afterEventId: number): boolean;
@@ -258,6 +285,24 @@ export declare class TaskStore {
     updateAttempt(taskId: string, attemptId: string, patch: Omit<TaskUpdate, "attemptId" | "attempt">, options?: {
         expectedStates?: TaskState[];
         preserveTerminal?: boolean;
+    }): {
+        task: StoredTask;
+        applied: boolean;
+    };
+    /**
+     * Accept the reviewed attempt and close the task as one transaction
+     * (T2-R4): the accepted state, review facts and the terminal task_closed
+     * event commit together or not at all, so a crash between them can never
+     * leave an accepted task without its closure event.
+     */
+    acceptAttempt(taskId: string, attemptId: string, patch: Omit<TaskUpdate, "attemptId" | "attempt">, closedEvent: {
+        type: "task_closed";
+        occurredAt: string;
+        actor: string;
+        payload: Record<string, unknown>;
+        sourceRef: string | null;
+    }, options?: {
+        expectedStates?: TaskState[];
     }): {
         task: StoredTask;
         applied: boolean;

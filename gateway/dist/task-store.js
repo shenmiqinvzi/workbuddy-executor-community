@@ -75,7 +75,7 @@ export class TaskStore {
                 review_note: "TEXT", reviewed_at: "TEXT", constraints_json: "TEXT", acceptance_commands_json: "TEXT",
                 session_id: "TEXT", runtime_source: "TEXT", attempt_id: "TEXT", attempt: "INTEGER", last_event_seq: "INTEGER",
                 artifacts_json: "TEXT", evidence_json: "TEXT", blocking_reason: "TEXT", submission_hash: "TEXT",
-                revision: "TEXT",
+                revision: "TEXT", run_evidence_digest: "TEXT",
             })) {
                 if (!columns.has(name))
                     this.db.exec(`ALTER TABLE tasks ADD COLUMN ${name} ${type}`);
@@ -174,11 +174,19 @@ export class TaskStore {
                 if (existing !== undefined)
                     continue; // replay of an already-mirrored native event
                 const metadata = event.metadata ?? {};
+                // Preserve the caller-visible content: journal metadata may carry text,
+                // but native messages often carry content arrays (T2-R2). The per-event
+                // contentText (resolved from THAT message) wins; the batch-level
+                // context fallback exists only for callers that cannot resolve it, and
+                // never re-attributes one message's text to another event.
+                const text = typeof metadata.text === "string" && metadata.text.trim() ? metadata.text
+                    : typeof event.contentText === "string" && event.contentText.trim() ? event.contentText
+                        : context.contentText;
                 appended.push(this.appendTaskEventInTransaction({
                     taskId, attemptId: context.attemptId, type: event.type,
                     occurredAt: event.createdAt, observedAt: context.observedAt ?? new Date().toISOString(),
                     actor: context.actor,
-                    payload: { ...metadata, nativeEventSeq: nativeSeq, text: metadata.text },
+                    payload: { ...metadata, nativeEventSeq: nativeSeq, text: text ?? null },
                     sourceRef,
                 }));
             }
@@ -190,6 +198,14 @@ export class TaskStore {
      *
      * afterEventId is exclusive (0 = from the beginning); limit is bounded to
      * 200 per the events contract. Read-only: it writes nothing.
+     *
+     * nextEventId is the resumption cursor for THIS page (contract :27): the
+     * last eventId actually returned, so a consumer paging with it can never
+     * skip unread events. An empty page keeps the caller's afterEventId (the
+     * stream simply has nothing more at that position), and an empty stream
+     * yields 0. The stream-wide high-water mark is not a consumer cursor;
+     * conflating the two silently skipped events between the last page and
+     * the tail (T2-R6).
      */
     listTaskEvents(taskId, options = {}) {
         const after = Math.max(0, Math.floor(options.afterEventId ?? 0));
@@ -197,10 +213,10 @@ export class TaskStore {
         const rows = this.db.prepare(`SELECT * FROM task_events WHERE task_id = ? AND event_id > ? ORDER BY event_id ASC LIMIT ?`)
             .all(taskId, after, limit);
         const events = rows.map(eventRowToEvent);
-        const last = events.at(-1);
-        const max = this.db.prepare("SELECT COALESCE(MAX(event_id), 0) AS max FROM task_events WHERE task_id = ?").get(taskId);
-        const nextEventId = last && Number(max.max) > last.eventId ? last.eventId : null;
-        return { events, nextEventId };
+        // Resume from the last event this page actually delivered; a short or
+        // empty page re-offers the caller's position.
+        const last = events.length ? events[events.length - 1].eventId : after;
+        return { events, nextEventId: last };
     }
     /** Whether the task has any persistent event with eventId > afterEventId. */
     hasTaskEventAfter(taskId, afterEventId) {
@@ -213,9 +229,13 @@ export class TaskStore {
             if (existing)
                 return { task: existing, created: false };
             const now = task.createdAt ?? new Date().toISOString();
+            // Every legitimate creation path must produce the initial revision and
+            // task_received inside the same transaction (T2-R5); idempotent replays
+            // (the row already exists) never rewrite either.
+            const revision = task.revision ?? newRevisionToken();
             this.db.prepare(`INSERT INTO tasks (task_id, message_id, objective, workspace, state, created_at, updated_at, last_message_id, report_json, cancel_note,
-        review_note, reviewed_at, constraints_json, acceptance_commands_json, session_id, runtime_source, attempt_id, attempt, last_event_seq, artifacts_json, evidence_json, blocking_reason, submission_hash)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(task.taskId, task.messageId, task.objective, task.workspace ?? null, task.state, now, now, task.lastMessageId ?? task.messageId, json(task.report), task.cancelNote ?? null, task.reviewNote ?? null, task.reviewedAt ?? null, json(task.constraints), json(task.acceptanceCommands), task.sessionId ?? null, task.runtimeSource ?? null, task.attemptId ?? null, task.attempt ?? null, task.lastEventSeq ?? null, json(task.artifacts), json(task.evidence), task.blockingReason ?? null, task.submissionHash ?? null);
+        review_note, reviewed_at, constraints_json, acceptance_commands_json, session_id, runtime_source, attempt_id, attempt, last_event_seq, artifacts_json, evidence_json, blocking_reason, submission_hash, revision)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(task.taskId, task.messageId, task.objective, task.workspace ?? null, task.state, now, now, task.lastMessageId ?? task.messageId, json(task.report), task.cancelNote ?? null, task.reviewNote ?? null, task.reviewedAt ?? null, json(task.constraints), json(task.acceptanceCommands), task.sessionId ?? null, task.runtimeSource ?? null, task.attemptId ?? null, task.attempt ?? null, task.lastEventSeq ?? null, json(task.artifacts), json(task.evidence), task.blockingReason ?? null, task.submissionHash ?? null, revision);
             const stored = this.get(task.taskId);
             this.saveAttempt(stored);
             this.appendTaskEventInTransaction({
@@ -299,13 +319,23 @@ export class TaskStore {
         const objective = contract.objective;
         return this.transaction(() => {
             const now = task.createdAt ?? new Date().toISOString();
+            // Same T2-R5 invariant as createOrGet: the winning creator writes the
+            // initial revision in the same transaction; conflicting/existing rows
+            // are returned untouched.
+            const revision = task.revision ?? newRevisionToken();
             const inserted = this.db.prepare(`INSERT INTO tasks (task_id, message_id, objective, workspace, state, created_at, updated_at, last_message_id, report_json, cancel_note,
-        review_note, reviewed_at, constraints_json, acceptance_commands_json, session_id, runtime_source, attempt_id, attempt, last_event_seq, artifacts_json, evidence_json, blocking_reason, submission_hash)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(task_id) DO NOTHING`).run(task.taskId, task.messageId, objective, task.workspace ?? null, task.state, now, now, task.lastMessageId ?? task.messageId, json(task.report), task.cancelNote ?? null, task.reviewNote ?? null, task.reviewedAt ?? null, json(task.constraints), json(task.acceptanceCommands), task.sessionId ?? null, task.runtimeSource ?? null, task.attemptId ?? null, task.attempt ?? null, task.lastEventSeq ?? null, json(task.artifacts), json(task.evidence), task.blockingReason ?? null, task.submissionHash ?? null);
+        review_note, reviewed_at, constraints_json, acceptance_commands_json, session_id, runtime_source, attempt_id, attempt, last_event_seq, artifacts_json, evidence_json, blocking_reason, submission_hash, revision)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(task_id) DO NOTHING`).run(task.taskId, task.messageId, objective, task.workspace ?? null, task.state, now, now, task.lastMessageId ?? task.messageId, json(task.report), task.cancelNote ?? null, task.reviewNote ?? null, task.reviewedAt ?? null, json(task.constraints), json(task.acceptanceCommands), task.sessionId ?? null, task.runtimeSource ?? null, task.attemptId ?? null, task.attempt ?? null, task.lastEventSeq ?? null, json(task.artifacts), json(task.evidence), task.blockingReason ?? null, task.submissionHash ?? null, revision);
             if (Number(inserted.changes) > 0) {
                 const stored = this.get(task.taskId);
                 this.saveAttempt(stored);
+                this.appendTaskEventInTransaction({
+                    taskId: task.taskId, attemptId: null, type: "task_received",
+                    occurredAt: stored.updatedAt, observedAt: stored.updatedAt, actor: "codex",
+                    payload: { objective: stored.objective.length > 120 ? `${stored.objective.slice(0, 117)}...` : stored.objective, workspace: stored.workspace ?? null },
+                    sourceRef: null,
+                });
                 const record = persistedTaskContract(contract, contractHash, now, policy);
                 this.db.prepare(`INSERT INTO task_contracts (task_id, agreement_version, contract_hash, schema_version, contract_json,
           requested_max_attempts, policy_max_attempts, effective_max_attempts, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(record.taskId, record.agreementVersion, record.contractHash, record.schemaVersion, JSON.stringify(record.contract), record.requestedMaxAttempts, record.policyMaxAttempts, record.effectiveMaxAttempts, record.createdAt);
@@ -402,7 +432,14 @@ export class TaskStore {
                 acceptanceCommands: reservation.acceptanceCommands === undefined ? current.acceptanceCommands : [...new Set([...(current.acceptanceCommands ?? []), ...reservation.acceptanceCommands])],
                 lastEventSeq: 0, artifacts: [], evidence: [], report: null,
                 blockingReason: null, reviewNote: null, reviewedAt: null, cancelNote: null,
-            });
+                // T2-R2: the new attempt's evidence starts empty. A previous round's
+                // stop digest (stopped=true) must never suppress this round's
+                // native_stop_confirmed.
+                runEvidenceDigest: null,
+            }, { suppressFactEvents: true });
+            // The lifecycle event is written exactly once here (T2-R2): the
+            // writeUpdate above resets per-attempt facts but must not also emit an
+            // attempt_queued for the same reservation.
             this.appendTaskEventInTransaction({
                 taskId, attemptId: reservation.attemptId,
                 type: attemptNumber > 1 ? "rework_requested" : "attempt_queued",
@@ -439,6 +476,30 @@ export class TaskStore {
             return { task: this.writeUpdate(current, patch), applied: true };
         });
     }
+    /**
+     * Accept the reviewed attempt and close the task as one transaction
+     * (T2-R4): the accepted state, review facts and the terminal task_closed
+     * event commit together or not at all, so a crash between them can never
+     * leave an accepted task without its closure event.
+     */
+    acceptAttempt(taskId, attemptId, patch, closedEvent, options = {}) {
+        return this.transaction(() => {
+            const current = this.get(taskId);
+            if (!current)
+                throw new Error(`Unknown task: ${taskId}`);
+            if (current.attemptId !== attemptId)
+                return { task: current, applied: false };
+            if (options.expectedStates && !options.expectedStates.includes(current.state))
+                return { task: current, applied: false };
+            const task = this.writeUpdate(current, patch);
+            this.appendTaskEventInTransaction({
+                taskId, attemptId, type: closedEvent.type,
+                occurredAt: closedEvent.occurredAt, observedAt: task.updatedAt, actor: closedEvent.actor,
+                payload: closedEvent.payload, sourceRef: closedEvent.sourceRef,
+            });
+            return { task, applied: true };
+        });
+    }
     listAttempts(taskId) {
         const rows = this.db.prepare("SELECT snapshot_json FROM task_attempts WHERE task_id = ? ORDER BY attempt ASC").all(taskId);
         return rows.map((row) => JSON.parse(row.snapshot_json));
@@ -468,20 +529,27 @@ export class TaskStore {
     ) ORDER BY message_order ASC`).all(taskId, selectedAttempt, boundedLimit(limit));
         return rows.map((row) => JSON.parse(row.raw_json));
     }
-    writeUpdate(current, patch) {
+    writeUpdate(current, patch, options = {}) {
         const merged = { ...current, ...Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined)), updatedAt: new Date().toISOString() };
-        const factChanged = taskFactSignature(current) !== taskFactSignature(merged);
+        const before = taskFactSignature(current);
+        const after = taskFactSignature(merged);
+        const factChanged = before !== after;
         const revision = factChanged ? newRevisionToken() : merged.revision ?? null;
         this.db.prepare(`UPDATE tasks SET state = ?, message_id = ?, updated_at = ?, last_message_id = ?, report_json = ?, cancel_note = ?, review_note = ?, reviewed_at = ?,
-      constraints_json = ?, acceptance_commands_json = ?, session_id = ?, runtime_source = ?, attempt_id = ?, attempt = ?, last_event_seq = ?, artifacts_json = ?, evidence_json = ?, blocking_reason = ?, revision = ? WHERE task_id = ?`).run(merged.state, merged.messageId, merged.updatedAt, merged.lastMessageId ?? null, json(merged.report), merged.cancelNote ?? null, merged.reviewNote ?? null, merged.reviewedAt ?? null, json(merged.constraints), json(merged.acceptanceCommands), merged.sessionId ?? null, merged.runtimeSource ?? null, merged.attemptId ?? null, merged.attempt ?? null, merged.lastEventSeq ?? null, json(merged.artifacts), json(merged.evidence), merged.blockingReason ?? null, revision, current.taskId);
+      constraints_json = ?, acceptance_commands_json = ?, session_id = ?, runtime_source = ?, attempt_id = ?, attempt = ?, last_event_seq = ?, artifacts_json = ?, evidence_json = ?, blocking_reason = ?, revision = ?, run_evidence_digest = ? WHERE task_id = ?`).run(merged.state, merged.messageId, merged.updatedAt, merged.lastMessageId ?? null, json(merged.report), merged.cancelNote ?? null, merged.reviewNote ?? null, merged.reviewedAt ?? null, json(merged.constraints), json(merged.acceptanceCommands), merged.sessionId ?? null, merged.runtimeSource ?? null, merged.attemptId ?? null, merged.attempt ?? null, merged.lastEventSeq ?? null, json(merged.artifacts), json(merged.evidence), merged.blockingReason ?? null, revision, merged.runEvidenceDigest ?? null, current.taskId);
         const updated = this.get(current.taskId);
-        if (factChanged) {
-            this.appendTaskEventInTransaction({
-                taskId: current.taskId, attemptId: updated.attemptId ?? null, type: taskEventType(patch),
-                occurredAt: updated.updatedAt, observedAt: updated.updatedAt, actor: taskEventActor(patch),
-                payload: { patch: summarizeTaskPatch(patch), before: taskFactSignature(current), after: taskFactSignature(updated) },
-                sourceRef: null,
-            });
+        if (factChanged && !options.suppressFactEvents) {
+            // One event per changed fact (T2-R2): a single patch may legitimately
+            // cross several lifecycle facts (e.g. a result message both claims the
+            // session and delivers the report), so each fact transition is recorded
+            // with its contract semantic instead of one best-guess type.
+            for (const event of taskFactEvents(current, merged, patch, updated)) {
+                this.appendTaskEventInTransaction({
+                    taskId: current.taskId, attemptId: updated.attemptId ?? null,
+                    type: event.type, occurredAt: updated.updatedAt, observedAt: updated.updatedAt,
+                    actor: event.actor, payload: { patch: summarizeTaskPatch(patch), before, after }, sourceRef: null,
+                });
+            }
         }
         this.saveAttempt(updated);
         return updated;
@@ -537,41 +605,64 @@ function newRevisionToken() { return randomBytes(12).toString("base64url"); }
  * cancellation and blocking facts. Transient bookkeeping (lastMessageId,
  * lastEventSeq, updatedAt) is deliberately excluded so a pure sync poll does
  * not fabricate a fact change.
+ *
+ * T2-R1: the signature also covers the caller-facing acceptance conditions
+ * (constraints, acceptanceCommands) — changing them changes what the operator
+ * must verify — and the runEvidenceDigest of external run evidence (native
+ * stop proof, report authentication), because that evidence changes the
+ * view and the operator's next allowed action without touching a task row.
  */
 function taskFactSignature(task) {
     return JSON.stringify([
         task.state, task.attemptId, task.attempt, task.sessionId ?? null, task.runtimeSource ?? null,
         task.messageId, json(task.report) ?? null, task.cancelNote ?? null, task.reviewNote ?? null,
         task.reviewedAt ?? null, json(task.artifacts) ?? null, json(task.evidence) ?? null, task.blockingReason ?? null,
+        json(task.constraints) ?? null, json(task.acceptanceCommands) ?? null, task.runEvidenceDigest ?? null,
     ]);
 }
-/** The semantic event type for a writeUpdate patch, by which facts changed. */
-function taskEventType(patch) {
-    if (patch.attemptId !== undefined && patch.lastEventSeq === 0)
-        return "attempt_queued";
-    if (patch.reviewedAt !== undefined)
-        return "review_recorded";
-    if (patch.report !== undefined)
-        return "report_received";
-    if (patch.cancelNote !== undefined)
-        return "cancel_requested";
-    if (patch.state !== undefined)
-        return "task_state_changed";
-    if (patch.blockingReason !== undefined)
-        return "input_requested";
-    if (patch.sessionId !== undefined || patch.runtimeSource !== undefined)
-        return "native_claimed";
-    return "task_updated";
-}
-/** The actor recorded for a writeUpdate-driven event. */
-function taskEventActor(patch) {
-    if (patch.reviewedAt !== undefined || patch.reviewNote !== undefined || patch.evidence !== undefined)
-        return "codex";
-    if (patch.cancelNote !== undefined)
-        return "codex";
-    if (patch.report !== undefined || patch.sessionId !== undefined || patch.runtimeSource !== undefined)
-        return "workbuddy";
-    return "gateway";
+/**
+ * The semantic lifecycle events for one writeUpdate patch, derived from
+ * per-fact before/after comparisons (T2-R2). Each changed fact maps to at
+ * most one contract event; blocked→blocked rewrites and non-input blockers
+ * do not fabricate input_requested.
+ */
+function taskFactEvents(before, after, patch, updated) {
+    const events = [];
+    // Native claim: the verified session/runtime binding changed. beginAttempt
+    // resets these fields with suppressFactEvents, so reaching here means the
+    // caller supplied a real native identity.
+    if (patch.sessionId !== undefined && (before.sessionId ?? null) !== (after.sessionId ?? null) && after.sessionId) {
+        events.push({ type: "native_claimed", actor: "workbuddy" });
+    }
+    else if (patch.runtimeSource !== undefined && (before.runtimeSource ?? null) !== (after.runtimeSource ?? null) && after.runtimeSource) {
+        events.push({ type: "native_claimed", actor: "workbuddy" });
+    }
+    if (patch.report !== undefined && (before.report ?? null) !== (after.report ?? null)) {
+        events.push({ type: "report_received", actor: "workbuddy" });
+    }
+    if (patch.cancelNote !== undefined && (before.cancelNote ?? null) !== (after.cancelNote ?? null)) {
+        events.push({ type: "cancel_requested", actor: "codex" });
+    }
+    if (patch.reviewedAt !== undefined && (before.reviewedAt ?? null) !== (after.reviewedAt ?? null)) {
+        events.push({ type: "review_recorded", actor: "codex" });
+    }
+    // Input requests: only an explicit worker input request (patch hint
+    // inputRequested, set by the sync waiting_input / blockedReason paths) is
+    // an input request. A blocked report without that hint is a worker failure
+    // and keeps the plain state-change semantic (T2-R2); unblocking (reason
+    // cleared) is input_resolved.
+    if (patch.blockingReason !== undefined && (before.blockingReason ?? null) !== (after.blockingReason ?? null)) {
+        if (patch.blockingReason !== null && patch.blockingReason !== undefined && patch.state === "blocked" && patch.inputRequested === true) {
+            events.push({ type: "input_requested", actor: "workbuddy" });
+        }
+        else if (patch.blockingReason === null && before.blockingReason && before.state === "blocked") {
+            events.push({ type: "input_resolved", actor: "gateway" });
+        }
+    }
+    if (patch.state !== undefined && before.state !== after.state) {
+        events.push({ type: "task_state_changed", actor: "gateway" });
+    }
+    return events.length ? events : [{ type: "task_updated", actor: "gateway" }];
 }
 /** Compact, bounded patch summary for event payloads. */
 function summarizeTaskPatch(patch) {
@@ -600,7 +691,7 @@ export function rowToTask(row) {
         constraints: parseJson(row.constraints_json), acceptanceCommands: parseJson(row.acceptance_commands_json),
         sessionId: optionalText(row.session_id), runtimeSource: optionalText(row.runtime_source), attemptId: optionalText(row.attempt_id), attempt: optionalNumber(row.attempt),
         lastEventSeq: optionalNumber(row.last_event_seq), artifacts: parseJson(row.artifacts_json), evidence: parseJson(row.evidence_json), blockingReason: optionalText(row.blocking_reason),
-        revision: optionalText(row.revision),
+        revision: optionalText(row.revision), runEvidenceDigest: optionalText(row.run_evidence_digest),
     };
 }
 //# sourceMappingURL=task-store.js.map

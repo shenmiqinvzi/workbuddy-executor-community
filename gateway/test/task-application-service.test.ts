@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { loadConfig } from "../src/config.js";
-import { TaskCoordinator } from "../src/coordinator.js";
+import { TaskCoordinator, runEvidenceDigestOf } from "../src/coordinator.js";
 import { TaskApplicationService } from "../src/task-application-service.js";
 import { TaskStore } from "../src/task-store.js";
 import { WorkBuddyClient } from "../src/workbuddy-client.js";
@@ -16,7 +16,7 @@ class SnapshotClient extends WorkBuddyClient {
   snapshot?: RunSnapshot;
   sent = 0;
   override runSnapshot() { return this.snapshot; }
-  override async messages() { return []; }
+  override async messages(): Promise<import("../src/workbuddy-client.js").LocalMessage[]> { return []; }
   override async sendMessage(...args: Parameters<WorkBuddyClient["sendMessage"]>) {
     this.sent++;
     const options = args[4]!;
@@ -36,7 +36,7 @@ test("two service instances reuse one task identity and dispatch only once", asy
   const second = new TaskApplicationService(new TaskCoordinator(config, secondStore, client), 3, config.runsDir);
   const input = { taskId: "same-task", objective: "fix a file", workspace: dir, sessionId: "session-one" };
   const results = await Promise.all([first.send(input), second.send(input)]);
-  assert.equal(results.filter(result => result.created).length, 1);
+  assert.equal(results.filter(result => result && result.created).length, 1);
   assert.equal(client.sent, 1);
   await assert.rejects(() => second.send({ ...input, objective: "different work" }), /Task ID conflicts/);
   assert.equal(client.sent, 1);
@@ -173,6 +173,7 @@ function stageFixture(t: { after: (fn: () => void) => void }) {
       ...(options.authenticated ? { reportAuthentication: { formatVersion: 1, taskId: options.taskId, attemptId, sessionId, runtimeSource: "desktop_queue", reportedStatus: "completed", reportDigest: digest, authenticatedAt: options.createdAt } } : {}),
     };
     fs.writeFileSync(path.join(runDir, "state.json"), JSON.stringify(snapshot));
+    store.updateAttempt(options.taskId, attemptId, { runEvidenceDigest: runEvidenceDigestOf(snapshot) });
     return attemptId;
   };
   return { dir, store, service, seed };
@@ -372,21 +373,9 @@ test("stage detail stays one consistent snapshot when a concurrent acceptance ke
   const result = f.service.readStageView("stage-accept-race");
   readerStore.get = realGet;
   assert.ok(gets >= 2, "the reader must perform its re-check store.get");
-  assert.equal(result.ok, true, "same attemptId must not be a read_conflict");
-  if (!result.ok) throw Error("expected a view");
-  const view = result.view;
-  // One consistent snapshot: every row fact and the projection must come
-  // from the same read of the task row.
-  const consistentPreAccept = view.businessState === "needs_review"
-    && view.displayState === "needs_review"
-    && view.timing.reviewedAt === null
-    && view.remoteStopped === true;
-  // A full post-acceptance snapshot would also be consistent, but the
-  // projection was built from the pre-acceptance read, so that combination
-  // (accepted row values beside a needs_review projection) is the mixture
-  // the previous implementation produced and must never appear.
-  assert.ok(consistentPreAccept, `the view must be one consistent snapshot, got businessState=${view.businessState} displayState=${view.displayState} reviewedAt=${view.timing.reviewedAt}`);
-  assert.equal(view.attempt.id, attemptA);
+  assert.equal(result.ok, false);
+  if (result.ok) throw Error("Expected a revision conflict");
+  assert.equal(result.code, "read_conflict");
 });
 
 test("stage list stays per-item consistent when a concurrent acceptance keeps the same attemptId", async t => {
@@ -418,13 +407,10 @@ test("stage list stays per-item consistent when a concurrent acceptance keeps th
   assert.ok(gets >= 2, "the reader must perform its re-check store.get");
   assert.equal(page.ok, true);
   if (!page.ok) throw Error("expected a page");
-  const entry = page.tasks.find(item => item.ok && item.view.taskId === "stage-list-race");
-  assert.ok(entry && entry.ok, "the raced task must appear in the page");
-  if (entry.ok) {
-    assert.equal(entry.view.businessState, "needs_review");
-    assert.equal(entry.view.displayState, "needs_review");
-    assert.equal(entry.view.timing.reviewedAt, null);
-  }
+  const entry = page.tasks.find(item => item.taskId === "stage-list-race");
+  assert.ok(entry && !entry.ok);
+  if (entry.ok) throw Error("Expected a revision conflict");
+  assert.equal(entry.code, "read_conflict");
 });
 
 test("stage list keeps a per-item failure instead of an empty view or a masked error", async t => {
@@ -594,4 +580,197 @@ test("revision persists per fact change, is unguessable and never time-derived, 
   assert.equal(last.type, "task_state_changed");
   assert.equal(last.actor, "gateway");
   assert.ok("after" in last.payload && "before" in last.payload, "the fact event names before and after signatures");
+});
+
+/** SnapshotClient variant that also replays native message batches (sync path). */
+class LifecycleClient extends SnapshotClient {
+  batches: import("../src/workbuddy-client.js").LocalMessage[][] = [];
+  override async messages() { return this.batches.shift() ?? []; }
+  pushMessage(taskId: string, attemptId: string, seq: number, text: string, metadata: Record<string, unknown>): void {
+    this.batches.push([{
+      message_id: `${attemptId}:${seq}`,
+      role: metadata.type === "result" ? "assistant" : "system",
+      content: [text],
+      created_at: "2026-10-18T10:10:00.000Z",
+      metadata: { attemptId, eventSeq: seq, sessionId: "session-stage-1", runtimeSource: "desktop_queue", ...metadata },
+    }]);
+  }
+}
+
+function lifecycleFixture(t: { after: (fn: () => void) => void }) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "task-service-lifecycle-"));
+  const config: Config = {
+    backend: "desktop-queue",
+    apiBaseUrl: "http://127.0.0.1/unreachable",
+    tokenFile: path.join(dir, "credentials.json"),
+    dbFile: path.join(dir, "tasks.sqlite"),
+    oauthRedirectUri: "http://127.0.0.1:0/oauth",
+    oauthPort: 0,
+    oauthScopes: "test",
+    requestTimeoutMs: 1000,
+    cliElectronPath: path.join(dir, "no-electron.exe"),
+    cliScriptPath: path.join(dir, "no-cli"),
+    cliPermissionMode: "deny",
+    acpPermissionMode: "deny",
+    gatewayUrl: "http://127.0.0.1:0",
+    workbuddyConfigDir: path.join(dir, "workbuddy-config"),
+    runsDir: path.join(dir, "runs"),
+    taskTimeoutSeconds: 600,
+    claimTimeoutSeconds: 60,
+    maxTaskAttempts: 3,
+    serviceConfigFile: path.join(dir, "persistent-service.json"),
+  };
+  const store = new TaskStore(config.dbFile);
+  const client = new LifecycleClient(config);
+  const coordinator = new TaskCoordinator(config, store, client);
+  const service = new TaskApplicationService(coordinator, 3, config.runsDir!);
+  t.after(() => { store.close(); });
+  return { dir, config, store, client, coordinator, service };
+}
+
+test("the sync lifecycle records contract events in order, folds native stop proof into the revision and keeps cancelled tasks mirroring evidence (T2-R1/R2/R3)", async t => {
+  const f = lifecycleFixture(t);
+  const sent = await f.coordinator.send({ taskId: "lifecycle", objective: "drive the full lifecycle", workspace: f.dir, sessionId: "session-stage-1", constraints: ["keep scope"], acceptanceCommands: ["run check"] });
+  assert.ok(sent, "dispatch must return a result");
+  assert.equal(sent.created, true);
+  const taskId = "lifecycle";
+  const attemptId = f.store.get(taskId)!.attemptId!;
+  const events = () => f.store.listTaskEvents(taskId, { limit: 200 }).events;
+
+  // Creation invariants (R5 through the coordinator path).
+  const creationTypes = events().map((event) => event.type);
+  assert.deepEqual(creationTypes.filter(type => type === "task_received"), ["task_received"]);
+  assert.equal(creationTypes.filter(type => type === "attempt_queued").length, 1, "attempt_queued exactly once at dispatch");
+
+  // Claim: the native session binding arrives as a message fact.
+  f.client.pushMessage(taskId, attemptId, 1, "worker started", { type: "status", status: "working" });
+  const claimed = await f.coordinator.sync(taskId);
+  assert.equal(claimed.state, "working");
+  assert.equal(claimed.sessionId, "session-stage-1");
+  const claimedEvents = events().filter(event => event.type === "native_claimed");
+  assert.equal(claimedEvents.length, 1, "native_claimed exactly once when the binding appears");
+  assert.equal(claimedEvents[0]?.actor, "workbuddy");
+
+  // Input request: waiting_input message → blocked + input_requested; then
+  // recovery → working + input_resolved.
+  f.client.pushMessage(taskId, attemptId, 2, "Synthetic permission request", { type: "input_request", status: "waiting_input" });
+  const blocked = await f.coordinator.sync(taskId);
+  assert.equal(blocked.state, "blocked");
+  assert.match(blocked.blockingReason ?? "", /Synthetic permission request/);
+  const mirrored = events().find(event => event.sourceRef?.endsWith("journal:2"));
+  assert.ok(mirrored, "the waiting_input journal event is mirrored with its source content");
+  assert.equal(mirrored?.payload.text, "Synthetic permission request", "the mirror preserves message.content text (T2-R2)");
+  const requested = events().filter(event => event.type === "input_requested");
+  assert.equal(requested.length, 1, "input_requested exactly once");
+  f.client.pushMessage(taskId, attemptId, 3, "resumed", { type: "status", status: "working" });
+  await f.coordinator.sync(taskId);
+  assert.equal(events().filter(event => event.type === "input_resolved").length, 1, "input_resolved exactly once after recovery");
+
+  // Report: result message → needs_review + report_received.
+  f.client.pushMessage(taskId, attemptId, 4, "TASK_STATUS: completed\nSynthetic lifecycle report", { type: "result", status: "needs_review", artifacts: ["out.mp4"] });
+  const reported = await f.coordinator.sync(taskId);
+  assert.equal(reported.state, "needs_review");
+  assert.ok(events().some(event => event.type === "report_received" && event.actor === "workbuddy"), "report_received is recorded");
+
+  // Stop proof before sync: view already knows, but the revision must not
+  // change until the controlled sync folds the evidence in (T2-R1).
+  const digest = reportDigest({ status: "completed", text: "TASK_STATUS: completed\nSynthetic lifecycle report", artifacts: [] });
+  const attemptDir = path.join(f.config.runsDir!, attemptId);
+  fs.mkdirSync(attemptDir, { recursive: true });
+  const snapshotWithStop: RunSnapshot = {
+    attemptId, taskId, status: "needs_review", driver: "desktop-queue", sessionId: "session-stage-1",
+    runtimeSource: "desktop_queue", text: "TASK_STATUS: completed\nSynthetic lifecycle report",
+    reportDigest: digest, updatedAt: "2026-10-18T10:20:00.000Z",
+    nativeStoppedAt: "2026-10-18T10:30:00.000Z", nativeStopSource: "native_idle",
+  };
+  f.client.snapshot = snapshotWithStop;
+  const viewBefore = f.service.readStageView(taskId);
+  assert.equal(viewBefore.ok, false);
+  if (viewBefore.ok) throw Error("Expected stale evidence");
+  assert.equal(viewBefore.code, "evidence_stale");
+  const revisionBeforeSync = f.store.get(taskId)!.revision!;
+  const revisionAtReport = revisionBeforeSync;
+
+  const synced = await f.coordinator.sync(taskId);
+  const revisionAfterSync = f.store.get(taskId)!.revision!;
+  assert.notEqual(revisionAfterSync, revisionAtReport, "native stop evidence folded in during sync regenerates the revision (T2-R1)");
+  assert.equal(f.store.get(taskId)!.runEvidenceDigest !== undefined, true, "the run evidence digest persists on the task row");
+  const stopEvents = events().filter(event => event.type === "native_stop_confirmed");
+  assert.equal(stopEvents.length, 1, "native_stop_confirmed exactly once");
+  assert.equal(stopEvents[0]?.actor, "workbuddy");
+  assert.equal(stopEvents[0]?.attemptId, attemptId);
+  assert.ok(stopEvents[0]?.sourceRef?.includes("native_stop"), "the stop event carries its dedup sourceRef");
+  assert.ok(synced.revision, "the task keeps a revision after evidence sync");
+
+  // Polling again with unchanged evidence must not regenerate the revision
+  // and must not duplicate the stop event.
+  const stableRevision = f.store.get(taskId)!.revision!;
+  const countBeforePoll = events().length;
+  await f.coordinator.sync(taskId);
+  await f.coordinator.sync(taskId);
+  assert.equal(f.store.get(taskId)!.revision, stableRevision, "unchanged evidence polls keep the revision");
+  assert.equal(events().length, countBeforePoll, "unchanged evidence polls emit nothing");
+  assert.equal(events().filter(event => event.type === "native_stop_confirmed").length, 1);
+
+  // Acceptance: atomic accept (T2-R4) through the coordinator.
+  const artifact = path.join(f.dir, "out.mp4");
+  fs.writeFileSync(artifact, "synthetic artifact bytes");
+  const accepted = await f.coordinator.accept(taskId, "verified independently", ["Independent check: fixture output inspected"], [artifact]);
+  assert.equal(accepted.state, "accepted");
+  const closed = events().filter(event => event.type === "task_closed");
+  assert.equal(closed.length, 1, "task_closed written with the acceptance");
+  const stateAfterAccept = f.store.get(taskId)!.state;
+  const revisionAfterAccept = f.store.get(taskId)!.revision!;
+
+  // Late evidence after acceptance (T2-R3): a new same-attempt journal event
+  // still mirrors after the terminal decision, while the accepted business
+  // state and the evidence-derived revision survive unchanged (the run
+  // evidence itself did not change, so no new revision may be minted).
+  f.client.pushMessage(taskId, attemptId, 5, "late journal note", { type: "status", note: "post-accept evidence" });
+  const afterLateSync = await f.coordinator.sync(taskId);
+  assert.equal(afterLateSync.state, "accepted", "terminal business state survives late evidence sync");
+  assert.ok(events().some(event => event.sourceRef?.endsWith("journal:5")), "late same-attempt journal events still mirror after acceptance (T2-R3)");
+  assert.equal(f.store.get(taskId)!.revision, revisionAfterAccept, "unchanged evidence keeps the revision stable even after acceptance");
+  void stateAfterAccept;
+});
+
+test("a cancelled task keeps mirroring same-attempt evidence and stop proof without re-dispatch (T2-R3)", async t => {
+  const f = lifecycleFixture(t);
+  const sent = await f.coordinator.send({ taskId: "cancelled-flow", objective: "cancel then prove evidence", workspace: f.dir, sessionId: "session-stage-1" });
+  assert.ok(sent, "dispatch must return a result");
+  assert.equal(sent.created, true);
+  const taskId = "cancelled-flow";
+  const attemptId = f.store.get(taskId)!.attemptId!;
+  const events = () => f.store.listTaskEvents(taskId, { limit: 200 }).events;
+
+  await f.coordinator.cancel(taskId, "operator stop");
+  assert.equal(f.store.get(taskId)!.state, "cancelled");
+  const beforeCount = events().length;
+  const beforeMirrored = events().filter(event => event.sourceRef).length;
+
+  // The worker's real report and stop proof arrive after the cancellation.
+  f.client.pushMessage(taskId, attemptId, 1, "TASK_STATUS: cancelled\nworker stopped", { type: "result", status: "cancelled" });
+  const digest = reportDigest({ status: "cancelled", text: "TASK_STATUS: cancelled\nworker stopped", artifacts: [] });
+  const attemptDir = path.join(f.config.runsDir!, attemptId);
+  fs.mkdirSync(attemptDir, { recursive: true });
+  f.client.snapshot = {
+    attemptId, taskId, status: "cancelled", driver: "desktop-queue", sessionId: "session-stage-1",
+    runtimeSource: "desktop_queue", text: "TASK_STATUS: cancelled\nworker stopped",
+    reportDigest: digest, updatedAt: "2026-10-18T10:25:00.000Z",
+    nativeStoppedAt: "2026-10-18T10:26:00.000Z", nativeStopSource: "native_idle",
+    stopReason: "native_idle_verified",
+  };
+  const synced = await f.coordinator.sync(taskId);
+  assert.equal(synced.state, "cancelled", "cancellation protection keeps the business state");
+  const after = events();
+  assert.ok(after.length > beforeCount, "the cancelled task still collects its journal mirror");
+  assert.ok(after.some(event => event.sourceRef?.endsWith("journal:1")), "the post-cancel worker report mirrors (T2-R3)");
+  assert.ok(after.filter(event => event.sourceRef).length > beforeMirrored, "mirrored events grew after cancellation");
+  const stopEvents = after.filter(event => event.type === "native_stop_confirmed");
+  assert.equal(stopEvents.length, 1, "the native stop proof after cancellation is recorded once");
+  assert.notEqual(f.store.get(taskId)!.revision, undefined, "the cancelled task keeps a revision that folded the evidence");
+  // No re-dispatch: no second attempt_queued, no new attempt.
+  assert.equal(after.filter(event => event.type === "attempt_queued").length, 1);
+  assert.equal(f.store.listAttempts(taskId).length, 1);
+  await assert.rejects(() => f.coordinator.continue({ taskId, feedback: "restart" }), /Cancelled tasks/);
 });

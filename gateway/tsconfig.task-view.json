@@ -13,6 +13,7 @@
   },
   "include": [
     "test/backend-integration.test.ts",
+    "test/evidence-consistency.test.ts",
     "test/task-application-service.test.ts",
     "src/task-application-service.ts",
     "test/task-view.test.ts",
