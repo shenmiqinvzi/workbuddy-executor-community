@@ -2,6 +2,7 @@ import type { LocalMessage } from "./workbuddy-client.js";
 import { type PersistedTaskContract, type TaskContractIntegrity, type TaskContractPolicy, type TaskContractRejection } from "./task-contract.js";
 import { CollaborationRegistry, type ModelPolicy, type ModelObservation } from "./collaboration.js";
 import { QuotaStore } from "./quota-observation.js";
+import { CreditBalanceStore } from "./credit-balance.js";
 export type TaskState = "queued" | "working" | "completed" | "blocked" | "failed" | "cancelled" | "needs_review" | "accepted";
 export interface StoredTask {
     taskId: string;
@@ -153,6 +154,7 @@ export declare class TaskStore {
     private readonly db;
     readonly collaboration: CollaborationRegistry;
     readonly quotas: QuotaStore;
+    readonly creditBalances: CreditBalanceStore;
     constructor(file: string);
     close(): void;
     /**

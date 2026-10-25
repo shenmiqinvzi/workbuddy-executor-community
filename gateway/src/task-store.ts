@@ -6,6 +6,7 @@ import type { LocalMessage } from "./workbuddy-client.js";
 import { persistedTaskContract, validateSupportedTaskContract, verifyPersistedContract, type PersistedTaskContract, type TaskContractIntegrity, type TaskContractPolicy, type TaskContractRejection } from "./task-contract.js";
 import { AdmissionError, CollaborationRegistry, enforceModelPolicy, verifySelectedModel, type ModelPolicy, type ModelObservation } from "./collaboration.js";
 import { QuotaStore } from "./quota-observation.js";
+import { CreditBalanceStore } from "./credit-balance.js";
 
 export type TaskState = "queued" | "working" | "completed" | "blocked" | "failed" | "cancelled" | "needs_review" | "accepted";
 
@@ -147,6 +148,7 @@ export class TaskStore {
   private readonly db: DatabaseSync;
   readonly collaboration: CollaborationRegistry;
   readonly quotas: QuotaStore;
+  readonly creditBalances: CreditBalanceStore;
 
   constructor(readonly file: string) {
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
@@ -210,6 +212,7 @@ export class TaskStore {
     `);
     this.collaboration = new CollaborationRegistry(this.db);
     this.quotas = new QuotaStore(this.db);
+    this.creditBalances = new CreditBalanceStore(this.db, this.quotas);
     // Preserve old task history; extend pre-review-loop databases in place.
     this.transaction(() => {
       const columns = new Set((this.db.prepare("PRAGMA table_info(tasks)").all() as Array<{ name: string }>).map((column) => column.name));

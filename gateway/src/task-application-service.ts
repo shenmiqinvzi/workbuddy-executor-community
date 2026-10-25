@@ -90,6 +90,7 @@ export class TaskApplicationService {
   readQuotaResources(options: { connectionId?: string; modelId?: string; limit?: number } = {}) {
     return this.coordinator.store.quotas.read(options);
   }
+  readCreditBalances(connectionId?: string) { return this.coordinator.store.creditBalances.read(connectionId); }
 
   /** Stored facts only: deliberately bypasses every synchronising coordinator method. */
   readProjection(taskId: string) {

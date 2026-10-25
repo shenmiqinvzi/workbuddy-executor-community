@@ -19,6 +19,7 @@ import { runtimeVersion } from "./runtime-version.js";
 import { runsDirectory } from "./run-journal.js";
 import { WorkbenchHttpServer, workbenchHealth, workbenchPortFromEnv } from "./workbench-http.js";
 import { WorkBuddyQuotaCollector } from "./quota-observation.js";
+import { WorkBuddyCreditBalanceCollector } from "./credit-balance.js";
 
 const config = loadConfig();
 const store = new TaskStore(config.dbFile);
@@ -38,6 +39,7 @@ const server = new WorkbenchHttpServer({
 
 const port = workbenchPortFromEnv();
 let quota:WorkBuddyQuotaCollector|undefined;
+let credit:WorkBuddyCreditBalanceCollector|undefined;
 try {
   if(process.env.WORKBUDDY_QUOTA_SOURCE_URL){
     try {quota=new WorkBuddyQuotaCollector(store.quotas,{id:process.env.WORKBUDDY_QUOTA_SOURCE_ID??"workbuddy2api-local",baseUrl:process.env.WORKBUDDY_QUOTA_SOURCE_URL,
@@ -47,8 +49,14 @@ try {
       console.error(JSON.stringify({event:"quota_source_configuration_invalid",message:"Quota observation is unavailable; task reads remain available. No source credentials are included."}));
     }
   }
+  if(process.env.WORKBUDDY_CREDIT_SOURCE_URL){
+    try {credit=new WorkBuddyCreditBalanceCollector(store.creditBalances,{id:process.env.WORKBUDDY_CREDIT_SOURCE_ID??"workbuddy2api-credit",baseUrl:process.env.WORKBUDDY_CREDIT_SOURCE_URL,apiKey:process.env.WORKBUDDY_CREDIT_API_KEY??""});}
+    catch {try{store.creditBalances.configurationError(process.env.WORKBUDDY_CREDIT_SOURCE_ID??"workbuddy2api-credit");}catch{/* optional source bookkeeping cannot prevent task reads */}
+      console.error(JSON.stringify({event:"credit_source_configuration_invalid",message:"Credit observations are unavailable; task reads remain available."}));}
+  }
   const bound = await server.listen(port);
   quota?.start();
+  credit?.start();
   console.log(JSON.stringify({ ok: true, event: "workbench_http_listening", port: bound, backend: config.backend, readOnly: true }));
 } catch (error) {
   console.error(JSON.stringify({ ok: false, event: "workbench_http_bind_failed", message: error instanceof Error ? error.message : String(error) }));
@@ -57,6 +65,6 @@ try {
 }
 
 let closing:Promise<void>|undefined;
-const close=()=>closing??=(async()=>{await quota?.stop();await server.close();store.close();})();
+const close=()=>closing??=(async()=>{await Promise.all([quota?.stop(),credit?.stop()]);await server.close();store.close();})();
 process.once("SIGINT", () => { void close().then(() => process.exit(0)); });
 process.once("SIGTERM", () => { void close().then(() => process.exit(0)); });

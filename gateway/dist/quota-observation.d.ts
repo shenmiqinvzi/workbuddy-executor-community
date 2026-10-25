@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
+import { type StatisticsErrorCode } from "./local-statistics-client.js";
 export declare const QUOTA_RESOURCE_SCHEMA = "workbuddy-executor/quota-1";
-type QuotaErrorCode = "source_unavailable" | "source_unauthorized" | "source_invalid" | "source_timeout" | "source_configuration_invalid";
+type QuotaErrorCode = StatisticsErrorCode | "source_configuration_invalid";
 export interface QuotaObservation {
     scopeId: string;
     scopeKind: "gateway_pool";
@@ -96,7 +97,7 @@ export interface WorkBuddyQuotaConnection {
 export declare class WorkBuddyQuotaCollector {
     private readonly store;
     private readonly source;
-    private readonly endpoint;
+    private readonly statistics;
     private readonly epoch;
     private flight?;
     private controller?;

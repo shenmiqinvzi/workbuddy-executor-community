@@ -132,6 +132,41 @@ export declare class TaskApplicationService {
         actualTaskCredits: null;
         actualTaskTokens: null;
     };
+    readCreditBalances(connectionId?: string): {
+        schemaVersion: string;
+        readOnly: true;
+        connections: {
+            connectionId: string;
+            status: string;
+            errorCode: string | null;
+            snapshotId: string | null;
+            collectedAt: string | null;
+            cacheFreshness: string;
+        }[];
+        balances: {
+            shared: true;
+            scopeKind: "gateway_region_pool";
+            balanceFreshness: string;
+            limitations: string[];
+            errorCode: string | null;
+            snapshotId: string;
+            connectionId: string;
+            scopeId: string;
+            realm: "cn" | "intl";
+            unit: "credit";
+            valueKind: "reported_cache";
+            balance: number | null;
+            accountsEnabled: number;
+            accountsWithData: number;
+            coverage: "complete" | "partial" | "unavailable";
+            latestMemberObservedAt: string | null;
+            collectedAt: string;
+            cacheExpiresAt: string;
+            connectionIds: string[];
+        }[];
+        actualTaskCredits: null;
+        attribution: "connection_only";
+    };
     /** Stored facts only: deliberately bypasses every synchronising coordinator method. */
     readProjection(taskId: string): import("./task-view-reader.js").TaskProjectionResult;
     /**

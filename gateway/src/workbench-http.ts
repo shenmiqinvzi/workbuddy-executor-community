@@ -285,6 +285,7 @@ export class WorkbenchHttpServer {
         // reviews, accept) are not opened in this stage at all.
         const isKnownPath = pathname === HEALTH_PATH
           || pathname === "/workbench/v1/resources/quotas"
+          || pathname === "/workbench/v1/resources/credit-balances"
           || pathname === TASKS_PREFIX
           || /^\/workbench\/v1\/tasks\/[^/]+(\/(rework|cancel|reviews|accept|events|export))?$/.test(pathname);
         if (isKnownPath) {
@@ -310,6 +311,15 @@ export class WorkbenchHttpServer {
         }
         try {this.send(response,200,this.options.service.readQuotaResources({connectionId,modelId,limit:rawLimit===null?undefined:Number(rawLimit)}));}
         catch {this.refuse(response,503,"RESOURCE_STORE_UNAVAILABLE","The saved quota resource view could not be read.");}
+        return;
+      }
+      if (pathname === "/workbench/v1/resources/credit-balances") {
+        const connectionId=url.searchParams.get("connectionId")??undefined;
+        if ((connectionId!==undefined&&(!connectionId||connectionId.length>200))||[...url.searchParams.keys()].some(key=>key!=="connectionId")) {
+          this.refuse(response,400,"INVALID_RESOURCE_QUERY","Use a registered credit connection identifier.");return;
+        }
+        try {this.send(response,200,this.options.service.readCreditBalances(connectionId));}
+        catch {this.refuse(response,503,"RESOURCE_STORE_UNAVAILABLE","The saved credit balance view could not be read.");}
         return;
       }
       if (pathname === TASKS_PREFIX) {

@@ -11,7 +11,7 @@
 | T1/T2：已完成源码交付 | stage-2 统一只读查询、本地 HTTP、稳定分页、持久事件和 revision | 对应提交的构建、回归、只读冒烟与干净检出验证；完整 vNext 和部署另验 |
 | T3a：基础源码已实现 | 真实队列契约准入、工作区绑定、轮次/期限；vnext-2 版本分派、协作方案、免费模型政策 | 见[T3a 实现范围](docs/T3A_DISPATCH_ADMISSION.md)；合成验证与真实桌面证据分别登记，未部署 |
 | T3b | DSH 适配、精确会话发现、执行模型选择/核验与技能协作入口 | 真实执行、停止、原任务返工和独立验收；自动审查故障保持真实状态 |
-| T3c：基础源码已实现 | WorkBuddy2API 后台采集、持久脱敏快照与 quota-1 只读接口 | 见[T3c 范围](docs/T3C_QUOTA_OBSERVATION.md)；真实鉴权与口径未验收，不冒充 DSH 独占余额 |
+| T3c：基础源码及积分联调已完成 | token 估算 quota-1、积分缓存 credit-balance-1 的后台采集与只读接口 | [积分链路](docs/T3C_CREDIT_BALANCE.md)已有本机真实只读证据；[token 统计](docs/T3C_QUOTA_OBSERVATION.md)、完整路由和前端仍待验收，不冒充 DSH 独占余额 |
 | T4 | operationId、旧 revision/attempt 拒绝、方案消费、模型准备、持久意图/回执与共享容量 | MCP/HTTP/CLI/多进程和两执行器共同遵守容量 1；崩溃与结果不明不重复派工 |
 | T5 | 派工前文件基线、范围增量、原有改动保护 | Windows 路径/链接/重命名有验证，不宣称完整 OS 沙箱 |
 | T6 | 独立检查、不可变 reviewId 与最终验收 | 绑定当前约定/执行器/轮次/源码；停止明确、必需检查通过；检查器错误单列 |

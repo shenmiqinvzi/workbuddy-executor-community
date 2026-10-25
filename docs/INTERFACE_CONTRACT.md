@@ -181,6 +181,8 @@ T3a 更新：vnext-2 的校验/持久化、工作区与政策准入、方案绑�
 
 T3c 更新：GET `/resources/quotas` 已作为独立 `workbuddy-executor/quota-1` 资源接口实现，当前字段、限制和配置见[T3c 说明](T3C_QUOTA_OBSERVATION.md)；完整路由核验、单任务计量和本节目标 QuotaSnapshot 仍未全部实现。
 
+积分资源另用 GET `/resources/credit-balances` 与 `workbuddy-executor/credit-balance-1`，见[积分说明](T3C_CREDIT_BALANCE.md)。reported_cache、账号覆盖、最新成员时间和缓存新鲜度各自独立，不将其混入 token 估算或 task usage。
+
 本节规定新设计边界，不声明新增端点已经可用。启用前须同时提交 schema、类型、合成 fixture、旧版本兼容和对应验收。stage-2 端口、响应和 GET 零任务写入规则保持不变；旧 vnext-1 解析器继续拒绝未知字段与 vnext-2。
 
 ### 8.1 版本与派工约定

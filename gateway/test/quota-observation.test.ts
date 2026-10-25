@@ -163,4 +163,6 @@ test("corrupt cached observations cannot leak unexpected fields through the HTTP
   const server=new WorkbenchHttpServer({service,health:()=>workbenchHealth({runtime:{release:"test",packageVersion:"test",startedAt:"test"}})});const port=await server.listen(0);
   try{const response=await fetch(`http://127.0.0.1:${port}/workbench/v1/resources/quotas`);assert.equal(response.status,503);assert.equal((await response.text()).includes("must-not-be-returned"),false);}
   finally{await server.close();}
+  const repaired=new WorkBuddyQuotaCollector(f.store.quotas,input(url));await repaired.collect();await repaired.stop();
+  assert.equal(f.store.quotas.read().observations[0]!.remaining,80,"validated background collection may repair the cache");
 });

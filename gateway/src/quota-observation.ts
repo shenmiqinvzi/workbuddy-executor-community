@@ -1,8 +1,9 @@
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
+import { LocalStatisticsClient, StatisticsSourceError, type StatisticsErrorCode } from "./local-statistics-client.js";
 
 export const QUOTA_RESOURCE_SCHEMA = "workbuddy-executor/quota-1";
-type QuotaErrorCode="source_unavailable"|"source_unauthorized"|"source_invalid"|"source_timeout"|"source_configuration_invalid";
+type QuotaErrorCode=StatisticsErrorCode|"source_configuration_invalid";
 export interface QuotaObservation {
   scopeId: string; scopeKind: "gateway_pool"; shared: true; modelId: string; realm: string;
   unit: "tokens"; valueKind: "estimated" | "unavailable"; availability: "available" | "exhausted" | "unknown";
@@ -79,8 +80,9 @@ export class QuotaStore {
   publish(id:string,epoch:string,generation:number,snapshot:QuotaSnapshot):boolean {
     const row=this.connection(id);if(!row || row.epoch!==epoch || row.generation!==generation)return false;
     if(row.snapshot_json){
-      const previous=savedSnapshot(row.snapshot_json,id);
-      if(previous.sourceObservedAt && (!snapshot.sourceObservedAt || previous.sourceObservedAt>snapshot.sourceObservedAt))return false;
+      let previous:QuotaSnapshot|undefined;
+      try{previous=savedSnapshot(row.snapshot_json,id);}catch{/* only a verified background refresh may replace corrupt cache; GET still refuses it */}
+      if(previous?.sourceObservedAt && (!snapshot.sourceObservedAt || previous.sourceObservedAt>snapshot.sourceObservedAt))return false;
     }
     return Number(this.db.prepare("UPDATE quota_connections SET snapshot_json=?,error_code=NULL WHERE id=? AND epoch=? AND generation=?").run(JSON.stringify(snapshot),id,epoch,generation).changes)===1;
   }
@@ -122,7 +124,7 @@ export interface WorkBuddyQuotaConnection {
 
 export class WorkBuddyQuotaCollector {
   private readonly source:Readonly<WorkBuddyQuotaConnection>;
-  private readonly endpoint:URL;
+  private readonly statistics:LocalStatisticsClient;
   private readonly epoch:string;
   private flight?:Promise<void>;
   private controller?:AbortController;
@@ -131,14 +133,12 @@ export class WorkBuddyQuotaCollector {
   private failures=0;
   private nextDue=0;
   constructor(private readonly store:QuotaStore,source:WorkBuddyQuotaConnection) {
-    const url=new URL(source.baseUrl);
-    if(url.protocol!=="http:" || !["127.0.0.1","[::1]"].includes(url.hostname) || url.username || url.password || url.search || url.hash || url.pathname!=="/")throw new Error("Quota source must be an explicit loopback HTTP origin");
-    if(typeof source.apiKey!=="string"||!source.apiKey||source.apiKey.length>8192||/[\r\n]/.test(source.apiKey)|| (source.panelToken!==undefined&&(typeof source.panelToken!=="string"||source.panelToken.length>8192||/[\r\n]/.test(source.panelToken))))throw new Error("Invalid local quota credentials");
+    this.statistics=new LocalStatisticsClient(source);
     for(const [value,min,max] of [[source.intervalMs??30000,1000,3600000],[source.maxAgeMs??90000,1000,86400000],[source.timeoutMs??5000,50,30000]] as const){
       if(!Number.isInteger(value)||value<min||value>max)throw new Error("Invalid quota collection interval");
     }
-    this.source=Object.freeze({...source,baseUrl:url.origin});this.endpoint=new URL("/usage/remaining",url);
-    this.epoch=store.register(source.id,hash(JSON.stringify([url.origin,source.apiKey,source.panelToken??null,source.maxAgeMs??90000,source.intervalMs??30000])));
+    this.source=Object.freeze({...source,baseUrl:this.statistics.origin});
+    this.epoch=store.register(source.id,hash(JSON.stringify([this.statistics.origin,source.apiKey,source.panelToken??null,source.maxAgeMs??90000,source.intervalMs??30000])));
   }
   collect():Promise<void> {
     if(this.stopped || Date.now()<this.nextDue)return Promise.resolve();
@@ -158,18 +158,13 @@ export class WorkBuddyQuotaCollector {
     const timeout=setTimeout(()=>controller.abort(),this.source.timeoutMs??5000);timeout.unref();
     let code:QuotaErrorCode="source_unavailable";
     try {
-      const response=await fetch(this.endpoint,{method:"GET",redirect:"error",signal:controller.signal,
-        headers:{authorization:`Bearer ${this.source.apiKey}`,...this.source.panelToken?{"X-Panel-Token":this.source.panelToken}:{}}});
-      if(!response.ok){code=response.status===401||response.status===403?"source_unauthorized":"source_unavailable";await response.body?.cancel();throw Error(code);}
+      const payload=await this.statistics.read("/usage/remaining",controller.signal) as {rows?:unknown;generated_at?:unknown};
       code="source_invalid";
-      const reader=response.body?.getReader();if(!reader)throw Error(code);
-      const chunks:Uint8Array[]=[];let bytes=0;
-      for(;;){const next=await reader.read();if(next.done)break;bytes+=next.value.byteLength;if(bytes>1024*1024){await reader.cancel();throw Error(code);}chunks.push(next.value);}
-      const payload=JSON.parse(Buffer.concat(chunks).toString("utf8")) as {rows?:unknown;generated_at?:unknown};
       const snapshot=this.normalize(payload);
       if(!this.stopped)this.store.publish(this.source.id,this.epoch,generation,snapshot);
       this.failures=0;this.nextDue=Date.now()+(this.source.intervalMs??30000);
-    }catch {
+    }catch(error) {
+      if(error instanceof StatisticsSourceError)code=error.code;
       if(controller.signal.aborted)code="source_timeout";
       if(!this.stopped){this.failures++;this.nextDue=Date.now()+Math.min(300000,(this.source.intervalMs??30000)*2**Math.min(this.failures-1,8));this.store.failed(this.source.id,this.epoch,generation,code);}
     }finally{clearTimeout(timeout);if(this.controller===controller)this.controller=undefined;}

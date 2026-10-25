@@ -5,11 +5,13 @@ import { DatabaseSync } from "node:sqlite";
 import { persistedTaskContract, validateSupportedTaskContract, verifyPersistedContract } from "./task-contract.js";
 import { AdmissionError, CollaborationRegistry, enforceModelPolicy, verifySelectedModel } from "./collaboration.js";
 import { QuotaStore } from "./quota-observation.js";
+import { CreditBalanceStore } from "./credit-balance.js";
 export class TaskStore {
     file;
     db;
     collaboration;
     quotas;
+    creditBalances;
     constructor(file) {
         this.file = file;
         fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
@@ -74,6 +76,7 @@ export class TaskStore {
     `);
         this.collaboration = new CollaborationRegistry(this.db);
         this.quotas = new QuotaStore(this.db);
+        this.creditBalances = new CreditBalanceStore(this.db, this.quotas);
         // Preserve old task history; extend pre-review-loop databases in place.
         this.transaction(() => {
             const columns = new Set(this.db.prepare("PRAGMA table_info(tasks)").all().map((column) => column.name));

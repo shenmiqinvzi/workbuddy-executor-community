@@ -4,6 +4,8 @@
 
 T3c 更新：任务 stage-2 DTO 保持原样，另新增独立 `quota-1` 的 GET `/workbench/v1/resources/quotas` 及显式配置后的后台采集，准确行为见[T3c 说明](T3C_QUOTA_OBSERVATION.md)。GET 只读缓存，不触发采集；没有新增 HTTP 写操作、模型探测或派工。
 
+积分资源使用另一条只读 GET `/workbench/v1/resources/credit-balances` 和 `credit-balance-1`，见[积分说明](T3C_CREDIT_BALANCE.md)。它读取源服务缓存汇总，不混合 token 与 credit，也不以最新成员时间代表全池实时状态。
+
 更新日期:2026-10-25。对应实现:`gateway/src/workbench-http.ts`、`gateway/src/task-view-stage.ts`、`gateway/src/task-application-service.ts` 的只读查询、`gateway/src/task-store.ts` 的持久任务事件/revision(T2)。契约依据:[INTERFACE_CONTRACT.md](INTERFACE_CONTRACT.md)。本文描述**本阶段**实际交付的能力与限制;完整 `workbuddy-executor/vnext-1` 契约的其余部分仍待后续阶段实现,不得把本阶段响应当作完整 TaskView。
 
 ## 1. 阶段响应与完整目标 TaskView 的区别
