@@ -13,6 +13,8 @@
   },
   "include": [
     "test/t3-admission.test.ts",
+    "test/quota-observation.test.ts",
+    "test/quota-entry.test.ts",
     "test/backend-integration.test.ts",
     "test/evidence-consistency.test.ts",
     "test/task-application-service.test.ts",

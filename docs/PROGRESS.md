@@ -36,11 +36,11 @@ node verify-snapshot.mjs
 
 ## 后续顺序
 
-2026-10-25：T3a 的契约派工基础已实现，详见[实现与边界](T3A_DISPATCH_ADMISSION.md)。内部服务与兼容 MCP 参数可使用登记工作区、版本化免费政策、明确授权的方案、固定模型/轮次/期限；未部署或取得真实桌面证据。T3b/T3c 及以下后续阶段仍为计划。总体目标见[协作设计](COLLABORATION_DESIGN.md)、[接口扩展](INTERFACE_CONTRACT.md#8-多-agent-扩展草案vnext-2待实现)与[验收场景](ACCEPTANCE.md)。
+2026-10-25：T3a 契约准入与 T3c 只读额度观测的基础源码已实现，详见[T3a 边界](T3A_DISPATCH_ADMISSION.md)和[T3c 边界](T3C_QUOTA_OBSERVATION.md)。未部署或取得真实桌面/额度来源证据。T3b 及以下后续阶段仍待交付。总体目标见[协作设计](COLLABORATION_DESIGN.md)、[接口扩展](INTERFACE_CONTRACT.md#8-多-agent-扩展草案vnext-2待实现)与[验收场景](ACCEPTANCE.md)。
 
 1. T3a：初始契约接入真实派工，绑定 workspaceId、有效轮次预算、固定期限；新增协作方案和版本化模型政策。vnext-2 为草案，当前解析器仍只接受 vnext-1。
 2. T3b：DSH 适配、目标会话发现、按任务选择模型、实际请求模型核验、执行/停止/返工/独立验收闭环；插件自动审查故障单独修复，不冒充已通过。
-3. T3c：WorkBuddy2API 后台额度观测和只读资源快照；区分共享池、Key 路由、估算、冷却、未知与陈旧，先不承诺精确单任务费用。
+3. T3c：后台采集、脱敏持久缓存及只读 quota-1 资源接口已实现，见[T3c 说明](T3C_QUOTA_OBSERVATION.md)。真实来源鉴权、Key 路由核验与单任务费用归因未验收；显示范围仍为网关共享池。
 4. T4：operationId、expectedRevision/AttemptId、方案消费、模型准备与跨入口持久意图/回执；WorkBuddy/DSH 共用容量 1。
 5. T5：文件范围清单、越界变更检查与用户原有改动保护，两执行器采用相同准入与验收规则。
 6. T6：独立检查、不可变 reviewId、源码/证据/执行来源绑定与最终验收。

@@ -36,7 +36,7 @@
 
 本分支已完成 T1/T2：统一只读任务查询、本地 HTTP、持久事件与 revision；阶段响应为 `workbuddy-executor/stage-2`，完整 vNext 契约仍待实现。接口详情及未知字段见[阶段说明](docs/WORKBENCH_STAGE_HTTP.md)。HTTP 没有派工、取消或验收写入口；export/workspaces 仍为 501。MCP 现有执行与同步入口保持兼容，纯查询不触发派工或同步。
 
-源码交付不自动部署到运行网关，历史版本实测不自动算作当前版本通过。下一阶段为 T3：真实派工约定及模型政策、DSH 适配与 WorkBuddy2API 只读额度观测。前端交付由 Issue #6 跟踪，完整异机验收由 Issue #3 跟踪；它们不证明新增设计已经完成。当前状态与证据见[开发进度](docs/PROGRESS.md)。
+源码交付不自动部署到运行网关，历史版本实测不自动算作当前版本通过。T3a 的[契约与模型准入](docs/T3A_DISPATCH_ADMISSION.md)、T3c 的[只读额度观测](docs/T3C_QUOTA_OBSERVATION.md)已有基础源码；DSH、真实额度来源与完整交互仍待验收。前端交付由 Issue #6 跟踪，完整异机验收由 Issue #3 跟踪；它们不证明新增设计已经完成。当前状态与证据见[开发进度](docs/PROGRESS.md)。
 
 ## 验证与已知限制
 

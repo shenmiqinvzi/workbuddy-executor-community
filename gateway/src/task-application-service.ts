@@ -87,6 +87,9 @@ export class TaskApplicationService {
     return this.coordinator.store.collaboration.authorizePlan(planId, revision, this.coordinator.modelPolicy(), source);
   }
   getCollaborationPlan(planId: string) { return this.coordinator.store.collaboration.getPlan(planId); }
+  readQuotaResources(options: { connectionId?: string; modelId?: string; limit?: number } = {}) {
+    return this.coordinator.store.quotas.read(options);
+  }
 
   /** Stored facts only: deliberately bypasses every synchronising coordinator method. */
   readProjection(taskId: string) {
@@ -219,8 +222,8 @@ export class TaskApplicationService {
    * Pure read: afterEventId is exclusive (0 = from the beginning), limit is
    * bounded 1-200 (default 100), events ascend by the monotonic per-task
    * eventId, and nothing is written — a missing task is a task_not_found
-   * failure, never an implicit creation. nextEventId is null when the page
-   * already reached the end of the stream.
+   * failure, never an implicit creation. nextEventId is the last returned id,
+   * or the original afterEventId on an empty page, including at stream end.
    */
   listTaskEvents(taskId: string, options: { afterEventId?: number; limit?: number } = {}):
     { ok: true; events: StoredTaskEvent[]; nextEventId: number }

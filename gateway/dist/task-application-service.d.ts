@@ -88,6 +88,50 @@ export declare class TaskApplicationService {
     }): import("./collaboration.js").CollaborationPlan;
     authorizeCollaborationPlan(planId: string, revision: string, source: string): import("./collaboration.js").CollaborationPlan;
     getCollaborationPlan(planId: string): import("./collaboration.js").CollaborationPlan;
+    readQuotaResources(options?: {
+        connectionId?: string;
+        modelId?: string;
+        limit?: number;
+    }): {
+        schemaVersion: string;
+        readOnly: true;
+        connections: {
+            connectionId: string;
+            status: string;
+            errorCode: string | null;
+            snapshotId: string | null;
+            collectedAt: string | null;
+            sourceObservedAt: string | null;
+            expiresAt: string | null;
+            freshness: string;
+        }[];
+        observations: ({
+            connectionId: string;
+            snapshotId: string;
+            sourceObservedAt: string | null;
+            collectedAt: string;
+            scopeId: string;
+            scopeKind: "gateway_pool";
+            shared: true;
+            modelId: string;
+            realm: string;
+            unit: "tokens";
+            valueKind: "estimated" | "unavailable";
+            availability: "available" | "exhausted" | "unknown";
+            used: number | null;
+            budget: number | null;
+            remaining: number | null;
+            resetAt: string | null;
+            method: string;
+            limitations: string[];
+        } & {
+            connectionIds: string[];
+        })[];
+        truncated: boolean;
+        attribution: "connection_only";
+        actualTaskCredits: null;
+        actualTaskTokens: null;
+    };
     /** Stored facts only: deliberately bypasses every synchronising coordinator method. */
     readProjection(taskId: string): import("./task-view-reader.js").TaskProjectionResult;
     /**
@@ -139,8 +183,8 @@ export declare class TaskApplicationService {
      * Pure read: afterEventId is exclusive (0 = from the beginning), limit is
      * bounded 1-200 (default 100), events ascend by the monotonic per-task
      * eventId, and nothing is written — a missing task is a task_not_found
-     * failure, never an implicit creation. nextEventId is null when the page
-     * already reached the end of the stream.
+     * failure, never an implicit creation. nextEventId is the last returned id,
+     * or the original afterEventId on an empty page, including at stream end.
      */
     listTaskEvents(taskId: string, options?: {
         afterEventId?: number;

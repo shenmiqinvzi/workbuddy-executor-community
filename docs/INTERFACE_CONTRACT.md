@@ -177,7 +177,9 @@ usage 区分目录费率标签、实耗额度、token 与活跃推理时间。�
 
 ## 8. 多 Agent 扩展草案（vnext-2，待实现）
 
-T3a 更新：vnext-2 的校验/持久化、工作区与政策准入、方案绑定、固定轮次/期限已在内部服务和兼容 MCP 参数实现，见[实现说明](T3A_DISPATCH_ADMISSION.md)。本节的发现/额度/方案 HTTP、新 TaskView、自动调度与 DSH 仍为目标；不能据此宣称整节已实现。
+T3a 更新：vnext-2 的校验/持久化、工作区与政策准入、方案绑定、固定轮次/期限已在内部服务和兼容 MCP 参数实现，见[实现说明](T3A_DISPATCH_ADMISSION.md)。本节的执行器发现/方案 HTTP、新 TaskView、自动调度与 DSH 仍为目标；额度资源基础另见 T3c，不能据此宣称整节已实现。
+
+T3c 更新：GET `/resources/quotas` 已作为独立 `workbuddy-executor/quota-1` 资源接口实现，当前字段、限制和配置见[T3c 说明](T3C_QUOTA_OBSERVATION.md)；完整路由核验、单任务计量和本节目标 QuotaSnapshot 仍未全部实现。
 
 本节规定新设计边界，不声明新增端点已经可用。启用前须同时提交 schema、类型、合成 fixture、旧版本兼容和对应验收。stage-2 端口、响应和 GET 零任务写入规则保持不变；旧 vnext-1 解析器继续拒绝未知字段与 vnext-2。
 

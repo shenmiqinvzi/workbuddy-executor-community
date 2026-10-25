@@ -63,8 +63,8 @@
     },
     {
       "path": "WINDOWS_ENV.example",
-      "sha256": "cf85ee3dffb61ea0bf04bb2901238e5c9fe77b707e1ebf0cbf4d69cc8d2f8968",
-      "bytes": 479
+      "sha256": "ad4885f92f44d15c93828ce06291af0c5287c560b3ef00d65a71271095eee292",
+      "bytes": 924
     },
     {
       "path": "bin/agent-hub",
@@ -553,7 +553,7 @@
     },
     {
       "path": "dist/persistent-service.d.ts",
-      "sha256": "6a9bebff28b5451974d686a6b2bb0ac6f21e790f62605c23bbe7ae7a020cf2d1",
+      "sha256": "90cc1b0e93e09240deeaa8e9fafb5511fd97c9fbde27ae34a9ab0bd801fb1431",
       "bytes": 5103
     },
     {
@@ -717,6 +717,21 @@
       "bytes": 908
     },
     {
+      "path": "dist/quota-observation.d.ts",
+      "sha256": "3174b15ccf3f7b68d5d85bb5b41f2227c1dae7303e0e98381708c7a939b4ffa5",
+      "bytes": 3758
+    },
+    {
+      "path": "dist/quota-observation.js",
+      "sha256": "84fa611956abeb39a5dd3892f12cb7bef7d61dd7f9af1b9ede7c2c447ef93575",
+      "bytes": 16313
+    },
+    {
+      "path": "dist/quota-observation.js.map",
+      "sha256": "202c64780a8ce730e20d3f67472a05bfaedf136579111a689a4b9502f8238400",
+      "bytes": 17512
+    },
+    {
       "path": "dist/report-authentication.d.ts",
       "sha256": "49baaa17de175076b4ec3c03e4b66ae4fc5023fde9ace3fcf8d8c0c1c168011a",
       "bytes": 4161
@@ -823,18 +838,18 @@
     },
     {
       "path": "dist/task-application-service.d.ts",
-      "sha256": "459d8e318adddbaec89e61b2fc5a568550528cbb2151402f5795bf9310553d19",
-      "bytes": 17863
+      "sha256": "16f1be7ff09bad4a213e62247c54f3709052f62222b808e437d2732049b59d78",
+      "bytes": 19283
     },
     {
       "path": "dist/task-application-service.js",
-      "sha256": "b65adfb275c4ed159a5421c2b56922814e26f79d516e1ac9b5032ec5a1de84d3",
-      "bytes": 13709
+      "sha256": "a187109be5a21b61cb71900ed9b383de75e5e66f31549a23ecf60be9d6cc12f3",
+      "bytes": 13850
     },
     {
       "path": "dist/task-application-service.js.map",
-      "sha256": "94b6fafbb8078645ab6d07411ecc9000ee900ac4330b73fe5c589628ed8f40e9",
-      "bytes": 9886
+      "sha256": "22375280674ee244ea3f7cc904a59623fcd6378063fba00617af69f61bdee6e0",
+      "bytes": 10001
     },
     {
       "path": "dist/task-contract.d.ts",
@@ -853,18 +868,18 @@
     },
     {
       "path": "dist/task-store.d.ts",
-      "sha256": "199588774d57ee291cff7f6494d0c06b8c7bcb82b570677fabb3322688ca39e0",
-      "bytes": 12729
+      "sha256": "e4bbbc767b6150bf4f593ce1d2421c9f89b3e96c76d01d6372dcc33d824a5384",
+      "bytes": 12815
     },
     {
       "path": "dist/task-store.js",
-      "sha256": "8f907d3f294d6c31a9fa36fb4d7dd9064e55286d8abb0e111ec1dfe35e8bba62",
-      "bytes": 46627
+      "sha256": "c00f6b7a68183aaf86da2407f8c8e028b232fd89034a02726c45c73bb4e2f71d",
+      "bytes": 46739
     },
     {
       "path": "dist/task-store.js.map",
-      "sha256": "743e5041e38a5fa4c38ddb3945372afae2724f24a804f6c37099e1e5fef7ca76",
-      "bytes": 32552
+      "sha256": "4406a1e188cc482aec6784ccb2afb44df572ac7814d8cd5a1695e5a05311df8f",
+      "bytes": 32677
     },
     {
       "path": "dist/task-view-actions.d.ts",
@@ -973,33 +988,33 @@
     },
     {
       "path": "dist/workbench-entry.d.ts",
-      "sha256": "ac515f28c37cd6f8b94f78d1cd81a8239c32770e37556eaed13ef7e69441ce86",
-      "bytes": 424
+      "sha256": "d448923b10d88fa411217d1b202e44770761eb63b7e30e883d6cebd6596aa060",
+      "bytes": 528
     },
     {
       "path": "dist/workbench-entry.js",
-      "sha256": "13ff3d92ba65bb922b0056ebf1b177ccbe5e2a8106043dd183187166221347d7",
-      "bytes": 2407
+      "sha256": "7b4a138515f2bf8501be84c4b5f76924012aa701b447cec4c281bf16e492fed1",
+      "bytes": 3518
     },
     {
       "path": "dist/workbench-entry.js.map",
-      "sha256": "06ef735872b15e609c10f95ddc080c5488a6f3b784933f0d45d939cd73e83cdf",
-      "bytes": 2143
+      "sha256": "4ecae91e7353741b3fda317f2ec547f7e1a6e40996cdeab379c79f067e169fed",
+      "bytes": 2972
     },
     {
       "path": "dist/workbench-http.d.ts",
-      "sha256": "a9c9772a22353744639d2272ca60b04bc6218a194a81f8c47802fcb4bc4bbf09",
-      "bytes": 5914
+      "sha256": "401b1ee10106a1a145959b8b20d953f79aa2282e4398d219c4d09318ce596784",
+      "bytes": 5834
     },
     {
       "path": "dist/workbench-http.js",
-      "sha256": "ec62287e1988649ae00d950b3568fa490b0cb1fa08bb043a18ccc935fe9314f3",
-      "bytes": 15881
+      "sha256": "f0cddc8139c486eb1899da7dbe23304ae2f416dd87aeab5c2f641b73e0883ab6",
+      "bytes": 17188
     },
     {
       "path": "dist/workbench-http.js.map",
-      "sha256": "9d22d32c4d43f64dde78e9c2dcac29568a072b2e163adcd52c797a712f53796b",
-      "bytes": 11094
+      "sha256": "525dfe8342605d651b317cb6449dd0c10aaea91163f639e67ce1f6ebc679648b",
+      "bytes": 12334
     },
     {
       "path": "dist/workbuddy-client.d.ts",
@@ -1487,6 +1502,11 @@
       "bytes": 610
     },
     {
+      "path": "src/quota-observation.ts",
+      "sha256": "1909b92b26a6637cc5645aed6f42c3fda06f240f69280ef4e68414a361c3f0f4",
+      "bytes": 15972
+    },
+    {
       "path": "src/report-authentication.ts",
       "sha256": "9fa193be090df6ab12c1b5ab197faf076f98ceaed4e764d6e6225f50f5e96b58",
       "bytes": 5793
@@ -1523,8 +1543,8 @@
     },
     {
       "path": "src/task-application-service.ts",
-      "sha256": "2917ee151554707080e5cc856de677ca70a7b26800e64c0ffae5d3e30d3eb69a",
-      "bytes": 16066
+      "sha256": "5a25e38df75e25448af6f1f8d52371d12b62a3073df3fa456890c162a04ed710",
+      "bytes": 16260
     },
     {
       "path": "src/task-contract.ts",
@@ -1533,8 +1553,8 @@
     },
     {
       "path": "src/task-store.ts",
-      "sha256": "725a55e11dfb1cecd03d1f2c4f1f7a677ddfedd4d79814dbe92b4a189ecfcfdf",
-      "bytes": 52278
+      "sha256": "0b543d62ea64b9e0511e13474fe9f630d0e4e0b5c23c92078c3214d7836af144",
+      "bytes": 52408
     },
     {
       "path": "src/task-view-actions.ts",
@@ -1573,13 +1593,13 @@
     },
     {
       "path": "src/workbench-entry.ts",
-      "sha256": "c7f81cf1c1b9ee207a113392a395a97346580ed9e597ee9f86b11633a1faf821",
-      "bytes": 2348
+      "sha256": "b139ed43b28b8f5e04b8c82b2e994e2a1adc067b67c66c472e20df135a926907",
+      "bytes": 3375
     },
     {
       "path": "src/workbench-http.ts",
-      "sha256": "2270def6dbff085d7375c034b655cb5a61e8ef2bf05a143c77dfeb4bdd0aeedd",
-      "bytes": 17336
+      "sha256": "c36b0816abfb5076e1d5cd49593f3c185f5b5bdd1855e8e1c83c93bd1d0b91ca",
+      "bytes": 18373
     },
     {
       "path": "src/workbuddy-client.ts",
@@ -1722,6 +1742,16 @@
       "bytes": 9833
     },
     {
+      "path": "test/quota-entry.test.ts",
+      "sha256": "40150dccc47ce53f3a04756f19baf35c4a120e075d2c8055dc08061232326ed9",
+      "bytes": 4260
+    },
+    {
+      "path": "test/quota-observation.test.ts",
+      "sha256": "a50e4a818a6171d6e0d3b427c92418ecb67bddf930f9d06e225659f24b54570b",
+      "bytes": 15584
+    },
+    {
       "path": "test/reliability-v2.test.ts",
       "sha256": "eee96c184f75e3ccf3fe30197d96cedfed82b01794d84aeeaa51448bf68c3b95",
       "bytes": 14272
@@ -1833,8 +1863,8 @@
     },
     {
       "path": "tsconfig.task-view.json",
-      "sha256": "29a9e78138425f62667b33549963ec474a5824ba050ebf53199d7fa74cba4825",
-      "bytes": 1167
+      "sha256": "d631c5fe5a75aadde9bb7a9e77637239179b7929094584d59e5da5db3100b2a5",
+      "bytes": 1237
     },
     {
       "path": "verify-snapshot.mjs",
