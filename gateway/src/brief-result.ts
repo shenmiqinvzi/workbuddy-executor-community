@@ -60,7 +60,7 @@ export function resultForDetail(value: unknown, detail: ResultDetail = "full", o
   if (detail === "full") return value;
   const input = record(value);
   if (!input) return value;
-  const result = pick(input, ["runtime", "delta", "operationId", "operationState", "outcomeCode", "models", "currentModel", "model", "ok", "code", "error", "created", "taskId", "attemptId", "attempt", "sessionId", "workspace", "worker", "workers", "runtimeSource", "state", "lastEventSeq", "artifacts", "artifactPaths", "blockingReason", "message", "next", "acceptance", "cancellationRequested", "remoteStopped", "executionState", "execution", "statusView", "statusViews", "backend", "online", "desktopSupervision", "ready", "status", "sessions", "workerCandidates", "persistentService"]);
+  const result = pick(input, ["runtime", "delta", "operationId", "recoveryOperationId", "operationState", "outcomeCode", "models", "currentModel", "model", "ok", "code", "error", "created", "taskId", "attemptId", "attempt", "sessionId", "workspace", "worker", "workers", "runtimeSource", "state", "lastEventSeq", "artifacts", "artifactPaths", "blockingReason", "message", "next", "acceptance", "cancellationRequested", "remoteStopped", "executionState", "execution", "statusView", "statusViews", "backend", "online", "desktopSupervision", "ready", "status", "sessions", "workerCandidates", "persistentService"]);
   const messages = Array.isArray(input.messages) ? input.messages.map(record).filter((item): item is RecordValue => item !== undefined) : [];
   const task = record(input.task);
   const historicalMessages = options.messageAttemptId !== undefined && options.messageAttemptId !== task?.attemptId;

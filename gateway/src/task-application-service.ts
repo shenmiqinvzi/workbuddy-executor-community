@@ -1,6 +1,7 @@
 import type { TaskCoordinator, SendTaskInput } from "./coordinator.js";
 import type { DshTaskCoordinator } from "./dsh-coordinator.js";
 import type { OperationOptions } from "./operation-admission.js";
+import type { RecoveryInput } from "./operation-recovery.js";
 import { AdmissionError } from "./collaboration.js";
 import type { StoredTask, StoredTaskEvent } from "./task-store.js";
 import { readTaskProjection } from "./task-view-reader.js";
@@ -103,6 +104,22 @@ export class TaskApplicationService {
 
   getOperation(operationId: string) { return this.coordinator.store.operations.get(operationId); }
   listUnfinishedOperations() { return this.coordinator.store.operations.listUnfinished(); }
+  readOperationRecovery(targetOperationId: string) { return this.coordinator.store.recoveries.inspect(targetOperationId, this.runsDir); }
+  getOperationRecoveryDecision(operationId: string) { return this.coordinator.store.recoveries.get(operationId); }
+  authorizeOperationRecovery(input: RecoveryInput, actor: string) { return this.coordinator.store.recoveries.authorize(input, this.runsDir, actor); }
+  resolveOperationRecovery(input: RecoveryInput, authorizationId: string) { return this.coordinator.store.recoveries.resolve(input, this.runsDir, authorizationId); }
+  async observeOperationRecovery(targetOperationId: string) {
+    const view = this.readOperationRecovery(targetOperationId);
+    if (this.coordinator.store.get(view.operation.taskId)?.attemptId && !this.coordinator.store.recoveries.closure(view.operation.taskId)) {
+      const dsh = this.dshFor(view.operation.taskId);
+      if (dsh) await dsh.sync(view.operation.taskId, 100, true);
+      else {
+        if (view.operation.executor === "dsh") throw new AdmissionError("EXECUTOR_UNAVAILABLE", "The original DSH source is unavailable; no fallback is allowed.");
+        await this.coordinator.observeRecovery(view.operation.taskId);
+      }
+    }
+    return this.readOperationRecovery(targetOperationId);
+  }
 
   /** Stored facts only: deliberately bypasses every synchronising coordinator method. */
   readProjection(taskId: string) {

@@ -58,7 +58,22 @@ export class OperationAdmission {
         }
     }
     listUnfinished() {
-        return this.db.prepare("SELECT operation_id FROM task_operations WHERE state IN ('reserved','effect_started','outcome_unknown') ORDER BY rowid").all().map(row => this.get(String(row.operation_id)));
+        return this.db.prepare("SELECT operation_id FROM task_operations WHERE state IN ('reserved','effect_started','outcome_unknown') ORDER BY rowid").all().map(row => this.get(String(row.operation_id))).filter(op => !this.store.recoveries.forOperation(op.operationId) && !this.store.recoveries.closure(op.taskId));
+    }
+    forTask(taskId) { return this.db.prepare("SELECT operation_id FROM task_operations WHERE task_id=? ORDER BY rowid").all(taskId).map(row => this.get(String(row.operation_id))); }
+    preparationReturned(operationId) {
+        this.store.atomic(() => {
+            const op = this.get(operationId);
+            if (!op || !["reserved", "effect_started"].includes(op.state))
+                throw new AdmissionError("OPERATION_REQUIRED", "The original preparation is not active.");
+            this.assertUnresolved(op);
+            this.save({ ...op, preparationCompletedAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+        });
+    }
+    assertUnresolved(op) {
+        const decision = this.store.recoveries.closure(op.taskId) ?? this.store.recoveries.forOperation(op.operationId);
+        if (decision)
+            throw Object.assign(new AdmissionError("OPERATION_RESOLVED", "The original operation was handled by a recovery decision; inspect its audit without resending."), { operationId: op.operationId, recoveryOperationId: decision.operationId });
     }
     originalBinding(taskId) {
         const row = this.db.prepare("SELECT operation_id FROM task_operations WHERE task_id=? AND kind='send' AND state<>'rejected' ORDER BY rowid LIMIT 1").get(taskId);
@@ -132,6 +147,9 @@ export class OperationAdmission {
     }
     /** Closing requires all existing durable facts, never idle/TTL or a business label alone. */
     isClosed(task) {
+        const recovery = this.store.recoveries.closure(task.taskId);
+        if (recovery && task.state === "cancelled" && recovery.attemptId === (task.attemptId ?? null))
+            return !!this.db.prepare("SELECT 1 FROM task_events WHERE task_id=? AND attempt_id IS ? AND type='task_closed' AND source_ref=?").get(task.taskId, recovery.attemptId, `recovery:${recovery.operationId}`);
         if (!task.attemptId || !["accepted", "cancelled", "failed"].includes(task.state))
             return false;
         try {
@@ -148,6 +166,7 @@ export class OperationAdmission {
     }
     /** Called under BEGIN IMMEDIATE, also used by compatibility queue/worker gates. */
     claim(taskId, executor, operationId) {
+        this.store.recoveries.assertOpen(taskId);
         const owner = this.occupant();
         if (owner && owner.taskId !== taskId) {
             const previous = this.store.get(owner.taskId);
@@ -172,6 +191,8 @@ export class OperationAdmission {
             throw new AdmissionError("INVALID_OPERATION", "Use a stable bounded operationId.");
         const parameterDigest = operationDigest({ kind, taskId, executor, parameters, ...(legacy ? {} : { expectedRevision: options.expectedRevision, expectedAttemptId: options.expectedAttemptId }) });
         return this.store.atomic(() => {
+            if (this.store.recoveries.get(operationId))
+                throw new AdmissionError("OPERATION_CONFLICT", "This operationId belongs to a recovery action.");
             const prior = this.get(operationId);
             if (prior) {
                 if (prior.parameterDigest !== parameterDigest)
@@ -194,7 +215,7 @@ export class OperationAdmission {
                 this.claim(taskId, executor, operationId);
             }
             const now = new Date().toISOString();
-            const record = { operationId, kind, taskId, attemptId: task?.attemptId ?? null, parameterDigest,
+            const record = { operationId, kind, taskId, phaseVersion: 1, attemptId: task?.attemptId ?? null, parameterDigest,
                 expectedRevision: legacy ? task?.revision ?? null : options.expectedRevision ?? null,
                 expectedAttemptId: legacy ? task?.attemptId ?? null : options.expectedAttemptId ?? null,
                 executor, binding, state: "reserved", createdAt: now, updatedAt: now };
@@ -203,8 +224,9 @@ export class OperationAdmission {
         });
     }
     /** Commit before every possibly mutating native call; never roll this back with its receipt. */
-    nativeBoundary(taskId, attemptId) {
+    nativeBoundary(taskId, attemptId, phase = attemptId ? "dispatch" : "prepare") {
         this.store.atomic(() => {
+            this.store.recoveries.assertOpen(taskId);
             const owner = this.occupant();
             if (!owner || owner.taskId !== taskId)
                 throw new AdmissionError("OPERATION_REQUIRED", "Native execution requires the original durable admission.");
@@ -216,7 +238,8 @@ export class OperationAdmission {
                 throw new AdmissionError("OPERATION_REQUIRED", "No active operation authorizes this native side effect.");
             for (const row of rows) {
                 const record = this.get(String(row.operation_id));
-                this.save({ ...record, state: "effect_started", effectStartedAt: record.effectStartedAt ?? new Date().toISOString(), resolvedBinding: { sessionId: task?.sessionId ?? null, runtimeSource: task?.runtimeSource ?? null }, attemptId: attemptId ?? record.attemptId, updatedAt: new Date().toISOString() });
+                this.assertUnresolved(record);
+                this.save({ ...record, state: "effect_started", effectStartedAt: record.effectStartedAt ?? new Date().toISOString(), ...(phase === "dispatch" ? { dispatchEnteredAt: record.dispatchEnteredAt ?? new Date().toISOString() } : {}), resolvedBinding: { sessionId: task?.sessionId ?? null, runtimeSource: task?.runtimeSource ?? null }, attemptId: attemptId ?? record.attemptId, updatedAt: new Date().toISOString() });
             }
         });
     }
@@ -230,9 +253,9 @@ export class OperationAdmission {
             const receipt = this.get(`queue:${attemptId}`);
             if (!receipt || receipt.kind !== "queue" || receipt.taskId !== taskId || receipt.attemptId !== attemptId)
                 throw new AdmissionError("OPERATION_REQUIRED", "Historical queue execution needs explicit recovery; it is not automatically dispatched after migration.");
-            if (receipt.state !== "succeeded")
+            if (receipt.state !== "succeeded" && this.store.recoveries.forOperation(receipt.operationId)?.action !== "reconcile")
                 throw new OperationOutcomeError(receipt.operationId, receipt.state);
-            const pending = this.db.prepare("SELECT operation_id FROM task_operations WHERE task_id=? AND kind IN ('send','rework') AND state IN ('reserved','effect_started','outcome_unknown') LIMIT 1").get(taskId);
+            const pending = this.db.prepare("SELECT operation_id FROM task_operations WHERE task_id=? AND kind IN ('send','rework') AND state IN ('reserved','effect_started','outcome_unknown') AND NOT EXISTS (SELECT 1 FROM operation_recoveries r WHERE r.target_operation_id=task_operations.operation_id) LIMIT 1").get(taskId);
             if (pending)
                 throw new OperationOutcomeError(String(pending.operation_id), this.get(String(pending.operation_id)).state);
             const task = this.store.get(taskId);
@@ -251,6 +274,7 @@ export class OperationAdmission {
     replay(record) {
         if (record.state === "succeeded")
             return structuredClone(record.result);
+        this.assertUnresolved(record);
         if (record.state === "rejected")
             throw new AdmissionError(record.error?.code ?? "OPERATION_REJECTED", record.error?.message ?? "The original operation was rejected.");
         throw new OperationOutcomeError(record.operationId, record.state);
@@ -258,6 +282,8 @@ export class OperationAdmission {
     run(kind, taskId, executor, parameters, options, binding, action) {
         const { record, fresh } = this.admit(kind, taskId, executor, parameters, options, binding, true);
         if (!fresh) {
+            if (record.state !== "succeeded")
+                this.assertUnresolved(record);
             const pending = this.pending.get(record.operationId);
             if (!options.operationId && !pending && ["reserved", "effect_started", "outcome_unknown"].includes(record.state)) {
                 const task = this.store.get(taskId);
@@ -272,6 +298,7 @@ export class OperationAdmission {
             try {
                 const raw = await action(record);
                 const current = this.get(record.operationId);
+                this.assertUnresolved(current);
                 const uncertain = current.state === "effect_started" && raw?.ok === false && raw.code !== "DISPATCH_REJECTED";
                 const result = JSON.parse(JSON.stringify({ ...raw, operationId: record.operationId, operationState: uncertain ? "outcome_unknown" : "succeeded", ...(uncertain ? { outcomeCode: "OUTCOME_UNKNOWN", ...(raw.code ? {} : { code: "OUTCOME_UNKNOWN" }) } : {}) }));
                 this.store.atomic(() => {
@@ -280,6 +307,7 @@ export class OperationAdmission {
                 return result;
             }
             catch (error) {
+                this.assertUnresolved(this.get(record.operationId));
                 try {
                     this.store.atomic(() => {
                         const current = this.get(record.operationId);

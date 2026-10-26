@@ -39,6 +39,9 @@ export interface OperationRecord {
     preparationSessionId?: string;
     preparationEnteredAt?: string;
     effectStartedAt?: string;
+    phaseVersion?: 1;
+    dispatchEnteredAt?: string;
+    preparationCompletedAt?: string;
     createdAt: string;
     updatedAt: string;
     result?: unknown;
@@ -62,6 +65,9 @@ export declare class OperationAdmission {
     constructor(db: DatabaseSync, store: TaskStore);
     get(operationId: string): OperationRecord | null;
     listUnfinished(): OperationRecord[];
+    forTask(taskId: string): OperationRecord[];
+    preparationReturned(operationId: string): void;
+    private assertUnresolved;
     originalBinding(taskId: string): unknown;
     originalSession(taskId: string): string | null;
     private save;
@@ -83,7 +89,7 @@ export declare class OperationAdmission {
     claim(taskId: string, executor: string, operationId: string): void;
     private admit;
     /** Commit before every possibly mutating native call; never roll this back with its receipt. */
-    nativeBoundary(taskId: string, attemptId?: string): void;
+    nativeBoundary(taskId: string, attemptId?: string, phase?: "prepare" | "dispatch"): void;
     /** Existing queue receipts may wake exactly their original attempt, under its retained workflow. */
     assertExecution(taskId: string, attemptId: string, target?: {
         sessionId: string;

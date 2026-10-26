@@ -48,7 +48,7 @@ export declare class DshTaskCoordinator {
     private sendAdmitted;
     private dispatch;
     private fold;
-    sync(taskId: string, limit?: number): Promise<StoredTask>;
+    sync(taskId: string, limit?: number, observeOnly?: boolean): Promise<StoredTask>;
     executionStatus(taskId: string): {
         state: string;
         remoteStopped: boolean;

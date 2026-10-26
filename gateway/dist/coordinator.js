@@ -10,7 +10,8 @@ import { readServiceRegistration } from "./persistent-service.js";
 import { PersistentDesktopService, reconcileReportedAttempt, registeredServiceConfig } from "./persistent-service.js";
 import { NativeDesktopRpcTrigger } from "./native-desktop-trigger.js";
 import { verifyValidationEvidence } from "./worker-result.js";
-import { snapshotReportDigest } from "./report-authentication.js";
+import { runEvidenceDigestOf } from "./run-evidence.js";
+export { runEvidenceDigestOf } from "./run-evidence.js";
 import { validateSupportedTaskContract, contractExecution } from "./task-contract.js";
 import { AdmissionError, defaultModelPolicy, enforceModelPolicy } from "./collaboration.js";
 async function observeSelectedModel(config, sessionId, model) {
@@ -62,7 +63,9 @@ export class TaskCoordinator {
             input = { ...input, workerKey: undefined };
         this.store.operations.reservePreparation(operation.operationId, { taskId: operation.taskId, workspace: input.workspace, sessionId: input.sessionId ?? null, model: input.model, workerKey: input.workerKey ?? null, title: input.title ?? null });
         this.store.operations.nativeBoundary(operation.taskId);
-        return this.resolveWorkspace(this.config, { ...input, admissionTaskId: operation.taskId, admissionOperationId: operation.operationId });
+        const result = await this.resolveWorkspace(this.config, { ...input, admissionTaskId: operation.taskId, admissionOperationId: operation.operationId });
+        this.store.operations.preparationReturned(operation.operationId);
+        return result;
     }
     async sendAdmitted(input, operation) {
         this.requireDesktop();
@@ -198,6 +201,8 @@ export class TaskCoordinator {
     }
     async sync(taskId, limit = 100) {
         const task = this.requireTask(taskId);
+        if (this.store.recoveries.closure(taskId))
+            return task;
         // Terminal business states keep their protection (no re-dispatch, no new
         // business-state writes — updateAttempt/preserveTerminal still guard
         // that), but T2-R3: real evidence for the same attempt that arrives after
@@ -328,6 +333,11 @@ export class TaskCoordinator {
         }
         const updated = this.requireTask(taskId);
         return this.recordRunEvidence(updated);
+    }
+    observeRecovery(taskId) {
+        if (this.config.backend !== "desktop-queue")
+            throw new AdmissionError("EXECUTOR_CAPABILITY_MISSING", "Recovery observation requires the original desktop queue source.");
+        return this.sync(taskId);
     }
     /**
      * Close a cancelled/accepted task exactly once (T2-R3): once the business
@@ -599,59 +609,6 @@ export function parseReport(rawText) {
 }
 export function buildTaskPrompt(input, feedback) {
     return `[CODEX_TASK]\ntask_id: ${input.taskId}\n目标：\n${input.objective}\n工作目录：${input.workspace ?? "当前绑定桌面会话的目录"}\n约束（每轮继续有效）：\n${input.constraints?.map((item) => `- ${item}`).join("\n") || "按目标范围执行"}\n验收要求：\n${input.acceptanceCommands?.map((item) => `- ${item}`).join("\n") || "运行相关检查并报告真实结果"}\n超时（秒）：${input.timeoutSeconds ?? 1800}\n${feedback ? `Codex 本轮验收反馈（逐项修正，保留已有有效成果）：\n${feedback}\n` : ""}执行要求：使用 WorkBuddy 当前会话和自身工具完成任务。遇到输入、权限、素材或能力阻碍时如实报告。不要把计划或请求受理当成成品，也不要宣称别的 Agent 完成的文件是本轮成果。最终给出实际产物路径、用到的工具/技能、运行的命令和结果。\n最终格式：\nTASK_STATUS: completed | blocked | failed\nARTIFACTS:\nFILES_CHANGED:\nCOMMANDS_RUN:\nTEST_RESULT:\nREMAINING_PROBLEMS:\n[/CODEX_TASK]`;
-}
-/**
- * Pure evidence-digest builder (T2-R1/R2): the digest covers every
- * run-file fact the projection reads — stop proof, full report
- * authentication object (not just its presence), report digest and status —
- * and is bound to the attemptId so a previous round's evidence can never be
- * mistaken for this round's. The projection reader recomputes it from the
- * run file to detect "file facts ahead of the persisted revision".
- *
- * T2-R1 round 3: the digest also binds the report's ACTUAL content. A
- * snapshot can carry an unchanged declared reportDigest while its text or
- * artifacts were altered on disk; the recomputed content digest diverges and
- * the evidence identity changes, so the reader refuses the stale revision
- * and the next sync regenerates it.
- */
-export function runEvidenceDigestOf(snapshot, cancellation) {
-    const stopped = hasNativeStopEvidence(snapshot);
-    // The digest the snapshot's own bytes support right now (null when the
-    // snapshot lacks a report or a usable authentication status). Comparing
-    // this against the DECLARED digest is the adapter's authentication check;
-    // here it only has to be part of the identity so any content change moves
-    // the evidence.
-    let contentDigest = null;
-    try {
-        contentDigest = snapshotReportDigest(snapshot);
-    }
-    catch {
-        contentDigest = null;
-    }
-    return JSON.stringify({
-        taskId: snapshot.taskId,
-        attemptId: snapshot.attemptId,
-        sessionId: snapshot.sessionId ?? null,
-        runtimeSource: snapshot.runtimeSource ?? null,
-        driver: snapshot.driver ?? null,
-        stopped, nativeStoppedAt: snapshot.nativeStoppedAt ?? null,
-        nativeStopSource: snapshot.nativeStopSource ?? null,
-        stopReason: snapshot.stopReason ?? null,
-        stopProofDigest: crypto.createHash("sha256").update(JSON.stringify([
-            snapshot.nativeFailure ?? null, snapshot.stopControl ?? null, snapshot.nativeStopCheck ?? null,
-        ])).digest("hex"),
-        rawContentDigest: crypto.createHash("sha256").update(JSON.stringify([
-            snapshot.text ?? null, snapshot.artifacts ?? null, snapshot.validationRecords ?? null,
-        ])).digest("hex"),
-        cancellation: cancellation ? { requestedAt: cancellation.requestedAt ?? null, reason: cancellation.reason ?? null } : null,
-        reportDigest: snapshot.reportDigest ?? null,
-        // Actual on-disk report content binding: changes whenever text,
-        // artifacts, validation records or the reported status change.
-        contentDigest,
-        auth: snapshot.reportAuthentication ?? null,
-        status: snapshot.status,
-        ...(snapshot.dsh ? { dsh: snapshot.dsh } : {}),
-    });
 }
 /**
  * Whether a stored digest records confirmed stop proof FOR THIS ATTEMPT

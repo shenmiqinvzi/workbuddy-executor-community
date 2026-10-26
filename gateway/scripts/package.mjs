@@ -17,15 +17,16 @@ const REQUIRED_FILES = ["README.md", ".env.example", "package.json", "package-lo
 REQUIRED_FILES.push("scripts/bounded-job.ps1", "bin/agent-hub", "bin/agent-hub-mcp", "scripts/agent-hub-call.mjs", "docs/AGENT_HUB.md", "docs/AGENT_HUB_DESIGN.md",
   ...["contracts", "store", "workbuddy", "engine", "http", "client", "ui", "cli", "mcp"].flatMap(name => [`src/platform/${name}.ts`, `dist/platform/${name}.js`, `dist/platform/${name}.d.ts`]));
 REQUIRED_FILES.push("scripts/dsh-host-check.mjs", ...["dsh-bindings", "dsh-client", "dsh-coordinator", "dsh-runtime", "dsh-rate-verifier", "dsh-inspect"].flatMap(name => [`src/${name}.ts`, `dist/${name}.js`, `dist/${name}.d.ts`]));
+REQUIRED_FILES.push("bin/workbuddy-recovery.cmd", "docs/OPERATION_RECOVERY.md", ...["operation-recovery", "recovery-console", "recovery-cli", "run-evidence"].flatMap(name => [`src/${name}.ts`, `dist/${name}.js`]));
 const DEPLOYMENT_FILES = ["WINDOWS_ENV.example","RESTORE.md","scripts/zip.mjs","scripts/verify-release.mjs","scripts/setup.mjs","scripts/doctor.mjs","scripts/deployment-check.mjs","scripts/workbuddy-inspect.mjs","bin/workbuddy-gateway.cmd","docs/INSTALL_WINDOWS.md","docs/DEPLOYMENT_ACCEPTANCE.md","test/support/typescript-loader.mjs","test/support/read-zip.mjs","test/support/selected-model-client.ts",
   ...["deployment-paths","deployment-safety","deployment-acceptance","setup","doctor","inspect-task"].flatMap(name=>[`src/${name}.ts`,`dist/${name}.js`])];
 REQUIRED_FILES.push(...DEPLOYMENT_FILES);
 const DIRECTORY_RULES = new Map([
   ["src", /\.ts$/],
   ["test", /\.test\.ts$/],
-  ["docs", /^(?:INSTALL_WINDOWS|DEPLOYMENT_ACCEPTANCE|video-explanation|FAILURE_REVIEW|USER_ACCEPTANCE|CODEX_WORKFLOW|QUEUE_WORKER|DEEPSEEK|AGENT_HUB_DESIGN|AGENT_HUB|RELEASE_NOTES)\.md$/],
+  ["docs", /^(?:INSTALL_WINDOWS|DEPLOYMENT_ACCEPTANCE|OPERATION_RECOVERY|video-explanation|FAILURE_REVIEW|USER_ACCEPTANCE|CODEX_WORKFLOW|QUEUE_WORKER|DEEPSEEK|AGENT_HUB_DESIGN|AGENT_HUB|RELEASE_NOTES)\.md$/],
   ["scripts", /^(?:bounded-job\.ps1$|(?:zip|verify-release|setup|doctor|deployment-check|package|install-skill|install-deepseek-skill|install-deepseek-plugin|dsh-host-check|deepseek-call|workbuddy-call|workbuddy-inspect|agent-hub-call)\.mjs$)/],
-  ["bin", /^(?:workbuddy-(?:gateway|cli|doctor|worker|service)(?:\.cmd)?|deepseek-gateway|agent-hub(?:-mcp)?)$/],
+  ["bin", /^(?:workbuddy-(?:gateway|cli|doctor|worker|service|recovery)(?:\.cmd)?|deepseek-gateway|agent-hub(?:-mcp)?)$/],
   ["dist", /\.(?:js|js\.map|d\.ts)$/],
   ["skills", /^(?:SKILL\.md|openai\.yaml|setup\.md)$/],
   ["deepseek-plugin", /./],

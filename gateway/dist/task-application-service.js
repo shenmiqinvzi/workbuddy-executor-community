@@ -32,6 +32,24 @@ export class TaskApplicationService {
     readCreditBalances(connectionId) { return this.coordinator.store.creditBalances.read(connectionId); }
     getOperation(operationId) { return this.coordinator.store.operations.get(operationId); }
     listUnfinishedOperations() { return this.coordinator.store.operations.listUnfinished(); }
+    readOperationRecovery(targetOperationId) { return this.coordinator.store.recoveries.inspect(targetOperationId, this.runsDir); }
+    getOperationRecoveryDecision(operationId) { return this.coordinator.store.recoveries.get(operationId); }
+    authorizeOperationRecovery(input, actor) { return this.coordinator.store.recoveries.authorize(input, this.runsDir, actor); }
+    resolveOperationRecovery(input, authorizationId) { return this.coordinator.store.recoveries.resolve(input, this.runsDir, authorizationId); }
+    async observeOperationRecovery(targetOperationId) {
+        const view = this.readOperationRecovery(targetOperationId);
+        if (this.coordinator.store.get(view.operation.taskId)?.attemptId && !this.coordinator.store.recoveries.closure(view.operation.taskId)) {
+            const dsh = this.dshFor(view.operation.taskId);
+            if (dsh)
+                await dsh.sync(view.operation.taskId, 100, true);
+            else {
+                if (view.operation.executor === "dsh")
+                    throw new AdmissionError("EXECUTOR_UNAVAILABLE", "The original DSH source is unavailable; no fallback is allowed.");
+                await this.coordinator.observeRecovery(view.operation.taskId);
+            }
+        }
+        return this.readOperationRecovery(targetOperationId);
+    }
     /** Stored facts only: deliberately bypasses every synchronising coordinator method. */
     readProjection(taskId) {
         return readTaskProjection({ store: this.coordinator.store, runsDir: this.runsDir }, taskId);

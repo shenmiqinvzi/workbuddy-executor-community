@@ -135,11 +135,14 @@ export class DshTaskCoordinator {
         try {
             enforceModelPolicy(this.policy(), binding.execution);
             const before = await this.checkedSession(binding, task.workspace);
-            this.store.operations.nativeBoundary(task.taskId, binding.attemptId);
+            this.store.operations.nativeBoundary(task.taskId, binding.attemptId, "prepare");
             const ready = prepare && !same(before.selectedModel, expected) ? await this.client.selectModel({ hostId: binding.hostId, sessionId: binding.sessionId, ...expected }) : before;
             if (ready.sessionId !== binding.sessionId || !same(ready.selectedModel, expected))
                 return fail("MODEL_BINDING_CHANGED", "Native model readback differs; no prompt was sent.");
             await this.checkedSession(binding, task.workspace);
+            for (const op of this.store.operations.forTask(task.taskId))
+                if (["reserved", "effect_started"].includes(op.state) && op.kind === "send")
+                    this.store.operations.preparationReturned(op.operationId);
             const model = await this.observation(binding.execution, binding.sessionId, binding.taskId);
             this.store.atomic(() => {
                 const current = this.store.dshBindings.get(binding.attemptId);
@@ -205,7 +208,7 @@ export class DshTaskCoordinator {
         }
         this.store.updateAttempt(taskId, journal.attemptId, { runEvidenceDigest: runEvidenceDigestOf(snapshot, cancellation) });
     }
-    async sync(taskId, limit = 100) {
+    async sync(taskId, limit = 100, observeOnly = false) {
         const binding = this.binding(taskId), task = this.task(taskId);
         if (!binding.runOpen || !task.attemptId)
             return task;
@@ -263,7 +266,7 @@ export class DshTaskCoordinator {
                     patch.blockingReason = "The native request model differs from its immutable selection.";
                     snapshot.error = "model_binding_drift";
                     snapshot.status = "blocked";
-                    if (!current.cancelRequested) {
+                    if (!observeOnly && !current.cancelRequested) {
                         current = { ...current, cancelRequested: true };
                         cancelOriginal = true;
                     }
@@ -295,7 +298,7 @@ export class DshTaskCoordinator {
                     this.store.updateAttempt(taskId, binding.attemptId, patch);
                 this.store.appendTaskEvent({ taskId, attemptId: binding.attemptId, type: config ? "native_request_observed" : `dsh_${event.type}`, occurredAt: event.timestamp ?? new Date().toISOString(), observedAt: new Date().toISOString(), actor: "dsh", payload: { nativeEventSeq: event.seq, requestId: binding.requestId, rawType: event.rawType ?? null, ...(event.text ? { text: event.text } : {}), ...(config ? { effectiveModel: snapshot.dsh?.effectiveModel ?? null } : {}) }, sourceRef: `${binding.attemptId}:dsh:${event.seq}` });
             }
-            if (current.runOpen && !current.cancelRequested && Date.parse(snapshot.deadline ?? "") <= Date.now()) {
+            if (!observeOnly && current.runOpen && !current.cancelRequested && Date.parse(snapshot.deadline ?? "") <= Date.now()) {
                 current = { ...current, cancelRequested: true };
                 cancelOriginal = true;
                 snapshot.status = "blocked";

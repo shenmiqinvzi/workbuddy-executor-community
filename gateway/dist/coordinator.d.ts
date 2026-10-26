@@ -1,7 +1,7 @@
 import type { Config } from "./config.js";
 import { TaskStore, type StoredTask, type TaskReport } from "./task-store.js";
 import { WorkBuddyClient } from "./workbuddy-client.js";
-import { type RunSnapshot } from "./run-journal.js";
+export { runEvidenceDigestOf } from "./run-evidence.js";
 import { type ModelObservation } from "./collaboration.js";
 import type { OperationOptions } from "./operation-admission.js";
 export interface SendTaskInput extends OperationOptions {
@@ -64,6 +64,7 @@ export declare class TaskCoordinator {
     private sendWithContract;
     private dispatch;
     sync(taskId: string, limit?: number): Promise<StoredTask>;
+    observeRecovery(taskId: string): Promise<StoredTask>;
     /**
      * Close a cancelled/accepted task exactly once (T2-R3): once the business
      * terminal decision AND the native stop proof are both on record, record
@@ -388,24 +389,6 @@ export declare function parseReport(rawText: string): TaskReport;
 export declare function buildTaskPrompt(input: SendTaskInput & {
     taskId: string;
 }, feedback?: string): string;
-/**
- * Pure evidence-digest builder (T2-R1/R2): the digest covers every
- * run-file fact the projection reads — stop proof, full report
- * authentication object (not just its presence), report digest and status —
- * and is bound to the attemptId so a previous round's evidence can never be
- * mistaken for this round's. The projection reader recomputes it from the
- * run file to detect "file facts ahead of the persisted revision".
- *
- * T2-R1 round 3: the digest also binds the report's ACTUAL content. A
- * snapshot can carry an unchanged declared reportDigest while its text or
- * artifacts were altered on disk; the recomputed content digest diverges and
- * the evidence identity changes, so the reader refuses the stale revision
- * and the next sync regenerates it.
- */
-export declare function runEvidenceDigestOf(snapshot: RunSnapshot, cancellation?: {
-    requestedAt?: string | null;
-    reason?: string | null;
-}): string;
 /**
  * Whether a stored digest records confirmed stop proof FOR THIS ATTEMPT
  * (T2-R2): digests without an attemptId (legacy rows) only count when the

@@ -4,6 +4,7 @@ import { CollaborationRegistry, type ModelPolicy, type ModelObservation } from "
 import { QuotaStore } from "./quota-observation.js";
 import { CreditBalanceStore } from "./credit-balance.js";
 import { OperationAdmission } from "./operation-admission.js";
+import { RecoveryStore } from "./operation-recovery.js";
 import { DshBindingStore } from "./dsh-bindings.js";
 export type TaskState = "queued" | "working" | "completed" | "blocked" | "failed" | "cancelled" | "needs_review" | "accepted";
 export interface StoredTask {
@@ -161,6 +162,7 @@ export declare class TaskStore {
     readonly creditBalances: CreditBalanceStore;
     readonly dshBindings: DshBindingStore;
     readonly operations: OperationAdmission;
+    readonly recoveries: RecoveryStore;
     constructor(file: string);
     close(): void;
     /**

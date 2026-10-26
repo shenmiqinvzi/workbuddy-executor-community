@@ -211,8 +211,6 @@ npm run package
 
 ### 模型选择与项目重新绑定
 
-直连使用 `workbuddy_list_models({sessionId?,detail:"brief"})`；Hub 使用 `agent_hub_models({sessionId?})`。读取 models 中的实际 ID 后，在 `workbuddy_send_task` / `agent_hub_submit` 传 model 即可指定本轮模型，包含已在 WorkBuddy 配置的自定义模型。省略 model 保留会话当前选择。
+新任务先展示实际执行器、来源、模型、推理档位与已知费用，由用户选择并确认；发送显式 model 或已授权约定，不默认固定/免费模型。付费及未知价格可明确选择；主动免费限定与历史政策仍保留。返工沿用原绑定和预算，不更换模型/会话。
 
-`workbuddy_ensure_workspace({workspace,sessionId?,model?})` 与 `agent_hub_bind_workspace({workspace,sessionId?,model?})` 可更换同目录真实会话的绑定和默认模型。模型配置要求原生空闲且无排队、未闭合任务；不满足时等待或绑定另一个空闲会话。更换绑定不会迁移已派出任务或返工。返工可通过 `workbuddy_continue_task` / `agent_hub_rework` 的 model 指定新模型。
-
-HTTP：`GET /v1/providers/workbuddy/models?sessionId=...`、`GET /v1/providers/workbuddy/workspaces`、`POST /v1/providers/workbuddy/workspaces`（JSON：workspace、可选 sessionId/model/title）。CLI：`agent-hub models [sessionId]`、`agent-hub workspaces`、`agent-hub bind @binding.json`。完整接口见 [Agent Hub](docs/AGENT_HUB.md)。更新后重新构建、安装 Skill，并在本机服务空闲时重载 Gateway/Hub 服务；只替换 Skill 不会给旧程序增加能力。
+T4A 已将独立 ensure_workspace / Hub bind 原生准备收口到持久派工准入，无授权时返回 OPERATION_REQUIRED。已派工任务先观察原身份，结果不明不能换键重派。T4B 的本地人工恢复控制台、证据与审计规则见 [原操作恢复](docs/OPERATION_RECOVERY.md)；HTTP 仍保持已有只读范围。源码更新不自动安装技能、修改运行配置或启动真实任务。
