@@ -349,12 +349,15 @@ export class DshTaskCoordinator {
     async continue(input) {
         input = structuredClone(input);
         const { operationId, expectedRevision, expectedAttemptId, ...parameters } = input;
-        return this.store.operations.run("rework", input.taskId, "dsh", parameters, { operationId, expectedRevision, expectedAttemptId }, this.store.dshBindings.forTask(input.taskId), () => this.continueAdmitted(input));
+        if (!operationId && !this.store.operations.compatibilityOperation("rework", input.taskId, parameters))
+            await this.sync(input.taskId);
+        return this.store.operations.run("rework", input.taskId, "dsh", parameters, { operationId, expectedRevision, expectedAttemptId }, this.store.dshBindings.forTask(input.taskId), operation => this.continueAdmitted(input, operation));
     }
-    async continueAdmitted(input) {
+    async continueAdmitted(input, operation) {
         if (!input.feedback.trim() || input.feedback.length > 20000)
             return fail("INVALID_FEEDBACK", "Provide bounded, concrete review feedback.");
         const task = await this.sync(input.taskId), previous = this.binding(input.taskId);
+        this.store.operations.assertTaskVersion(operation);
         const contract = this.store.getContract(task.taskId);
         if (previous.runOpen || !this.executionStatus(task.taskId).remoteStopped)
             return fail("STOP_UNCONFIRMED", "The original native request has not been confirmed stopped.");
@@ -367,6 +370,7 @@ export class DshTaskCoordinator {
         const current = await this.checkedSession(previous, task.workspace);
         if (!same(current.selectedModel, selection(previous.execution)))
             return fail("MODEL_BINDING_CHANGED", "The original session model changed; rework did not change it back.");
+        this.store.operations.assertTaskVersion(operation);
         const binding = { ...previous, attemptId: RunJournal.newId(), requestId: "", cursor: -1, runOpen: true, cancelRequested: false, dispatch: "preparing", turnId: undefined, terminalSeq: undefined };
         binding.requestId = binding.attemptId;
         this.store.atomic(() => { if (this.task(task.taskId).revision !== task.revision)

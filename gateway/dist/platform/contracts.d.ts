@@ -24,8 +24,8 @@ export declare const requestSchema: z.ZodObject<{
     sessionId?: string | undefined;
     model?: string | undefined;
     timeoutSeconds?: number | undefined;
-    constraints?: string[] | undefined;
     workspace?: string | undefined;
+    constraints?: string[] | undefined;
     output?: "text" | "artifacts" | "json" | undefined;
     provider?: string | undefined;
     idempotencyKey?: string | undefined;

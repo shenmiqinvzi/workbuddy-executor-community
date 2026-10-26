@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import fs from "node:fs";
 import { AdmissionError } from "./collaboration.js";
 export class OperationOutcomeError extends AdmissionError {
     operationId;
@@ -60,11 +61,11 @@ export class OperationAdmission {
         return this.db.prepare("SELECT operation_id FROM task_operations WHERE state IN ('reserved','effect_started','outcome_unknown') ORDER BY rowid").all().map(row => this.get(String(row.operation_id)));
     }
     originalBinding(taskId) {
-        const row = this.db.prepare("SELECT operation_id FROM task_operations WHERE task_id=? AND kind='send' ORDER BY rowid LIMIT 1").get(taskId);
+        const row = this.db.prepare("SELECT operation_id FROM task_operations WHERE task_id=? AND kind='send' AND state<>'rejected' ORDER BY rowid LIMIT 1").get(taskId);
         return row ? this.get(String(row.operation_id)).binding : null;
     }
     originalSession(taskId) {
-        const row = this.db.prepare("SELECT operation_id FROM task_operations WHERE task_id=? AND kind='send' ORDER BY rowid LIMIT 1").get(taskId);
+        const row = this.db.prepare("SELECT operation_id FROM task_operations WHERE task_id=? AND kind='send' AND state<>'rejected' ORDER BY rowid LIMIT 1").get(taskId);
         if (!row)
             return null;
         const operation = this.get(String(row.operation_id));
@@ -72,6 +73,62 @@ export class OperationAdmission {
     }
     save(record) {
         this.db.prepare("UPDATE task_operations SET state=?,body_json=? WHERE operation_id=?").run(record.state, JSON.stringify(record), record.operationId);
+    }
+    compatibilityOperation(kind, taskId, parameters) {
+        return this.get(`compat:${kind}:${taskId}:${operationDigest(parameters)}`);
+    }
+    assertTaskVersion(record) {
+        this.store.atomic(() => {
+            const task = this.store.get(record.taskId);
+            if ((task?.attemptId ?? null) !== record.expectedAttemptId)
+                throw new AdmissionError("STALE_ATTEMPT", "The original operation's attempt changed during observation.");
+            if ((task?.revision ?? null) !== record.expectedRevision)
+                throw new AdmissionError("STALE_REVISION", "The original operation's revision changed during observation.");
+        });
+    }
+    /** Only a receipt explicitly saved before any native boundary proves a clean dispatch refusal. */
+    provenNotDispatched(taskId, attemptId) {
+        return this.db.prepare("SELECT operation_id FROM task_operations WHERE task_id=? AND kind IN ('send','rework') AND state='succeeded'").all(taskId).some(row => {
+            const operation = this.get(String(row.operation_id));
+            const result = operation.result;
+            return !operation.effectStartedAt && operation.attemptId === operation.expectedAttemptId && result?.ok === false && result.task?.attemptId === attemptId;
+        });
+    }
+    /** Persist the exact route chosen by the admitted coordinator, before calling its native adapter. */
+    reservePreparation(operationId, target) {
+        this.store.atomic(() => {
+            const operation = this.get(operationId);
+            if (!operation || operation.kind !== "send" || operation.executor !== "workbuddy" || operation.taskId !== target.taskId || !["reserved", "effect_started"].includes(operation.state))
+                throw new AdmissionError("OPERATION_REQUIRED", "The original send operation must authorize preparation.");
+            const requested = operation.binding;
+            const model = requested.contract?.execution?.modelId ?? requested.contract?.model ?? requested.model;
+            if (!model || target.model !== model || target.sessionId !== (requested.sessionId ?? null))
+                throw new AdmissionError("MODEL_BINDING_CHANGED", "Preparation differs from the original model or session selection.");
+            const bound = { ...target, workspace: fs.realpathSync.native(target.workspace) };
+            const task = this.store.get(target.taskId);
+            if (task?.workspace && fs.realpathSync.native(task.workspace) !== bound.workspace)
+                throw new AdmissionError("WORKSPACE_CONFLICT", "Preparation differs from the admitted task directory.");
+            if (operation.preparationBinding && operationDigest(operation.preparationBinding) !== operationDigest(bound))
+                throw new AdmissionError("MODEL_BINDING_CHANGED", "The original preparation route cannot change.");
+            this.save({ ...operation, preparationBinding: bound, updatedAt: new Date().toISOString() });
+        });
+    }
+    preparationBoundary(operationId, target, resolvedSessionId, enter = false) {
+        this.store.atomic(() => {
+            const operation = operationId ? this.get(operationId) : null;
+            if (!operation?.preparationBinding || operation.kind !== "send" || operation.executor !== "workbuddy" || operation.taskId !== target.taskId)
+                throw new AdmissionError("OPERATION_REQUIRED", "Preparation requires the coordinator's original persisted operation and route.");
+            if (operationDigest(operation.preparationBinding) !== operationDigest({ ...target, workspace: fs.realpathSync.native(target.workspace) }))
+                throw new AdmissionError("MODEL_BINDING_CHANGED", "The preparation target differs from its authorized route.");
+            if (enter && operation.preparationEnteredAt)
+                throw new OperationOutcomeError(operation.operationId, operation.state);
+            if (!enter && !operation.preparationEnteredAt)
+                throw new AdmissionError("OPERATION_REQUIRED", "The original native preparation has not entered its adapter.");
+            if (resolvedSessionId && ((target.sessionId && target.sessionId !== resolvedSessionId) || (operation.preparationSessionId && operation.preparationSessionId !== resolvedSessionId)))
+                throw new AdmissionError("MODEL_BINDING_CHANGED", "Preparation cannot switch its original resolved session.");
+            this.nativeBoundary(target.taskId);
+            this.save({ ...this.get(operation.operationId), ...(enter ? { preparationEnteredAt: new Date().toISOString() } : {}), ...(resolvedSessionId ? { preparationSessionId: resolvedSessionId } : {}), updatedAt: new Date().toISOString() });
+        });
     }
     /** Closing requires all existing durable facts, never idle/TTL or a business label alone. */
     isClosed(task) {
@@ -159,24 +216,37 @@ export class OperationAdmission {
                 throw new AdmissionError("OPERATION_REQUIRED", "No active operation authorizes this native side effect.");
             for (const row of rows) {
                 const record = this.get(String(row.operation_id));
-                this.save({ ...record, state: "effect_started", resolvedBinding: { sessionId: task?.sessionId ?? null, runtimeSource: task?.runtimeSource ?? null }, attemptId: attemptId ?? record.attemptId, updatedAt: new Date().toISOString() });
+                this.save({ ...record, state: "effect_started", effectStartedAt: record.effectStartedAt ?? new Date().toISOString(), resolvedBinding: { sessionId: task?.sessionId ?? null, runtimeSource: task?.runtimeSource ?? null }, attemptId: attemptId ?? record.attemptId, updatedAt: new Date().toISOString() });
             }
         });
     }
     /** Existing queue receipts may wake exactly their original attempt, under its retained workflow. */
-    assertExecution(taskId, attemptId) {
+    assertExecution(taskId, attemptId, target) {
         this.store.atomic(() => {
-            this.claim(taskId, "workbuddy", `compat:execution:${attemptId}`);
-            const record = this.db.prepare("SELECT 1 FROM task_operations WHERE task_id=?").get(taskId);
-            if (!record)
+            const owner = this.occupant();
+            if (!owner || owner.taskId !== taskId || owner.executor !== "workbuddy")
+                throw new AdmissionError("OPERATION_REQUIRED", "The original workflow must already own shared capacity.");
+            this.claim(taskId, "workbuddy", owner.operationId);
+            const receipt = this.get(`queue:${attemptId}`);
+            if (!receipt || receipt.kind !== "queue" || receipt.taskId !== taskId || receipt.attemptId !== attemptId)
                 throw new AdmissionError("OPERATION_REQUIRED", "Historical queue execution needs explicit recovery; it is not automatically dispatched after migration.");
+            if (receipt.state !== "succeeded")
+                throw new OperationOutcomeError(receipt.operationId, receipt.state);
             const pending = this.db.prepare("SELECT operation_id FROM task_operations WHERE task_id=? AND kind IN ('send','rework') AND state IN ('reserved','effect_started','outcome_unknown') LIMIT 1").get(taskId);
             if (pending)
                 throw new OperationOutcomeError(String(pending.operation_id), this.get(String(pending.operation_id)).state);
             const task = this.store.get(taskId);
             if (task?.attemptId !== attemptId || task.cancelNote || ["accepted", "cancelled", "failed"].includes(task.state))
                 throw new AdmissionError("STALE_ATTEMPT", "Only the current live attempt may execute.");
+            const binding = receipt.binding;
+            if (!binding.model?.trim())
+                throw new AdmissionError("MODEL_SELECTION_REQUIRED", "A queue attempt must retain an explicit user-selected model.");
+            if (target && ((task.sessionId && task.sessionId !== target.sessionId) || (binding.sessionId && binding.sessionId !== target.sessionId) || binding.model !== target.model || (binding.workspace && (!target.workspace || fs.realpathSync.native(binding.workspace) !== fs.realpathSync.native(target.workspace)))))
+                throw new AdmissionError("MODEL_BINDING_CHANGED", "Queue execution differs from its original session, directory or model.");
         });
+    }
+    executeQueueAttempt(taskId, attemptId, target, action) {
+        return this.store.atomic(() => { this.assertExecution(taskId, attemptId, target); return action(); });
     }
     replay(record) {
         if (record.state === "succeeded")
@@ -200,7 +270,7 @@ export class OperationAdmission {
         }
         const promise = (async () => {
             try {
-                const raw = await action();
+                const raw = await action(record);
                 const current = this.get(record.operationId);
                 const uncertain = current.state === "effect_started" && raw?.ok === false && raw.code !== "DISPATCH_REJECTED";
                 const result = JSON.parse(JSON.stringify({ ...raw, operationId: record.operationId, operationState: uncertain ? "outcome_unknown" : "succeeded", ...(uncertain ? { outcomeCode: "OUTCOME_UNKNOWN", ...(raw.code ? {} : { code: "OUTCOME_UNKNOWN" }) } : {}) }));

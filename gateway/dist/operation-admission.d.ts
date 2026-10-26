@@ -12,6 +12,14 @@ export interface OperationReceipt {
     operationState: OperationState;
     outcomeCode?: "OUTCOME_UNKNOWN";
 }
+export interface PreparationBinding {
+    taskId: string;
+    workspace: string;
+    sessionId: string | null;
+    model: string;
+    workerKey: string | null;
+    title: string | null;
+}
 export interface OperationRecord {
     operationId: string;
     kind: string;
@@ -27,6 +35,10 @@ export interface OperationRecord {
         sessionId: string | null;
         runtimeSource: string | null;
     };
+    preparationBinding?: PreparationBinding;
+    preparationSessionId?: string;
+    preparationEnteredAt?: string;
+    effectStartedAt?: string;
     createdAt: string;
     updatedAt: string;
     result?: unknown;
@@ -53,6 +65,13 @@ export declare class OperationAdmission {
     originalBinding(taskId: string): unknown;
     originalSession(taskId: string): string | null;
     private save;
+    compatibilityOperation(kind: string, taskId: string, parameters: unknown): OperationRecord | null;
+    assertTaskVersion(record: OperationRecord): void;
+    /** Only a receipt explicitly saved before any native boundary proves a clean dispatch refusal. */
+    provenNotDispatched(taskId: string, attemptId: string): boolean;
+    /** Persist the exact route chosen by the admitted coordinator, before calling its native adapter. */
+    reservePreparation(operationId: string, target: PreparationBinding): void;
+    preparationBoundary(operationId: string | undefined, target: PreparationBinding, resolvedSessionId?: string, enter?: boolean): void;
     /** Closing requires all existing durable facts, never idle/TTL or a business label alone. */
     isClosed(task: StoredTask): boolean;
     occupant(): {
@@ -66,9 +85,18 @@ export declare class OperationAdmission {
     /** Commit before every possibly mutating native call; never roll this back with its receipt. */
     nativeBoundary(taskId: string, attemptId?: string): void;
     /** Existing queue receipts may wake exactly their original attempt, under its retained workflow. */
-    assertExecution(taskId: string, attemptId: string): void;
+    assertExecution(taskId: string, attemptId: string, target?: {
+        sessionId: string;
+        model?: string;
+        workspace?: string;
+    }): void;
+    executeQueueAttempt<T>(taskId: string, attemptId: string, target: {
+        sessionId: string;
+        model?: string;
+        workspace?: string;
+    }, action: () => T): T;
     private replay;
-    run<T extends object>(kind: string, taskId: string, executor: string, parameters: unknown, options: OperationOptions, binding: unknown, action: () => Promise<T>): Promise<T & OperationReceipt>;
+    run<T extends object>(kind: string, taskId: string, executor: string, parameters: unknown, options: OperationOptions, binding: unknown, action: (operation: OperationRecord) => Promise<T>): Promise<T & OperationReceipt>;
     /** Internal queue persistence has its own stable receipt, while retaining its parent's workflow. */
     enqueue(taskId: string, attemptId: string, parameters: unknown, action: () => void): void;
     metadata<T>(kind: string, taskId: string, parameters: unknown, options: Pick<OperationOptions, "operationId">, action: () => T, binding?: unknown): T;

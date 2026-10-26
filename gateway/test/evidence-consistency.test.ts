@@ -9,7 +9,7 @@ import { DatabaseSync } from "node:sqlite";
 import type { Config } from "../src/config.js";
 import { TaskStore, type StoredTask } from "../src/task-store.js";
 import { TaskCoordinator, runEvidenceDigestOf } from "../src/coordinator.js";
-import { WorkBuddyClient } from "../src/workbuddy-client.js";
+import { SelectedModelClient as WorkBuddyClient } from "./support/selected-model-client.js";
 import { TaskApplicationService } from "../src/task-application-service.js";
 import { DesktopQueue } from "../src/desktop-queue.js";
 import { RunJournal } from "../src/run-journal.js";
@@ -38,7 +38,7 @@ function fixture(name: string) {
   const coordinator=new TaskCoordinator(config,store,client),service=new TaskApplicationService(coordinator,3,config.runsDir!);
   const queue=new DesktopQueue(config,()=>({desktopPid:process.pid})),taskId="fixture-task";
   return {dir,config,store,coordinator,service,queue,taskId,
-    send:()=>coordinator.send({taskId,objective:"Synthetic consistency fixture",workspace:dir,sessionId:"fixture-session",timeoutSeconds:600}),
+    send:()=>coordinator.send({model: "synthetic-user-choice",taskId,objective:"Synthetic consistency fixture",workspace:dir,sessionId:"fixture-session",timeoutSeconds:600}),
     events:()=>store.listTaskEvents(taskId,{limit:200}).events,
     view:()=>{const r=service.readStageView(taskId);if(!r.ok)throw Error(r.code);return r.view;},
   };

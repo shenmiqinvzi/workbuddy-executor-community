@@ -17,7 +17,7 @@ const REQUIRED_FILES = ["README.md", ".env.example", "package.json", "package-lo
 REQUIRED_FILES.push("scripts/bounded-job.ps1", "bin/agent-hub", "bin/agent-hub-mcp", "scripts/agent-hub-call.mjs", "docs/AGENT_HUB.md", "docs/AGENT_HUB_DESIGN.md",
   ...["contracts", "store", "workbuddy", "engine", "http", "client", "ui", "cli", "mcp"].flatMap(name => [`src/platform/${name}.ts`, `dist/platform/${name}.js`, `dist/platform/${name}.d.ts`]));
 REQUIRED_FILES.push("scripts/dsh-host-check.mjs", ...["dsh-bindings", "dsh-client", "dsh-coordinator", "dsh-runtime", "dsh-rate-verifier", "dsh-inspect"].flatMap(name => [`src/${name}.ts`, `dist/${name}.js`, `dist/${name}.d.ts`]));
-const DEPLOYMENT_FILES = ["WINDOWS_ENV.example","RESTORE.md","scripts/zip.mjs","scripts/verify-release.mjs","scripts/setup.mjs","scripts/doctor.mjs","scripts/deployment-check.mjs","scripts/workbuddy-inspect.mjs","bin/workbuddy-gateway.cmd","docs/INSTALL_WINDOWS.md","docs/DEPLOYMENT_ACCEPTANCE.md","test/support/typescript-loader.mjs","test/support/read-zip.mjs",
+const DEPLOYMENT_FILES = ["WINDOWS_ENV.example","RESTORE.md","scripts/zip.mjs","scripts/verify-release.mjs","scripts/setup.mjs","scripts/doctor.mjs","scripts/deployment-check.mjs","scripts/workbuddy-inspect.mjs","bin/workbuddy-gateway.cmd","docs/INSTALL_WINDOWS.md","docs/DEPLOYMENT_ACCEPTANCE.md","test/support/typescript-loader.mjs","test/support/read-zip.mjs","test/support/selected-model-client.ts",
   ...["deployment-paths","deployment-safety","deployment-acceptance","setup","doctor","inspect-task"].flatMap(name=>[`src/${name}.ts`,`dist/${name}.js`])];
 REQUIRED_FILES.push(...DEPLOYMENT_FILES);
 const DIRECTORY_RULES = new Map([
@@ -36,7 +36,7 @@ function allowed(relative) {
   const segments = relative.split("/");
   if (segments.some((segment) => PRIVATE_DIRS.has(segment))) return false;
   if (relative === "docs/native-stop-verification.json") return true;
-  if (relative === "test/support/typescript-loader.mjs" || relative === "test/support/read-zip.mjs") return true;
+  if (relative === "test/support/typescript-loader.mjs" || relative === "test/support/read-zip.mjs" || relative === "test/support/selected-model-client.ts") return true;
   if (segments.length === 1) return ROOT_FILES.has(relative);
   if (segments[0] === "skills") return SKILL_FILES.includes(relative);
   if (segments[0] === "deepseek-plugin") return PLUGIN_FILES.includes(relative);

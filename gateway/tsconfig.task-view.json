@@ -14,6 +14,7 @@
   "include": [
     "test/dsh-adapter.test.ts",
     "test/t4a-operation-admission.test.ts",
+    "test/t4a-boundaries.test.ts",
     "test/dsh-transport.test.ts",
     "test/t3-admission.test.ts",
     "test/quota-observation.test.ts",

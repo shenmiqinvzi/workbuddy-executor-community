@@ -23,10 +23,10 @@ function fixture(t:{after:(fn:()=>void)=>void}) {
  for(const id of ["session","other"])db.prepare("INSERT INTO sessions VALUES(?,?,1,NULL)").run(id,dir);db.close();
  const store=new TaskStore(config.dbFile),queue=new DesktopQueue(config,()=>({desktopPid:process.pid})),coordinator=new TaskCoordinator(config,store,new WorkBuddyClient(config));
  let state:NativeObservation["state"]="idle",stopFailure=false,stops=0,wakes=0;
- const trigger:NativeDesktopTrigger={inspect:async()=>({state,workspace:dir}),wakeIdle:async()=>{wakes++;state="busy";return {accepted:true};},cancelAttempt:async(sid,wid,workspace)=>{assert.equal(sid,"session");assert.match(wid,/^wake-run-/);assert.equal(workspace,dir);stops++;if(stopFailure)throw Error("stop API failed");state="idle";}};
+ const trigger:NativeDesktopTrigger={ async setModel(sessionId: string, model: string) { return { sessionId, model }; },inspect:async()=>({state,workspace:dir}),wakeIdle:async()=>{wakes++;state="busy";return {accepted:true};},cancelAttempt:async(sid,wid,workspace)=>{assert.equal(sid,"session");assert.match(wid,/^wake-run-/);assert.equal(workspace,dir);stops++;if(stopFailure)throw Error("stop API failed");state="idle";}};
  const registration={version:1 as const,sessionId:"session",workspace:dir,projectDir:dir,nodeBin:process.execPath,cdpPort:18491,dbFile:config.dbFile,runsDir:config.runsDir,workbuddyConfigDir:dir,cliElectronPath:config.cliElectronPath};
  const service=()=>new PersistentDesktopService(config,registration,trigger,store);
- const send=async()=>{await coordinator.send({taskId:"task",objective:"fixture",sessionId:"session",workspace:dir,timeoutSeconds:120});await service().pump();const claim=await queue.claim("session",0);if(claim.status!=="task")throw Error("no claim");return {...claim,journal:new RunJournal(config.runsDir,claim.attemptId)};};
+ const send=async()=>{await coordinator.send({ model: "synthetic-user-choice",taskId:"task",objective:"fixture",sessionId:"session",workspace:dir,timeoutSeconds:120});await service().pump();const claim=await queue.claim("session",0);if(claim.status!=="task")throw Error("no claim");return {...claim,journal:new RunJournal(config.runsDir,claim.attemptId)};};
  t.after(()=>{store.close();fs.rmSync(dir,{recursive:true,force:true});});
  return {dir,config,store,queue,coordinator,trigger,service,send,setState:(s:typeof state)=>state=s,setFailure:(f:boolean)=>stopFailure=f,stops:()=>stops,wakes:()=>wakes};
 }
@@ -50,7 +50,7 @@ test("stop API failure is visible, not replayed, forbids new sessions/rework/acc
  assert.equal((await f.service().pump()).status,"stop_unconfirmed");assert.equal(f.stops(),1);
  assert.match(c.journal.snapshot()?.stopControl?.error??"",/stop API failed/);
  assert.equal(f.coordinator.executionStatus("task").remoteStopped,false);
- await assert.rejects(f.coordinator.send({taskId:"other-task",objective:"overlap",sessionId:"other",workspace:f.dir}),{code:"CAPACITY_OCCUPIED"});
+ await assert.rejects(f.coordinator.send({ model: "synthetic-user-choice",taskId:"other-task",objective:"overlap",sessionId:"other",workspace:f.dir}),{code:"CAPACITY_OCCUPIED"});
  assert.equal(f.store.get("other-task"),undefined);
  await assert.rejects(()=>f.coordinator.continue({taskId:"task",feedback:"retry"}),/Cancelled/);
  await assert.rejects(()=>f.coordinator.accept("task","bad",["check"]),/finish/);
@@ -82,8 +82,8 @@ test("same task rework retains session and history; overlapping and duplicate di
  await assert.rejects(()=>f.coordinator.continue({taskId:"task",feedback:"fix"}),/not been confirmed/);
  f.setState("idle");await f.service().pump();await f.coordinator.continue({taskId:"task",feedback:"specific correction"});await f.service().pump();
  const current=f.store.get("task")!;assert.equal(current.sessionId,c.sessionId);assert.equal(current.attempt,2);assert.notEqual(current.attemptId,c.attemptId);
- assert.equal((await f.coordinator.send({taskId:"task",objective:"fixture",sessionId:"session",workspace:f.dir,timeoutSeconds:120})).created,false);
- await assert.rejects(()=>f.coordinator.send({taskId:"task",objective:"duplicate"}),/Task ID conflicts/);assert.equal(f.wakes(),2);assert.equal(f.store.listAttempts("task").length,2);
+ assert.equal((await f.coordinator.send({ model: "synthetic-user-choice",taskId:"task",objective:"fixture",sessionId:"session",workspace:f.dir,timeoutSeconds:120})).created,false);
+ await assert.rejects(()=>f.coordinator.send({ model: "synthetic-user-choice",taskId:"task",objective:"duplicate"}),/Task ID conflicts/);assert.equal(f.wakes(),2);assert.equal(f.store.listAttempts("task").length,2);
 });
 
 async function validatedReport(f: ReturnType<typeof fixture>) {

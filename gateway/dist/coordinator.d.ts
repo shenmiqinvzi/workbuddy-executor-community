@@ -29,6 +29,7 @@ export declare class TaskCoordinator {
         model?: string;
         workerKey?: string;
         admissionTaskId?: string;
+        admissionOperationId?: string;
     }) => Promise<{
         workspace: string;
         sessionId: string;
@@ -58,6 +59,7 @@ export declare class TaskCoordinator {
         task: StoredTask;
         message?: undefined;
     }>;
+    private prepareWorkspace;
     private sendAdmitted;
     private sendWithContract;
     private dispatch;

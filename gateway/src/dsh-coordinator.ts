@@ -12,7 +12,7 @@ import { reportDigest } from "./report-authentication.js";
 import { DeepSeekRpcError } from "./deepseek-client.js";
 import { readTaskProjection } from "./task-view-reader.js";
 
-import type { OperationOptions } from "./operation-admission.js";
+import type { OperationOptions, OperationRecord } from "./operation-admission.js";
 
 type ModelRate = { credits: string | null; observedAt: string };
 /** Trusted source metadata, separate from native selection verification. Missing
@@ -253,12 +253,14 @@ export class DshTaskCoordinator {
   async continue(input: { taskId: string; feedback: string; model?: string; timeoutSeconds?: number; acceptanceCommands?: string[] } & OperationOptions) {
     input = structuredClone(input);
     const { operationId, expectedRevision, expectedAttemptId, ...parameters } = input;
+    if (!operationId && !this.store.operations.compatibilityOperation("rework", input.taskId, parameters)) await this.sync(input.taskId);
     return this.store.operations.run("rework", input.taskId, "dsh", parameters, { operationId, expectedRevision, expectedAttemptId },
-      this.store.dshBindings.forTask(input.taskId), () => this.continueAdmitted(input));
+      this.store.dshBindings.forTask(input.taskId), operation => this.continueAdmitted(input, operation));
   }
-  private async continueAdmitted(input: { taskId: string; feedback: string; model?: string; timeoutSeconds?: number; acceptanceCommands?: string[] }) {
+  private async continueAdmitted(input: { taskId: string; feedback: string; model?: string; timeoutSeconds?: number; acceptanceCommands?: string[] }, operation: OperationRecord) {
     if (!input.feedback.trim() || input.feedback.length > 20000) return fail("INVALID_FEEDBACK", "Provide bounded, concrete review feedback.");
     const task = await this.sync(input.taskId), previous = this.binding(input.taskId);
+    this.store.operations.assertTaskVersion(operation);
     const contract = this.store.getContract(task.taskId);
     if (previous.runOpen || !this.executionStatus(task.taskId).remoteStopped) return fail("STOP_UNCONFIRMED", "The original native request has not been confirmed stopped.");
     if (["accepted", "cancelled"].includes(task.state) || contract.state !== "found") return fail("TASK_CLOSED", "Closed or unbound tasks cannot be reworked.");
@@ -266,6 +268,7 @@ export class DshTaskCoordinator {
     if (input.model !== undefined || input.timeoutSeconds !== undefined || input.acceptanceCommands !== undefined) return fail("TASK_CONFLICT", "Rework cannot change the immutable execution terms.");
     const current = await this.checkedSession(previous, task.workspace!);
     if (!same(current.selectedModel, selection(previous.execution))) return fail("MODEL_BINDING_CHANGED", "The original session model changed; rework did not change it back.");
+    this.store.operations.assertTaskVersion(operation);
     const binding = { ...previous, attemptId: RunJournal.newId(), requestId: "", cursor: -1, runOpen: true, cancelRequested: false, dispatch: "preparing" as const, turnId: undefined, terminalSeq: undefined }; binding.requestId = binding.attemptId;
     this.store.atomic(() => { if (this.task(task.taskId).revision !== task.revision) return fail("READ_CONFLICT", "The task changed during rework preparation."); this.store.dshBindings.reserve(binding); });
     return this.dispatch(binding, input.feedback);

@@ -12,7 +12,7 @@ import { TaskStore, type StoredTask } from "../src/task-store.js";
 import type { LocalMessage } from "../src/workbuddy-client.js";
 import { loadConfig } from "../src/config.js";
 import { DesktopQueue } from "../src/desktop-queue.js";
-import { RunJournal } from "../src/run-journal.js";
+import { RunJournal, writePrivateJson } from "../src/run-journal.js";
 
 function task(overrides: Partial<StoredTask> = {}): StoredTask {
   return {
@@ -207,7 +207,8 @@ test("MCP schemas expose optional brief and full still retrieves complete durabl
   const attemptId = RunJournal.newId();
   store.createOrGet({ taskId: "report-before-idle", messageId: attemptId, objective: "Fixture only", workspace: directory, sessionId: "native-session", state: "queued" });
   store.beginAttempt("report-before-idle", { attemptId, messageId: attemptId, sessionId: "native-session" });
-  queue.start({ taskId: "report-before-idle", attemptId, sessionId: "native-session", workspace: directory, prompt: "Fixture only", timeoutSeconds: 120 });
+  queue.start({ model: "synthetic-user-choice", taskId: "report-before-idle", attemptId, sessionId: "native-session", workspace: directory, prompt: "Fixture only", timeoutSeconds: 120 });
+  writePrivateJson(path.join(directory, "runs", attemptId, "model-ready.json"), { attemptId, sessionId: "native-session", model: "synthetic-user-choice" });
   const claim = await queue.claim("native-session", 0);
   if (claim.status !== "task") throw new Error("Missing fixture claim");
   queue.report({ ...claim, status: "completed", text: "TASK_STATUS: completed\nActual fixture report", artifacts: [] });

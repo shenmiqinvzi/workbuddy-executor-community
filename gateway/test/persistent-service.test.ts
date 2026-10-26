@@ -7,7 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import { loadConfig, type Config } from "../src/config.js";
 import { TaskStore } from "../src/task-store.js";
 import { TaskCoordinator } from "../src/coordinator.js";
-import { WorkBuddyClient } from "../src/workbuddy-client.js";
+import { SelectedModelClient as WorkBuddyClient } from "./support/selected-model-client.js";
 import { DesktopQueue } from "../src/desktop-queue.js";
 import { RunJournal, writePrivateJson, hasNativeStopEvidence } from "../src/run-journal.js";
 import { PersistentDesktopService, recoverExpiredAttempt, reconcileReportedAttempt, readServiceRegistration, serviceRegistrationPath, type NativeDesktopTrigger, type NativeObservation, type ServiceRegistration, type WakeIntent } from "../src/persistent-service.js";
@@ -413,7 +413,7 @@ function fixture(t: { after: (fn: () => void) => void }, sessionId = "worker-ses
   trigger.workspace = dir;
   const service = () => new PersistentDesktopService(config, registration, trigger, store);
   const send = async (taskId = "transport-fixture") => {
-    await coordinator.send({ taskId, objective: "Unit transport fixture only", sessionId: registration.sessionId, workspace: dir, timeoutSeconds: 600 });
+    await coordinator.send({ model: "synthetic-user-choice", taskId, objective: "Unit transport fixture only", sessionId: registration.sessionId, workspace: dir, timeoutSeconds: 600 });
     return new RunJournal(config.runsDir!, store.get(taskId)!.attemptId!);
   };
   t.after(() => { store.close(); fs.rmSync(dir, { recursive: true, force: true }); });
@@ -713,7 +713,7 @@ test("installed binding supplies the worker identity without a new listener or e
   const f = fixture(t);
   f.config.serviceConfigFile = serviceRegistrationPath(f.dir);
   writePrivateJson(f.config.serviceConfigFile, f.registration);
-  const result = await f.coordinator.send({ taskId: "bound-default", objective: "Unit binding fixture" });
+  const result = await f.coordinator.send({ model: "synthetic-user-choice", taskId: "bound-default", objective: "Unit binding fixture" });
   assert.equal(result.ok, true);
   const stored = f.store.get("bound-default")!;
   assert.equal(stored.sessionId, f.registration.sessionId);
@@ -843,7 +843,7 @@ test("expired unclaimed tasks and deleted native sessions are never woken", asyn
 
 test("same-chat rework gets one new wake and preserves original task identity and constraints", async (t) => {
   const f = fixture(t);
-  await f.coordinator.send({ taskId: "rework", objective: "Unit fixture", constraints: ["Preserve original constraint"], sessionId: f.registration.sessionId, workspace: f.dir });
+  await f.coordinator.send({ model: "synthetic-user-choice", taskId: "rework", objective: "Unit fixture", constraints: ["Preserve original constraint"], sessionId: f.registration.sessionId, workspace: f.dir });
   assert.equal((await f.service().pump()).status, "wake_submitted");
   const claim = await f.queue.claim(f.registration.sessionId, 0);
   if (claim.status !== "task") throw new Error("Expected unit claim");

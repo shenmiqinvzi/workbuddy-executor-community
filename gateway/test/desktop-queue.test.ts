@@ -7,7 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import { loadConfig, type Config } from "../src/config.js";
 import { DesktopQueue, assertDesktopCaller, windowsWorkerCommand } from "../src/desktop-queue.js";
 import { TaskStore } from "../src/task-store.js";
-import { WorkBuddyClient } from "../src/workbuddy-client.js";
+import { SelectedModelClient as WorkBuddyClient } from "./support/selected-model-client.js";
 import { TaskCoordinator } from "../src/coordinator.js";
 import { RunJournal } from "../src/run-journal.js";
 import { readWorkerResult } from "../src/worker-result.js";
@@ -25,7 +25,7 @@ function fixture(t: { after: (fn: () => void) => void }) {
   // Unit fixture only. Production CLI always uses actual native process ancestry.
   const queue = new DesktopQueue(config, () => ({ desktopPid: process.pid }));
   t.after(() => { store.close(); fs.rmSync(dir, { recursive: true, force: true }); });
-  const send = (taskId = "unit-task") => coordinator.send({ taskId, objective: "Unit transport fixture", workspace: dir, sessionId: "unit-session", constraints: ["Keep original constraint"], timeoutSeconds: 120 });
+  const send = (taskId = "unit-task") => coordinator.send({ model: "synthetic-user-choice", taskId, objective: "Unit transport fixture", workspace: dir, sessionId: "unit-session", constraints: ["Keep original constraint"], timeoutSeconds: 120 });
   return { dir, config, store, client, coordinator, queue, send };
 }
 
@@ -277,7 +277,7 @@ test("legacy report stop reasons remain unconfirmed until a native observation",
 
 test("a rejected queue dispatch remains inspectable and can be corrected without losing its task", async (t) => {
   const f = fixture(t);
-  const rejected = await f.coordinator.send({ taskId: "rejected-mode", objective: "Fixture task", workspace: f.dir, sessionId: "unit-session", sessionMode: "new" });
+  const rejected = await f.coordinator.send({ model: "synthetic-user-choice", taskId: "rejected-mode", objective: "Fixture task", workspace: f.dir, sessionId: "unit-session", sessionMode: "new" });
   assert.equal(rejected.ok, false);
   assert.equal((await f.coordinator.sync("rejected-mode")).state, "blocked");
   await f.coordinator.continue({ taskId: "rejected-mode", feedback: "Use the native desktop model already selected" });

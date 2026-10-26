@@ -84,6 +84,18 @@ test("same task replay and coordinator reconstruction never dispatch again", asy
   await assert.rejects(restarted.send({ ...input, sessionId: "other" }), { code: "TASK_CONFLICT" });
 });
 
+test("explicit DSH rework retains the caller's revision when internal sync receives a new report", async t => {
+  const f = fixture(t); await f.send();
+  const original = f.store.get("dsh-task")!;
+  f.finish();
+  await assert.rejects(f.coordinator.continue({ taskId: original.taskId, feedback: "Feedback for the original view", operationId: "stale-rework",
+    expectedRevision: original.revision, expectedAttemptId: original.attemptId }), { code: "STALE_REVISION" });
+  assert.notEqual(f.store.get(original.taskId)!.revision, original.revision);
+  assert.equal(f.store.get(original.taskId)!.attemptId, original.attemptId);
+  assert.equal(f.store.operations.get("stale-rework")!.expectedRevision, original.revision);
+  assert.deepEqual(f.counts(), { prompts: 1, selections: 1 });
+});
+
 test("lost dispatch response holds shared capacity and recovers by original events", async t => {
   const f = fixture(t); f.setPromptError(new Error("private credential must not leak")); const result = await f.send();
   assert.equal(result.ok, false); assert.equal(f.store.dshBindings.forTask("dsh-task")!.runOpen, true);

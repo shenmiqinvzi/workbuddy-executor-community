@@ -19,11 +19,12 @@ export function workerRegistration(config) {
 export async function ensureWorkspace(config, input) {
     if (config.backend !== "desktop-queue")
         throw new Error("Automatic native workspaces require desktop-queue");
+    const target = { taskId: input.admissionTaskId ?? "", workspace: input.workspace, sessionId: input.sessionId ?? null, model: input.model ?? "", workerKey: input.workerKey ?? null, title: input.title ?? null };
     const gate = new TaskStore(config.dbFile);
     try {
         if (!input.admissionTaskId)
             throw new AdmissionError("OPERATION_REQUIRED", "Use a durable authorized task operation for native workspace preparation.");
-        gate.operations.nativeBoundary(input.admissionTaskId);
+        gate.operations.preparationBoundary(input.admissionOperationId, target, undefined, true);
     }
     finally {
         gate.close();
@@ -41,7 +42,7 @@ export async function ensureWorkspace(config, input) {
             createWorker: (...args) => {
                 const gate = new TaskStore(bound.dbFile);
                 try {
-                    gate.operations.nativeBoundary(input.admissionTaskId);
+                    gate.operations.preparationBoundary(input.admissionOperationId, target, args[1]);
                 }
                 finally {
                     gate.close();
@@ -52,7 +53,7 @@ export async function ensureWorkspace(config, input) {
                 // Configuration must not change the model underneath queued or unclosed attempts.
                 const store = new TaskStore(bound.dbFile);
                 try {
-                    store.operations.nativeBoundary(input.admissionTaskId);
+                    store.operations.preparationBoundary(input.admissionOperationId, target, sessionId);
                     for (let offset = 0;; offset += 500) {
                         const tasks = store.listTasks({ limit: 500, offset });
                         for (const task of tasks) {
