@@ -7,7 +7,7 @@ import { windowsPrivatePath } from "../deepseek-plugin/private-path.mjs";
 import { DshClient } from "../src/dsh-client.js";
 
 test("real local transport and DSH client use a private authenticated endpoint", { timeout: 60000 }, async t => {
-  const parent = fs.mkdtempSync(path.join(os.tmpdir(), "dsh-wire-")), root = path.join(parent, "bridge");
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), "dsh-wire-")), root = path.join(parent, process.platform === "win32" ? "bridge-资料-'literal" : "bridge");
   const modulePath = new URL("../deepseek-plugin/transport.mjs", import.meta.url).href;
   const { startTransport } = await import(modulePath);
   const hostId = "dsh-synthetic-wire";

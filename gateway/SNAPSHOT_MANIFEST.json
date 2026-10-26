@@ -148,8 +148,8 @@
     },
     {
       "path": "deepseek-plugin/private-path.mjs",
-      "sha256": "184decd899d7faeaa8088627f0f198e868ffd703d96ca1124f1589b0651da90f",
-      "bytes": 2316
+      "sha256": "6f25fe990e8eac211308b19b9a0ba6b8a82baa0be8ea4269d8f2bb5a010cb335",
+      "bytes": 2651
     },
     {
       "path": "deepseek-plugin/test/adapter.test.mjs",
@@ -1863,8 +1863,8 @@
     },
     {
       "path": "test/dsh-transport.test.ts",
-      "sha256": "e4b563de15692e5e62b6f71b5917d9f14cc2f8a3e607b261bfb65d5252f67374",
-      "bytes": 2908
+      "sha256": "02c601e8f03807e8da554c4a64b38db0e047eb98348eb68fc50a9f00dc3026f6",
+      "bytes": 2966
     },
     {
       "path": "test/evidence-consistency.test.ts",

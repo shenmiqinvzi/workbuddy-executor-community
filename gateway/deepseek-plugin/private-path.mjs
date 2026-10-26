@@ -5,19 +5,23 @@ import { join } from 'node:path';
 // inspected, never repaired. No shell interpolation or path arguments.
 const script = String.raw`
 $ErrorActionPreference='Stop'
-$data=[Console]::In.ReadToEnd() | ConvertFrom-Json
+$parts=[Console]::In.ReadToEnd().Split([char]10)
+if ($parts.Length -ne 3) { throw 'input' }
+$target=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($parts[0]))
+$protect=$parts[1] -eq '1'
+$directory=$parts[2] -eq '1'
 $me=[Security.Principal.WindowsIdentity]::GetCurrent().User
-if ($data.protect) {
-  $acl=if ($data.directory) { [IO.Directory]::GetAccessControl($data.path) } else { [IO.File]::GetAccessControl($data.path) }
+if ($protect) {
+  $acl=if ($directory) { [IO.Directory]::GetAccessControl($target) } else { [IO.File]::GetAccessControl($target) }
   $acl.SetAccessRuleProtection($true,$false)
-  if ($data.directory) { $rule=New-Object Security.AccessControl.FileSystemAccessRule($me,'FullControl','ContainerInherit,ObjectInherit','None','Allow') }
-  else { $rule=New-Object Security.AccessControl.FileSystemAccessRule($me,'FullControl','Allow') }
+  if ($directory) { $rule=[Security.AccessControl.FileSystemAccessRule]::new($me,'FullControl','ContainerInherit,ObjectInherit','None','Allow') }
+  else { $rule=[Security.AccessControl.FileSystemAccessRule]::new($me,'FullControl','Allow') }
   $acl.AddAccessRule($rule)
-  if ($data.directory) { [IO.Directory]::SetAccessControl($data.path,$acl) }
-  else { [IO.File]::SetAccessControl($data.path,$acl) }
+  if ($directory) { [IO.Directory]::SetAccessControl($target,$acl) }
+  else { [IO.File]::SetAccessControl($target,$acl) }
 }
-if ([IO.File]::GetAttributes($data.path) -band [IO.FileAttributes]::ReparsePoint) { throw 'reparse' }
-$acl=if ($data.directory) { [IO.Directory]::GetAccessControl($data.path) } else { [IO.File]::GetAccessControl($data.path) }
+if ([IO.File]::GetAttributes($target) -band [IO.FileAttributes]::ReparsePoint) { throw 'reparse' }
+$acl=if ($directory) { [IO.Directory]::GetAccessControl($target) } else { [IO.File]::GetAccessControl($target) }
 if ($acl.GetOwner([Security.Principal.SecurityIdentifier]).Value -notin @($me.Value,'S-1-5-32-544')) { throw 'owner' }
 $allowed=@($me.Value,'S-1-5-18','S-1-5-32-544')
 foreach ($rule in $acl.GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier])) {
@@ -30,7 +34,10 @@ export function windowsPrivatePath(path, { protect = false, directory = false } 
   try {
     const result = execFileSync(join(process.env.SystemRoot ?? 'C:\\Windows', 'System32/WindowsPowerShell/v1.0/powershell.exe'),
       ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')],
-      { input: JSON.stringify({ path, protect, directory }), encoding: 'utf8', windowsHide: true, timeout: 10000, maxBuffer: 65536, stdio: ['pipe', 'pipe', 'pipe'] });
+      { input: `${Buffer.from(path, 'utf8').toString('base64')}\n${protect ? 1 : 0}\n${directory ? 1 : 0}`, encoding: 'utf8', windowsHide: true, timeout: 10000, maxBuffer: 65536, stdio: ['pipe', 'pipe', 'pipe'] });
     if (result.trim() !== 'private') throw Error();
-  } catch { throw new Error('bridge/insecure-path'); }
+  } catch (error) {
+    const reason = error?.code === 'ETIMEDOUT' ? 'query_timeout' : 'query_failed';
+    throw Object.assign(new Error(`bridge/insecure-path: ${reason}`), { code: 'bridge/insecure-path', reason });
+  }
 }
