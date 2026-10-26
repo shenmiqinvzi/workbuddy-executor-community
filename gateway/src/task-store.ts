@@ -631,7 +631,7 @@ export class TaskStore {
         if (attemptNumber > policy.maxAttempts || contract.record.contract.timeoutSeconds > policy.maxTimeoutSeconds) throw new AdmissionError("POLICY_CHANGED", "The current policy no longer admits this attempt.");
         const observed = reservation.modelObservation;
         if (!current.sessionId || reservation.sessionId !== current.sessionId) throw new AdmissionError("MODEL_BINDING_CHANGED", "The contract session changed before attempt reservation.");
-        verifySelectedModel(admission.execution, observed, current.sessionId);
+        verifySelectedModel(admission.execution, observed, current.sessionId, admission.policy.requireFree || policy.requireFree);
         this.collaboration.saveAttempt({ taskId, attemptId: reservation.attemptId, model: observed, deadlineAt: new Date(Date.now() + contract.record.contract.timeoutSeconds * 1000).toISOString() });
       }
       const updated = this.writeUpdate(current, {

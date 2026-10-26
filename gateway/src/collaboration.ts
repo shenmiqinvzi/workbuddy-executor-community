@@ -12,7 +12,9 @@ export interface ModelPolicy {
   version: string;
   maxAttempts: number;
   maxTimeoutSeconds: number;
-  requireFree: true;
+  requireFree: boolean;
+  /** Missing on stored legacy policies: an explicit allowlist. */
+  selectionMode?: "allowlist" | "user_choice";
   allowed: ExecutionSelection[];
 }
 export interface CollaborationPlan {
@@ -26,7 +28,7 @@ export interface TaskAdmission {
   contractHash: string; planId: string | null; planRevision: string | null;
 }
 export interface ModelObservation {
-  sessionId: string; modelId: string; selectedModel: string; credits: string; observedAt: string;
+  sessionId: string; modelId: string; selectedModel: string; credits: string | null; observedAt: string;
   level: "selected";
   providerId?: string; connectionId?: string; reasoningEffort?: string | null;
 }
@@ -41,22 +43,31 @@ const equalSelection = (a: ExecutionSelection, b: ExecutionSelection) =>
   a.executorId === b.executorId && a.connectionId === b.connectionId && a.providerId === b.providerId && a.modelId === b.modelId && a.reasoningEffort === b.reasoningEffort;
 const fail = (code: string, message: string): never => { throw new AdmissionError(code, message); };
 
-export function defaultModelPolicy(maxAttempts = 3): ModelPolicy {
+export function legacyFreeModelPolicy(maxAttempts = 3): ModelPolicy {
   const policy = { maxAttempts, maxTimeoutSeconds: 86_400, requireFree: true as const,
     allowed: [{ executorId: "workbuddy" as const, connectionId: "local-workbuddy", providerId: "workbuddy-native", modelId: "deepseek-v4.1-flash", reasoningEffort: null }] };
   return { version: `default-${digest(policy).slice(0, 24)}`, ...policy };
 }
 
-export function enforceModelPolicy(policy: ModelPolicy, execution: ExecutionSelection): void {
-  if (policy.requireFree !== true) fail("COST_CONTROL_UNAVAILABLE", "This stage does not authorize paid models or promise a hard cost limit.");
-  if (!policy.allowed.some(candidate => equalSelection(candidate, execution))) fail("MODEL_POLICY_BLOCKED", "The execution selection is outside the authorized model policy.");
+/** New installations have no preselected model. Selection is authorized through a plan. */
+export function defaultModelPolicy(maxAttempts = 3): ModelPolicy {
+  const policy = { maxAttempts, maxTimeoutSeconds: 86_400, requireFree: false,
+    selectionMode: "user_choice" as const, allowed: [] };
+  return { version: `default-${digest(policy).slice(0, 24)}`, ...policy };
 }
 
-export function verifySelectedModel(execution: ExecutionSelection, observed: ModelObservation | undefined, sessionId: string): asserts observed is ModelObservation {
-  if (execution.executorId === "dsh" && (!observed || observed.providerId !== execution.providerId || observed.connectionId !== execution.connectionId || (observed.reasoningEffort ?? null) !== execution.reasoningEffort)) fail("MODEL_UNVERIFIED", "The DSH source or reasoning selection differs.");
-  const observedAt = Date.parse(observed?.observedAt ?? "");
-  if (!observed || observed.sessionId !== sessionId || observed.level !== "selected" || observed.modelId !== execution.modelId || observed.selectedModel !== execution.modelId || typeof observed.credits !== "string" ||
-      !/^x0(?:\.0+)?(?: credits)?$/i.test(observed.credits.trim()) || !Number.isFinite(observedAt) || observedAt < Date.now() - 30_000 || observedAt > Date.now() + 5000) fail("MODEL_UNVERIFIED", "A recent selected-model and exact zero-rate observation is required.");
+export function enforceModelPolicy(policy: ModelPolicy, execution: ExecutionSelection): void {
+  if ((policy.selectionMode !== "user_choice" || policy.allowed.length > 0) &&
+      !policy.allowed.some(candidate => equalSelection(candidate, execution))) fail("MODEL_POLICY_BLOCKED", "The execution selection is outside the authorized model policy.");
+}
+
+export function verifySelectedModel(execution: ExecutionSelection, observed: ModelObservation | undefined, sessionId: string, requireFree = false): asserts observed is ModelObservation {
+  if (!observed) return fail("MODEL_UNVERIFIED", "A recent exact selected-model observation is required.");
+  if (execution.executorId === "dsh" && (observed.providerId !== execution.providerId || observed.connectionId !== execution.connectionId || (observed.reasoningEffort ?? null) !== execution.reasoningEffort)) fail("MODEL_UNVERIFIED", "The DSH source or reasoning selection differs.");
+  const observedAt = Date.parse(observed.observedAt);
+  if (observed.sessionId !== sessionId || observed.level !== "selected" || observed.modelId !== execution.modelId || observed.selectedModel !== execution.modelId ||
+      !Number.isFinite(observedAt) || observedAt < Date.now() - 30_000 || observedAt > Date.now() + 5000) fail("MODEL_UNVERIFIED", "A recent exact selected-model observation is required.");
+  if (requireFree && (typeof observed.credits !== "string" || !/^x0(?:\.0+)?(?: credits)?$/i.test(observed.credits.trim()))) fail("MODEL_UNVERIFIED", "The optional free-only policy requires a verified zero rate.");
 }
 
 /** Server-owned registry on the SAME SQLite connection as tasks and contracts.
@@ -104,10 +115,10 @@ export class CollaborationRegistry {
 
   /** Trusted configuration operation; not a client approval field. */
   setPolicy(input: Omit<ModelPolicy, "version">): ModelPolicy {
-    if (input.requireFree !== true) fail("COST_CONTROL_UNAVAILABLE", "Paid execution requires a later, verified cost-control implementation.");
+    if (typeof input.requireFree !== "boolean" || (input.selectionMode !== undefined && !["allowlist", "user_choice"].includes(input.selectionMode))) fail("MODEL_POLICY_BLOCKED", "Invalid model selection policy.");
     if (!Number.isInteger(input.maxAttempts) || input.maxAttempts < 1 || input.maxAttempts > 100 || !Number.isInteger(input.maxTimeoutSeconds) || input.maxTimeoutSeconds < 1 || input.maxTimeoutSeconds > 86_400 || !Array.isArray(input.allowed) || input.allowed.length > 100) fail("MODEL_POLICY_BLOCKED", "Invalid server model policy.");
     for (const selection of input.allowed) {
-      if (!["workbuddy", "dsh"].includes(selection.executorId) || ![selection.connectionId, selection.providerId, selection.modelId].every(validId) || (selection.reasoningEffort !== null && !validId(selection.reasoningEffort))) fail("MODEL_POLICY_BLOCKED", "Invalid model selection in server policy.");
+      if (!["workbuddy", "dsh"].includes(selection.executorId) || ![selection.connectionId, selection.providerId].every(validId) || typeof selection.modelId !== "string" || !selection.modelId.trim() || selection.modelId.length > 200 || (selection.reasoningEffort !== null && !validId(selection.reasoningEffort))) fail("MODEL_POLICY_BLOCKED", "Invalid model selection in server policy.");
     }
     const policy: ModelPolicy = { ...structuredClone(input), version: `policy-${token()}` };
     this.db.prepare("INSERT INTO collaboration_policy VALUES (1,?,?) ON CONFLICT(id) DO UPDATE SET body_json=excluded.body_json,digest=excluded.digest").run(JSON.stringify(policy), digest(policy));
@@ -156,6 +167,7 @@ export class CollaborationRegistry {
     if (contract.timeoutSeconds > policy.maxTimeoutSeconds) fail("DEADLINE_EXCEEDED", "The requested duration exceeds the server policy.");
     if (execution.executorId !== executor) fail("EXECUTOR_UNAVAILABLE", "This adapter does not execute the selected executor.");
     if (executor === "workbuddy" && (execution.connectionId !== "local-workbuddy" || execution.providerId !== "workbuddy-native" || execution.reasoningEffort !== null)) fail("EXECUTOR_CAPABILITY_MISSING", "This WorkBuddy adapter cannot verify the requested source or reasoning effort.");
+    if (!("collaboration" in contract) && (policy.selectionMode === "user_choice" || !policy.requireFree)) fail("PLAN_CONFIRMATION_REQUIRED", "Choose a model and authorize its vnext-2 plan before dispatch.");
     let planId: string | null = null, planRevision: string | null = null;
     if ("collaboration" in contract) {
       const plan = this.getPlan(contract.collaboration.planId);

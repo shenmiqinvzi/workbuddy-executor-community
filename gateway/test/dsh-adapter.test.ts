@@ -11,17 +11,17 @@ import type { TaskCoordinator } from "../src/coordinator.js";
 import { configuredDshCoordinator } from "../src/dsh-runtime.js";
 import { DshTaskCoordinator } from "../src/dsh-coordinator.js";
 import { discoverDshSessions, type DshTransport, type DshSelection } from "../src/dsh-client.js";
-import { defaultModelPolicy } from "../src/collaboration.js";
+import { defaultModelPolicy, legacyFreeModelPolicy, AdmissionError } from "../src/collaboration.js";
 import { RunJournal } from "../src/run-journal.js";
 import { readTaskProjection } from "../src/task-view-reader.js";
-import { workBuddyDshFreeRateVerifier } from "../src/dsh-rate-verifier.js";
+import { workBuddyDshFreeRateVerifier, workBuddyDshRateObserver } from "../src/dsh-rate-verifier.js";
 import { DeepSeekRpcError, type DeepSeekEvent } from "../src/deepseek-client.js";
 
 
-function fixture(t: { after: (fn: () => void | Promise<void>) => void }) {
+function fixture(t: { after: (fn: () => void | Promise<void>) => void }, chosenModel = "deepseek-v4.1-flash") {
   const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "dsh-adapter-")));
   const store = new TaskStore(path.join(dir, "tasks.sqlite")), runs = path.join(dir, "runs");
-  const execution = { executorId: "dsh" as const, connectionId: "dsh-synthetic-host", providerId: "synthetic-provider", modelId: "deepseek-v4.1-flash", reasoningEffort: null };
+  const execution = { executorId: "dsh" as const, connectionId: "dsh-synthetic-host", providerId: "synthetic-provider", modelId: chosenModel, reasoningEffort: null };
   let selected: DshSelection | null = null, prompts = 0, selections = 0, busy = false, lost = false;
   let promptError: Error | undefined, selectionError: Error | undefined;
   const events: DeepSeekEvent[] = [];
@@ -41,7 +41,7 @@ function fixture(t: { after: (fn: () => void | Promise<void>) => void }) {
   const free = async () => ({ credits: "x0.00", observedAt: new Date().toISOString() });
   const coordinator = new DshTaskCoordinator(store, client, runs, free);
   store.collaboration.registerWorkspace("project", dir, "Synthetic project");
-  store.collaboration.setPolicy({ ...defaultModelPolicy(), allowed: [...defaultModelPolicy().allowed, execution] });
+  store.collaboration.setPolicy({ ...legacyFreeModelPolicy(), allowed: [...legacyFreeModelPolicy().allowed, execution] });
   t.after(() => { store.close(); fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }); });
   function contract(taskId = "dsh-task") {
     const proposal = { schemaVersion: "workbuddy-executor/vnext-2", taskId, workspaceId: "project", title: "Synthetic DSH task", objective: "Verify the bounded synthetic adapter", execution, timeoutSeconds: 60, maxAttempts: 2, scope: { allowedChanges: ["src/example.ts"], permittedMetadata: [] }, requiredChecks: [], collaboration: { planId: "placeholder", expectedPlanRevision: "placeholder" } };
@@ -271,4 +271,68 @@ test("native discovery excludes cold history and never selects among multiple at
   assert.equal((await f.coordinator.discover(f.dir, undefined, "one")).selected?.sessionId, "one");
   assert.equal((await f.coordinator.discover(f.dir, undefined, "cold")).reason, "session_not_matched");
   assert.deepEqual(f.counts(), { prompts: 0, selections: 0 });
+});
+
+
+test("default user choice admits the exact paid or unpriced model without substitution", async t => {
+  for (const [id, credits] of [["vendor/paid-model", "x2.50"], ["another-unpriced-model", null]] as const) {
+    const f = fixture(t, id);
+    f.store.collaboration.setPolicy(defaultModelPolicy());
+    const observer = credits === null ? undefined : async () => ({ credits, observedAt: new Date().toISOString() });
+    const coordinator = new DshTaskCoordinator(f.store, f.client, f.runs, observer);
+    const contract = f.contract();
+    const result = await coordinator.send({ contract, objective: contract.objective, sessionId: "original-session" });
+    assert.equal(result.ok, true);
+    const task = f.store.get(contract.taskId)!;
+    const attempt = f.store.collaboration.getAttempt(task.attemptId!)!;
+    assert.equal(attempt.model.modelId, id); assert.equal(attempt.model.credits, credits);
+    assert.equal(f.store.collaboration.getTaskAdmission(task.taskId)!.execution.modelId, id);
+    assert.deepEqual(f.counts(), { prompts: 1, selections: 1 });
+    f.finish(); assert.equal((await coordinator.sync(task.taskId)).state, "needs_review");
+  }
+});
+
+test("missing price source remains unknown under user choice; free-only stays strict", async t => {
+  const f = fixture(t, "chosen-paid-model"); f.store.collaboration.setPolicy(defaultModelPolicy());
+  const unavailable = async () => { throw new AdmissionError("COST_VERIFICATION_UNAVAILABLE", "Unavailable"); };
+  const coordinator = new DshTaskCoordinator(f.store, f.client, f.runs, unavailable), contract = f.contract();
+  assert.equal((await coordinator.send({ contract, objective: contract.objective, sessionId: "original-session" })).ok, true);
+  assert.equal(f.store.collaboration.getAttempt(f.store.get(contract.taskId)!.attemptId!)!.model.credits, null);
+  const g = fixture(t); g.store.collaboration.setPolicy({ ...defaultModelPolicy(), requireFree: true });
+  const strict = new DshTaskCoordinator(g.store, g.client, g.runs), denied = g.contract();
+  await assert.rejects(strict.send({ contract: denied, objective: denied.objective, sessionId: "original-session" }), { code: "COST_VERIFICATION_UNAVAILABLE" });
+  assert.deepEqual(g.counts(), { prompts: 0, selections: 0 });
+});
+
+test("user choice still needs real plan authorization and exact native readback", async t => {
+  const f = fixture(t, "user-selected-model"); f.store.collaboration.setPolicy(defaultModelPolicy());
+  const authorized = f.contract(), saved = f.store.collaboration.getPlan(authorized.collaboration.planId);
+  const plan = f.store.collaboration.createPlan(saved.proposal, f.coordinator.policy(), { mode: "manual", reason: "Await actual user choice" });
+  const input = { ...authorized, collaboration: { planId: plan.planId, expectedPlanRevision: plan.revision } };
+  const coordinator = new DshTaskCoordinator(f.store, f.client, f.runs);
+  await assert.rejects(coordinator.send({ contract: input, objective: input.objective, sessionId: "original-session" }), { code: "PLAN_CONFIRMATION_REQUIRED" });
+  assert.deepEqual(f.counts(), { prompts: 0, selections: 0 });
+  f.client.selectModel = async request => ({ sessionId: request.sessionId, workspace: f.dir, attached: true, selectedModel: { providerId: request.providerId, modelId: "unapproved-fallback", reasoningEffort: null } });
+  const result = await coordinator.send({ contract: authorized, objective: authorized.objective, sessionId: "original-session" });
+  assert.equal(result.ok, false); assert.equal("code" in result && result.code, "MODEL_BINDING_CHANGED"); assert.equal(f.counts().prompts, 0);
+});
+
+test("a legacy free-only task cannot be relaxed by switching the global default", async t => {
+  const f = fixture(t); await f.send(); f.finish(); await f.coordinator.sync("dsh-task");
+  f.store.collaboration.setPolicy(defaultModelPolicy());
+  const paid = new DshTaskCoordinator(f.store, f.client, f.runs, async () => ({ credits: "x1.00", observedAt: new Date().toISOString() }));
+  const result = await paid.continue({ taskId: "dsh-task", feedback: "Bounded rework" });
+  assert.equal(result.ok, false); assert.equal("code" in result && result.code, "MODEL_UNVERIFIED"); assert.equal(f.counts().prompts, 1);
+});
+
+test("bound source observer reports paid and unknown prices without claiming free", async t => {
+  let credits: unknown = "x2.50";
+  const server = http.createServer((_req, res) => res.end(JSON.stringify({ data: [{ id: "chosen-model", credits }] })));
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise<void>(resolve => { server.closeAllConnections(); server.close(() => resolve()); }));
+  const address = server.address(); if (!address || typeof address === "string") throw Error("socket");
+  const observe = workBuddyDshRateObserver({ baseUrl: `http://127.0.0.1:${address.port}`, apiKey: "synthetic-key", providerId: "provider", connectionId: "host" });
+  const selection = { executorId: "dsh" as const, providerId: "provider", connectionId: "host", modelId: "chosen-model", reasoningEffort: null };
+  assert.equal((await observe(selection)).credits, "x2.50"); credits = null; assert.equal((await observe(selection)).credits, null);
+  await assert.rejects(observe({ ...selection, providerId: "other" }), { code: "MODEL_BINDING_CHANGED" });
 });

@@ -4,7 +4,9 @@ WORKBUDDY_BACKEND=desktop-queue
 # WORKBUDDY_NODE_BIN=C:/Program Files/nodejs/node.exe
 # WORKBUDDY_CLI_ELECTRON=D:/Apps/WorkBuddy/WorkBuddyAI.exe
 # WORKBUDDY_CONFIG_DIR=C:/Users/YOUR_USER/.workbuddy-ai
-WORKBUDDY_REQUIRED_FREE_MODEL=deepseek-v4.1-flash
+# Optional free-only restriction; no fixed model is selected by default.
+# Set only when the user explicitly requests this restriction.
+# WORKBUDDY_REQUIRED_FREE_MODEL=<user-approved-free-model-id>
 WORKBUDDY_MAX_TASK_ATTEMPTS=3
 WORKBUDDY_CLAIM_TIMEOUT_SECONDS=180
 

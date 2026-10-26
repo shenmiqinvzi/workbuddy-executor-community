@@ -25,8 +25,8 @@ export interface SendTaskInput {
 async function observeSelectedModel(config: Config, sessionId: string, model: string): Promise<ModelObservation> {
   const result = await listModels(config, sessionId) as unknown as { models?: Array<{ id: string; credits?: unknown }>; currentModel?: string; sessionId?: string };
   const entry = result.models?.find(candidate => candidate.id === model);
-  if (!entry || result.sessionId !== sessionId || result.currentModel !== model || typeof entry.credits !== "string") throw new AdmissionError("MODEL_UNVERIFIED", "The selected native session, model and zero-rate catalog entry could not be verified.");
-  return { sessionId, modelId: entry.id, selectedModel: result.currentModel, credits: entry.credits, observedAt: new Date().toISOString(), level: "selected" };
+  if (!entry || result.sessionId !== sessionId || result.currentModel !== model) throw new AdmissionError("MODEL_UNVERIFIED", "The selected native session, model catalog entry could not be verified.");
+  return { sessionId, modelId: entry.id, selectedModel: result.currentModel, credits: typeof entry.credits === "string" ? entry.credits : null, observedAt: new Date().toISOString(), level: "selected" };
 }
 export class TaskCoordinator {
   constructor(private readonly config: Config, readonly store: TaskStore, private readonly client: WorkBuddyClient,

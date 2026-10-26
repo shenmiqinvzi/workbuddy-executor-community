@@ -16,12 +16,12 @@ export class DshTaskCoordinator {
     store;
     client;
     runsDir;
-    verifyFree;
-    constructor(store, client, runsDir, verifyFree) {
+    observeRate;
+    constructor(store, client, runsDir, observeRate) {
         this.store = store;
         this.client = client;
         this.runsDir = runsDir;
-        this.verifyFree = verifyFree;
+        this.observeRate = observeRate;
     }
     policy() { return this.store.collaboration.currentPolicy(defaultModelPolicy()); }
     owns(taskId) { return !!this.store.dshBindings.forTask(taskId); }
@@ -54,13 +54,25 @@ export class DshTaskCoordinator {
             return fail("SESSION_BUSY", "The original DSH session has active or queued work.");
         return session;
     }
-    async observation(execution, sessionId) {
-        if (!this.verifyFree)
-            return fail("COST_VERIFICATION_UNAVAILABLE", "The native DSH catalog has no rates. A trusted rate verifier is required; no model request was made.");
-        const rate = await this.verifyFree(execution);
-        if (!/^x0(?:\.0+)?(?: credits)?$/i.test(rate.credits) || !Number.isFinite(Date.parse(rate.observedAt)) || Math.abs(Date.now() - Date.parse(rate.observedAt)) > 30000)
-            return fail("MODEL_UNVERIFIED", "A recent exact zero-rate observation is required.");
-        return { ...rate, sessionId, modelId: execution.modelId, selectedModel: execution.modelId, providerId: execution.providerId, connectionId: execution.connectionId, reasoningEffort: execution.reasoningEffort, level: "selected" };
+    async observation(execution, sessionId, taskId) {
+        const requireFree = this.policy().requireFree || (taskId ? this.store.collaboration.getTaskAdmission(taskId)?.policy.requireFree === true : false);
+        let rate = { credits: null, observedAt: new Date().toISOString() };
+        if (!this.observeRate && requireFree)
+            return fail("COST_VERIFICATION_UNAVAILABLE", "The optional free-only policy requires a trusted rate source.");
+        if (this.observeRate) {
+            try {
+                rate = await this.observeRate(execution);
+            }
+            catch (error) {
+                if (requireFree || !(error instanceof AdmissionError) || error.code !== "COST_VERIFICATION_UNAVAILABLE")
+                    throw error;
+            }
+        }
+        if (!Number.isFinite(Date.parse(rate.observedAt)) || Math.abs(Date.now() - Date.parse(rate.observedAt)) > 30000)
+            rate = { credits: null, observedAt: new Date().toISOString() };
+        if (requireFree && (typeof rate.credits !== "string" || !/^x0(?:\.0+)?(?: credits)?$/i.test(rate.credits.trim())))
+            return fail("MODEL_UNVERIFIED", "The optional free-only policy requires a recent verified zero rate.");
+        return { credits: rate.credits, observedAt: new Date().toISOString(), sessionId, modelId: execution.modelId, selectedModel: execution.modelId, providerId: execution.providerId, connectionId: execution.connectionId, reasoningEffort: execution.reasoningEffort, level: "selected" };
     }
     async send(input) {
         if (typeof input.sessionId !== "string" || !input.sessionId.trim() || input.sessionId.length > 512)
@@ -117,7 +129,7 @@ export class DshTaskCoordinator {
             if (ready.sessionId !== binding.sessionId || !same(ready.selectedModel, expected))
                 return fail("MODEL_BINDING_CHANGED", "Native model readback differs; no prompt was sent.");
             await this.checkedSession(binding, task.workspace);
-            const model = await this.observation(binding.execution, binding.sessionId);
+            const model = await this.observation(binding.execution, binding.sessionId, binding.taskId);
             this.store.atomic(() => {
                 const current = this.store.dshBindings.get(binding.attemptId);
                 if (!current.runOpen || current.dispatch !== "preparing")

@@ -13,11 +13,11 @@
 
 ## 新任务
 
-1. `workbuddy_list_models({"detail":"full"})`：检查精确 ID `deepseek-v4.1-flash` 和 `credits: x0.00`。缺少任一证据就停止，不能只看名称或 isFree。
+1. `workbuddy_list_models({"detail":"full"})`：展示实际可用模型、精确 ID 与已知费率，让用户选择本次模型。费用未知明确说明，用户了解后仍可确认；只有主动设置免费限定时才要求精确零费率。以下 `用户选定的精确模型ID` 均为占位符，须替换为实际选择，不能原样执行。
 2. `workbuddy_ensure_workspace`：
 
 ```json
-{"workspace":"E:/example/project","workerKey":"submit-guard-001","model":"deepseek-v4.1-flash","detail":"brief"}
+{"workspace":"E:/example/project","workerKey":"submit-guard-001","model":"用户选定的精确模型ID","detail":"brief"}
 ```
 
 3. 取真实返回的 workspace/sessionId，调用 `workbuddy_send_task`。下例的 sessionId 只是说明变量，不能原样执行：
@@ -27,7 +27,7 @@
   "taskId":"submit-guard-001",
   "workspace":"E:/example/project",
   "sessionId":"ensure_workspace 返回的真实 sessionId",
-  "model":"deepseek-v4.1-flash",
+  "model":"用户选定的精确模型ID",
   "objective":"修复提交按钮的重复提交问题：请求期间连续点击只发一次请求，成功正常展示，失败后允许重试。自行定位提交逻辑并完成相关验证。",
   "constraints":["只修改提交逻辑与相关测试","保留用户已有改动，不调整接口契约","改变功能含义的歧义以 blocked 回报"],
   "acceptanceCommands":["验证请求期间连续点击只产生一次请求","验证成功结果展示及失败后可重试","报告实际检查类型、命令、退出码、证据和遗留问题"],
@@ -59,7 +59,7 @@ constraints 和 acceptanceCommands 会进入任务说明；后者不会由网关
 需要返工时先确认原生停止，再调用 `workbuddy_continue_task`：
 
 ```json
-{"taskId":"submit-guard-001","feedback":"填入实际发现的问题及改好标准","model":"deepseek-v4.1-flash","detail":"brief"}
+{"taskId":"submit-guard-001","feedback":"填入实际发现的问题及改好标准","model":"用户选定的精确模型ID","detail":"brief"}
 ```
 
 返工后重复监督与独立验收；不重发原任务。取消走 cancel_task，并继续确认 remoteStopped。异常处理见 [连接与恢复](setup.md)。

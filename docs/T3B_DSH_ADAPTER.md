@@ -6,7 +6,7 @@
 
 `DshTaskCoordinator` 与 WorkBuddy 使用同一 `TaskStore`，经 `TaskApplicationService` 按已保存的执行器路由。业务状态、契约、revision、事件和最终 accept 均由共享服务保存，不写入旧 `DeepSeekStore`，不把插件 review 当作最终验收。已绑定的 DSH 任务在适配器不可用时明确失败，不能交给 WorkBuddy 接管。
 
-使用显式 vnext-2 契约、已登记真实工作区、授权方案、精确 host/provider/model/effort 和服务端白名单。默认免费模型政策没有扩大；启用 DSH 环境配置不会新增白名单、确认方案或发起模型请求。方案和政策仍由可信本地应用入口维护；新增 HTTP 写接口不在本阶段。
+使用显式 vnext-2 契约、已登记真实工作区、经用户实际选择并确认的方案及精确 host/provider/model/effort。新默认为用户选择，没有固定模型或零费率门槛；可主动设置白名单和免费限定，历史任务限制保留。启用 DSH 环境配置不会确认方案或发起模型请求。方案和政策仍由可信本地应用入口维护；新增 HTTP 写接口不在本阶段。
 
 `TaskStore.atomic` 组合准入、原任务和 DSH 绑定的 SQLite 写入，嵌套操作使用 savepoint。`dsh_attempt_bindings` 保存原 task/attempt/host/session/request、执行选择、代次游标、投递状态和占用；记录带摘要。每个已配置任务库最多一个未解决的 DSH 绑定；WorkBuddy beginAttempt 同时核对它，DSH 准备前核对其他任务的持久停止证据。模型准备或投递不明保留原绑定，重放 send 不再次准备或发送。
 
@@ -18,8 +18,8 @@
 - 原生桥接只读 `sessions/session` 与 `models`；历史会话和当前 attached 会话分开。只能选择同一真实目录内 attached 的原会话，不选最新、不默认创建或恢复冷会话。
 - 初始派工才可准备所选模型；已一致时不重复选择。原生 selectModel 后读回 provider/model/effort，发送前再次核对。返工沿用原会话且不重新切模型；漂移时拒绝。
 - 宿主 selectModel 使用原生模型选择语义：改变会话选择时宿主也可能保存新建会话的默认模型。适配器不修改其他已存在会话或权限政策；真实验收前须明确授权所选模型。
-- DSH 原生目录没有费率字段，不能据模型名或可见性认定免费。`workBuddyDshFreeRateVerifier` 只接受运营者明确绑定的实际连接/provider/网关 Key，通过 `/v1/models` 读取精确模型的 x0.00 元数据；未知、付费、错误映射和查询故障均拒绝派工。该读取可能触发源服务的模型元数据缓存更新，不发模型推理或积分刷新请求。
-- 白名单与 Key 映射属于可信后端配置，浏览器不能提交“已免费”标记。完整 Key 路由、代理物理模型与硬费用控制尚未验收，不由模型目录推导完成。
+- DSH 原生目录没有费率字段，不能据模型名或可见性认定免费。可选的 `workBuddyDshRateObserver` 只接受运营者明确绑定的实际连接/provider/网关 Key，通过 `/v1/models` 读取精确模型的费率元数据。付费值如实保存；未配置、不可得或过期的费率保持 unknown/null，默认政策允许用户了解后选择。该读取可能触发源服务的模型元数据缓存更新，不发模型推理或积分刷新请求。
+- `workBuddyDshFreeRateVerifier` 保留为主动免费限定的严格封装，未知或非零仍拒绝。白名单与 Key 映射属于可信后端配置，浏览器不能提交“已免费”标记；错误来源映射仍拒绝。完整 Key 路由、代理物理模型与硬费用控制尚未验收，不由模型目录推导完成。
 
 requested selection 在任务准入中保存，selected observation 在轮次准入中保存；`request/header` 的真实配置单独记录为 effectiveModel 和 nativeEventSeq。它只证明 DSH 请求层的模型，不证明代理背后的物理模型。一轮内任何已观察到的模型漂移都保留为失败，后来切回不能抹掉历史。
 
@@ -42,7 +42,7 @@ stage-2 的只读详情/列表/事件可读取 DSH 记录；GET 不同步、不�
 
 ## 显式启用与核查
 
-配置见 [WINDOWS_ENV.example](../gateway/WINDOWS_ENV.example)。`WORKBUDDY_DSH_ENABLED=1` 只开启适配器；host/provider 及其对应的来源 URL/既有 Key 由私有启动环境提供。无费率核验配置仍可做发现，但不能派工。不可把其他来源 Key 的目录冒充该 DSH provider 的费率。参数错误停用 DSH，不妨碍原 WorkBuddy 服务启动。
+配置见 [WINDOWS_ENV.example](../gateway/WINDOWS_ENV.example)。`WORKBUDDY_DSH_ENABLED=1` 只开启适配器；host/provider 与可选的费率来源 URL/既有 Key 由私有启动环境提供。默认政策下缺少费率来源表示费用未知，用户了解并确认后可派工；只有主动免费限定才要求零费率证明。不可把其他来源 Key 的目录冒充该 DSH provider 的费率。参数错误停用 DSH，不妨碍原 WorkBuddy 服务启动。
 
 ```powershell
 cd gateway

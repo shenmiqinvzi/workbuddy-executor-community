@@ -1,4 +1,5 @@
 import { type DiscoveryOptions } from "./deployment-paths.js";
+/** Historical example retained for explicit free-only deployments; never a default. */
 export declare const APPROVED_FREE_MODEL = "deepseek-v4.1-flash";
 export declare function checkNativeSchema(directory: string | undefined): boolean;
 export declare function diagnose(options?: DiscoveryOptions & {
@@ -36,7 +37,7 @@ export declare function diagnose(options?: DiscoveryOptions & {
         config: "environment" | "detected" | "missing" | "ambiguous";
     };
     connection: "verified" | "unavailable" | "not_checked" | "bridge_missing";
-    modelPolicy: "blocked" | "unknown" | "verified" | "not_checked";
+    modelPolicy: "blocked" | "unknown" | "verified" | "user_choice" | "not_checked";
     login: string;
     quota: string;
     taskExecutionVerified: boolean;

@@ -59,10 +59,11 @@ test("full is the original result and brief substantially reduces large logs wit
 test("brief retains full blockers, errors, cancellation uncertainty and every artifact path", () => {
   const reason = "Permission denied; inspect original conversation. ".repeat(100);
   const stored = task({ state: "blocked", blockingReason: reason });
-  const input = { ok: false, error: reason, task: stored, cancellationRequested: true, remoteStopped: false, messages: [message(stored.attemptId!, 100, "Awaiting permission", { status: "waiting_input", artifacts: ["/fixture/new-path.txt"] })] };
+  const input = { ok: false, code: "MODEL_SELECTION_REQUIRED", error: reason, task: stored, cancellationRequested: true, remoteStopped: false, messages: [message(stored.attemptId!, 100, "Awaiting permission", { status: "waiting_input", artifacts: ["/fixture/new-path.txt"] })] };
   const result = brief(input);
   assert.equal(result.ok, false);
   assert.equal(result.error, reason);
+  assert.equal(result.code, "MODEL_SELECTION_REQUIRED");
   assert.equal(result.task.blockingReason, reason);
   assert.equal(result.task.state, "blocked");
   assert.equal(result.cancellationRequested, true);

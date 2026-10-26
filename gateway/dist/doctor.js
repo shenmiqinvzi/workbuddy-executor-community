@@ -5,6 +5,7 @@ import { discoverDesktopPaths, supportedNode } from "./deployment-paths.js";
 import { loadDotEnv, PROJECT_ROOT } from "./env.js";
 import { loadConfig } from "./config.js";
 import { runtimeVersion } from "./runtime-version.js";
+/** Historical example retained for explicit free-only deployments; never a default. */
 export const APPROVED_FREE_MODEL = "deepseek-v4.1-flash";
 export function checkNativeSchema(directory) {
     if (!directory)
@@ -37,9 +38,9 @@ export async function diagnose(options = {}) {
         applicationPresent: existsFile(discovery.executable.value),
         configSchemaCompatible: checkNativeSchema(discovery.config.value),
         desktopRoute: (env.WORKBUDDY_BACKEND ?? "desktop-queue") === "desktop-queue",
-        freePolicyEnabled: env.WORKBUDDY_REQUIRED_FREE_MODEL === APPROVED_FREE_MODEL,
+        freePolicyEnabled: Boolean(env.WORKBUDDY_REQUIRED_FREE_MODEL),
     };
-    const localSetupReady = Object.values(checks).every(Boolean);
+    const localSetupReady = Object.entries(checks).every(([name, value]) => name === "freePolicyEnabled" || value);
     const nextSteps = [];
     if (!checks.nodeSupported)
         nextSteps.push("Install Node.js >=22.13.0.");
@@ -51,8 +52,8 @@ export async function diagnose(options = {}) {
         nextSteps.push("Install/open WorkBuddy, or set WORKBUDDY_CLI_ELECTRON to its absolute executable path.");
     if (!checks.configSchemaCompatible)
         nextSteps.push("Open WorkBuddy once; set WORKBUDDY_CONFIG_DIR to its data directory. The sessions schema must be compatible.");
-    if (!checks.desktopRoute || !checks.freePolicyEnabled)
-        nextSteps.push("Use setup plan/install; preserve existing .env and explicitly resolve backend/free-model conflicts.");
+    if (!checks.desktopRoute)
+        nextSteps.push("Use setup plan/install; preserve existing .env and explicitly resolve backend conflicts.");
     let connection = "not_checked";
     let modelPolicy = "not_checked";
     if (options.live && localSetupReady) {
@@ -78,18 +79,20 @@ export async function diagnose(options = {}) {
             });
             const result = await probe();
             connection = result.bridgeReady ? "verified" : "bridge_missing";
-            const selected = result.models?.find(model => model.id === APPROVED_FREE_MODEL);
+            const selected = result.models?.find(model => model.id === env.WORKBUDDY_REQUIRED_FREE_MODEL);
             if (result.bridgeReady)
-                modelPolicy = selected && /^x0(?:\.0+)?(?: credits)?$/i.test(String(selected.credits ?? "").trim()) ? "verified" : selected?.credits === undefined && selected ? "unknown" : "blocked";
+                modelPolicy = !checks.freePolicyEnabled ? "user_choice" : selected && /^x0(?:\.0+)?(?: credits)?$/i.test(String(selected.credits ?? "").trim()) ? "verified" : selected?.credits === undefined && selected ? "unknown" : "blocked";
         }
         catch { /* Never print private native errors, accounts, paths or history. */ }
         if (connection !== "verified")
             nextSteps.push("Open WorkBuddy and complete the documented first connection. Diagnosis never starts/restarts the app or installs its native bridge.");
-        if (modelPolicy !== "verified")
-            nextSteps.push("Confirm the approved model is currently available at x0.00 in WorkBuddy; no paid fallback.");
+        if (modelPolicy === "user_choice")
+            nextSteps.push("Show available models and known pricing; wait for the user to select and confirm before preparing a session or dispatching.");
+        else if (modelPolicy !== "verified")
+            nextSteps.push("Confirm the explicitly restricted model is currently available at x0.00; do not silently change this optional policy.");
     }
     return {
-        ok: localSetupReady && (!options.live || (connection === "verified" && modelPolicy === "verified")),
+        ok: localSetupReady && (!options.live || (connection === "verified" && (modelPolicy === "verified" || modelPolicy === "user_choice"))),
         readOnly: true, mode: options.live ? "live_observation" : "local", runtime: { packageVersion: runtimeVersion.packageVersion, release: runtimeVersion.release, codeHash: runtimeVersion.codeHash }, checks, localSetupReady,
         discovery: { application: discovery.executable.source, config: discovery.config.source },
         connection, modelPolicy, login: "unknown", quota: "unknown", taskExecutionVerified: false, taskSent: false, nextSteps,

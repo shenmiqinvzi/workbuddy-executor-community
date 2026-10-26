@@ -12,10 +12,12 @@ import { reportDigest } from "./report-authentication.js";
 import { DeepSeekRpcError } from "./deepseek-client.js";
 import { readTaskProjection } from "./task-view-reader.js";
 
-type FreeRate = { credits: string; observedAt: string };
-/** Trusted backend integration, never a caller-supplied 'free' flag. The DSH
- * native catalog has no rates: absent verifier means dispatch is unavailable. */
-export type DshFreeRateVerifier = (selection: ExecutionSelection) => Promise<FreeRate>;
+type ModelRate = { credits: string | null; observedAt: string };
+/** Trusted source metadata, separate from native selection verification. Missing
+ * pricing stays unknown; only an explicit free-only policy requires a rate. */
+export type DshRateObserver = (selection: ExecutionSelection) => Promise<ModelRate>;
+/** Compatibility alias for integrations opting into a free-only policy. */
+export type DshFreeRateVerifier = DshRateObserver;
 const fail = (code: string, message: string): never => { throw new AdmissionError(code, message); };
 const same = (a: DshSelection | null | undefined, b: DshSelection) => !!a && a.providerId === b.providerId && a.modelId === b.modelId && (a.reasoningEffort ?? null) === b.reasoningEffort;
 const selection = (e: ExecutionSelection): DshSelection => ({ providerId: e.providerId, modelId: e.modelId, reasoningEffort: e.reasoningEffort });
@@ -23,7 +25,7 @@ const selection = (e: ExecutionSelection): DshSelection => ({ providerId: e.prov
 /** Shared TaskStore owns business state. The transport owns native sessions,
  * durable request events and cancellation. No workflow/Reviewer is created. */
 export class DshTaskCoordinator {
-  constructor(readonly store: TaskStore, readonly client: DshTransport, readonly runsDir: string, private readonly verifyFree?: DshFreeRateVerifier) {}
+  constructor(readonly store: TaskStore, readonly client: DshTransport, readonly runsDir: string, private readonly observeRate?: DshRateObserver) {}
   policy() { return this.store.collaboration.currentPolicy(defaultModelPolicy()); }
   owns(taskId: string) { return !!this.store.dshBindings.forTask(taskId); }
   private task(taskId: string) { return this.store.get(taskId) ?? fail("TASK_NOT_FOUND", "No task has this identity."); }
@@ -46,11 +48,19 @@ export class DshTaskCoordinator {
     if (session.busy) return fail("SESSION_BUSY", "The original DSH session has active or queued work.");
     return session;
   }
-  private async observation(execution: ExecutionSelection, sessionId: string): Promise<ModelObservation> {
-    if (!this.verifyFree) return fail("COST_VERIFICATION_UNAVAILABLE", "The native DSH catalog has no rates. A trusted rate verifier is required; no model request was made.");
-    const rate = await this.verifyFree(execution);
-    if (!/^x0(?:\.0+)?(?: credits)?$/i.test(rate.credits) || !Number.isFinite(Date.parse(rate.observedAt)) || Math.abs(Date.now() - Date.parse(rate.observedAt)) > 30000) return fail("MODEL_UNVERIFIED", "A recent exact zero-rate observation is required.");
-    return { ...rate, sessionId, modelId: execution.modelId, selectedModel: execution.modelId, providerId: execution.providerId, connectionId: execution.connectionId, reasoningEffort: execution.reasoningEffort, level: "selected" };
+  private async observation(execution: ExecutionSelection, sessionId: string, taskId?: string): Promise<ModelObservation> {
+    const requireFree = this.policy().requireFree || (taskId ? this.store.collaboration.getTaskAdmission(taskId)?.policy.requireFree === true : false);
+    let rate: ModelRate = { credits: null, observedAt: new Date().toISOString() };
+    if (!this.observeRate && requireFree) return fail("COST_VERIFICATION_UNAVAILABLE", "The optional free-only policy requires a trusted rate source.");
+    if (this.observeRate) {
+      try { rate = await this.observeRate(execution); }
+      catch (error) {
+        if (requireFree || !(error instanceof AdmissionError) || error.code !== "COST_VERIFICATION_UNAVAILABLE") throw error;
+      }
+    }
+    if (!Number.isFinite(Date.parse(rate.observedAt)) || Math.abs(Date.now() - Date.parse(rate.observedAt)) > 30000) rate = { credits: null, observedAt: new Date().toISOString() };
+    if (requireFree && (typeof rate.credits !== "string" || !/^x0(?:\.0+)?(?: credits)?$/i.test(rate.credits.trim()))) return fail("MODEL_UNVERIFIED", "The optional free-only policy requires a recent verified zero rate.");
+    return { credits: rate.credits, observedAt: new Date().toISOString(), sessionId, modelId: execution.modelId, selectedModel: execution.modelId, providerId: execution.providerId, connectionId: execution.connectionId, reasoningEffort: execution.reasoningEffort, level: "selected" };
   }
   async send(input: { contract: unknown; sessionId: string; objective: string; hostId?: string; taskId?: string; workspace?: string }) {
     if (typeof input.sessionId !== "string" || !input.sessionId.trim() || input.sessionId.length > 512) return fail("SESSION_REQUIRED", "Select an explicit original DSH session.");
@@ -94,7 +104,7 @@ export class DshTaskCoordinator {
       const ready = prepare && !same(before.selectedModel, expected) ? await this.client.selectModel({ hostId: binding.hostId, sessionId: binding.sessionId, ...expected }) : before;
       if (ready.sessionId !== binding.sessionId || !same(ready.selectedModel, expected)) return fail("MODEL_BINDING_CHANGED", "Native model readback differs; no prompt was sent.");
       await this.checkedSession(binding, task.workspace!);
-      const model = await this.observation(binding.execution, binding.sessionId);
+      const model = await this.observation(binding.execution, binding.sessionId, binding.taskId);
       this.store.atomic(() => {
         const current = this.store.dshBindings.get(binding.attemptId)!;
         if (!current.runOpen || current.dispatch !== "preparing") return fail("READ_CONFLICT", "The preparation binding changed.");

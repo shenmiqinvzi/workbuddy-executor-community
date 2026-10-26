@@ -154,3 +154,24 @@ test('deployment report requires authentic saved evidence, matching identities a
   journal.save(snapshot);fs.writeFileSync(path.join(journal.dir,'worker-result.json'),JSON.stringify({...result,text:'tampered'}));assert.equal(checkDeploymentTask(config,'normal','fixture-task').status,'failed');
   assert.equal(checkDeploymentTask(config,'cancel','fixture-task').status,'failed');
 });
+
+
+test('fresh setup and doctor do not impose a fixed or free-only model',async t=>{
+  const f=fixture(t),env={WORKBUDDY_CLI_ELECTRON:f.app,WORKBUDDY_CONFIG_DIR:f.config};
+  const options={...f.options,env}; setup('install',options);
+  for(const file of ['.env','data/workbuddy-mcp.toml']) {
+    const text=fs.readFileSync(path.join(f.root,file),'utf8');
+    assert.equal(text.includes('WORKBUDDY_REQUIRED_FREE_MODEL'),false); assert.equal(text.includes(APPROVED_FREE_MODEL),false);
+  }
+  const report=await diagnose({...options,live:true,probe:async()=>({bridgeReady:true,models:[{id:'user-selected-model',credits:'x2.50'}]})});
+  assert.equal(report.ok,true); assert.equal(report.modelPolicy,'user_choice'); assert.equal(report.checks.freePolicyEnabled,false); assert.equal(report.taskSent,false);
+});
+
+test('upgrade preserves an existing explicit restriction without imposing the old model',t=>{
+  const f=fixture(t),env={WORKBUDDY_CLI_ELECTRON:f.app,WORKBUDDY_CONFIG_DIR:f.config};
+  const original='WORKBUDDY_BACKEND=desktop-queue\nWORKBUDDY_REQUIRED_FREE_MODEL=another-approved-model\n';
+  fs.writeFileSync(path.join(f.root,'.env'),original); setup('install',{...f.options,env});
+  assert.equal(fs.readFileSync(path.join(f.root,'.env'),'utf8'),original);
+  assert.ok(fs.readFileSync(path.join(f.root,'data/workbuddy-mcp.toml'),'utf8').includes('another-approved-model'));
+  assert.throws(()=>setup('upgrade',f.options),/policy conflict/);
+});

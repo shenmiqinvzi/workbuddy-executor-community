@@ -1,21 +1,23 @@
 import type { TaskStore, StoredTask } from "./task-store.js";
 import type { DshTransport } from "./dsh-client.js";
 import type { ExecutionSelection } from "./task-contract.js";
-type FreeRate = {
-    credits: string;
+type ModelRate = {
+    credits: string | null;
     observedAt: string;
 };
-/** Trusted backend integration, never a caller-supplied 'free' flag. The DSH
- * native catalog has no rates: absent verifier means dispatch is unavailable. */
-export type DshFreeRateVerifier = (selection: ExecutionSelection) => Promise<FreeRate>;
+/** Trusted source metadata, separate from native selection verification. Missing
+ * pricing stays unknown; only an explicit free-only policy requires a rate. */
+export type DshRateObserver = (selection: ExecutionSelection) => Promise<ModelRate>;
+/** Compatibility alias for integrations opting into a free-only policy. */
+export type DshFreeRateVerifier = DshRateObserver;
 /** Shared TaskStore owns business state. The transport owns native sessions,
  * durable request events and cancellation. No workflow/Reviewer is created. */
 export declare class DshTaskCoordinator {
     readonly store: TaskStore;
     readonly client: DshTransport;
     readonly runsDir: string;
-    private readonly verifyFree?;
-    constructor(store: TaskStore, client: DshTransport, runsDir: string, verifyFree?: DshFreeRateVerifier | undefined);
+    private readonly observeRate?;
+    constructor(store: TaskStore, client: DshTransport, runsDir: string, observeRate?: DshRateObserver | undefined);
     policy(): import("./collaboration.js").ModelPolicy;
     owns(taskId: string): boolean;
     private task;

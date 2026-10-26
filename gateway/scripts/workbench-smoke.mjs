@@ -302,6 +302,16 @@ try {
     const send=tools.find(tool=>tool.name==="workbuddy_send_task");
     const workspace=tools.find(tool=>tool.name==="workbuddy_ensure_workspace");
     step("compiled-mcp-registration", {ok:tools.some(tool=>tool.name==="workbuddy_get_task") && Boolean(send?.inputSchema.properties?.contract) && Boolean(workspace?.inputSchema.properties?.workspaceId),tools:tools.length});
+    for (const [name, args] of [
+      ["workbuddy_send_task", { taskId: "no-model-choice", objective: "Synthetic task; must not dispatch", detail: "brief" }],
+      ["workbuddy_ensure_workspace", { workspace: dir, workspaceId: "no-model-workspace", detail: "full" }],
+    ]) {
+      const result = await mcp.callTool({ name, arguments: args }, undefined, { timeout: 10000 });
+      const body = JSON.parse(result.content[0].text);
+      step(`${name}-requires-model-choice`, { ok: body.ok === false && body.code === "MODEL_SELECTION_REQUIRED" });
+    }
+    const listed = await mcp.callTool({ name: "workbuddy_list_tasks", arguments: { detail: "full" } });
+    step("no-model-choice-no-tasks-created", { ok: JSON.parse(listed.content[0].text).tasks.length === 0 });
   } finally {await mcp.close();}
 } finally {
   await server.close();
