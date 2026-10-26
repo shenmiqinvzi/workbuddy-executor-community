@@ -5,7 +5,16 @@ import { BridgeError, privateDirectory, privateFile } from './transport.mjs';
 import { replayEvents, eventPage, requestOf } from './events.mjs';
 
 export const SUPPORTED_VERSION = '0.2.0-rc.2';
-export const METHODS = Object.freeze(['health', 'sessions', 'create', 'session', 'prompt', 'events', 'cancel']);
+export const SUPPORTED_VERSIONS = Object.freeze(['0.2.0-rc.2', '0.2.1-rc.2']);
+export const METHODS = Object.freeze(['health', 'sessions', 'create', 'session', 'prompt', 'events', 'cancel', 'models', 'select_model']);
+function selectionOf(state) {
+  for (const event of [...state.events].reverse()) {
+    const value = event.type === 'model/selection' ? event.data : event.type === 'request/header' ? event.data?.header?.config : undefined;
+    if (typeof value?.provider === 'string' && typeof value.model === 'string') return { providerId: value.provider, modelId: value.model, reasoningEffort: value.reasoningEffort ?? null };
+  }
+  return null;
+}
+function equalSelection(a, b) { return a?.providerId === b?.providerId && a?.modelId === b?.modelId && (a?.reasoningEffort ?? null) === (b?.reasoningEffort ?? null); }
 const hash = value => createHash('sha256').update(value).digest('hex');
 function string(value, name, max = 512) {
   if (typeof value !== 'string' || !value.trim() || value.length > max || value.includes('\0')) throw new BridgeError('bridge/bad-request', `${name} must be a nonempty string of at most ${max} characters`);
@@ -22,12 +31,12 @@ export function verifyCapabilities(ctx) {
   const profile = ctx.get('profileContext');
   if (!profile || !['desktop', 'web'].includes(profile.name)) throw new BridgeError('bridge/unsupported-host', 'Load this plugin into an existing desktop or web profile Host');
   const metadata = ctx.get('pluginPackages')?.packageOf('@deepseek-ai/dsh-api-session-controller', ctx.baseUrl ?? import.meta.url);
-  if (metadata?.version !== SUPPORTED_VERSION) throw new BridgeError('bridge/unsupported-version', `Bridge requires session-controller ${SUPPORTED_VERSION}; found ${metadata?.version ?? 'unknown'}`);
+  if (!SUPPORTED_VERSIONS.includes(metadata?.version)) throw new BridgeError('bridge/unsupported-version', 'Unsupported session-controller version');
   for (const method of ['list', 'inspect', 'create', 'prompt', 'cancel', 'updateQueue']) if (typeof ctx.sessionController?.[method] !== 'function') throw new BridgeError('bridge/missing-capability', `Harness sessionController.${method} is unavailable`);
   if (typeof ctx.agents?.get !== 'function') throw new BridgeError('bridge/missing-capability', 'Harness Agent registry is unavailable');
   return profile;
 }
-export async function createAdapter(ctx, { root, hostId, identity }) {
+export async function createAdapter(ctx, { root, hostId, identity, allowLegacyPrompt = false }) {
   const ledgerRoot = await privateDirectory(join(await privateDirectory(root), 'requests'));
   const ledgerDir = await privateDirectory(join(ledgerRoot, hostId));
   const locks = new Map();
@@ -44,6 +53,7 @@ export async function createAdapter(ctx, { root, hostId, identity }) {
     const pending = Boolean(agent?.inbox?.nextTurn?.length || agent?.inbox?.nextStep?.length);
     return {
       sessionId: meta.id, workspace: meta.cwd, cwd: meta.cwd,
+      attached: Boolean(agent),
       preset: meta.agentPreset, busy: running || pending, running,
       ...(replay?.activeRequests?.length === 1 ? { activeRequestId: replay.activeRequests[0] } : {}),
       identity: { hostId, profile: identity.profile, runtimeSource: identity.runtimeSource, sessionId: meta.id },
@@ -52,7 +62,7 @@ export async function createAdapter(ctx, { root, hostId, identity }) {
   async function session(sessionId, signal) {
     const state = await inspect(sessionId, signal);
     const title = state.events.findLast(event => event.type === 'session/title')?.data?.title;
-    return { ...summary(state.meta, replayEvents(sessionId, state.events)), ...(typeof title === 'string' ? { title } : {}) };
+    return { ...summary(state.meta, replayEvents(sessionId, state.events)), selectedModel: selectionOf(state), ...(typeof title === 'string' ? { title } : {}) };
   }
   async function exclusive(sessionId, fn) {
     const previous = locks.get(sessionId) ?? Promise.resolve();
@@ -74,7 +84,14 @@ export async function createAdapter(ctx, { root, hostId, identity }) {
   async function prompt(params, signal) {
     let nativeSubmitted = false;
     try {
-    keys(params, ['sessionId', 'requestId', 'text']);
+    keys(params, ['sessionId', 'requestId', 'text', 'expectedSelection']);
+    if (!params.expectedSelection && !allowLegacyPrompt) throw new BridgeError('bridge/model-required', 'This adapter requires an explicit execution model binding');
+    if (params.expectedSelection) {
+      if (typeof params.expectedSelection !== 'object' || Array.isArray(params.expectedSelection)) throw new BridgeError('bridge/bad-request', 'Expected a model binding object');
+      keys(params.expectedSelection, ['providerId', 'modelId', 'reasoningEffort']);
+      string(params.expectedSelection.providerId, 'providerId'); string(params.expectedSelection.modelId, 'modelId');
+      if (params.expectedSelection.reasoningEffort != null) string(params.expectedSelection.reasoningEffort, 'reasoningEffort');
+    }
     const sessionId = string(params.sessionId, 'sessionId');
     const requestId = string(params.requestId, 'requestId');
     const text = string(params.text, 'text', 200000);
@@ -94,7 +111,9 @@ export async function createAdapter(ctx, { root, hostId, identity }) {
       }
       if (existing) throw new BridgeError('bridge/admission-unknown', 'This request was reserved before a disconnect. No duplicate dispatch is allowed; inspect the App and synchronize persisted events');
       const current = summary(state.meta, replay);
+      if (!current.attached) throw new BridgeError('bridge/session-not-live', 'The selected original native session is not attached');
       if (current.busy) throw new BridgeError('bridge/session-busy', 'Session already has running or queued work');
+      if (params.expectedSelection && !equalSelection(selectionOf(state), params.expectedSelection)) throw new BridgeError('bridge/model-drift', 'Session selection changed before admission');
       const record = { sessionId, requestId, textHash: hash(text), state: 'reserved', reservedAt: new Date().toISOString() };
       const reservation = await fs.open(path, 'wx', 0o600);
       try { await reservation.writeFile(JSON.stringify(record)); await reservation.sync(); } finally { await reservation.close(); }
@@ -122,12 +141,37 @@ export async function createAdapter(ctx, { root, hostId, identity }) {
       switch (method) {
         case 'health':
           keys(params, []);
-          return { ok: true, hostId, pid: process.pid, protocolVersion: 1, version: SUPPORTED_VERSION, profile: identity.profile, runtimeSource: identity.runtimeSource, methods: METHODS, approvalHandling: 'Harness UI only; bridge never auto-approves', nativePersistence: true };
+          return { ok: true, hostId, pid: process.pid, protocolVersion: 1, version: identity.version ?? SUPPORTED_VERSION, profile: identity.profile, runtimeSource: identity.runtimeSource, methods: METHODS, capabilities: { modelCatalog: typeof controller.modelCatalog === 'function', selectModel: typeof controller.selectModel === 'function', observeEffectiveModel: true, cancel: true, proveStopped: true, automaticReview: false, usageAttribution: false }, approvalHandling: 'Harness UI only; bridge never auto-approves', nativePersistence: true };
+        case 'models': {
+          keys(params, []);
+          if (typeof controller.modelCatalog !== 'function') throw new BridgeError('bridge/missing-capability', 'Native model catalog unavailable');
+          const catalog = await controller.modelCatalog();
+          if (!Array.isArray(catalog.groups)) throw new BridgeError('bridge/invalid-native-result', 'Invalid native model catalog');
+          return { models: catalog.groups.flatMap(provider => provider.models.map(model => ({ providerId: provider.id, modelId: model.id, reasoningEfforts: model.reasoning?.efforts?.map(effort => effort.id) ?? [], credits: null }))), pricingVerified: false };
+        }
+        case 'select_model': {
+          keys(params, ['sessionId', 'providerId', 'modelId', 'reasoningEffort']);
+          if (typeof controller.selectModel !== 'function') throw new BridgeError('bridge/missing-capability', 'Native model selection unavailable');
+          const sessionId = string(params.sessionId, 'sessionId');
+          return exclusive(sessionId, async () => {
+            const state = await inspect(sessionId, signal);
+            if (summary(state.meta, replayEvents(sessionId, state.events)).busy) throw new BridgeError('bridge/session-busy', 'Cannot change a busy session model');
+            if (!ctx.agents.get(sessionId)) throw new BridgeError('bridge/session-not-live', 'The selected original native session is not attached');
+            const requested = { providerId: string(params.providerId, 'providerId'), modelId: string(params.modelId, 'modelId'), reasoningEffort: params.reasoningEffort ?? null };
+            if (requested.reasoningEffort !== null) string(requested.reasoningEffort, 'reasoningEffort');
+            if (equalSelection(selectionOf(state), requested)) return session(sessionId, signal);
+            signal.throwIfAborted();
+            await controller.selectModel({ sessionId, provider: requested.providerId, model: requested.modelId, ...(requested.reasoningEffort === null ? {} : { reasoningEffort: requested.reasoningEffort }) });
+            const readback = await session(sessionId, signal);
+            if (!equalSelection(readback.selectedModel, requested)) throw new BridgeError('bridge/model-unverified', 'Native model selection did not persist as requested');
+            return readback;
+          });
+        }
         case 'sessions': {
           keys(params, []);
           const result = await controller.list({}, signal);
           if (!Array.isArray(result.items)) throw new BridgeError('bridge/invalid-native-result', 'Harness returned an invalid Session list');
-          return { sessions: result.items.map(item => ({ sessionId: item.sessionId, workspace: item.cwd, cwd: item.cwd, busy: item.running, running: item.running, preset: item.agentPreset, title: item.projections?.values?.title ?? undefined, identity: { hostId, profile: identity.profile, runtimeSource: identity.runtimeSource, sessionId: item.sessionId } })) };
+          return { sessions: result.items.map(item => ({ sessionId: item.sessionId, workspace: item.cwd, cwd: item.cwd, attached: Boolean(ctx.agents.get(item.sessionId)), busy: item.running, running: item.running, preset: item.agentPreset, title: item.projections?.values?.title ?? undefined, identity: { hostId, profile: identity.profile, runtimeSource: identity.runtimeSource, sessionId: item.sessionId } })) };
         }
         case 'session':
           keys(params, ['sessionId']); return session(string(params.sessionId, 'sessionId'), signal);
@@ -194,5 +238,6 @@ export async function logicalIdentity(ctx) {
   const profile = verifyCapabilities(ctx);
   const profileDir = await fs.realpath(profile.dir);
   const runtimeSource = profile.name === 'desktop' ? 'deepseek-desktop' : 'deepseek-web';
-  return { hostId: `dsh-${hash(`${profileDir}\0${runtimeSource}`).slice(0, 20)}`, identity: { version: SUPPORTED_VERSION, profile: profile.name, profileDir, runtimeSource } };
+  const version = ctx.get('pluginPackages').packageOf('@deepseek-ai/dsh-api-session-controller', ctx.baseUrl ?? import.meta.url).version;
+  return { hostId: `dsh-${hash(`${profileDir}\0${runtimeSource}`).slice(0, 20)}`, identity: { version, profile: profile.name, profileDir, runtimeSource } };
 }

@@ -44,6 +44,11 @@ export interface ReportAuthentication {
     reportDigest: string;
     /** When the queue accepted the report, as an ISO-8601 instant. */
     authenticatedAt: string;
+    dshProvenance?: {
+        hostId: string;
+        requestId: string;
+        eventSeq: number;
+    };
 }
 export interface ReportDigestInput {
     status: string;
@@ -73,6 +78,11 @@ export interface ReportAuthenticationExpectation {
     attemptId: string;
     sessionId: string;
     runtimeSource: string;
+    dshProvenance?: {
+        hostId: string;
+        requestId: string;
+        eventSeq: number;
+    };
     /** The digest recomputed from the snapshot's own content and reported status. */
     snapshotDigest: string;
 }

@@ -257,3 +257,5 @@ scopeId 是匿名稳定标识，不是密钥或原始账号。gateway_pool 只�
 新增目标错误：EXECUTOR_UNAVAILABLE、EXECUTOR_CAPABILITY_MISSING、SESSION_AMBIGUOUS、MODEL_BINDING_CHANGED、PLAN_STALE、PLAN_CONFIRMATION_REQUIRED、POLICY_CHANGED、QUOTA_UNAVAILABLE、QUOTA_EXHAUSTED、COST_CONTROL_UNAVAILABLE。模型/政策/费用拒绝为 403；方案/绑定/耗尽冲突为 409；来源或必要观测不可用为 503。等待确认或额度恢复可以是合法方案状态，不一律包装为任务失败。错误 message 不含连接凭据、原始账号或私有路径。
 
 兼容验收须覆盖旧客户端对新 schema 的明确拒绝、旧报告来源保留、未绑定模型/额度的旧任务显示 null、写入迁移事务与失败回滚、备份与降级限制。不得从旧 model 字符串反推 DSH 来源、实际模型或历史额度；新增能力须逐项开关，不以 schema 名称代表执行器已通过真实验收。
+
+T3b 的受控 DSH SDK、原生请求停止证据与报告认证格式 2 见 [DSH 阶段说明](T3B_DSH_ADAPTER.md)。stage-2 HTTP 结构与只读边界保持不变；不能据此认定完整 vnext-2 面板已实现。

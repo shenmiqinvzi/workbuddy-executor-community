@@ -1,6 +1,6 @@
 # WorkBuddy Executor
 
-让 Codex 与桌面 WorkBuddy 协作完成本地开发任务：Codex 明确范围、监督并独立验收，WorkBuddy 负责适合委派的实现、测试和资料整理。新增目标是本地多 Agent 协作工作台：接入 DeepSeek Harness（DSH）、按任务选择执行模型、在用户政策内自动制定协作方案，并展示 WorkBuddy2API 提供的用量与额度信息。新增目标尚未实现。
+让 Codex 与桌面 WorkBuddy 协作完成本地开发任务：Codex 明确范围、监督并独立验收，WorkBuddy 负责适合委派的实现、测试和资料整理。新增目标是本地多 Agent 协作工作台：接入 DeepSeek Harness（DSH）、按任务选择执行模型、在用户政策内自动制定协作方案，并展示 WorkBuddy2API 提供的用量与额度信息。新增目标部分已实现，源码、真实验收与部署进度分别记录。
 
 当前产品目标仅为 Windows。仓库维护者负责路线、集成与发布，欢迎通过 Issue 提供场景、认领具体任务并提交 PR；任务状态与交付在对应 Issue/PR 中跟踪。
 
@@ -53,3 +53,5 @@
 网关基于 [dudu555-djiao/codex-workbuddy-gateway](https://github.com/dudu555-djiao/codex-workbuddy-gateway) 维护；维护者已与上游原作者沟通取得授权。详细来源、私下授权记录的公开边界及当前许可状态见 [AUTHORIZATION.md](AUTHORIZATION.md)。上游署名与现有第三方声明保留。
 
 反馈和提交方式见 [CONTRIBUTING.md](CONTRIBUTING.md)。请勿提交凭据、私密聊天、真实会话数据库、业务日志或个人开发安排。
+
+DSH 受控适配源码与 Windows 桥接的边界、启用和验证见 [T3b 说明](docs/T3B_DSH_ADAPTER.md)；真实模型执行与安装部署须单独验收。

@@ -20,7 +20,26 @@ export interface RunSnapshot {
     taskId: string;
     status: RunStatus;
     pid?: number;
-    driver?: "desktop-acp" | "desktop-queue";
+    driver?: "desktop-acp" | "desktop-queue" | "dsh";
+    dsh?: {
+        hostId: string;
+        requestId: string;
+        sessionId: string;
+        admissionRejected?: boolean;
+        terminal?: {
+            seq: number;
+            type: "completed" | "failed" | "cancelled";
+            rawType: string;
+            at: string;
+            turnId?: string;
+        };
+        effectiveModel?: {
+            providerId: string;
+            modelId: string;
+            reasoningEffort: string | null;
+            seq: number;
+        };
+    };
     deadline?: string;
     claimDeadline?: string;
     sessionId?: string;
@@ -62,7 +81,7 @@ export interface RunSnapshot {
     }>;
     nativeIdleSince?: string;
     nativeStoppedAt?: string;
-    nativeStopSource?: "native_idle" | "not_dispatched";
+    nativeStopSource?: "native_idle" | "not_dispatched" | "dsh_terminal_event";
     stopControl?: {
         requestedAt: string;
         issuedAt?: string;

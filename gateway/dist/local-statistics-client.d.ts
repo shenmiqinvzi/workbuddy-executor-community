@@ -13,5 +13,5 @@ export declare class LocalStatisticsClient {
     readonly origin: string;
     private readonly credentials;
     constructor(input: StatisticsCredentials);
-    read(endpoint: "/usage/remaining" | "/v1/balance-summary", signal: AbortSignal): Promise<unknown>;
+    read(endpoint: "/usage/remaining" | "/v1/balance-summary" | "/v1/models", signal: AbortSignal): Promise<unknown>;
 }

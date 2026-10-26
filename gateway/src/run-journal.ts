@@ -26,7 +26,13 @@ export interface RunSnapshot {
   taskId: string;
   status: RunStatus;
   pid?: number;
-  driver?: "desktop-acp" | "desktop-queue";
+  driver?: "desktop-acp" | "desktop-queue" | "dsh";
+  dsh?: {
+    hostId: string; requestId: string; sessionId: string;
+    admissionRejected?: boolean;
+    terminal?: { seq: number; type: "completed" | "failed" | "cancelled"; rawType: string; at: string; turnId?: string };
+    effectiveModel?: { providerId: string; modelId: string; reasoningEffort: string | null; seq: number };
+  };
   deadline?: string;
   claimDeadline?: string;
   sessionId?: string;
@@ -50,7 +56,7 @@ export interface RunSnapshot {
   validationRecords?: Array<{ path: string; sha256: string }>;
   nativeIdleSince?: string;
   nativeStoppedAt?: string;
-  nativeStopSource?: "native_idle" | "not_dispatched";
+  nativeStopSource?: "native_idle" | "not_dispatched" | "dsh_terminal_event";
   stopControl?: { requestedAt: string; issuedAt?: string; acknowledgedAt?: string; checkedAt?: string; error?: string; state: "requested" | "stop_unconfirmed" | "stopped" };
   progress?: { stage: string; completed: string; running: string; blocker: string; lastMeaningfulAt: string; reportedAt: string };
   reportBy?: string;
@@ -71,6 +77,14 @@ const TERMINAL = new Set<RunStatus>(["needs_review", "blocked", "failed", "cance
 /** A worker report ends its lease, not necessarily the native model/tool turn. */
 export function hasNativeStopEvidence(snapshot: RunSnapshot | undefined): boolean {
   if (!snapshot) return false;
+  if (snapshot.driver === "dsh") {
+    const proof = snapshot.dsh, terminal = proof?.terminal;
+    if (snapshot.runtimeSource === "dsh" && proof?.requestId === snapshot.attemptId && proof.sessionId === snapshot.sessionId && !!proof.hostId && proof.admissionRejected === true && snapshot.nativeStopSource === "not_dispatched" && snapshot.stopReason === "not_dispatched" && Number.isFinite(Date.parse(snapshot.nativeStoppedAt ?? ""))) return true;
+    return snapshot.runtimeSource === "dsh" && proof?.requestId === snapshot.attemptId && proof.sessionId === snapshot.sessionId && typeof proof.hostId === "string" && proof.hostId.length > 0 &&
+      !!terminal && Number.isSafeInteger(terminal.seq) && terminal.seq >= 0 && ["completed", "failed", "cancelled"].includes(terminal.type) &&
+      (terminal.rawType === "turn/end" || (terminal.type === "cancelled" && terminal.rawType === "agent/inbox/spliced")) &&
+      Number.isFinite(Date.parse(terminal.at)) && snapshot.nativeStoppedAt === terminal.at && snapshot.nativeStopSource === "dsh_terminal_event";
+  }
   if (snapshot.driver !== "desktop-queue") return false;
   // A provider/RPC failure can precede further tool activity. An idle sample
   // alone must never release a failed turn, including after a service restart.

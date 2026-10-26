@@ -3,19 +3,28 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { promises as fs, lstatSync, readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
+import { windowsPrivatePath } from './private-path.mjs';
 
 export class BridgeError extends Error {
   constructor(code, message) { super(message); this.code = code; }
 }
 export async function privateDirectory(path) {
-  await fs.mkdir(path, { recursive: true, mode: 0o700 });
+  const created = await fs.mkdir(path, { recursive: true, mode: 0o700 });
   const stat = await fs.lstat(path);
+  if (process.platform === 'win32') {
+    if (!stat.isDirectory() || stat.isSymbolicLink()) throw new BridgeError('bridge/insecure-path', 'Private bridge directory required');
+    windowsPrivatePath(path, { protect: Boolean(created), directory: true }); return path;
+  }
   if (!stat.isDirectory() || stat.isSymbolicLink() || stat.uid !== process.getuid() || (stat.mode & 0o077)) throw new BridgeError('bridge/insecure-path', `Bridge directory must be owned by this user and mode 0700: ${path}`);
   return path;
 }
 export async function privateFile(path) {
   const stat = await fs.lstat(path);
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.uid !== process.getuid() || (stat.mode & 0o077)) throw new BridgeError('bridge/insecure-path', `Bridge file must be owned by this user and mode 0600: ${path}`);
+  if (process.platform === 'win32') {
+    if (!stat.isFile() || stat.isSymbolicLink()) throw new BridgeError('bridge/insecure-path', 'Private bridge file required');
+    windowsPrivatePath(path); return;
+  }
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.uid !== process.getuid() || (stat.mode & 0o077)) throw new BridgeError('bridge/insecure-path', 'Bridge file must be private and owned by the current user');
 }
 function alive(pid) {
   if (!Number.isSafeInteger(pid) || pid < 1) return true; // Unknown owner fails closed.
@@ -29,7 +38,7 @@ function authorized(value, token) {
 }
 function safeError(error) {
   // Do not return exception stacks, auth headers, runtime env, or config secrets.
-  return { code: typeof error?.code === 'string' ? error.code : 'bridge/internal', message: error instanceof Error ? error.message : 'Bridge operation failed', ...(error?.admissionRejected === true ? { admissionRejected: true } : {}) };
+  return { code: typeof error?.code === 'string' && /^bridge\/[a-z0-9-]+$/.test(error.code) ? error.code : 'bridge/native-failure', message: 'The native bridge operation could not be confirmed. Inspect the original session without resending.', ...(error?.admissionRejected === true ? { admissionRejected: true } : {}) };
 }
 async function bodyOf(req, maxBytes) {
   let bytes = 0; const chunks = [];
@@ -41,16 +50,17 @@ async function bodyOf(req, maxBytes) {
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
   catch { throw new BridgeError('bridge/bad-request', 'RPC body must be JSON'); }
 }
-/** Private AF_UNIX endpoint; no TCP listener or remote auth workaround. */
+/** Local named pipe on Windows, AF_UNIX elsewhere; never a TCP listener. */
 export async function startTransport(options) {
-  if (typeof process.getuid !== 'function') throw new BridgeError('bridge/unsupported-platform', 'This bridge requires Unix filesystem ownership checks');
   const root = await privateDirectory(options.root ?? join(homedir(), '.dsh', 'codex-bridge'));
   const hosts = await privateDirectory(join(root, 'hosts'));
   if (!/^[a-z0-9-]{8,64}$/.test(options.hostId)) throw new BridgeError('bridge/invalid-host', 'Invalid logical Host identity');
   const registryPath = join(hosts, `${options.hostId}.json`);
-  const socketPath = join(root, `${options.hostId.slice(0, 24)}-${process.pid}-${randomBytes(3).toString('hex')}.sock`);
+  const socketPath = process.platform === 'win32'
+    ? `\\\\.\\pipe\\workbuddy-dsh-${options.hostId}-${process.pid}-${randomBytes(12).toString('hex')}`
+    : join(root, `${options.hostId.slice(0, 24)}-${process.pid}-${randomBytes(3).toString('hex')}.sock`);
   // Darwin's sockaddr_un.sun_path is only 104 bytes including the NUL.
-  if (Buffer.byteLength(socketPath) > 100) throw new BridgeError('bridge/socket-path-too-long', 'Bridge home is too long for a Unix socket');
+  if (process.platform !== 'win32' && Buffer.byteLength(socketPath) > 100) throw new BridgeError('bridge/socket-path-too-long', 'Bridge home is too long for a Unix socket');
   const token = randomBytes(32).toString('hex');
   const registration = { ...options.identity, hostId: options.hostId, socketPath, token, pid: process.pid, protocolVersion: 1, registeredAt: new Date().toISOString() };
   let ownsRegistration = false;
@@ -126,9 +136,11 @@ export async function startTransport(options) {
   try {
     await claim();
     await new Promise((resolve, reject) => { server.once('error', reject); server.listen(socketPath, () => { server.off('error', reject); resolve(); }); });
-    await fs.chmod(socketPath, 0o600);
-    const socketStat = await fs.lstat(socketPath);
-    if (!socketStat.isSocket() || socketStat.uid !== process.getuid() || (socketStat.mode & 0o077)) throw new BridgeError('bridge/insecure-socket', 'Unix socket ownership check failed');
+    if (process.platform !== 'win32') {
+      await fs.chmod(socketPath, 0o600);
+      const socketStat = await fs.lstat(socketPath);
+      if (!socketStat.isSocket() || socketStat.uid !== process.getuid() || (socketStat.mode & 0o077)) throw new BridgeError('bridge/insecure-socket', 'Unix socket ownership check failed');
+    }
     process.once('exit', onExit);
   } catch (error) { server.close(); removeOwnedSync(); throw error; }
   return {

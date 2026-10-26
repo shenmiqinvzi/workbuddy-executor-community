@@ -19,6 +19,7 @@ import { runtimeVersion } from "./runtime-version.js";
 import { progressDelta } from "./progress-summary.js";
 import { registerTaskProjectionTool } from "./task-view-reader.js";
 import { runsDirectory } from "./run-journal.js";
+import { configuredDshCoordinator } from "./dsh-runtime.js";
 
 // Load this installation's .env so the MCP host does not have to export it or
 // run the POSIX launcher. Explicit host variables always win.
@@ -27,7 +28,7 @@ const config = loadConfig();
 const client = new WorkBuddyClient(config);
 const store = new TaskStore(config.dbFile);
 const coordinator = new TaskCoordinator(config, store, client);
-const tasks = new TaskApplicationService(coordinator, config.maxTaskAttempts ?? 3, runsDirectory(config));
+const tasks = new TaskApplicationService(coordinator, config.maxTaskAttempts ?? 3, runsDirectory(config), configuredDshCoordinator(store, runsDirectory(config)));
 const server = new McpServer({ name: "codex-workbuddy-gateway", version: runtimeVersion.packageVersion });
 const timeout = z.number().int().positive().max(86_400).optional();
 const taskId = z.string().min(1).max(200);

@@ -12,6 +12,7 @@ export interface DeepSeekSession {
     sessionId: string;
     workspace?: string;
     busy?: boolean;
+    attached?: boolean;
     activeRequestId?: string;
     title?: string;
 }

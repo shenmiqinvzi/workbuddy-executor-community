@@ -48,6 +48,9 @@ export interface ModelObservation {
     credits: string;
     observedAt: string;
     level: "selected";
+    providerId?: string;
+    connectionId?: string;
+    reasoningEffort?: string | null;
 }
 export interface AttemptAdmission {
     taskId: string;
@@ -76,9 +79,9 @@ export declare class CollaborationRegistry {
     getPlan(planId: string): CollaborationPlan;
     /** Called only by a trusted application action after actual user authorization. */
     authorizePlan(planId: string, revision: string, policy: ModelPolicy, authorizationSource: string): CollaborationPlan;
-    prepare(contract: SupportedTaskContract, contractHash: string, policy: ModelPolicy): TaskAdmission;
+    prepare(contract: SupportedTaskContract, contractHash: string, policy: ModelPolicy, executor?: "workbuddy" | "dsh"): TaskAdmission;
     /** Must run inside the task/contract creation transaction; rechecks policy and plan. */
-    saveTaskAdmission(taskId: string, contract: SupportedTaskContract, contractHash: string, policy: ModelPolicy): TaskAdmission;
+    saveTaskAdmission(taskId: string, contract: SupportedTaskContract, contractHash: string, policy: ModelPolicy, executor?: "workbuddy" | "dsh"): TaskAdmission;
     getTaskAdmission(taskId: string): TaskAdmission | null;
     saveAttempt(record: AttemptAdmission): void;
     getAttempt(attemptId: string): AttemptAdmission | null;

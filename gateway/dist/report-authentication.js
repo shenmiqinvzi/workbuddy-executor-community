@@ -46,8 +46,13 @@ function nonBlank(value) {
 export function verifyReportAuthentication(record, expectation) {
     if (!record)
         return { state: "unknown", problem: "missing" };
-    if (record.formatVersion !== REPORT_AUTHENTICATION_FORMAT) {
+    if (record.formatVersion !== REPORT_AUTHENTICATION_FORMAT && !(record.formatVersion === 2 && expectation.runtimeSource === "dsh")) {
         return { state: "unknown", problem: "unsupported_format" };
+    }
+    if (record.formatVersion === 2) {
+        const proof = record.dshProvenance, expected = expectation.dshProvenance;
+        if (!proof || !expected || !nonBlank(proof.hostId) || proof.hostId !== expected.hostId || proof.requestId !== expectation.attemptId || proof.requestId !== expected.requestId || !Number.isSafeInteger(proof.eventSeq) || proof.eventSeq < 0 || proof.eventSeq !== expected.eventSeq)
+            return { state: "unknown", problem: "binding_mismatch" };
     }
     if (!nonBlank(record.taskId) ||
         !nonBlank(record.attemptId) ||

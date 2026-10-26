@@ -594,6 +594,7 @@ export function runEvidenceDigestOf(snapshot, cancellation) {
         contentDigest,
         auth: snapshot.reportAuthentication ?? null,
         status: snapshot.status,
+        ...(snapshot.dsh ? { dsh: snapshot.dsh } : {}),
     });
 }
 /**

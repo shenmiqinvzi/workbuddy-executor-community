@@ -16,8 +16,8 @@ export class LocalStatisticsClient {
     this.origin = url.origin;
     this.credentials = Object.freeze({ ...input, baseUrl: url.origin });
   }
-  async read(endpoint: "/usage/remaining" | "/v1/balance-summary", signal: AbortSignal): Promise<unknown> {
-    if (!["/usage/remaining", "/v1/balance-summary"].includes(endpoint)) throw new StatisticsSourceError("source_unsupported");
+  async read(endpoint: "/usage/remaining" | "/v1/balance-summary" | "/v1/models", signal: AbortSignal): Promise<unknown> {
+    if (!["/usage/remaining", "/v1/balance-summary", "/v1/models"].includes(endpoint)) throw new StatisticsSourceError("source_unsupported");
     try {
       const response = await fetch(new URL(endpoint, this.origin), { method: "GET", redirect: "error", signal,
         headers: { authorization: `Bearer ${this.credentials.apiKey}`, ...(this.credentials.panelToken ? { "X-Panel-Token": this.credentials.panelToken } : {}) } });

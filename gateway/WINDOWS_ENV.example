@@ -21,3 +21,11 @@ WORKBUDDY_CLAIM_TIMEOUT_SECONDS=180
 # WORKBUDDY_CREDIT_SOURCE_ID=workbuddy2api-credit
 # WORKBUDDY_CREDIT_SOURCE_URL=http://127.0.0.1:8788
 # WORKBUDDY_CREDIT_API_KEY=YOUR_EXISTING_DSH_PROVIDER_API_KEY
+
+# Optional DSH adapter, off by default. Does not authorize a model or plan.
+# WORKBUDDY_DSH_ENABLED=1
+# WORKBUDDY_DSH_HOST_ID=dsh-<verified-host-id>
+# WORKBUDDY_DSH_PROVIDER_ID=<exact-provider-id>
+# WORKBUDDY_DSH_RATE_SOURCE_URL=http://127.0.0.1:8788
+# WORKBUDDY_DSH_RATE_API_KEY=<existing-private-key-for-that-provider-route>
+# WORKBUDDY_DSH_REGISTRY_DIR=<private-bridge-host-registry-directory>

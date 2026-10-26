@@ -27,6 +27,8 @@ export function enforceModelPolicy(policy, execution) {
         fail("MODEL_POLICY_BLOCKED", "The execution selection is outside the authorized model policy.");
 }
 export function verifySelectedModel(execution, observed, sessionId) {
+    if (execution.executorId === "dsh" && (!observed || observed.providerId !== execution.providerId || observed.connectionId !== execution.connectionId || (observed.reasoningEffort ?? null) !== execution.reasoningEffort))
+        fail("MODEL_UNVERIFIED", "The DSH source or reasoning selection differs.");
     const observedAt = Date.parse(observed?.observedAt ?? "");
     if (!observed || observed.sessionId !== sessionId || observed.level !== "selected" || observed.modelId !== execution.modelId || observed.selectedModel !== execution.modelId || typeof observed.credits !== "string" ||
         !/^x0(?:\.0+)?(?: credits)?$/i.test(observed.credits.trim()) || !Number.isFinite(observedAt) || observedAt < Date.now() - 30_000 || observedAt > Date.now() + 5000)
@@ -131,15 +133,15 @@ export class CollaborationRegistry {
             .run(new Date().toISOString(), authorizationSource, planId, revision);
         return this.getPlan(planId);
     }
-    prepare(contract, contractHash, policy) {
+    prepare(contract, contractHash, policy, executor = "workbuddy") {
         const workspace = this.getWorkspace(contract.workspaceId);
         const execution = contractExecution(contract);
         enforceModelPolicy(policy, execution);
         if (contract.timeoutSeconds > policy.maxTimeoutSeconds)
             fail("DEADLINE_EXCEEDED", "The requested duration exceeds the server policy.");
-        if (execution.executorId !== "workbuddy")
-            fail("EXECUTOR_UNAVAILABLE", "The DSH execution adapter has not been enabled.");
-        if (execution.connectionId !== "local-workbuddy" || execution.providerId !== "workbuddy-native" || execution.reasoningEffort !== null)
+        if (execution.executorId !== executor)
+            fail("EXECUTOR_UNAVAILABLE", "This adapter does not execute the selected executor.");
+        if (executor === "workbuddy" && (execution.connectionId !== "local-workbuddy" || execution.providerId !== "workbuddy-native" || execution.reasoningEffort !== null))
             fail("EXECUTOR_CAPABILITY_MISSING", "This WorkBuddy adapter cannot verify the requested source or reasoning effort.");
         let planId = null, planRevision = null;
         if ("collaboration" in contract) {
@@ -155,8 +157,8 @@ export class CollaborationRegistry {
         return { workspace, execution, policy: structuredClone(policy), contractHash, planId, planRevision };
     }
     /** Must run inside the task/contract creation transaction; rechecks policy and plan. */
-    saveTaskAdmission(taskId, contract, contractHash, policy) {
-        const admission = this.prepare(contract, contractHash, policy);
+    saveTaskAdmission(taskId, contract, contractHash, policy, executor = "workbuddy") {
+        const admission = this.prepare(contract, contractHash, policy, executor);
         if (admission.planId) {
             const result = this.db.prepare("UPDATE collaboration_plans SET consumed_by=? WHERE plan_id=? AND (consumed_by IS NULL OR consumed_by=?)").run(taskId, admission.planId, taskId);
             if (Number(result.changes) !== 1)

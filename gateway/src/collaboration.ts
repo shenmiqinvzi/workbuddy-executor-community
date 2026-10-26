@@ -28,6 +28,7 @@ export interface TaskAdmission {
 export interface ModelObservation {
   sessionId: string; modelId: string; selectedModel: string; credits: string; observedAt: string;
   level: "selected";
+  providerId?: string; connectionId?: string; reasoningEffort?: string | null;
 }
 export interface AttemptAdmission {
   taskId: string; attemptId: string; deadlineAt: string; model: ModelObservation;
@@ -52,6 +53,7 @@ export function enforceModelPolicy(policy: ModelPolicy, execution: ExecutionSele
 }
 
 export function verifySelectedModel(execution: ExecutionSelection, observed: ModelObservation | undefined, sessionId: string): asserts observed is ModelObservation {
+  if (execution.executorId === "dsh" && (!observed || observed.providerId !== execution.providerId || observed.connectionId !== execution.connectionId || (observed.reasoningEffort ?? null) !== execution.reasoningEffort)) fail("MODEL_UNVERIFIED", "The DSH source or reasoning selection differs.");
   const observedAt = Date.parse(observed?.observedAt ?? "");
   if (!observed || observed.sessionId !== sessionId || observed.level !== "selected" || observed.modelId !== execution.modelId || observed.selectedModel !== execution.modelId || typeof observed.credits !== "string" ||
       !/^x0(?:\.0+)?(?: credits)?$/i.test(observed.credits.trim()) || !Number.isFinite(observedAt) || observedAt < Date.now() - 30_000 || observedAt > Date.now() + 5000) fail("MODEL_UNVERIFIED", "A recent selected-model and exact zero-rate observation is required.");
@@ -147,13 +149,13 @@ export class CollaborationRegistry {
     return this.getPlan(planId);
   }
 
-  prepare(contract: SupportedTaskContract, contractHash: string, policy: ModelPolicy): TaskAdmission {
+  prepare(contract: SupportedTaskContract, contractHash: string, policy: ModelPolicy, executor: "workbuddy" | "dsh" = "workbuddy"): TaskAdmission {
     const workspace = this.getWorkspace(contract.workspaceId);
     const execution = contractExecution(contract);
     enforceModelPolicy(policy, execution);
     if (contract.timeoutSeconds > policy.maxTimeoutSeconds) fail("DEADLINE_EXCEEDED", "The requested duration exceeds the server policy.");
-    if (execution.executorId !== "workbuddy") fail("EXECUTOR_UNAVAILABLE", "The DSH execution adapter has not been enabled.");
-    if (execution.connectionId !== "local-workbuddy" || execution.providerId !== "workbuddy-native" || execution.reasoningEffort !== null) fail("EXECUTOR_CAPABILITY_MISSING", "This WorkBuddy adapter cannot verify the requested source or reasoning effort.");
+    if (execution.executorId !== executor) fail("EXECUTOR_UNAVAILABLE", "This adapter does not execute the selected executor.");
+    if (executor === "workbuddy" && (execution.connectionId !== "local-workbuddy" || execution.providerId !== "workbuddy-native" || execution.reasoningEffort !== null)) fail("EXECUTOR_CAPABILITY_MISSING", "This WorkBuddy adapter cannot verify the requested source or reasoning effort.");
     let planId: string | null = null, planRevision: string | null = null;
     if ("collaboration" in contract) {
       const plan = this.getPlan(contract.collaboration.planId);
@@ -166,8 +168,8 @@ export class CollaborationRegistry {
   }
 
   /** Must run inside the task/contract creation transaction; rechecks policy and plan. */
-  saveTaskAdmission(taskId: string, contract: SupportedTaskContract, contractHash: string, policy: ModelPolicy): TaskAdmission {
-    const admission = this.prepare(contract, contractHash, policy);
+  saveTaskAdmission(taskId: string, contract: SupportedTaskContract, contractHash: string, policy: ModelPolicy, executor: "workbuddy" | "dsh" = "workbuddy"): TaskAdmission {
+    const admission = this.prepare(contract, contractHash, policy, executor);
     if (admission.planId) {
       const result = this.db.prepare("UPDATE collaboration_plans SET consumed_by=? WHERE plan_id=? AND (consumed_by IS NULL OR consumed_by=?)").run(taskId, admission.planId, taskId);
       if (Number(result.changes) !== 1) fail("PLAN_STALE", "The plan was already bound to another task.");

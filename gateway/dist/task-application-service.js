@@ -1,3 +1,4 @@
+import { AdmissionError } from "./collaboration.js";
 import { readTaskProjection } from "./task-view-reader.js";
 import { stageTaskViewFromProjection, STAGE_TASK_VIEW_UNAVAILABLE, STAGE_TASK_VIEW_SCHEMA_VERSION } from "./task-view-stage.js";
 /** The MCP entry point and future local HTTP adapter share this service. */
@@ -5,10 +6,14 @@ export class TaskApplicationService {
     coordinator;
     maxAttempts;
     runsDir;
-    constructor(coordinator, maxAttempts, runsDir) {
+    dsh;
+    constructor(coordinator, maxAttempts, runsDir, dsh) {
         this.coordinator = coordinator;
         this.maxAttempts = maxAttempts;
         this.runsDir = runsDir;
+        this.dsh = dsh;
+        if (dsh && dsh.store !== coordinator.store)
+            throw new Error("DSH and WorkBuddy must share the same TaskStore");
     }
     /** Trusted local setup and authorization seams; no HTTP write routes. */
     registerWorkspace(id, directory, displayName) { return this.coordinator.store.collaboration.registerWorkspace(id, directory, displayName); }
@@ -181,21 +186,39 @@ export class TaskApplicationService {
             return { ok: false, code: "store_unavailable", field: "store.listTaskEvents", message: "Reading the event stream failed; this is not reported as an empty stream." };
         }
     }
-    send(input) { return this.coordinator.send(input); }
-    continue(input) { return this.coordinator.continue(input); }
-    accept(...args) { return this.coordinator.accept(...args); }
-    cancel(...args) { return this.coordinator.cancel(...args); }
-    respond(...args) { return this.coordinator.respond(...args); }
-    reconcileReport(input) { return this.coordinator.reconcileReport(input); }
-    sync(taskId, limit) { return this.coordinator.sync(taskId, limit); }
+    async send(input) {
+        if (input.contract?.execution?.executorId === "dsh") {
+            if (!this.dsh)
+                throw new AdmissionError("EXECUTOR_UNAVAILABLE", "The original DSH adapter is unavailable; WorkBuddy cannot take over its task");
+            if (!input.sessionId || input.constraints !== undefined || input.acceptanceCommands !== undefined || input.model !== undefined || input.timeoutSeconds !== undefined || input.sessionMode === "new")
+                throw new AdmissionError("TASK_CONFLICT", "DSH requires an explicit original session and immutable contract terms");
+            return this.dsh.send({ contract: input.contract, objective: input.objective, sessionId: input.sessionId, taskId: input.taskId, workspace: input.workspace });
+        }
+        return this.coordinator.send(input);
+    }
+    dshFor(taskId) {
+        if (!this.coordinator.store.dshBindings.forTask(taskId))
+            return undefined;
+        if (!this.dsh)
+            throw new Error("The original DSH adapter is unavailable; WorkBuddy cannot take over its task");
+        return this.dsh;
+    }
+    continue(input) { return this.dshFor(input.taskId)?.continue(input) ?? this.coordinator.continue(input); }
+    accept(...args) { return this.dshFor(args[0])?.accept(...args) ?? this.coordinator.accept(...args); }
+    cancel(...args) { return this.dshFor(args[0])?.cancel(...args) ?? this.coordinator.cancel(...args); }
+    respond(...args) { if (this.dshFor(args[0]))
+        throw new AdmissionError("EXECUTOR_CAPABILITY_MISSING", "Resolve DSH input in its native UI; this adapter cannot approve permissions"); return this.coordinator.respond(...args); }
+    reconcileReport(input) { if (this.dshFor(input.taskId))
+        throw new AdmissionError("EXECUTOR_CAPABILITY_MISSING", "DSH reports require their original durable request events"); return this.coordinator.reconcileReport(input); }
+    sync(taskId, limit) { return this.dshFor(taskId)?.sync(taskId, limit) ?? this.coordinator.sync(taskId, limit); }
     requireTask(taskId) { return this.coordinator.requireTask(taskId); }
-    executionStatus(taskId) { return this.coordinator.executionStatus(taskId); }
+    executionStatus(taskId) { return this.dshFor(taskId)?.executionStatus(taskId) ?? this.coordinator.executionStatus(taskId); }
     listTasks(limit) { return this.coordinator.store.listTasks({ limit }); }
     listTasksByCreatedCursor(options) { return this.coordinator.store.listTasksByCreatedCursor(options); }
     listMessages(taskId, limit, attemptId) { return this.coordinator.store.listMessages(taskId, limit, attemptId); }
     listAttempts(taskId) { return this.coordinator.store.listAttempts(taskId); }
     statusView(task) {
-        const execution = this.coordinator.executionStatus(task.taskId);
+        const execution = this.executionStatus(task.taskId);
         const stopped = execution.remoteStopped;
         const cancelled = task.state === "cancelled";
         const failed = task.state === "failed";
@@ -228,10 +251,10 @@ export class TaskApplicationService {
                 allowedActions.push("cancel");
             const contract = this.coordinator.store.getContract(task.taskId);
             const attemptLimit = contract.state === "found" ? contract.record.effectiveMaxAttempts : contract.state === "absent" ? this.maxAttempts : 0;
-            if (stopped && task.sessionId && (task.attempt ?? 0) < attemptLimit && (review || task.state === "blocked"))
+            if (stopped && task.sessionId && (task.attempt ?? 0) < attemptLimit && (review || task.state === "blocked" || (task.state === "failed" && task.runtimeSource === "dsh")))
                 allowedActions.push("rework");
-            const reportReady = task.runtimeSource !== "desktop_queue" || ("reportDigestPresent" in execution && execution.reportDigestPresent === true);
-            if (stopped && review && task.sessionId && task.report?.rawText.trim() && reportReady && ["desktop_interactive", "desktop_queue"].includes(task.runtimeSource ?? ""))
+            const reportReady = !["desktop_queue", "dsh"].includes(task.runtimeSource ?? "") || ("reportDigestPresent" in execution && execution.reportDigestPresent === true);
+            if (stopped && review && task.sessionId && task.report?.rawText.trim() && reportReady && (["desktop_interactive", "desktop_queue"].includes(task.runtimeSource ?? "") || (task.runtimeSource === "dsh" && this.dsh)))
                 allowedActions.push("accept");
         }
         return {
