@@ -232,6 +232,9 @@ test("trusted plan creation and confirmation are atomic replayable operations wi
   const p = f.service.getCollaborationPlan(input.contract.collaboration.planId);
   assert.equal(p.authorizedAt !== null, true);
   const before = f.store.operations.get("authorize:task");
+  assert.equal(before?.taskId, "task");
+  assert.deepEqual(before?.binding, { planId: p.planId, expectedPlanRevision: p.revision });
+  assert.equal(before?.expectedAttemptId, null);
   const repeated = f.service.authorizeCollaborationPlan(p.planId, p.revision, "synthetic-user-action", { operationId: "authorize:task" });
   assert.equal(repeated.authorizedAt, p.authorizedAt); assert.deepEqual(f.store.operations.get("authorize:task"), before);
   assert.throws(() => f.service.authorizeCollaborationPlan(p.planId, "old", "synthetic-user-action", { operationId: "stale-plan" }), { code: "PLAN_STALE" });

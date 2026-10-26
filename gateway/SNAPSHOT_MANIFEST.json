@@ -683,18 +683,18 @@
     },
     {
       "path": "dist/operation-admission.d.ts",
-      "sha256": "e95281a88930f8244a7c1e68f492ba445508187e36508a58b17fef04e8833cbf",
-      "bytes": 3253
+      "sha256": "23028a675d05f6cace2e072739627c4fe4133298d0d2699632024f51dd6984c5",
+      "bytes": 3293
     },
     {
       "path": "dist/operation-admission.js",
-      "sha256": "811d23deda6b1589ade3fb9cc42b3f9ca5925cfef9109ccc4cda41eca07a09e5",
-      "bytes": 17326
+      "sha256": "c703a0d3eeec43a505abbeefc5b4643e969feeefe6d39dc2907b4dc01c0f6821",
+      "bytes": 17345
     },
     {
       "path": "dist/operation-admission.js.map",
-      "sha256": "f7620caef9c9529ab1b628654cee46bd688d524b22aa2283ee03300e9e2279b3",
-      "bytes": 15335
+      "sha256": "fe2585b1ee36f712d942846a3b17190f738daed54d476829edb45189fecc12cc",
+      "bytes": 15351
     },
     {
       "path": "dist/persistent-service.d.ts",
@@ -988,13 +988,13 @@
     },
     {
       "path": "dist/task-application-service.js",
-      "sha256": "656aae957d15a5e1753d4f8efa94a7fb5298e88ecbf52337f8ea139b173cc7d1",
-      "bytes": 18486
+      "sha256": "f2523b37f3abe159aad5484ac73e8729b1683297d5e86e42507c562cbdb24340",
+      "bytes": 18613
     },
     {
       "path": "dist/task-application-service.js.map",
-      "sha256": "15327b4406ec6749c846e99100297b6ce59c1d1d2dc289ad468ee822e8da1b78",
-      "bytes": 14414
+      "sha256": "308447c2c39e1033e555f50ab083816b2b9e94175334d8856394d608c48f1e3a",
+      "bytes": 14552
     },
     {
       "path": "dist/task-contract.d.ts",
@@ -1638,8 +1638,8 @@
     },
     {
       "path": "src/operation-admission.ts",
-      "sha256": "f2a03691ed64762aacdf57985c727f33d0da58aa917f841dd38df30afdeda0b7",
-      "bytes": 17431
+      "sha256": "ac11c8dcfaa50a3346eb88df5c020ab967de87c9fc166f88b1ce8e39168a9b49",
+      "bytes": 17480
     },
     {
       "path": "src/persistent-service.ts",
@@ -1738,8 +1738,8 @@
     },
     {
       "path": "src/task-application-service.ts",
-      "sha256": "ab1551094e49b954cccb12161065ee41d0649c16e57a25417ef1c803bc1178fd",
-      "bytes": 21117
+      "sha256": "a945d8e22774dc5472183b91fc1a90cd51860bdf7ae429bf36d107eff4efe228",
+      "bytes": 21240
     },
     {
       "path": "src/task-contract.ts",
@@ -2008,8 +2008,8 @@
     },
     {
       "path": "test/t4a-operation-admission.test.ts",
-      "sha256": "0073863a926004204ac706dd22ff9b43799deabef72ea0e56984f5a08bafe345",
-      "bytes": 24582
+      "sha256": "274c597158ad1ee92b86d469875ddfabf189495e918b6f4cc69f714656a0c069",
+      "bytes": 24764
     },
     {
       "path": "test/task-application-service.test.ts",

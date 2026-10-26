@@ -226,9 +226,9 @@ export class OperationAdmission {
       throw error;
     }
   }
-  metadata<T>(kind: string, taskId: string, parameters: unknown, options: OperationOptions, action: () => T): T {
+  metadata<T>(kind: string, taskId: string, parameters: unknown, options: Pick<OperationOptions, "operationId">, action: () => T, binding: unknown = null): T {
     return this.store.atomic(() => {
-      const { record, fresh } = this.admit(kind, taskId, "metadata", parameters, options, null, false);
+      const { record, fresh } = this.admit(kind, taskId, "metadata", parameters, options, binding, false);
       if (!fresh) return this.replay<T>(record);
       const result = action();
       this.save({ ...record, state: "succeeded", result, updatedAt: new Date().toISOString() });

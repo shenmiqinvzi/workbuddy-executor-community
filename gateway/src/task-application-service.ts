@@ -91,8 +91,9 @@ export class TaskApplicationService {
       () => this.coordinator.store.collaboration.createPlan(contract, this.coordinator.modelPolicy(), parameters));
   }
   authorizeCollaborationPlan(planId: string, expectedPlanRevision: string, source: string, options: Pick<OperationOptions, "operationId"> = {}) {
-    return this.coordinator.store.operations.metadata("plan_authorize", planId, { planId, expectedPlanRevision, source }, options,
-      () => this.coordinator.store.collaboration.authorizePlan(planId, expectedPlanRevision, this.coordinator.modelPolicy(), source));
+    const taskId = this.coordinator.store.collaboration.getPlan(planId).proposal.taskId;
+    return this.coordinator.store.operations.metadata("plan_authorize", taskId, { planId, expectedPlanRevision, source }, options,
+      () => this.coordinator.store.collaboration.authorizePlan(planId, expectedPlanRevision, this.coordinator.modelPolicy(), source), { planId, expectedPlanRevision });
   }
   getCollaborationPlan(planId: string) { return this.coordinator.store.collaboration.getPlan(planId); }
   readQuotaResources(options: { connectionId?: string; modelId?: string; limit?: number } = {}) {

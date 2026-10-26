@@ -22,7 +22,8 @@ export class TaskApplicationService {
         return this.coordinator.store.operations.metadata("plan_create", contract?.taskId ?? "", { contract, ...parameters }, { operationId }, () => this.coordinator.store.collaboration.createPlan(contract, this.coordinator.modelPolicy(), parameters));
     }
     authorizeCollaborationPlan(planId, expectedPlanRevision, source, options = {}) {
-        return this.coordinator.store.operations.metadata("plan_authorize", planId, { planId, expectedPlanRevision, source }, options, () => this.coordinator.store.collaboration.authorizePlan(planId, expectedPlanRevision, this.coordinator.modelPolicy(), source));
+        const taskId = this.coordinator.store.collaboration.getPlan(planId).proposal.taskId;
+        return this.coordinator.store.operations.metadata("plan_authorize", taskId, { planId, expectedPlanRevision, source }, options, () => this.coordinator.store.collaboration.authorizePlan(planId, expectedPlanRevision, this.coordinator.modelPolicy(), source), { planId, expectedPlanRevision });
     }
     getCollaborationPlan(planId) { return this.coordinator.store.collaboration.getPlan(planId); }
     readQuotaResources(options = {}) {

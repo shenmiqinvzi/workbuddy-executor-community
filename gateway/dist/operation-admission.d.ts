@@ -71,5 +71,5 @@ export declare class OperationAdmission {
     run<T extends object>(kind: string, taskId: string, executor: string, parameters: unknown, options: OperationOptions, binding: unknown, action: () => Promise<T>): Promise<T & OperationReceipt>;
     /** Internal queue persistence has its own stable receipt, while retaining its parent's workflow. */
     enqueue(taskId: string, attemptId: string, parameters: unknown, action: () => void): void;
-    metadata<T>(kind: string, taskId: string, parameters: unknown, options: OperationOptions, action: () => T): T;
+    metadata<T>(kind: string, taskId: string, parameters: unknown, options: Pick<OperationOptions, "operationId">, action: () => T, binding?: unknown): T;
 }
