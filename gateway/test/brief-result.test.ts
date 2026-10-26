@@ -131,7 +131,10 @@ test("MCP schemas expose optional brief and full still retrieves complete durabl
   native.exec("CREATE TABLE sessions(id TEXT PRIMARY KEY, cwd TEXT, is_playground INTEGER, deleted_at INTEGER)");
   native.prepare("INSERT INTO sessions VALUES (?, ?, 1, NULL)").run("native-session", directory);
   native.close();
-  const stored = store.createOrGet(task({ state: "accepted", workspace: directory })).task;
+  const stored = store.createOrGet(task({ state: "accepted", workspace: directory, attemptId: RunJournal.newId() })).task;
+  // This fixture represents genuinely closed synthetic history, not an unknown migrated task.
+  store.update(stored.taskId, { runEvidenceDigest: JSON.stringify({ attemptId: stored.attemptId, stopped: true }) });
+  store.appendTaskEvent({ taskId: stored.taskId, attemptId: stored.attemptId!, type: "task_closed", occurredAt: stored.updatedAt, observedAt: stored.updatedAt, actor: "synthetic-review", payload: {}, sourceRef: null });
   store.addMessages(stored.taskId, Array.from({ length: 100 }, (_, index) => message(stored.attemptId!, index, "Durable progress ".repeat(1_000))));
   const client = new Client({ name: "brief-result-test", version: "1" });
   const transport = new StdioClientTransport({
@@ -235,4 +238,11 @@ test("MCP schemas expose optional brief and full still retrieves complete durabl
   const refusedRecovery = await call("workbuddy_reconcile_report", { taskId: claim.taskId, attemptId: "run-00000000-0000-4000-8000-000000000099", reason: "synthetic stale attempt", detail: "brief" });
   assert.equal(refusedRecovery.ok, false);
   assert.match(refusedRecovery.error, /current task attempt/);
+});
+
+
+test("brief operation failures retain identity, uncertainty and current revision", () => {
+  const value = brief({ ok: false, code: "OUTCOME_UNKNOWN", operationId: "original-op", operationState: "effect_started", outcomeCode: "OUTCOME_UNKNOWN", task: task({ revision: "actual-revision" }) });
+  assert.equal(value.operationId, "original-op"); assert.equal(value.operationState, "effect_started");
+  assert.equal(value.outcomeCode, "OUTCOME_UNKNOWN"); assert.equal(value.task.revision, "actual-revision");
 });

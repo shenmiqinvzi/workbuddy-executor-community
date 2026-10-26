@@ -24,7 +24,7 @@ export class WorkBuddyProvider implements AgentProvider {
   close() { this.store.close(); }
   models(sessionId?:string){return listModels(this.config,sessionId);}
   workspaces(){return {ok:true,workers:listWorkspaces(this.config)};}
-  bindWorkspace(input:{workspace:string;sessionId?:string;model?:string;title?:string}){return ensureWorkspace(this.config,input);}
+  async bindWorkspace(input:{workspace:string;sessionId?:string;model?:string;title?:string}){throw new HubError("OPERATION_REQUIRED", "Use an authorized task submission for native model preparation.");}
   async health() {
     let message = "First submitted workspace will be prepared automatically. WorkBuddy login and permissions must be valid.";
     let state = "needs_setup";

@@ -1,0 +1,277 @@
+import { createHash } from "node:crypto";
+import { AdmissionError } from "./collaboration.js";
+export class OperationOutcomeError extends AdmissionError {
+    operationId;
+    operationState;
+    constructor(operationId, operationState) {
+        super("OUTCOME_UNKNOWN", "Observe the original operation and task; execution will not be retried automatically.");
+        this.operationId = operationId;
+        this.operationState = operationState;
+    }
+}
+/** JSON data only; never hash transport metadata by accident or omit unknown behavior fields. */
+export function operationDigest(value) {
+    const canonical = (item) => {
+        if (item === undefined)
+            return null;
+        if (item === null || typeof item === "string" || typeof item === "boolean")
+            return item;
+        if (typeof item === "number" && Number.isFinite(item))
+            return item;
+        if (Array.isArray(item))
+            return item.map(canonical);
+        if (typeof item === "object" && Object.getPrototypeOf(item) === Object.prototype) {
+            return Object.fromEntries(Object.entries(item).filter(([, v]) => v !== undefined).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([k, v]) => [k, canonical(v)]));
+        }
+        throw new AdmissionError("INVALID_OPERATION", "Operation parameters must be finite JSON data.");
+    };
+    return createHash("sha256").update(JSON.stringify(canonical(value))).digest("hex");
+}
+/** SQLite is the arbiter. The local promises only let same-process callers await a receipt. */
+export class OperationAdmission {
+    db;
+    store;
+    pending = new Map();
+    constructor(db, store) {
+        this.db = db;
+        this.store = store;
+        db.exec(`CREATE TABLE IF NOT EXISTS task_operations (
+      operation_id TEXT PRIMARY KEY, task_id TEXT NOT NULL, kind TEXT NOT NULL,
+      state TEXT NOT NULL, body_json TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS task_operations_task ON task_operations(task_id);
+      CREATE TABLE IF NOT EXISTS workflow_capacity (
+      slot INTEGER PRIMARY KEY CHECK(slot=1), task_id TEXT NOT NULL, executor TEXT NOT NULL, operation_id TEXT NOT NULL);`);
+    }
+    get(operationId) {
+        const row = this.db.prepare("SELECT * FROM task_operations WHERE operation_id=?").get(operationId);
+        if (!row)
+            return null;
+        try {
+            const record = JSON.parse(String(row.body_json));
+            if (record.operationId !== operationId || record.taskId !== row.task_id || record.kind !== row.kind || record.state !== row.state)
+                throw Error();
+            return record;
+        }
+        catch {
+            throw new AdmissionError("CONTRACT_INTEGRITY", "The operation record is invalid; execution remains blocked.");
+        }
+    }
+    listUnfinished() {
+        return this.db.prepare("SELECT operation_id FROM task_operations WHERE state IN ('reserved','effect_started','outcome_unknown') ORDER BY rowid").all().map(row => this.get(String(row.operation_id)));
+    }
+    originalBinding(taskId) {
+        const row = this.db.prepare("SELECT operation_id FROM task_operations WHERE task_id=? AND kind='send' ORDER BY rowid LIMIT 1").get(taskId);
+        return row ? this.get(String(row.operation_id)).binding : null;
+    }
+    originalSession(taskId) {
+        const row = this.db.prepare("SELECT operation_id FROM task_operations WHERE task_id=? AND kind='send' ORDER BY rowid LIMIT 1").get(taskId);
+        if (!row)
+            return null;
+        const operation = this.get(String(row.operation_id));
+        return operation.resolvedBinding?.sessionId ?? operation.binding?.sessionId ?? null;
+    }
+    save(record) {
+        this.db.prepare("UPDATE task_operations SET state=?,body_json=? WHERE operation_id=?").run(record.state, JSON.stringify(record), record.operationId);
+    }
+    /** Closing requires all existing durable facts, never idle/TTL or a business label alone. */
+    isClosed(task) {
+        if (!task.attemptId || !["accepted", "cancelled", "failed"].includes(task.state))
+            return false;
+        try {
+            const evidence = JSON.parse(task.runEvidenceDigest ?? "");
+            return evidence.stopped === true && evidence.attemptId === task.attemptId && !!this.db.prepare("SELECT 1 FROM task_events WHERE task_id=? AND attempt_id=? AND type='task_closed'").get(task.taskId, task.attemptId);
+        }
+        catch {
+            return false;
+        }
+    }
+    occupant() {
+        const row = this.db.prepare("SELECT * FROM workflow_capacity WHERE slot=1").get();
+        return row ? { taskId: String(row.task_id), executor: String(row.executor), operationId: String(row.operation_id) } : null;
+    }
+    /** Called under BEGIN IMMEDIATE, also used by compatibility queue/worker gates. */
+    claim(taskId, executor, operationId) {
+        const owner = this.occupant();
+        if (owner && owner.taskId !== taskId) {
+            const previous = this.store.get(owner.taskId);
+            if (!previous || !this.isClosed(previous))
+                throw new AdmissionError("CAPACITY_OCCUPIED", "An original workflow remains open or uncertain.");
+            this.db.prepare("DELETE FROM workflow_capacity WHERE slot=1").run();
+        }
+        else if (owner && owner.executor !== executor)
+            throw new AdmissionError("EXECUTOR_UNAVAILABLE", "The workflow cannot change its original executor.");
+        // Check ALL historical rows, including preparations with no attempt. Migration invents no stop facts.
+        for (const row of this.db.prepare("SELECT task_id FROM tasks WHERE task_id<>?").all(taskId)) {
+            if (!this.isClosed(this.store.get(String(row.task_id))))
+                throw new AdmissionError("CAPACITY_OCCUPIED", "A historical workflow has no verified closure.");
+        }
+        this.store.dshBindings.assertNoOpen(taskId);
+        this.db.prepare("INSERT OR IGNORE INTO workflow_capacity VALUES (1,?,?,?)").run(taskId, executor, operationId);
+    }
+    admit(kind, taskId, executor, parameters, options, binding, capacity) {
+        const legacy = options.operationId === undefined;
+        const operationId = options.operationId ?? `compat:${kind}:${taskId}:${operationDigest(parameters)}`;
+        if (typeof operationId !== "string" || !operationId.trim() || operationId.length > 512)
+            throw new AdmissionError("INVALID_OPERATION", "Use a stable bounded operationId.");
+        const parameterDigest = operationDigest({ kind, taskId, executor, parameters, ...(legacy ? {} : { expectedRevision: options.expectedRevision, expectedAttemptId: options.expectedAttemptId }) });
+        return this.store.atomic(() => {
+            const prior = this.get(operationId);
+            if (prior) {
+                if (prior.parameterDigest !== parameterDigest)
+                    throw new AdmissionError("OPERATION_CONFLICT", "This operationId has different original parameters.");
+                return { record: prior, fresh: false };
+            }
+            const task = this.store.get(taskId);
+            if (!legacy && capacity) {
+                if (options.expectedRevision === undefined || options.expectedAttemptId === undefined)
+                    throw new AdmissionError("OPERATION_PRECONDITION_REQUIRED", "Provide expectedRevision and expectedAttemptId; new tasks use null, never a fabricated attempt.");
+                if ((task?.attemptId ?? null) !== options.expectedAttemptId)
+                    throw new AdmissionError("STALE_ATTEMPT", "The expected attempt is no longer current.");
+                if ((task?.revision ?? null) !== options.expectedRevision)
+                    throw new AdmissionError("STALE_REVISION", "The expected revision is no longer current.");
+            }
+            if (capacity) {
+                const active = this.db.prepare("SELECT operation_id FROM task_operations WHERE task_id=? AND state IN ('reserved','effect_started','outcome_unknown') LIMIT 1").get(taskId);
+                if (active)
+                    throw new OperationOutcomeError(String(active.operation_id), this.get(String(active.operation_id)).state);
+                this.claim(taskId, executor, operationId);
+            }
+            const now = new Date().toISOString();
+            const record = { operationId, kind, taskId, attemptId: task?.attemptId ?? null, parameterDigest,
+                expectedRevision: legacy ? task?.revision ?? null : options.expectedRevision ?? null,
+                expectedAttemptId: legacy ? task?.attemptId ?? null : options.expectedAttemptId ?? null,
+                executor, binding, state: "reserved", createdAt: now, updatedAt: now };
+            this.db.prepare("INSERT INTO task_operations VALUES (?,?,?,?,?)").run(operationId, taskId, kind, record.state, JSON.stringify(record));
+            return { record, fresh: true };
+        });
+    }
+    /** Commit before every possibly mutating native call; never roll this back with its receipt. */
+    nativeBoundary(taskId, attemptId) {
+        this.store.atomic(() => {
+            const owner = this.occupant();
+            if (!owner || owner.taskId !== taskId)
+                throw new AdmissionError("OPERATION_REQUIRED", "Native execution requires the original durable admission.");
+            const task = this.store.get(taskId);
+            if (task && (task.cancelNote || ["accepted", "cancelled", "failed"].includes(task.state)))
+                throw new AdmissionError("CANCELLED_TERMINAL", "The original workflow no longer permits native dispatch.");
+            const rows = this.db.prepare("SELECT operation_id FROM task_operations WHERE task_id=? AND state IN ('reserved','effect_started')").all(taskId);
+            if (!rows.length)
+                throw new AdmissionError("OPERATION_REQUIRED", "No active operation authorizes this native side effect.");
+            for (const row of rows) {
+                const record = this.get(String(row.operation_id));
+                this.save({ ...record, state: "effect_started", resolvedBinding: { sessionId: task?.sessionId ?? null, runtimeSource: task?.runtimeSource ?? null }, attemptId: attemptId ?? record.attemptId, updatedAt: new Date().toISOString() });
+            }
+        });
+    }
+    /** Existing queue receipts may wake exactly their original attempt, under its retained workflow. */
+    assertExecution(taskId, attemptId) {
+        this.store.atomic(() => {
+            this.claim(taskId, "workbuddy", `compat:execution:${attemptId}`);
+            const record = this.db.prepare("SELECT 1 FROM task_operations WHERE task_id=?").get(taskId);
+            if (!record)
+                throw new AdmissionError("OPERATION_REQUIRED", "Historical queue execution needs explicit recovery; it is not automatically dispatched after migration.");
+            const pending = this.db.prepare("SELECT operation_id FROM task_operations WHERE task_id=? AND kind IN ('send','rework') AND state IN ('reserved','effect_started','outcome_unknown') LIMIT 1").get(taskId);
+            if (pending)
+                throw new OperationOutcomeError(String(pending.operation_id), this.get(String(pending.operation_id)).state);
+            const task = this.store.get(taskId);
+            if (task?.attemptId !== attemptId || task.cancelNote || ["accepted", "cancelled", "failed"].includes(task.state))
+                throw new AdmissionError("STALE_ATTEMPT", "Only the current live attempt may execute.");
+        });
+    }
+    replay(record) {
+        if (record.state === "succeeded")
+            return structuredClone(record.result);
+        if (record.state === "rejected")
+            throw new AdmissionError(record.error?.code ?? "OPERATION_REJECTED", record.error?.message ?? "The original operation was rejected.");
+        throw new OperationOutcomeError(record.operationId, record.state);
+    }
+    run(kind, taskId, executor, parameters, options, binding, action) {
+        const { record, fresh } = this.admit(kind, taskId, executor, parameters, options, binding, true);
+        if (!fresh) {
+            const pending = this.pending.get(record.operationId);
+            if (!options.operationId && !pending && ["reserved", "effect_started", "outcome_unknown"].includes(record.state)) {
+                const task = this.store.get(taskId);
+                if (!task)
+                    throw new OperationOutcomeError(record.operationId, record.state);
+                return Promise.resolve({ ok: false, created: false, task, code: "OUTCOME_UNKNOWN", operationId: record.operationId, operationState: record.state });
+            }
+            const replayed = pending ? pending.then(result => structuredClone(result)) : Promise.resolve(this.replay(record));
+            return replayed.then(result => options.operationId ? result : { ...result, created: false, task: this.store.get(taskId) ?? result.task });
+        }
+        const promise = (async () => {
+            try {
+                const raw = await action();
+                const current = this.get(record.operationId);
+                const uncertain = current.state === "effect_started" && raw?.ok === false && raw.code !== "DISPATCH_REJECTED";
+                const result = JSON.parse(JSON.stringify({ ...raw, operationId: record.operationId, operationState: uncertain ? "outcome_unknown" : "succeeded", ...(uncertain ? { outcomeCode: "OUTCOME_UNKNOWN", ...(raw.code ? {} : { code: "OUTCOME_UNKNOWN" }) } : {}) }));
+                this.store.atomic(() => {
+                    this.save({ ...current, state: uncertain ? "outcome_unknown" : "succeeded", result, updatedAt: new Date().toISOString() });
+                });
+                return result;
+            }
+            catch (error) {
+                try {
+                    this.store.atomic(() => {
+                        const current = this.get(record.operationId);
+                        const uncertain = current.state === "effect_started" || current.state === "outcome_unknown";
+                        this.save({ ...current, state: uncertain ? "outcome_unknown" : "rejected", error: { code: error instanceof AdmissionError ? error.code : "OPERATION_FAILED", message: "The original operation failed; inspect its stored task and binding." }, updatedAt: new Date().toISOString() });
+                        if (!uncertain && !this.store.get(taskId) && this.occupant()?.operationId === record.operationId)
+                            this.db.prepare("DELETE FROM workflow_capacity WHERE slot=1").run();
+                    });
+                }
+                catch {
+                    // Failure to save the failure is never evidence that native work did not occur.
+                    if (error instanceof Error)
+                        Object.assign(error, { operationId: record.operationId, operationState: "outcome_unknown", outcomeCode: "OUTCOME_UNKNOWN" });
+                    throw error;
+                }
+                const failed = this.get(record.operationId);
+                if (failed.state === "outcome_unknown" && error instanceof Error)
+                    Object.assign(error, { operationId: record.operationId, operationState: failed.state, outcomeCode: "OUTCOME_UNKNOWN" });
+                throw error;
+            }
+            finally {
+                this.pending.delete(record.operationId);
+            }
+        })();
+        this.pending.set(record.operationId, promise);
+        return promise;
+    }
+    /** Internal queue persistence has its own stable receipt, while retaining its parent's workflow. */
+    enqueue(taskId, attemptId, parameters, action) {
+        const { record, fresh } = this.store.atomic(() => {
+            const admission = this.admit("queue", taskId, "workbuddy", parameters, { operationId: `queue:${attemptId}` }, parameters, false);
+            if (admission.fresh) {
+                this.claim(taskId, "workbuddy", admission.record.operationId);
+                const task = this.store.get(taskId);
+                if (task && task.attemptId !== attemptId)
+                    throw new AdmissionError("STALE_ATTEMPT", "The queue request is not the current attempt.");
+            }
+            return admission;
+        });
+        if (!fresh) {
+            this.replay(record);
+            return;
+        }
+        this.nativeBoundary(taskId, attemptId);
+        try {
+            action();
+            this.store.atomic(() => this.save({ ...this.get(record.operationId), state: "succeeded", result: null, updatedAt: new Date().toISOString() }));
+        }
+        catch (error) {
+            this.store.atomic(() => this.save({ ...this.get(record.operationId), state: "outcome_unknown", error: { code: "QUEUE_UNCONFIRMED", message: "Inspect the original queue attempt; it will not be resent." }, updatedAt: new Date().toISOString() }));
+            throw error;
+        }
+    }
+    metadata(kind, taskId, parameters, options, action) {
+        return this.store.atomic(() => {
+            const { record, fresh } = this.admit(kind, taskId, "metadata", parameters, options, null, false);
+            if (!fresh)
+                return this.replay(record);
+            const result = action();
+            this.save({ ...record, state: "succeeded", result, updatedAt: new Date().toISOString() });
+            return result;
+        });
+    }
+}
+//# sourceMappingURL=operation-admission.js.map

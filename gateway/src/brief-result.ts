@@ -44,7 +44,7 @@ function messageReport(message: RecordValue, fallback: RecordValue = {}): Record
   });
 }
 function briefTask(value: RecordValue, messages: RecordValue[] = []): RecordValue {
-  const result = pick(value, ["taskId", "attemptId", "attempt", "sessionId", "runtimeSource", "state", "lastEventSeq", "lastMessageId", "workspace", "createdAt", "updatedAt", "blockingReason", "cancelNote", "reviewNote", "reviewedAt"]);
+  const result = pick(value, ["taskId", "revision", "attemptId", "attempt", "sessionId", "runtimeSource", "state", "lastEventSeq", "lastMessageId", "workspace", "createdAt", "updatedAt", "blockingReason", "cancelNote", "reviewNote", "reviewedAt"]);
   const currentMessages = matchingMessages(messages, value.attemptId);
   // Paths are never clipped. Do not attribute earlier-attempt paths to this task.
   result.artifacts = [...new Set([...paths(value.artifacts), ...currentMessages.flatMap((message) => paths(record(message.metadata)?.artifacts))])];
@@ -60,7 +60,7 @@ export function resultForDetail(value: unknown, detail: ResultDetail = "full", o
   if (detail === "full") return value;
   const input = record(value);
   if (!input) return value;
-  const result = pick(input, ["runtime", "delta", "models", "currentModel", "model", "ok", "code", "error", "created", "taskId", "attemptId", "attempt", "sessionId", "workspace", "worker", "workers", "runtimeSource", "state", "lastEventSeq", "artifacts", "artifactPaths", "blockingReason", "message", "next", "acceptance", "cancellationRequested", "remoteStopped", "executionState", "execution", "statusView", "statusViews", "backend", "online", "desktopSupervision", "ready", "status", "sessions", "workerCandidates", "persistentService"]);
+  const result = pick(input, ["runtime", "delta", "operationId", "operationState", "outcomeCode", "models", "currentModel", "model", "ok", "code", "error", "created", "taskId", "attemptId", "attempt", "sessionId", "workspace", "worker", "workers", "runtimeSource", "state", "lastEventSeq", "artifacts", "artifactPaths", "blockingReason", "message", "next", "acceptance", "cancellationRequested", "remoteStopped", "executionState", "execution", "statusView", "statusViews", "backend", "online", "desktopSupervision", "ready", "status", "sessions", "workerCandidates", "persistentService"]);
   const messages = Array.isArray(input.messages) ? input.messages.map(record).filter((item): item is RecordValue => item !== undefined) : [];
   const task = record(input.task);
   const historicalMessages = options.messageAttemptId !== undefined && options.messageAttemptId !== task?.attemptId;

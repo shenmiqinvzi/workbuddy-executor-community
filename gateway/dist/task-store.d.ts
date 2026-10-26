@@ -3,6 +3,7 @@ import { type PersistedTaskContract, type TaskContractIntegrity, type TaskContra
 import { CollaborationRegistry, type ModelPolicy, type ModelObservation } from "./collaboration.js";
 import { QuotaStore } from "./quota-observation.js";
 import { CreditBalanceStore } from "./credit-balance.js";
+import { OperationAdmission } from "./operation-admission.js";
 import { DshBindingStore } from "./dsh-bindings.js";
 export type TaskState = "queued" | "working" | "completed" | "blocked" | "failed" | "cancelled" | "needs_review" | "accepted";
 export interface StoredTask {
@@ -124,6 +125,8 @@ export type TaskContractRead = {
 };
 export interface AttemptReservation {
     attemptId: string;
+    expectedRevision?: string | null;
+    expectedAttemptId?: string | null;
     messageId: string;
     sessionId?: string;
     runtimeSource?: string;
@@ -157,6 +160,7 @@ export declare class TaskStore {
     readonly quotas: QuotaStore;
     readonly creditBalances: CreditBalanceStore;
     readonly dshBindings: DshBindingStore;
+    readonly operations: OperationAdmission;
     constructor(file: string);
     close(): void;
     /**

@@ -16,7 +16,9 @@ import { snapshotReportDigest } from "./report-authentication.js";
 import { validateSupportedTaskContract, contractExecution } from "./task-contract.js";
 import { AdmissionError, defaultModelPolicy, enforceModelPolicy, type ModelObservation } from "./collaboration.js";
 
-export interface SendTaskInput {
+import type { OperationOptions } from "./operation-admission.js";
+
+export interface SendTaskInput extends OperationOptions {
   taskId?: string; objective: string; workspace?: string; constraints?: string[]; acceptanceCommands?: string[];
   timeoutSeconds?: number; sessionId?: string; model?: string; sessionMode?: "existing" | "new";
   contract?: unknown;
@@ -30,13 +32,26 @@ async function observeSelectedModel(config: Config, sessionId: string, model: st
 }
 export class TaskCoordinator {
   constructor(private readonly config: Config, readonly store: TaskStore, private readonly client: WorkBuddyClient,
-    private readonly resolveWorkspace: (config: Config, input: { workspace: string; sessionId?: string; title?: string; model?: string; workerKey?: string }) => Promise<{ workspace: string; sessionId: string }> = ensureWorkspace,
+    private readonly resolveWorkspace: (config: Config, input: { workspace: string; sessionId?: string; title?: string; model?: string; workerKey?: string; admissionTaskId?: string }) => Promise<{ workspace: string; sessionId: string }> = ensureWorkspace,
     private readonly observeModel: (config: Config, sessionId: string, model: string) => Promise<ModelObservation> = observeSelectedModel) {}
   modelPolicy() { return this.store.collaboration.currentPolicy(defaultModelPolicy(this.config.maxTaskAttempts ?? 3)); }
   private requireDesktop(): void {
     if (!["desktop-acp", "desktop-queue"].includes(this.config.backend)) throw new Error("Desktop supervision requires WORKBUDDY_BACKEND=desktop-queue or desktop-acp. CLI and hidden gateway execution do not prove execution in your WorkBuddy desktop conversation.");
   }
   async send(input: SendTaskInput) {
+    this.requireDesktop();
+    input = structuredClone(input);
+    const contractId = (input.contract as { taskId?: string } | undefined)?.taskId;
+    const taskId = input.taskId ?? contractId ?? (input.operationId ? `codex-${crypto.createHash("sha256").update(input.operationId).digest("hex").slice(0, 32)}` : undefined);
+    if (!taskId) throw new AdmissionError("OPERATION_REQUIRED", "Provide a stable taskId or operationId before dispatch.");
+    // Historical same-task replay is a pure read, even when another workflow owns capacity.
+    if (!input.operationId && this.store.get(taskId) && !this.store.operations.originalBinding(taskId)) return this.sendAdmitted({ ...input, taskId });
+    const { operationId, expectedRevision, expectedAttemptId, ...terms } = input;
+    const parameters = { ...terms, taskId, workspace: input.workspace ? path.resolve(input.workspace) : undefined, sessionMode: input.sessionMode ?? "existing", timeoutSeconds: input.timeoutSeconds ?? this.config.taskTimeoutSeconds ?? 1800 };
+    return this.store.operations.run("send", taskId, "workbuddy", parameters, { operationId, expectedRevision, expectedAttemptId },
+      { backend: this.config.backend, sessionId: input.sessionId ?? null, contract: input.contract ?? null, model: input.model ?? null, maxAttempts: this.config.maxTaskAttempts ?? 3, timeoutSeconds: input.timeoutSeconds ?? this.config.taskTimeoutSeconds ?? 1800 }, () => this.sendAdmitted({ ...input, taskId }));
+  }
+  private async sendAdmitted(input: SendTaskInput) {
     this.requireDesktop();
     if (input.contract !== undefined) return this.sendWithContract(input);
     const taskId = input.taskId ?? `codex-${crypto.randomUUID()}`;
@@ -66,10 +81,12 @@ export class TaskCoordinator {
         if(!input.workspace&&!input.sessionId&&new Set(readWorkspaceWorkers(this.config,registration).filter(worker=>worker.selected).map(worker=>worker.workspace)).size>1)throw new Error("Several project workspaces are registered; provide workspace or sessionId instead of silently using the legacy default");
         const workspace=input.workspace??(input.sessionId?readDesktopSession(this.config.workbuddyConfigDir,input.sessionId).cwd:registration.workspace);
         if(!workspace)throw new Error("Cannot determine the chosen native session workspace");
-        const selected=await this.resolveWorkspace(this.config,{workspace,sessionId:input.sessionId});
+        this.store.operations.nativeBoundary(taskId);
+        const selected=await this.resolveWorkspace(this.config,{workspace,sessionId:input.sessionId,admissionTaskId:taskId});
         input={...input,workspace:selected.workspace,sessionId:selected.sessionId};
       } else if(input.workspace&&!input.sessionId) {
-        const selected=await this.resolveWorkspace(this.config,{workspace:input.workspace});
+        this.store.operations.nativeBoundary(taskId);
+        const selected=await this.resolveWorkspace(this.config,{workspace:input.workspace,admissionTaskId:taskId});
         input={...input,workspace:selected.workspace,sessionId:selected.sessionId};
       }
     }
@@ -105,7 +122,8 @@ export class TaskCoordinator {
     // The winning creator persists its terms BEFORE model preparation. A crash
     // or unknown preparation result never permits a replay to prepare again.
     try {
-      const selected = await this.resolveWorkspace(this.config, { workspace: admission.workspace.realPath, sessionId: input.sessionId, title: contract.title, model: execution.modelId, workerKey: contract.taskId });
+      this.store.operations.nativeBoundary(contract.taskId);
+      const selected = await this.resolveWorkspace(this.config, { workspace: admission.workspace.realPath, sessionId: input.sessionId, title: contract.title, model: execution.modelId, workerKey: contract.taskId, admissionTaskId: contract.taskId });
       if (fs.realpathSync.native(selected.workspace) !== admission.workspace.realPath) throw new AdmissionError("WORKSPACE_CONFLICT", "Native routing returned a different project.");
       this.store.update(contract.taskId, { sessionId: selected.sessionId });
       const modelObservation = await this.observeModel(this.config, selected.sessionId, execution.modelId);
@@ -121,12 +139,13 @@ export class TaskCoordinator {
 
   private async dispatch(task: StoredTask, prompt: string, input: { timeoutSeconds?: number; sessionId?: string; model?: string; sessionMode?: "existing" | "new"; acceptanceCommands?: string[]; modelObservation?: ModelObservation }) {
     const attemptId = RunJournal.newId();
-    this.store.beginAttempt(task.taskId, { attemptId, messageId: attemptId, sessionId: input.sessionId, acceptanceCommands: input.acceptanceCommands, modelObservation: input.modelObservation });
+    this.store.beginAttempt(task.taskId, { expectedRevision: task.revision ?? null, expectedAttemptId: task.attemptId ?? null, attemptId, messageId: attemptId, sessionId: input.sessionId, acceptanceCommands: input.acceptanceCommands, modelObservation: input.modelObservation });
     const reserved = this.store.collaboration.getAttempt(attemptId);
     // A reservation is not execution provenance. The actual worker supplies it.
     this.store.updateAttempt(task.taskId, attemptId, { runtimeSource: null });
     try {
       if(this.config.backend==='desktop-queue'&&input.sessionMode==='new')throw new Error("Use workspace or ensure_workspace for native project routing; sessionMode:new is not supported by the queue");
+      this.store.operations.nativeBoundary(task.taskId, attemptId);
       await this.client.sendMessage(prompt, task.workspace, input.timeoutSeconds, input.sessionId ?? task.sessionId, { taskId: task.taskId, attemptId, model: input.model, sessionMode: input.sessionMode, deadline: reserved?.deadlineAt });
       // T2-R1 round 3: the queue writes the attempt's state.json during
       // dispatch, so the row must not be persisted BEHIND its own run file —
@@ -328,13 +347,24 @@ export class TaskCoordinator {
     // keep their state because the patch carries no state change.
     return task.attemptId ? this.store.updateAttempt(task.taskId, task.attemptId, { runEvidenceDigest: digest }).task : current;
   }
-  async continue(input: { taskId: string; feedback: string; acceptanceCommands?: string[]; timeoutSeconds?: number; model?: string }) {
+  async continue(input: { taskId: string; feedback: string; acceptanceCommands?: string[]; timeoutSeconds?: number; model?: string } & OperationOptions) {
+    input = structuredClone(input);
+    const { operationId, expectedRevision, expectedAttemptId, ...parameters } = input;
+    const task = this.store.get(input.taskId);
+    return this.store.operations.run("rework", input.taskId, "workbuddy", parameters, { operationId, expectedRevision, expectedAttemptId },
+      { sessionId: task?.sessionId ?? null, admission: this.store.collaboration.getTaskAdmission(input.taskId) }, () => this.continueAdmitted(input));
+  }
+  private async continueAdmitted(input: { taskId: string; feedback: string; acceptanceCommands?: string[]; timeoutSeconds?: number; model?: string }) {
     this.requireDesktop();
     const task = await this.sync(input.taskId);
     if (task.state === "cancelled") throw new Error("Cancelled tasks cannot be continued; create a new task");
     const storedContract = this.store.getContract(task.taskId);
     if (storedContract.state === "integrity_failure") throw new AdmissionError("CONTRACT_INTEGRITY", "The task contract failed integrity verification.");
-    const attemptLimit = storedContract.state === "found" ? storedContract.record.effectiveMaxAttempts : this.config.maxTaskAttempts ?? 3;
+    const original = this.store.operations.originalBinding(task.taskId) as { model?: string; maxAttempts?: number; timeoutSeconds?: number; backend?: string } | null;
+    if (original?.backend && original.backend !== this.config.backend) throw new AdmissionError("EXECUTOR_UNAVAILABLE", "Rework must use the original native adapter.");
+    const originalSession = this.store.operations.originalSession(task.taskId);
+    if (originalSession && task.sessionId !== originalSession) throw new AdmissionError("MODEL_BINDING_CHANGED", "Rework cannot change its original native session.");
+    const attemptLimit = storedContract.state === "found" ? storedContract.record.effectiveMaxAttempts : Math.min(this.config.maxTaskAttempts ?? 3, original?.maxAttempts ?? this.config.maxTaskAttempts ?? 3);
     if ((task.attempt ?? 0) >= attemptLimit) throw new Error("Task attempt limit reached. Stop retrying and review the failure and existing files before changing the configured budget.");
     if (!task.sessionId) throw new Error("No verified desktop session is bound. Inspect the old run and start a new task with an explicit WorkBuddy sessionId.");
     if (task.attemptId) {
@@ -342,6 +372,11 @@ export class TaskCoordinator {
       if (snapshot && ["queued", "working"].includes(snapshot.status)) throw new Error(snapshot.waitingInput ? "WorkBuddy is waiting for input. Use workbuddy_respond_task; a new prompt would overlap the active turn." : "This task still has an active worker; wait or cancel before sending rework.");
       if (!hasNativeStopEvidence(snapshot) && (task.runtimeSource === "desktop_queue" ||
           (snapshot?.driver === "desktop-queue" && ["claim.json", "wake.json"].some(file => fs.existsSync(path.join(runsDirectory(this.config), task.attemptId!, file)))))) throw new Error("The desktop attempt stopped reporting but its execution has not been confirmed stopped. Inspect the native session before rework.");
+    }
+    if (storedContract.state === "absent" && input.model !== undefined && input.model !== original?.model) throw new AdmissionError("MODEL_BINDING_CHANGED", "Rework cannot change the originally selected model.");
+    if (storedContract.state === "absent") {
+      if (original?.timeoutSeconds && input.timeoutSeconds !== undefined && input.timeoutSeconds > original.timeoutSeconds) throw new AdmissionError("TASK_CONFLICT", "Rework cannot extend its original duration budget.");
+      input = { ...input, model: original?.model ?? input.model, timeoutSeconds: input.timeoutSeconds ?? original?.timeoutSeconds };
     }
     let modelObservation: ModelObservation | undefined;
     if (storedContract.state === "found") {

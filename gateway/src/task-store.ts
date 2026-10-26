@@ -7,6 +7,7 @@ import { persistedTaskContract, validateSupportedTaskContract, verifyPersistedCo
 import { AdmissionError, CollaborationRegistry, enforceModelPolicy, verifySelectedModel, type ModelPolicy, type ModelObservation } from "./collaboration.js";
 import { QuotaStore } from "./quota-observation.js";
 import { CreditBalanceStore } from "./credit-balance.js";
+import { OperationAdmission } from "./operation-admission.js";
 import { DshBindingStore } from "./dsh-bindings.js";
 
 export type TaskState = "queued" | "working" | "completed" | "blocked" | "failed" | "cancelled" | "needs_review" | "accepted";
@@ -117,6 +118,8 @@ export type TaskContractRead =
   | { state: "integrity_failure"; integrity: TaskContractIntegrity };
 
 export interface AttemptReservation {  attemptId: string;
+  expectedRevision?: string | null;
+  expectedAttemptId?: string | null;
   messageId: string;
   sessionId?: string;
   runtimeSource?: string;
@@ -151,6 +154,7 @@ export class TaskStore {
   readonly quotas: QuotaStore;
   readonly creditBalances: CreditBalanceStore;
   readonly dshBindings: DshBindingStore;
+  readonly operations: OperationAdmission;
 
   constructor(readonly file: string) {
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
@@ -270,6 +274,7 @@ export class TaskStore {
       CREATE INDEX IF NOT EXISTS task_events_by_task ON task_events(task_id, event_id);
       CREATE UNIQUE INDEX IF NOT EXISTS task_events_source_ref ON task_events(task_id, source_ref) WHERE source_ref IS NOT NULL;
     `);
+    this.operations = new OperationAdmission(this.db, this);
   }
 
   close(): void { this.db.close(); }
@@ -602,6 +607,9 @@ export class TaskStore {
       this.dshBindings.assertNoOpen(taskId);
       const current = this.get(taskId);
       if (!current) throw new Error(`Unknown task: ${taskId}`);
+      if (reservation.expectedAttemptId !== undefined && (current.attemptId ?? null) !== reservation.expectedAttemptId) throw new AdmissionError("STALE_ATTEMPT", "The attempt changed before reservation.");
+      if (reservation.expectedRevision !== undefined && (current.revision ?? null) !== reservation.expectedRevision) throw new AdmissionError("STALE_REVISION", "The task changed before reservation.");
+      if (["accepted", "cancelled"].includes(current.state)) throw new AdmissionError("CANCELLED_TERMINAL", "Closed workflows cannot start another attempt.");
       if (current.state === "working" || (current.state === "queued" && current.attemptId)) {
         throw new Error(`Task ${taskId} already has an active attempt`);
       }

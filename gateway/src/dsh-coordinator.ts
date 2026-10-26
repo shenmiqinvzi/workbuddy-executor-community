@@ -12,6 +12,8 @@ import { reportDigest } from "./report-authentication.js";
 import { DeepSeekRpcError } from "./deepseek-client.js";
 import { readTaskProjection } from "./task-view-reader.js";
 
+import type { OperationOptions } from "./operation-admission.js";
+
 type ModelRate = { credits: string | null; observedAt: string };
 /** Trusted source metadata, separate from native selection verification. Missing
  * pricing stays unknown; only an explicit free-only policy requires a rate. */
@@ -62,7 +64,16 @@ export class DshTaskCoordinator {
     if (requireFree && (typeof rate.credits !== "string" || !/^x0(?:\.0+)?(?: credits)?$/i.test(rate.credits.trim()))) return fail("MODEL_UNVERIFIED", "The optional free-only policy requires a recent verified zero rate.");
     return { credits: rate.credits, observedAt: new Date().toISOString(), sessionId, modelId: execution.modelId, selectedModel: execution.modelId, providerId: execution.providerId, connectionId: execution.connectionId, reasoningEffort: execution.reasoningEffort, level: "selected" };
   }
-  async send(input: { contract: unknown; sessionId: string; objective: string; hostId?: string; taskId?: string; workspace?: string }) {
+  async send(input: { contract: unknown; sessionId: string; objective: string; hostId?: string; taskId?: string; workspace?: string } & OperationOptions) {
+    input = structuredClone(input);
+    const taskId = input.taskId ?? (input.contract as { taskId?: string })?.taskId;
+    if (!taskId) return fail("INVALID_CONTRACT", "A stable contract taskId is required.");
+    if (!input.operationId && this.store.get(taskId) && !this.store.operations.originalBinding(taskId)) return this.sendAdmitted(input);
+    const { operationId, expectedRevision, expectedAttemptId, ...parameters } = input;
+    return this.store.operations.run("send", taskId, "dsh", parameters, { operationId, expectedRevision, expectedAttemptId },
+      { sessionId: input.sessionId, hostId: input.hostId ?? null, contract: input.contract }, () => this.sendAdmitted(input));
+  }
+  private async sendAdmitted(input: { contract: unknown; sessionId: string; objective: string; hostId?: string; taskId?: string; workspace?: string }) {
     if (typeof input.sessionId !== "string" || !input.sessionId.trim() || input.sessionId.length > 512) return fail("SESSION_REQUIRED", "Select an explicit original DSH session.");
     const valid = validateSupportedTaskContract(input.contract);
     if (!valid.ok || !("execution" in valid.contract) || valid.contract.execution.executorId !== "dsh") return fail("INVALID_CONTRACT", "DSH requires an explicit vnext-2 execution selection and authorized plan.");
@@ -101,6 +112,7 @@ export class DshTaskCoordinator {
     try {
       enforceModelPolicy(this.policy(), binding.execution);
       const before = await this.checkedSession(binding, task.workspace!);
+      this.store.operations.nativeBoundary(task.taskId, binding.attemptId);
       const ready = prepare && !same(before.selectedModel, expected) ? await this.client.selectModel({ hostId: binding.hostId, sessionId: binding.sessionId, ...expected }) : before;
       if (ready.sessionId !== binding.sessionId || !same(ready.selectedModel, expected)) return fail("MODEL_BINDING_CHANGED", "Native model readback differs; no prompt was sent.");
       await this.checkedSession(binding, task.workspace!);
@@ -108,7 +120,7 @@ export class DshTaskCoordinator {
       this.store.atomic(() => {
         const current = this.store.dshBindings.get(binding.attemptId)!;
         if (!current.runOpen || current.dispatch !== "preparing") return fail("READ_CONFLICT", "The preparation binding changed.");
-        this.store.beginAttempt(task.taskId, { attemptId: binding.attemptId, messageId: binding.requestId, sessionId: binding.sessionId, runtimeSource: "dsh", modelObservation: model });
+        this.store.beginAttempt(task.taskId, { expectedRevision: task.revision ?? null, expectedAttemptId: task.attemptId ?? null, attemptId: binding.attemptId, messageId: binding.requestId, sessionId: binding.sessionId, runtimeSource: "dsh", modelObservation: model });
         this.store.dshBindings.update({ ...current, dispatch: "reserved" });
         const attempt = this.store.collaboration.getAttempt(binding.attemptId)!;
         const terms = this.store.getContract(task.taskId);
@@ -123,6 +135,7 @@ export class DshTaskCoordinator {
       enforceModelPolicy(this.policy(), binding.execution);
       const deadline = this.store.collaboration.getAttempt(binding.attemptId)!.deadlineAt;
       if (Date.parse(deadline) <= Date.now()) return fail("DEADLINE_EXCEEDED", "The reserved deadline elapsed before admission.");
+      this.store.operations.nativeBoundary(task.taskId, binding.attemptId);
       promptCalled = true;
       const result = await this.client.prompt({ hostId: binding.hostId, sessionId: binding.sessionId, requestId: binding.requestId, expectedSelection: expected,
         text: `Task ${task.taskId}; attempt ${binding.attemptId}.\n${task.objective}\n${(task.constraints ?? []).join("\n")}\nRequired checks: ${JSON.stringify(task.acceptanceCommands ?? [])}\nDeadline: ${deadline}. Do not extend or auto-retry. Use bounded foreground tools only; do not create background jobs, subagents or codex_workflow requests. Resolve permissions in the native UI; do not change permission policies. Return actual changes, checks and limitations; wait for independent review.${feedback ? `\nReview feedback: ${feedback}` : ""}` });
@@ -237,7 +250,13 @@ export class DshTaskCoordinator {
     try { await this.client.cancel({ hostId: binding.hostId, sessionId: binding.sessionId, requestId: binding.requestId }); } catch { /* original native work stays owned */ }
     return { ok: true, task: this.task(taskId), ...this.executionStatus(taskId) };
   }
-  async continue(input: { taskId: string; feedback: string; model?: string; timeoutSeconds?: number; acceptanceCommands?: string[] }) {
+  async continue(input: { taskId: string; feedback: string; model?: string; timeoutSeconds?: number; acceptanceCommands?: string[] } & OperationOptions) {
+    input = structuredClone(input);
+    const { operationId, expectedRevision, expectedAttemptId, ...parameters } = input;
+    return this.store.operations.run("rework", input.taskId, "dsh", parameters, { operationId, expectedRevision, expectedAttemptId },
+      this.store.dshBindings.forTask(input.taskId), () => this.continueAdmitted(input));
+  }
+  private async continueAdmitted(input: { taskId: string; feedback: string; model?: string; timeoutSeconds?: number; acceptanceCommands?: string[] }) {
     if (!input.feedback.trim() || input.feedback.length > 20000) return fail("INVALID_FEEDBACK", "Provide bounded, concrete review feedback.");
     const task = await this.sync(input.taskId), previous = this.binding(input.taskId);
     const contract = this.store.getContract(task.taskId);

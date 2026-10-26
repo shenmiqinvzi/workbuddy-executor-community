@@ -1,3 +1,4 @@
+import { AdmissionError } from "./collaboration.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Config } from "./config.js";
@@ -16,8 +17,13 @@ export function workerRegistration(config: Config) {
   if(registration && path.resolve(registration.dbFile)!==path.resolve(config.dbFile))throw new Error("The persistent service uses another task database; fix the bridge configuration before connecting projects");
   return registration;
 }
-export async function ensureWorkspace(config: Config, input: {workspace:string;sessionId?:string;title?:string;model?:string;workerKey?:string}) {
+export async function ensureWorkspace(config: Config, input: {workspace:string;sessionId?:string;title?:string;model?:string;workerKey?:string;admissionTaskId?:string}) {
   if(config.backend!=="desktop-queue")throw new Error("Automatic native workspaces require desktop-queue");
+  const gate = new TaskStore(config.dbFile);
+  try {
+    if (!input.admissionTaskId) throw new AdmissionError("OPERATION_REQUIRED", "Use a durable authorized task operation for native workspace preparation.");
+    gate.operations.nativeBoundary(input.admissionTaskId);
+  } finally { gate.close(); }
   if(process.env.WORKBUDDY_REQUIRED_FREE_MODEL&&!input.model)input={...input,model:process.env.WORKBUDDY_REQUIRED_FREE_MODEL};
   const registration=workerRegistration(config);
   const bound=registration?registeredServiceConfig(config,registration):config;
@@ -26,11 +32,16 @@ export async function ensureWorkspace(config: Config, input: {workspace:string;s
   try {
     if(registration)workers.seed(registration);
     const result=await workers.ensure(input,{
-      createWorker:(...args)=>trigger.createWorker(...args),
+      createWorker:(...args)=>{
+        const gate = new TaskStore(bound.dbFile);
+        try { gate.operations.nativeBoundary(input.admissionTaskId!); } finally { gate.close(); }
+        return trigger.createWorker(...args);
+      },
       async setModel(sessionId,model){
         // Configuration must not change the model underneath queued or unclosed attempts.
         const store=new TaskStore(bound.dbFile);
         try {
+          store.operations.nativeBoundary(input.admissionTaskId!);
           for(let offset=0;;offset+=500){
             const tasks=store.listTasks({limit:500,offset});
             for(const task of tasks){

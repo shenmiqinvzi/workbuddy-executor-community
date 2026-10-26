@@ -147,7 +147,7 @@ test("policy changes after plan authorization invalidate dispatch without native
 
 test("the same authorized plan cannot be consumed by another task identity",async t=>{
   const f=fixture(t),contract=f.approved();await f.send(contract);
-  await assert.rejects(f.send({...contract,taskId:"another-task"}),{code:"PLAN_STALE"});
+  await assert.rejects(f.send({...contract,taskId:"another-task"}),{code:"CAPACITY_OCCUPIED"});
   assert.equal(f.store.get("another-task"),undefined);assert.equal(f.preparations(),1);
 });
 

@@ -123,6 +123,8 @@ TaskView 还须包含下列字段；上例为突出阻塞而省略它们：`chec
 
 ## 4. 变更操作、幂等与排他
 
+T4A 阶段实现见[持久操作说明](T4A_OPERATION_ADMISSION.md)：send/rework、可信方案操作和共享容量已接入；下文 cancel/reviews/accept 的完整新版操作契约仍是后续目标。旧无 operationId 调用采用文档规定的持久兼容方式，不宣称已具备客户端预期版本检测。
+
 rework、cancel、reviews、accept 请求都有 `operationId`、`expectedRevision` 和 `expectedAttemptId`。rework 额外带 feedback 与精确 model；accept 带 reviewId。cancel 可带 reason，但不会改变首次取消/截止原因。
 
 reviews 额外提交 `{machineCheckIds:string[],semanticChecks:[{checkId,status,note,evidenceRefs}],note}`。machineCheckIds 只能引用后端已经验证的本轮机器记录；客户端不能提交 actor=program 或伪造机器检查的 passed。semanticChecks 的 checkId 必须在原约定中、类型必须为 semantic；actor 与调用通道由服务端根据实际入口记录。成功时 reviewId 非 null，其余动作 reviewId 为 null。

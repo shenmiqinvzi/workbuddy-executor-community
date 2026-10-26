@@ -29,6 +29,8 @@ npm run skill:install
 
 Codex 派任务、监督进度并独立检查成果，WorkBuddy 或 DeepSeek Harness 的原生会话使用自己的模型、工具和 Skill 实际执行。本机 MCP 保存任务、回报及同一会话的返工记录。
 
+**T4A 当前行为**：用户选择并确认模型后，直接向 send_task 提交稳定 taskId、workspace 和 model；显式 operationId 的新任务预期 revision/attempt 为 null，返工提交当前实际版本。模型准备、派工和 needs_review 共用 SQLite 持久容量 1；独立 ensure_workspace / Hub bind 原生准备已拒绝。OUTCOME_UNKNOWN 只观察原操作。以下 v0.6.0 的独立准备与换模型示例是历史说明，不适用于当前入口。
+
 **v0.6.0 引入的兼容能力：WorkBuddy 按项目自动创建、复用和选择执行会话。** 调用 `workbuddy_ensure_workspace` 或派工时传入项目的绝对目录，即可通过原生接口准备该项目的独立会话；无需 Computer Use、手动新建聊天或逐项目粘贴安装指令。一个持久服务监督多个项目，保留旧绑定和已排队任务。首次登录与原生权限仍在 WorkBuddy 处理。下方 v0.5.0 发布链接和 v0.4.1 验证记录属于历史版本，不包含当前本地聚合平台。
 
 ## 多项目调用

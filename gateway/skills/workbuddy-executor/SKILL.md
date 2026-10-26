@@ -18,8 +18,9 @@ description: 将适合的本地开发、修复、测试及资料整理交给桌�
 ## 2. 派工
 
 - 每个新任务先展示实际可用模型及已知费用，让用户选择精确模型；不得默认某个模型或要求必须免费。费用未知时明示未知，付费或未知费用均须用户了解后确认。用户尚未选择时只查询，不准备模型或派工；明确选定且已授权的同一任务无需重复询问。
-- ensure_workspace、send_task 都显式传用户选定的 model，返工沿用原任务已授权模型。不可用、限流或模型读回不符时阻塞，不擅自换模型；更换选择须重新确认且不能绕过旧任务的停止与预算限制。“只用免费模型”仅在用户主动设置时生效，已有任务或部署的限制不自动取消。
-- 新任务用稳定 taskId 作为 workerKey，在真实项目目录 ensure_workspace，再把返回的 workspace/sessionId 传给 send_task。已有身份先 get_task/wait；投递不明时不换键、复制项目或换会话重发。
+- send_task 显式传用户选定的 model，返工沿用原任务已授权模型。不可用、限流或模型读回不符时阻塞，不擅自换模型；更换选择须重新确认且不能绕过旧任务的停止与预算限制。“只用免费模型”仅在用户主动设置时生效，已有任务或部署的限制不自动取消。
+- 新任务使用稳定 taskId，直接向 send_task 提交真实项目目录与已选模型；模型准备在持久操作和共享容量准入之后进行。独立 ensure_workspace/Hub bind 已拒绝原生准备。已有身份先 get_task/wait；OUTCOME_UNKNOWN 用原 operationId 查询 get_operation，不换键、复制项目或换会话重发。
+- 显式操作使用稳定 operationId；新 send 的 expectedRevision/expectedAttemptId 均为 null，返工带当前实际 revision/attemptId。旧参数调用仍经过持久兼容准入；重复相同反馈只重放，需要再执行同一反馈须提供新的操作身份和当前版本。needs_review 仍占用名额，直到真实关闭与停止证明齐备。
 - 约定目标、可改范围、可观察的验收、必要假设及期限，保留用户已有改动。关键歧义以 blocked 回报；常规修错由 WorkBuddy 完成。
 
 首次编写派工约定或需要完整工具示例时读 [正常派工示例](references/dispatch.md)。执行、回报与验证格式见 [执行规范](references/execution.md)。

@@ -6,6 +6,7 @@ export declare function ensureWorkspace(config: Config, input: {
     title?: string;
     model?: string;
     workerKey?: string;
+    admissionTaskId?: string;
 }): Promise<{
     workspace: string;
     sessionId: string;

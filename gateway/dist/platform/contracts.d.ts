@@ -11,8 +11,8 @@ export declare const requestSchema: z.ZodObject<{
     timeoutSeconds: z.ZodDefault<z.ZodNumber>;
 }, "strict", z.ZodTypeAny, {
     timeoutSeconds: number;
-    constraints: string[];
     task: string;
+    constraints: string[];
     output: "text" | "artifacts" | "json";
     provider: string;
     sessionId?: string | undefined;

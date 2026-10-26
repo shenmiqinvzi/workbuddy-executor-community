@@ -3,7 +3,8 @@ import { TaskStore, type StoredTask, type TaskReport } from "./task-store.js";
 import { WorkBuddyClient } from "./workbuddy-client.js";
 import { type RunSnapshot } from "./run-journal.js";
 import { type ModelObservation } from "./collaboration.js";
-export interface SendTaskInput {
+import type { OperationOptions } from "./operation-admission.js";
+export interface SendTaskInput extends OperationOptions {
     taskId?: string;
     objective: string;
     workspace?: string;
@@ -27,6 +28,7 @@ export declare class TaskCoordinator {
         title?: string;
         model?: string;
         workerKey?: string;
+        admissionTaskId?: string;
     }) => Promise<{
         workspace: string;
         sessionId: string;
@@ -56,6 +58,7 @@ export declare class TaskCoordinator {
         task: StoredTask;
         message?: undefined;
     }>;
+    private sendAdmitted;
     private sendWithContract;
     private dispatch;
     sync(taskId: string, limit?: number): Promise<StoredTask>;
@@ -83,7 +86,7 @@ export declare class TaskCoordinator {
         acceptanceCommands?: string[];
         timeoutSeconds?: number;
         model?: string;
-    }): Promise<{
+    } & OperationOptions): Promise<({
         ok: boolean;
         created: boolean;
         task: StoredTask;
@@ -95,7 +98,8 @@ export declare class TaskCoordinator {
         error: string;
         created?: undefined;
         next?: undefined;
-    }>;
+    }) & import("./operation-admission.js").OperationReceipt>;
+    private continueAdmitted;
     accept(taskId: string, note: string, evidence: string[], artifactPaths?: string[]): Promise<StoredTask>;
     respond(taskId: string, decision: "allow_once" | "reject_once" | "cancel" | "submit", content?: Record<string, unknown>): {
         ok: boolean;

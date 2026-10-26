@@ -171,7 +171,9 @@ export class DesktopQueue {
     });
   }
   start(request: RunRequest): void {
-    return locked(path.join(this.root, "dispatch.lock"), () => this.startLocked(request));
+    const store = new TaskStore(this.config.dbFile);
+    try { store.operations.enqueue(request.taskId, request.attemptId, request, () => locked(path.join(this.root, "dispatch.lock"), () => this.startLocked(request))); }
+    finally { store.close(); }
   }
   private startLocked(request: RunRequest): void {
     const reservedDeadline = request.deadline === undefined ? undefined : Date.parse(request.deadline);

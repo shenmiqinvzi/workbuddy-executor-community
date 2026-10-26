@@ -419,6 +419,8 @@ export class PersistentDesktopService {
     if (new DesktopQueue(this.config).listeners().some((listener) => listener.sessionId === this.registration.sessionId)) return this.result("listener_ready", identity);
     const now = new Date().toISOString();
     const intent: WakeIntent = { version: 1, sessionId: this.registration.sessionId, attemptId: journal.attemptId, wakeId: previous?.wakeId ?? `wake-${journal.attemptId}`, state: "submitting", submissions: (previous?.submissions ?? (previous ? 1 : 0)) + 1, createdAt: previous?.createdAt ?? now, updatedAt: now };
+    // A legacy worker must obey the same retained workflow before model preparation or wake.
+    this.store.operations.assertExecution(task.taskId, journal.attemptId);
     // Persist before submission. A crash after this point is resolved by receipt lookup,
     // never by replaying an uncertain native prompt.
     writeWakeIntent(intentFile, intent);

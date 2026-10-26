@@ -1,5 +1,6 @@
 import type { TaskCoordinator, SendTaskInput } from "./coordinator.js";
 import type { DshTaskCoordinator } from "./dsh-coordinator.js";
+import type { OperationOptions } from "./operation-admission.js";
 import type { StoredTask, StoredTaskEvent } from "./task-store.js";
 import { STAGE_TASK_VIEW_UNAVAILABLE, STAGE_TASK_VIEW_SCHEMA_VERSION, type StageTaskView } from "./task-view-stage.js";
 /** A conservative status projection for existing tasks. This is not the vNext TaskView. */
@@ -87,8 +88,8 @@ export declare class TaskApplicationService {
         mode: "manual" | "recommend";
         reason: string;
         ttlSeconds?: number;
-    }): import("./collaboration.js").CollaborationPlan;
-    authorizeCollaborationPlan(planId: string, revision: string, source: string): import("./collaboration.js").CollaborationPlan;
+    } & Pick<OperationOptions, "operationId">): import("./collaboration.js").CollaborationPlan;
+    authorizeCollaborationPlan(planId: string, expectedPlanRevision: string, source: string, options?: Pick<OperationOptions, "operationId">): import("./collaboration.js").CollaborationPlan;
     getCollaborationPlan(planId: string): import("./collaboration.js").CollaborationPlan;
     readQuotaResources(options?: {
         connectionId?: string;
@@ -169,6 +170,8 @@ export declare class TaskApplicationService {
         actualTaskCredits: null;
         attribution: "connection_only";
     };
+    getOperation(operationId: string): import("./operation-admission.js").OperationRecord | null;
+    listUnfinishedOperations(): import("./operation-admission.js").OperationRecord[];
     /** Stored facts only: deliberately bypasses every synchronising coordinator method. */
     readProjection(taskId: string): import("./task-view-reader.js").TaskProjectionResult;
     /**
@@ -248,17 +251,17 @@ export declare class TaskApplicationService {
         next?: undefined;
     }>;
     private dshFor;
-    continue(input: Parameters<TaskCoordinator["continue"]>[0]): Promise<{
-        ok: boolean;
-        created: boolean;
-        task: StoredTask;
-        code: string;
-    } | {
+    continue(input: Parameters<TaskCoordinator["continue"]>[0]): Promise<({
         ok: boolean;
         created: boolean;
         task: StoredTask;
         code?: undefined;
-    }> | Promise<{
+    } | {
+        ok: boolean;
+        created: boolean;
+        task: StoredTask;
+        code: string;
+    }) & import("./operation-admission.js").OperationReceipt> | Promise<({
         ok: boolean;
         created: boolean;
         task: StoredTask;
@@ -270,7 +273,7 @@ export declare class TaskApplicationService {
         error: string;
         created?: undefined;
         next?: undefined;
-    }>;
+    }) & import("./operation-admission.js").OperationReceipt>;
     accept(...args: Parameters<TaskCoordinator["accept"]>): Promise<StoredTask>;
     cancel(...args: Parameters<TaskCoordinator["cancel"]>): Promise<{
         state: string;

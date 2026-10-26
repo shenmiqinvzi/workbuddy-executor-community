@@ -50,7 +50,8 @@ test("stop API failure is visible, not replayed, forbids new sessions/rework/acc
  assert.equal((await f.service().pump()).status,"stop_unconfirmed");assert.equal(f.stops(),1);
  assert.match(c.journal.snapshot()?.stopControl?.error??"",/stop API failed/);
  assert.equal(f.coordinator.executionStatus("task").remoteStopped,false);
- const another=await f.coordinator.send({taskId:"other-task",objective:"overlap",sessionId:"other",workspace:f.dir});assert.equal(another.ok,false);
+ await assert.rejects(f.coordinator.send({taskId:"other-task",objective:"overlap",sessionId:"other",workspace:f.dir}),{code:"CAPACITY_OCCUPIED"});
+ assert.equal(f.store.get("other-task"),undefined);
  await assert.rejects(()=>f.coordinator.continue({taskId:"task",feedback:"retry"}),/Cancelled/);
  await assert.rejects(()=>f.coordinator.accept("task","bad",["check"]),/finish/);
  f.setState("idle");assert.equal((await f.service().pump()).status,"stop_confirmed");assert.equal(f.stops(),1);

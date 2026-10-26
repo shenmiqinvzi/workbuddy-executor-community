@@ -66,17 +66,18 @@ test("queue rejects wrong leases, sessions and overlapping claims", async (t) =>
   if (claim.status !== "task") throw new Error("Expected claim");
   assert.throws(() => f.queue.progress({ ...claim, leaseToken: "wrong", text: "x" }), /execution lease/);
   assert.throws(() => f.queue.progress({ ...claim, sessionId: "other", text: "x" }), /execution lease/);
-  await f.send("second-task");
-  assert.match(f.store.get("second-task")?.blockingReason ?? "", /unresolved/);
+  await assert.rejects(f.send("second-task"), { code: "CAPACITY_OCCUPIED" });
+  assert.equal(f.store.get("second-task"), undefined);
   assert.equal((await f.queue.claim("unit-session", 0)).status,"retry");
   const r = { attemptId: RunJournal.newId(), taskId: "unsupported", prompt: "x", timeoutSeconds: 10, sessionId: "unit-session" };
-  assert.throws(()=>f.queue.start({ ...r, model: "different" }), /unresolved/);
+  assert.throws(()=>f.queue.start({ ...r, model: "different" }), { code: "CAPACITY_OCCUPIED" });
   f.queue.report({...claim,status:"completed",text:"fixture stopped",artifacts:[]});
   f.queue.observeNative(claim.attemptId,{state:"idle",workspace:f.dir});
+  await f.coordinator.accept("unit-task", "verified", ["Verified stopped original report"]);
   f.queue.start({ ...r, model: "different" });
   assert.equal(new RunJournal(f.config.runsDir!, r.attemptId).request().model, "different");
-  assert.throws(() => f.queue.start({ ...r, sessionMode: "new" }), /dedicated native/);
-  assert.throws(() => f.queue.start({ ...r, workspace: path.join(f.dir, "other") }), /workspace differs/);
+  assert.throws(() => f.queue.start({ ...r, sessionMode: "new" }), { code: "OPERATION_CONFLICT" });
+  assert.throws(() => f.queue.start({ ...r, workspace: path.join(f.dir, "other") }), { code: "OPERATION_CONFLICT" });
 });
 
 test("queue cancellation is observed by native report; deadline blocks without resending", async (t) => {
@@ -88,6 +89,7 @@ test("queue cancellation is observed by native report; deadline blocks without r
   assert.equal(f.queue.progress({ ...claim, text: "Checking cancellation" }).cancellationRequested, true);
   assert.equal(f.queue.report({ ...claim, status: "completed", text: "Stopped", artifacts: [] }).status, "cancelled");
   f.queue.observeNative(claim.attemptId,{state:"idle",workspace:f.dir});
+  await f.coordinator.sync("unit-task"); // cancellation + observed stop persist the closure before another workflow
   await f.send("deadline-task");
   const task = f.store.get("deadline-task")!;
   const journal = new RunJournal(f.queue.root, task.attemptId!);
@@ -245,7 +247,7 @@ test("a worker report cannot confirm native stop, allow rework or acceptance, or
   await assert.rejects(() => f.coordinator.continue({ taskId: "unit-task", feedback: "missing driver" }), /not been confirmed stopped/);
   assert.equal(f.coordinator.executionStatus("unit-task").remoteStopped, false);
   journal.save(reported);
-  await f.send("next-task");
+  await assert.rejects(f.send("next-task"), { code: "CAPACITY_OCCUPIED" });
   assert.equal((await f.queue.claim("unit-session",0)).status,"retry");
   for (const state of ["busy", "waiting_input"] as const) {
     f.queue.observeNative(claim.attemptId, { state, workspace: f.dir });
@@ -257,7 +259,7 @@ test("a worker report cannot confirm native stop, allow rework or acceptance, or
   assert.equal(f.coordinator.executionStatus("unit-task").remoteStopped, true);
   assert.equal(new RunJournal(f.queue.root, claim.attemptId).snapshot()?.text, text);
   assert.equal((await f.coordinator.accept("unit-task", "verified", ["Inspected fixture"])).state, "accepted");
-  await f.coordinator.continue({taskId:"next-task",feedback:"original native turn is now verified stopped"});
+  await f.send("next-task");
   assert.equal((await f.queue.claim("unit-session", 0)).status, "task");
 });
 

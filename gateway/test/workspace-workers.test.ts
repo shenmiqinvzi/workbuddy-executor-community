@@ -125,9 +125,8 @@ test('one service routes two projects sequentially while preserving the legacy d
   const resolver=async (_:Config,input:{workspace:string;sessionId?:string;title?:string})=>{const result=await f.registry.ensure(input,f.creator);return{ok:true,...result,workspace:result.worker.workspace,sessionId:result.worker.sessionId,next:''};};
   const coordinator=new TaskCoordinator(f.config,store,new WorkBuddyClient(f.config),resolver);
   await coordinator.send({taskId:'task-a',objective:'project A',workspace:f.a});
-  const rejected=await coordinator.send({taskId:'task-b',objective:'project B',workspace:f.b});
-  assert.equal(rejected.ok,false);
-  assert.equal(store.get('task-a')?.sessionId,a.worker.sessionId);assert.equal(store.get('task-b')?.sessionId,b.worker.sessionId);
+  await assert.rejects(coordinator.send({taskId:'task-b',objective:'project B',workspace:f.b}),{code:"CAPACITY_OCCUPIED"});
+  assert.equal(store.get('task-a')?.sessionId,a.worker.sessionId);assert.equal(store.get('task-b'),undefined);
   const wakes:string[]=[];
   const trigger={async inspect(sessionId:string){return{state:'idle' as const,workspace:sessionId===a.worker.sessionId?f.a:f.b};},async wakeIdle(sessionId:string){wakes.push(sessionId);return{accepted:true};}};
   const pumped=await pumpWorkspaceWorkers(f.config,registration,trigger,store);
@@ -135,7 +134,9 @@ test('one service routes two projects sequentially while preserving the legacy d
   const queue=new DesktopQueue(f.config,()=>({desktopPid:process.pid}));
   const first=await queue.claim(a.worker.sessionId,0);if(first.status!=="task")throw Error("missing first claim");
   queue.report({...first,status:"completed",text:"project A actual report",artifacts:[]});queue.observeNative(first.attemptId,{state:"idle",workspace:f.a});
-  await coordinator.continue({taskId:"task-b",feedback:"project A is now stopped; original queued project B was not dispatched"});
+  await assert.rejects(coordinator.send({taskId:'task-b',objective:'project B',workspace:f.b}),{code:"CAPACITY_OCCUPIED"});
+  await coordinator.accept("task-a", "Independent fixture review", ["Verified original report and native stop"]);
+  await coordinator.send({taskId:'task-b',objective:'project B',workspace:f.b});
   await pumpWorkspaceWorkers(f.config,registration,trigger,store);
 
   const claim=await queue.claim(b.worker.sessionId,0);assert.equal(claim.status,'task');if(claim.status!=='task')throw Error('missing claim');
@@ -156,9 +157,16 @@ test('duplicate IDs never reconfigure a workspace; explicit models are persisted
   });
   store.createOrGet({taskId:'already',messageId:'existing',objective:'old',state:'queued'});
   await assert.rejects(()=>coordinator.send({taskId:'already',objective:'new',workspace:f.b,model:'chosen'}),/Task ID conflicts/);assert.equal(resolved,0);
-  const sent=await coordinator.send({objective:'model task',workspace:f.b,model:'chosen'});
-  assert.equal(sent.ok,true);assert.equal(resolved,1);
-  const request=new RunJournal(f.config.runsDir!,sent.task!.attemptId!).request();assert.equal(request.model,'chosen');assert.equal(request.sessionId,f.registry.selected(f.b)!.sessionId);
+  await assert.rejects(coordinator.send({objective:'model task',workspace:f.b,model:'chosen'}),{code:"OPERATION_REQUIRED"});
+  await assert.rejects(coordinator.send({taskId:'model-task',objective:'model task',workspace:f.b,model:'chosen'}),{code:"CAPACITY_OCCUPIED"});
+  assert.equal(resolved,0);
+  const g=fixture(t),freshStore=g.openStore();
+  const freshCoordinator=new TaskCoordinator(g.config,freshStore,new WorkBuddyClient(g.config),async(_,input)=>{
+    const result=await g.registry.ensure(input,g.creator);return{workspace:result.worker.workspace,sessionId:result.worker.sessionId};
+  });
+  const sent=await freshCoordinator.send({taskId:'model-task',objective:'model task',workspace:g.b,model:'chosen'});
+  assert.equal(sent.ok,true);
+  const request=new RunJournal(g.config.runsDir!,sent.task!.attemptId!).request();assert.equal(request.model,'chosen');assert.equal(request.sessionId,g.registry.selected(g.b)!.sessionId);
 });
 
 test('failed model selection does not replace an existing workspace binding',async t=>{

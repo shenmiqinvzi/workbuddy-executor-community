@@ -4,7 +4,7 @@ import { TaskStore } from "../task-store.js";
 import { TaskCoordinator } from "../coordinator.js";
 import { WorkBuddyClient, messageText } from "../workbuddy-client.js";
 import { runsDirectory } from "../run-journal.js";
-import { workerRegistration, listModels, listWorkspaces, ensureWorkspace } from "../workspace-manager.js";
+import { workerRegistration, listModels, listWorkspaces } from "../workspace-manager.js";
 import { HubError } from "./contracts.js";
 export class WorkBuddyProvider {
     config;
@@ -25,7 +25,7 @@ export class WorkBuddyProvider {
     close() { this.store.close(); }
     models(sessionId) { return listModels(this.config, sessionId); }
     workspaces() { return { ok: true, workers: listWorkspaces(this.config) }; }
-    bindWorkspace(input) { return ensureWorkspace(this.config, input); }
+    async bindWorkspace(input) { throw new HubError("OPERATION_REQUIRED", "Use an authorized task submission for native model preparation."); }
     async health() {
         let message = "First submitted workspace will be prepared automatically. WorkBuddy login and permissions must be valid.";
         let state = "needs_setup";
