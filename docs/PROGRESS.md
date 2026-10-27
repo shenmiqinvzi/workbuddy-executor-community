@@ -1,6 +1,8 @@
 # 后端开发进度
 
-更新日期：2026-10-26。本页区分源码能力、自动验证和运行部署。
+更新日期：2026-10-27。本页区分源码能力、自动验证和运行部署。
+
+本次 T4B 收尾：真实领取提示补充 validationRecords 命令证据引用，回归解析实际提示示例；WorkBuddy 原队列恢复后的模板补验及 DSH 按时交付均已在本机候选记录 accepted，跨执行器容量拒绝和人工关闭/重放已有真实证据。旧失败保持，完整故障矩阵仍以隔离测试为准，详见 [脱敏验收摘要](T4B_LIVE_ACCEPTANCE_2026-10-27.md)。这不代表已合并发布、异机验收或 T5–T7 交付。
 
 ## 已合并基础
 
@@ -36,13 +38,13 @@ node verify-snapshot.mjs
 
 ## 后续顺序
 
-2026-10-25：T3a 契约准入与 T3c 只读资源基础已实现，详见[T3a 边界](T3A_DISPATCH_ADMISSION.md)、[token 观测](T3C_QUOTA_OBSERVATION.md)和[积分缓存](T3C_CREDIT_BALANCE.md)。积分链路已完成本机真实只读联调；未部署、未取得真实桌面或 token 管理统计证据。T3b 共享任务适配与 Windows 桥接源码已实现，见[T3b 说明](T3B_DSH_ADAPTER.md)；真实会话执行仍待新桥接安装后验收。T4A 持久操作与共享容量源码已实现，见[T4A 边界](T4A_OPERATION_ADMISSION.md)；T4B 原操作恢复已接入源码，见 [T4B 边界](T4B_OPERATION_RECOVERY.md)；T5–T7 仍待独立交付。总体目标见[协作设计](COLLABORATION_DESIGN.md)、[接口扩展](INTERFACE_CONTRACT.md#8-多-agent-扩展草案vnext-2待实现)与[验收场景](ACCEPTANCE.md)。
+2026-10-25 源码阶段记录：T3a 契约准入与 T3c 只读资源基础已实现，详见[T3a 边界](T3A_DISPATCH_ADMISSION.md)、[token 观测](T3C_QUOTA_OBSERVATION.md)和[积分缓存](T3C_CREDIT_BALANCE.md)。积分链路当时已完成本机真实只读联调，token 管理统计尚未验证。T3b 共享任务适配与 Windows 桥接源码已实现，见[T3b 说明](T3B_DSH_ADAPTER.md)；随后另行获批安装与真实会话执行的结果见上方 10月27日更新。T4A 持久操作与共享容量见[T4A 边界](T4A_OPERATION_ADMISSION.md)；T4B 原操作恢复见 [T4B 边界](T4B_OPERATION_RECOVERY.md)；T5–T7 仍待独立交付。总体目标见[协作设计](COLLABORATION_DESIGN.md)、[接口扩展](INTERFACE_CONTRACT.md#8-多-agent-扩展草案vnext-2待实现)与[验收场景](ACCEPTANCE.md)。
 
 1. T3a：初始契约接入真实派工，绑定 workspaceId、有效轮次预算、固定期限；新增协作方案和版本化模型政策。旧 vnext-1 摘要保留，vnext-2 由显式版本分派解析。
 2. T3b：共享 TaskStore 的 DSH 适配、精确会话发现、Windows named pipe、模型读回/请求层证据和取消/返工/独立验收的受控 SDK 已实现；宿主隔离加载与合成执行不替代真实模型验收。新增 HTTP 写入口、完整恢复和前端未交付；插件自动审查故障保留。
 3. T3c：token 估算 quota-1 与独立的 credit-balance-1 缓存汇总接口已实现；[积分链路](T3C_CREDIT_BALANCE.md)已用本机 DSH 四个既有来源完成真实只读联调，去重为两个区域池。真实 token 统计、完整 Key 路由、前端及单任务费用仍未验收；不把共享缓存称为独占/实时余额。
-4. T4A：SQLite 操作准入、显式 send/rework 预期版本、元数据方案操作、模型准备前共同占用、跨连接/进程竞争与保守崩溃状态已实现。cancel/respond/reconcile/accept 尚未具备完整操作契约；原生回执恢复、人工恢复和界面留给 T4B。HTTP 继续只读；未安装或真实派工。
-5. T4B：原队列/DSH 回执恢复、人工授权审计、原子关闭/释放、永久关闭围栏及本地交互控制台已接入；历史缺证和停止不明仍保留占用。MCP 仅查询/显式观察，HTTP 无新写入口；真实恢复未部署验收。
+4. T4A：SQLite 操作准入、显式 send/rework 预期版本、元数据方案操作、模型准备前共同占用、跨连接/进程竞争与保守崩溃状态已实现。cancel/respond/reconcile_report/accept 尚未具备完整新版操作契约；原生回执和人工恢复由 T4B 补充。HTTP 继续只读；本机共享容量结果见本次真实验收摘要。
+5. T4B：原队列/DSH 回执恢复、人工授权审计、原子关闭/释放、永久关闭围栏及本地交互控制台已接入；历史缺证和停止不明仍保留占用。MCP 仅查询/显式观察，HTTP 无新写入口。本机原队列恢复续跑、人工关闭及幂等已有真实证据；不等于每个真实 DSH 恢复故障均已触发。
 6. T5：文件范围清单、越界变更检查与用户原有改动保护，两执行器采用相同准入与验收规则。
 7. T6：独立检查、不可变 reviewId、源码/证据/执行来源绑定与最终验收。
 8. T7：面板真实读取、手动/推荐/自动三种模式、可解释调度、完整请求归因后单任务计量、发布版本核验与真实桌面/异机验证。

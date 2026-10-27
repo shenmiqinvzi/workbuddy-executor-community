@@ -438,13 +438,13 @@
     },
     {
       "path": "dist/desktop-queue.js",
-      "sha256": "4172b06cbec0d6ad42ffe48adbc01c96c92de4821ec41721909fe6b3494901d1",
-      "bytes": 58726
+      "sha256": "f4fffebb3c386309ab9c114312d07cbdc56375852eb88b42ac4d14bbc729947a",
+      "bytes": 59606
     },
     {
       "path": "dist/desktop-queue.js.map",
-      "sha256": "52661cf3645cc7183cf204da7ca239787a33c0977a7e2b337da4e8698dde5968",
-      "bytes": 48095
+      "sha256": "a5486069c13cc8870e1f0c2a08dda77323f021353d5ac4b2d64f1f6d23a55741",
+      "bytes": 48271
     },
     {
       "path": "dist/desktop-runtime.d.ts",
@@ -1323,8 +1323,8 @@
     },
     {
       "path": "docs/OPERATION_RECOVERY.md",
-      "sha256": "a2161188de843899ca35dea8b24b413bf83f3c4265eb600685316230fa5a8dd5",
-      "bytes": 3033
+      "sha256": "181cad0858476b9ca48eaf8cf801f2f6061d50b0c29ed00c3cad8974844ca107",
+      "bytes": 3231
     },
     {
       "path": "docs/PORTABILITY_VERIFICATION_2026-10-18.md",
@@ -1623,8 +1623,8 @@
     },
     {
       "path": "src/desktop-queue.ts",
-      "sha256": "5089196f94b62ec4203b79b033ebf11d665cee1fa02b71c51774769f2c4a04e4",
-      "bytes": 55605
+      "sha256": "0ed9550c97f57dbc55b4c975a83c8185d3edd7e60ed5011ac9bd486dca4a77a5",
+      "bytes": 56467
     },
     {
       "path": "src/desktop-runtime.ts",
@@ -2053,8 +2053,8 @@
     },
     {
       "path": "test/reliability-v2.test.ts",
-      "sha256": "f3c8646468fbd5617c30ef1e4929f3f0a4a3e2b77ad9838de95791c59d37ad7d",
-      "bytes": 14533
+      "sha256": "48ea83885a2089f0992307ae98cbd21c5cea980d3e962f397bddae21b4f4940c",
+      "bytes": 15328
     },
     {
       "path": "test/report-authentication.test.ts",

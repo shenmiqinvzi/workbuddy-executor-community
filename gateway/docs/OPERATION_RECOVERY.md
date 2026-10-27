@@ -23,4 +23,4 @@ MCP 提供 `workbuddy_get_operation_recovery`（只读）和 `workbuddy_observe_
 
 恢复决定包含原操作、task/attempt、证据种类和摘要、原因、人工确认与决定时间、恢复 operationId。原意图和未知结果保留；已处置的不确定原操作返回 OPERATION_RESOLVED 及 recoveryOperationId，不能把它当作重新发送的许可。T4A 已保存的原成功结果仍按原约定重放。
 
-本能力的自动验证使用隔离原生替身。部署、真实模型与真实原生恢复需要另行验收；cancel/respond/reconcile_report/accept 的完整新版操作契约、文件保护、独立 reviewId 和 Web 写操作不由本阶段扩大。
+本能力的自动验证使用隔离原生替身。另行获批的本机候选已验证 WorkBuddy 原队列恢复后交付、DSH 正常交付、共享容量拒绝及人工关闭，见[脱敏摘要](../../docs/T4B_LIVE_ACCEPTANCE_2026-10-27.md)；不代表所有真实故障、正式发布或异机验收通过。cancel/respond/reconcile_report/accept 的完整新版操作契约、文件保护、独立 reviewId 和 Web 写操作不由本阶段扩大。
