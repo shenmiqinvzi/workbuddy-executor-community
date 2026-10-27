@@ -4,6 +4,8 @@
 [INTERFACE_CONTRACT.md](INTERFACE_CONTRACT.md) 第 2 节与
 [DEVELOPMENT_DESIGN.md](DEVELOPMENT_DESIGN.md) 第 5、7 节。
 
+2026-10-25 修订：下文记录已实现的 **vnext-1 存储行为**，不是完整真实派工准入。新增多 Agent 目标使用 vnext-2 草案，见本文末尾与[接口第 8 节](INTERFACE_CONTRACT.md#8-多-agent-扩展草案vnext-2待实现)；当前解析器仍只接受 vnext-1，不因文档增加字段而放宽。
+
 ## “已保存约定”不等于“已执行检查”
 
 这是本模块最容易误读的地方，先写清楚：
@@ -145,3 +147,15 @@
 - 未实现范围检查、模型政策核验、检查执行与独立验收——这些依赖后续阶段。
 - `effectiveMaxAttempts` 目前只被记录，尚未用于实际的轮次准入。
 - `workspaceId` 尚未与任何真实工作区登记关联。
+
+## 多 Agent 约定演进（T3a 目标，尚未实现）
+
+- 新 schema `workbuddy-executor/vnext-2` 以 execution 保存 executorId、connectionId、providerId、modelId 与可空 reasoningEffort，替换顶层 model；不混用两套模型字段。collaboration 引用已授权的 planId 和方案 revision。
+- 来源连接、会话与工作区由服务端登记解析。政策快照、原生绑定、确认者、实际模型证据和额度准入引用由可信服务记录，客户端不得提交已免费/已核验/已授权结论。
+- 初始目标、范围、有效轮次/期限和选定 execution 纳入不可变摘要。政策调整只影响未来任务，不增加旧任务预算，也不静默迁移旧 task 到另一执行器/模型。
+- 方案授权与任务创建绑定须防止同一方案被不同 taskId 重复消费。派工前持久意图、模型准备、容量及结果不明恢复依赖 T4；约定存储完成不等于这些约束已经执行。
+- 请求模型、会话选中模型和请求观测模型分开保留；每份证据绑定 attempt、来源、模型、采集时间与核验层级。工作中的任务不可通过修改会话配置改变已保存约定。
+- 额度快照是具有范围/单位/期限的外部观测，不保证上游额度独占或硬费用封顶。准入保留快照引用，不将后续池余额变化算成源码/报告事实变化；单任务消耗需独立请求归因。
+- vnext-1 的规范化、agreementVersion、摘要与旧幂等键语义保持原样。vnext-2 启用时增加版本分派、fixture、事务迁移/失败回滚与备份/降级说明；不在 GET 补写，不用旧字段猜测 DSH 来源或历史实际模型。
+
+具体字段、协作模式、费用和绑定漂移政策以[协作设计](COLLABORATION_DESIGN.md)为准。当前已安装技能的精确免费模型限制保持有效，修改设计不自动改变运行政策。
