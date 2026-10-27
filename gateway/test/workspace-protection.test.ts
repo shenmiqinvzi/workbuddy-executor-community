@@ -224,3 +224,17 @@ test("T5 storage acceptance rejects history without a baseline instead of backfi
   assert.throws(() => f.store.acceptAttempt("historical", "old-attempt", { state: "accepted" }, { type: "task_closed", occurredAt: new Date().toISOString(), actor: "synthetic-reviewer", payload: {}, sourceRef: "close" }), { code: "SCOPE_BASELINE_MISSING" });
   assert.equal(f.store.get("historical")!.state, "needs_review"); assert.equal(f.store.workspaceProtection.readView("historical").baseline, "missing");
 });
+
+test("T5 service exclusions resolve canonical aliases without hiding neighboring user files", t => {
+  const f = fixture(t), alias = path.join(f.dir, "workspace-alias"); fs.symlinkSync(f.workspace, alias, process.platform === "win32" ? "junction" : "dir");
+  const store = new TaskStore(path.join(alias, "gateway-state", "tasks.sqlite"));
+  try {
+    const scope = { allowedChanges: ["src/**"], permittedMetadata: [] };
+    store.workspaceProtection.create("alias-task", alias, "synthetic", scope, path.join(alias, "gateway-state", "runs"));
+    const guard = store.workspaceProtection.guard("alias-task");
+    store.createOrGet({ taskId: "alias-task", workspace: alias, objective: "Alias fixture", messageId: "pending", state: "queued" });
+    store.workspaceProtection.assertGuard(guard);
+    f.write("gateway-state/user.txt", "not service-owned");
+    assert.throws(() => store.workspaceProtection.assertGuard(guard), { code: "SCOPE_WORKSPACE_CHANGED" });
+  } finally { store.close(); }
+});

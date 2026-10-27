@@ -1278,13 +1278,13 @@
     },
     {
       "path": "dist/workspace-protection.js",
-      "sha256": "46a14f117e12f84aa9d954f8f43348d88210c138b7a873b5690c506b0d37f02d",
-      "bytes": 33058
+      "sha256": "d2ff08798c8c042a320b7223d71c2fa24aa676793238c89531d27f94739de4a5",
+      "bytes": 33704
     },
     {
       "path": "dist/workspace-protection.js.map",
-      "sha256": "dff6c209681ac4781816e79358c2bd83849b5262defe7e8401598d6cde938f7b",
-      "bytes": 33328
+      "sha256": "dd2b91feabef651b0c9006feeb6957267db921375e5e02934517f520b1046578",
+      "bytes": 33916
     },
     {
       "path": "dist/workspace-workers.d.ts",
@@ -1918,8 +1918,8 @@
     },
     {
       "path": "src/workspace-protection.ts",
-      "sha256": "a3d55cce822308f25722608c2355b2afb23997fe11745d4a7ca7effa73370cde",
-      "bytes": 33988
+      "sha256": "dd0161e7b88142dc223bf771857db8edcac0a465eaaacc573b9fd96e0c9d6ead",
+      "bytes": 34567
     },
     {
       "path": "src/workspace-workers.ts",
@@ -2193,8 +2193,8 @@
     },
     {
       "path": "test/workspace-protection.test.ts",
-      "sha256": "54269d5ed6ae6daeb1dd84a23370dce3574480e912f853a29e556de91ffb6262",
-      "bytes": 25870
+      "sha256": "d8fbff10d590089cd96bfdcd0b2a5c8ead2e45a554227db89c9c3ed7b14e5d93",
+      "bytes": 26865
     },
     {
       "path": "test/workspace-workers.test.ts",

@@ -21,6 +21,25 @@ function inside(root, absolute) {
     const relative = path.relative(root, absolute);
     return !relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative);
 }
+/** Service-owned locations may use Windows short names, including not-yet-created sidecars. */
+function canonicalLocation(value) {
+    let parent = path.resolve(value);
+    const suffix = [];
+    for (;;) {
+        try {
+            return path.join(fs.realpathSync.native(parent), ...suffix);
+        }
+        catch (error) {
+            if (error.code !== "ENOENT")
+                throw error;
+            const next = path.dirname(parent);
+            if (next === parent)
+                throw error;
+            suffix.unshift(path.basename(parent));
+            parent = next;
+        }
+    }
+}
 function matches(name, patterns, directory = false) {
     const target = key(name);
     return patterns.some(pattern => { const tree = pattern.endsWith("/**"), base = key(tree ? pattern.slice(0, -3) : pattern); return (target === base && (!directory || tree)) || (tree && target.startsWith(`${base}/`)) || (directory && base.startsWith(`${target}/`)); });
@@ -266,13 +285,15 @@ export class WorkspaceProtection {
         if (mode === "legacy_read_only" && scopePatterns(scope).length)
             return fail("SCOPE_PATH_UNAUTHORIZED", "Legacy submissions have no implicit write grant.");
         const root = fs.realpathSync.native(workspace), excludedPaths = [];
-        for (const absolute of [this.dbFile, `${this.dbFile}-wal`, `${this.dbFile}-shm`, runsDir])
-            if (inside(root, path.resolve(absolute))) {
-                const relative = path.relative(root, path.resolve(absolute)).split(path.sep).join("/");
+        for (const location of [this.dbFile, `${this.dbFile}-wal`, `${this.dbFile}-shm`, runsDir]) {
+            const absolute = canonicalLocation(location);
+            if (inside(root, absolute)) {
+                const relative = path.relative(root, absolute).split(path.sep).join("/");
                 if (!relative)
                     return fail("SCOPE_RUNTIME_CONFLICT", "The workspace cannot equal the service runs directory.");
                 excludedPaths.push(relative);
             }
+        }
         for (const pattern of scopePatterns(scope)) {
             const relative = workspaceRelative(pattern.endsWith("/**") ? pattern.slice(0, -3) : pattern);
             if (relative.split("/").some(part => key(part) === ".git") || excludedPaths.some(item => matches(item, [pattern], true) || key(relative).startsWith(`${key(item)}/`)))
