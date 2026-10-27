@@ -36,7 +36,7 @@
 
 本分支已完成 T1/T2：统一只读任务查询、本地 HTTP、持久事件与 revision；阶段响应为 `workbuddy-executor/stage-2`，完整 vNext 契约仍待实现。接口详情及未知字段见[阶段说明](docs/WORKBENCH_STAGE_HTTP.md)。HTTP 没有派工、取消或验收写入口；export/workspaces 仍为 501。MCP 现有执行与同步入口保持兼容，纯查询不触发派工或同步。
 
-源码交付不自动部署到运行网关，历史版本实测不自动算作当前版本通过。T3a 的[契约与模型准入](docs/T3A_DISPATCH_ADMISSION.md)、T3c 的[token 估算](docs/T3C_QUOTA_OBSERVATION.md)及[积分缓存汇总](docs/T3C_CREDIT_BALANCE.md)已有源码，积分链路已完成本机真实只读联调；DSH、真实 token 统计与完整交互仍待验收。前端交付由 Issue #6 跟踪，完整异机验收由 Issue #3 跟踪；它们不证明新增设计已经完成。当前状态与证据见[开发进度](docs/PROGRESS.md)。
+T4A 持久准入/共享容量与 T4B 原操作恢复/人工关闭已随前序依赖合入主干，见[集成交付记录](docs/T4_COMPLETION_2026-10-27.md)。WorkBuddy 原队列恢复和 DSH 正常交付已有本机真实验收，积分链路有真实只读证据；完整 token 统计、T5 文件保护、T6 review 和 T7 交互仍待独立交付。源码合并不自动部署，历史样本不替代当前提交验证。前端与异机分别由 Issue #6/#3 跟踪，当前证据见[开发进度](docs/PROGRESS.md)。
 
 ## 验证与已知限制
 
