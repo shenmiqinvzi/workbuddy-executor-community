@@ -123,6 +123,11 @@ test("T5 command input names resolve against the actual cwd and cannot traverse 
   assert.throws(() => queue.authorizeCommandPaths(context, { cwd, inputs: ["hard-alias"] }), { code: "SCOPE_PATH_LINK" });
   assert.throws(() => queue.authorizeCommandPaths(context, { cwd: f.dir }), { code: "SCOPE_PATH_OUTSIDE" });
   assert.throws(() => queue.authorizeCommandPaths(context, { cwd, inputs: ["../README.md"] }), { code: "SCOPE_PATH_INVALID" });
+  assert.throws(() => queue.authorizeCommandPaths(context, { cwd, inputs: [path.join(cwd, "normal.js. ")] }), { code: "SCOPE_PATH_INVALID" });
+  if (process.platform === "win32") {
+    assert.throws(() => resolveWorkspaceRead(f.workspace, path.toNamespacedPath(path.join(cwd, "normal.js"))), { code: "SCOPE_PATH_INVALID" });
+    assert.throws(() => resolveWorkspaceRead(f.workspace, "\\\\unreachable.invalid\\share\\input.txt"), { code: "SCOPE_PATH_OUTSIDE" });
+  }
   assert.equal(fs.readFileSync(path.join(external, "secret"), "utf8"), "private sentinel");
 });
 
@@ -240,14 +245,16 @@ test("T5 service exclusions resolve canonical aliases without hiding neighboring
 });
 
 test("T5 an outside junction back into the workspace is never treated as a short-name alias", t => {
-  const f = fixture(t), alias = path.join(f.dir, "external-alias"); f.write("src/input.txt", "private input");
+  const f = fixture(t), alias = path.join(f.dir, "outside~1"); f.write("src/input.txt", "private input");
   fs.symlinkSync(f.workspace, alias, process.platform === "win32" ? "junction" : "dir");
-  assert.throws(() => resolveWorkspaceRead(f.workspace, path.join(alias, "src/input.txt")), { code: "SCOPE_PATH_LINK" });
+  assert.throws(() => resolveWorkspaceRead(f.workspace, path.join(alias, "src/input.txt")), { code: process.platform === "win32" ? "SCOPE_PATH_LINK" : "SCOPE_PATH_OUTSIDE" });
 });
 
 test("T5 Windows short-name workspace inputs expand to the same real file", { skip: process.platform !== "win32" }, t => {
   const f = fixture(t), root = path.join(f.dir, "workspace with long names"); fs.mkdirSync(root); fs.writeFileSync(path.join(root, "input.txt"), "input");
-  const short = execFileSync("cmd.exe", ["/d", "/c", `for %I in ("${root}") do @echo %~sI`], { encoding: "utf8", windowsHide: true }).trim();
-  if (!fs.existsSync(short) || short.toLowerCase() === fs.realpathSync.native(root).toLowerCase()) { t.skip("This volume does not expose a usable Windows short-name alias"); return; }
+  const command = `$ErrorActionPreference='Stop'; [Console]::OutputEncoding=[Text.UTF8Encoding]::new(); (New-Object -ComObject Scripting.FileSystemObject).GetFolder('${root.replaceAll("'", "''")}').ShortPath | ConvertTo-Json -Compress`;
+  const short = JSON.parse(execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", command], { encoding: "utf8", windowsHide: true, timeout: 15000 }).trim()) as string;
+  assert.equal(fs.existsSync(short), true, "The Windows short-name API must return an existing path");
+  if (short.toLowerCase() === fs.realpathSync.native(root).toLowerCase()) { t.skip("This volume does not expose a usable Windows short-name alias"); return; }
   assert.equal(resolveWorkspaceRead(fs.realpathSync.native(root), path.join(short, "input.txt")), fs.realpathSync.native(path.join(root, "input.txt")));
 });

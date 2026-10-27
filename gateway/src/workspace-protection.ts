@@ -78,9 +78,15 @@ function gitIndex(root: string): string | null {
 /** No traversal through reparse points, even when a link currently resolves inside. */
 function resolvedPath(root: string, target: string): { absolute: string; relative: string } {
   if (/[\x00-\x1f]/.test(target)) return fail("SCOPE_PATH_INVALID", "Invalid path characters.");
-  if (target.replaceAll("\\", "/").split("/").includes("..")) return fail("SCOPE_PATH_INVALID", "Traversal is not accepted.");
+  const lexical = target.replaceAll("\\", "/");
+  if (lexical.startsWith("//?/") || lexical.startsWith("//./") || lexical.split("/").some(part => part === "." || part === "..")) return fail("SCOPE_PATH_INVALID", "Traversal and Windows device paths are not accepted.");
   let absolute = path.isAbsolute(target) ? path.resolve(target) : path.resolve(root, workspaceRelative(target));
+  const absoluteTail = absolute.slice(path.parse(absolute).root.length);
+  if (absoluteTail) workspaceRelative(absoluteTail.split(path.sep).join("/"));
   if (!inside(root, absolute)) {
+    // Expand ordinary Windows drive paths only. Refuse external UNC/device
+    // paths before a filesystem lookup; links are independently refused below.
+    if (process.platform !== "win32" || !/^[A-Za-z]:[\\/]/.test(absolute)) return fail("SCOPE_PATH_OUTSIDE", "The path is outside the original workspace.");
     const expanded = canonicalLocation(absolute);
     if (!inside(root, expanded)) return fail("SCOPE_PATH_OUTSIDE", "The path is outside the original workspace.");
     // A Windows short-name prefix may differ lexically. It must not admit an
