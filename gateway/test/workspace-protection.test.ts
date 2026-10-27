@@ -7,7 +7,7 @@ import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 import { TaskStore } from "../src/task-store.js";
-import { workspaceRelative } from "../src/workspace-protection.js";
+import { workspaceRelative, resolveWorkspaceRead } from "../src/workspace-protection.js";
 import { DshTaskCoordinator } from "../src/dsh-coordinator.js";
 import type { DshTransport, DshSelection } from "../src/dsh-client.js";
 import type { DeepSeekEvent } from "../src/deepseek-client.js";
@@ -237,4 +237,17 @@ test("T5 service exclusions resolve canonical aliases without hiding neighboring
     f.write("gateway-state/user.txt", "not service-owned");
     assert.throws(() => store.workspaceProtection.assertGuard(guard), { code: "SCOPE_WORKSPACE_CHANGED" });
   } finally { store.close(); }
+});
+
+test("T5 an outside junction back into the workspace is never treated as a short-name alias", t => {
+  const f = fixture(t), alias = path.join(f.dir, "external-alias"); f.write("src/input.txt", "private input");
+  fs.symlinkSync(f.workspace, alias, process.platform === "win32" ? "junction" : "dir");
+  assert.throws(() => resolveWorkspaceRead(f.workspace, path.join(alias, "src/input.txt")), { code: "SCOPE_PATH_LINK" });
+});
+
+test("T5 Windows short-name workspace inputs expand to the same real file", { skip: process.platform !== "win32" }, t => {
+  const f = fixture(t), root = path.join(f.dir, "workspace with long names"); fs.mkdirSync(root); fs.writeFileSync(path.join(root, "input.txt"), "input");
+  const short = execFileSync("cmd.exe", ["/d", "/c", `for %I in ("${root}") do @echo %~sI`], { encoding: "utf8", windowsHide: true }).trim();
+  if (!fs.existsSync(short) || short.toLowerCase() === fs.realpathSync.native(root).toLowerCase()) { t.skip("This volume does not expose a usable Windows short-name alias"); return; }
+  assert.equal(resolveWorkspaceRead(fs.realpathSync.native(root), path.join(short, "input.txt")), fs.realpathSync.native(path.join(root, "input.txt")));
 });

@@ -69,9 +69,27 @@ function resolvedPath(root, target) {
         return fail("SCOPE_PATH_INVALID", "Invalid path characters.");
     if (target.replaceAll("\\", "/").split("/").includes(".."))
         return fail("SCOPE_PATH_INVALID", "Traversal is not accepted.");
-    const absolute = path.isAbsolute(target) ? path.resolve(target) : path.resolve(root, workspaceRelative(target));
-    if (!inside(root, absolute))
-        return fail("SCOPE_PATH_OUTSIDE", "The path is outside the original workspace.");
+    let absolute = path.isAbsolute(target) ? path.resolve(target) : path.resolve(root, workspaceRelative(target));
+    if (!inside(root, absolute)) {
+        const expanded = canonicalLocation(absolute);
+        if (!inside(root, expanded))
+            return fail("SCOPE_PATH_OUTSIDE", "The path is outside the original workspace.");
+        // A Windows short-name prefix may differ lexically. It must not admit an
+        // outside junction/symlink pointing back into the workspace instead.
+        for (let cursor = absolute;; cursor = path.dirname(cursor)) {
+            try {
+                if (fs.lstatSync(cursor).isSymbolicLink())
+                    return fail("SCOPE_PATH_LINK", "Linked/reparsed path aliases are not authorized.");
+            }
+            catch (error) {
+                if (error.code !== "ENOENT")
+                    throw error;
+            }
+            if (path.dirname(cursor) === cursor)
+                break;
+        }
+        absolute = expanded;
+    }
     const relative = path.relative(root, absolute).split(path.sep).join("/");
     if (relative)
         workspaceRelative(relative);
@@ -92,7 +110,10 @@ function resolvedPath(root, target) {
         if (stat.isFile() && stat.nlink > 1)
             return fail("SCOPE_PATH_LINK", "Shared hard-linked paths cannot be authorized as inputs or outputs.");
     }
-    return { absolute, relative };
+    const canonical = canonicalLocation(absolute);
+    if (!inside(root, canonical))
+        return fail("SCOPE_PATH_OUTSIDE", "The path changed ownership during resolution.");
+    return { absolute: canonical, relative: path.relative(root, canonical).split(path.sep).join("/") };
 }
 export function resolveWorkspaceRead(root, target) { return resolvedPath(fs.realpathSync.native(root), target).absolute; }
 function inventory(root, scope, excluded) {
