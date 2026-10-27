@@ -2,7 +2,7 @@ import type { TaskCoordinator, SendTaskInput } from "./coordinator.js";
 import type { DshTaskCoordinator } from "./dsh-coordinator.js";
 import type { OperationOptions } from "./operation-admission.js";
 import type { RecoveryInput } from "./operation-recovery.js";
-import { AdmissionError } from "./collaboration.js";
+import { AdmissionError, defaultModelPolicy } from "./collaboration.js";
 import type { StoredTask, StoredTaskEvent } from "./task-store.js";
 import { readTaskProjection } from "./task-view-reader.js";
 import { stageTaskViewFromProjection, STAGE_TASK_VIEW_UNAVAILABLE, STAGE_TASK_VIEW_SCHEMA_VERSION, type StageTaskView } from "./task-view-stage.js";
@@ -98,8 +98,8 @@ export class TaskApplicationService {
   }
   private planPolicy(contract: unknown) {
     if ((contract as { execution?: { executorId?: string } })?.execution?.executorId === "dsh") {
-      if (!this.dsh) throw new AdmissionError("EXECUTOR_UNAVAILABLE", "The selected DSH source is unavailable; no fallback is allowed.");
-      return this.dsh.policy();
+      // Offline planning is metadata-only; use the same fallback as DSH dispatch.
+      return this.dsh?.policy() ?? this.coordinator.store.collaboration.currentPolicy(defaultModelPolicy());
     }
     return this.coordinator.modelPolicy();
   }

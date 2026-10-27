@@ -1053,13 +1053,13 @@
     },
     {
       "path": "dist/task-application-service.js",
-      "sha256": "1d23f51f1e3f38ace274c1b0bbd992e863abb645a7b8cb4cc0e3c43e313f60d0",
-      "bytes": 20965
+      "sha256": "7746a0b64a14cf63ffbd1cd25887a5825a9a3e2b68e599f6996944f9efdf2a2d",
+      "bytes": 20991
     },
     {
       "path": "dist/task-application-service.js.map",
-      "sha256": "a5f193fbc940435d189972690e1c3174f6f0d475cc9bcea458df37191e6e4430",
-      "bytes": 16859
+      "sha256": "86c031bff3e915be2eb8461885f56879e6981af4bb4ead5d8eddc355829acd4e",
+      "bytes": 16870
     },
     {
       "path": "dist/task-contract.d.ts",
@@ -1843,8 +1843,8 @@
     },
     {
       "path": "src/task-application-service.ts",
-      "sha256": "cb438f60f25476dbc198c602d9fe1579c19bf51c79480f1d7c5ad9b11f2c960f",
-      "bytes": 23605
+      "sha256": "2c8227d4c58e28733bc6ac19429e4e0c89448107d34367026892df4a12be6fa9",
+      "bytes": 23647
     },
     {
       "path": "src/task-contract.ts",

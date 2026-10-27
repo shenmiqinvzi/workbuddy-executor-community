@@ -1,4 +1,4 @@
-import { AdmissionError } from "./collaboration.js";
+import { AdmissionError, defaultModelPolicy } from "./collaboration.js";
 import { readTaskProjection } from "./task-view-reader.js";
 import { stageTaskViewFromProjection, STAGE_TASK_VIEW_UNAVAILABLE, STAGE_TASK_VIEW_SCHEMA_VERSION } from "./task-view-stage.js";
 /** The MCP entry point and future local HTTP adapter share this service. */
@@ -27,9 +27,8 @@ export class TaskApplicationService {
     }
     planPolicy(contract) {
         if (contract?.execution?.executorId === "dsh") {
-            if (!this.dsh)
-                throw new AdmissionError("EXECUTOR_UNAVAILABLE", "The selected DSH source is unavailable; no fallback is allowed.");
-            return this.dsh.policy();
+            // Offline planning is metadata-only; use the same fallback as DSH dispatch.
+            return this.dsh?.policy() ?? this.coordinator.store.collaboration.currentPolicy(defaultModelPolicy());
         }
         return this.coordinator.modelPolicy();
     }
