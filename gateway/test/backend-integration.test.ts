@@ -15,7 +15,7 @@ import { RunJournal } from "../src/run-journal.js";
 import { TaskApplicationService } from "../src/task-application-service.js";
 import { TaskStore } from "../src/task-store.js";
 import { registerTaskProjectionTool } from "../src/task-view-reader.js";
-import { WorkBuddyClient } from "../src/workbuddy-client.js";
+import { SelectedModelClient as WorkBuddyClient } from "./support/selected-model-client.js";
 
 function fixture(t: { after: (fn: () => void) => void }) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "backend-integration-"));
@@ -35,7 +35,7 @@ function fixture(t: { after: (fn: () => void) => void }) {
   // evidence in the stored task — the fact T2-R1 checks reads against. The
   // reads themselves below stay strictly read-only.
   const report = async (persist = true) => {
-    await service.send({ taskId: "integrated-task", objective: "Integration fixture", workspace: dir,
+    await service.send({ model: "synthetic-user-choice", taskId: "integrated-task", objective: "Integration fixture", workspace: dir,
       sessionId: "integration-session", timeoutSeconds: 600 });
     const claim = await queue.claim("integration-session", 0);
     if (claim.status !== "task") throw Error("Expected a queue claim");

@@ -2,9 +2,9 @@
 
 ## v0.6.0 多项目原生接入
 
-默认调用 `workbuddy_ensure_workspace({workspace:"项目绝对目录"})`，或 `send_task` 直接传 `workspace`。通过本机 CDP 和 WorkBuddy 原生 `workspace:initialize`、`session:create`、`session:rename` 接口创建会话，并核对原生注册。用户不需要先打开聊天或粘贴安装指令；登录、输入与权限仍沿用 WorkBuddy 的原生流程。此处创建的是目录对应的本地执行会话，不是云端团队空间。
+T4A 起，用户选定模型后向 `send_task` 直接传稳定 taskId、workspace 和 model；原生准备先经过 SQLite 操作与共同容量准入。独立 `ensure_workspace` 原生准备返回 OPERATION_REQUIRED。通过本机 CDP 和 WorkBuddy 原生 `workspace:initialize`、`session:create`、`session:rename` 接口创建会话，并核对原生注册。用户不需要先打开聊天或粘贴安装指令；登录、输入与权限仍沿用 WorkBuddy 的原生流程。此处创建的是目录对应的本地执行会话，不是云端团队空间。
 
-每个项目独立保存会话映射，重复调用复用。`ensure_workspace` 的 `sessionId` 可选择同目录已有的真实会话。切换选择不改变旧任务和返工的身份；旧会话仍会被监督。一个 LaunchAgent 逐轮监督全部已登记会话，各会话单独校验忙闲、租约和唤醒回执。它允许不同目录的原生执行并存，实际并发仍受 WorkBuddy 能力和额度约束。
+每个项目独立保存会话映射，重复调用复用。`ensure_workspace` 的 `sessionId` 可选择同目录已有的真实会话。切换选择不改变旧任务和返工的身份；旧会话仍会被监督。一个 LaunchAgent 逐轮监督全部已登记会话，各会话单独校验忙闲、租约和唤醒回执。连接同一 TaskStore 的受控工作流共同遵守容量 1；needs_review 保留占用，停止、取消请求或 TTL 都不会单独释放。
 
 原来的持久服务配置保留为默认入口。业务项目路由另存于本机任务记录目录的 `workspace-workers.sqlite`，不会直接写 WorkBuddy 数据库。创建前预留原生 ID；不确定的创建不得自动重发，发现对应真实记录后可复用恢复。已登记多个项目时，派工须指明目录或会话，以免使用旧默认目录。
 

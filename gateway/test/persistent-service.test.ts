@@ -7,7 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import { loadConfig, type Config } from "../src/config.js";
 import { TaskStore } from "../src/task-store.js";
 import { TaskCoordinator } from "../src/coordinator.js";
-import { WorkBuddyClient } from "../src/workbuddy-client.js";
+import { SelectedModelClient as WorkBuddyClient } from "./support/selected-model-client.js";
 import { DesktopQueue } from "../src/desktop-queue.js";
 import { RunJournal, writePrivateJson, hasNativeStopEvidence } from "../src/run-journal.js";
 import { PersistentDesktopService, recoverExpiredAttempt, reconcileReportedAttempt, readServiceRegistration, serviceRegistrationPath, type NativeDesktopTrigger, type NativeObservation, type ServiceRegistration, type WakeIntent } from "../src/persistent-service.js";
@@ -190,8 +190,8 @@ test("429 followed by a transient idle never releases the attempt, even if the n
   f.trigger.state = "idle";
   assert.equal((await f.service().pump()).status,"stop_unconfirmed");
   await assert.rejects(()=>f.coordinator.continue({taskId:claim.taskId,feedback:"overlap"}),/not been confirmed stopped/);
-  const second = await f.send("must-not-overlap");
-  assert.match(second.snapshot()?.error ?? "",/unresolved/);
+  await assert.rejects(f.send("must-not-overlap"), { code: "CAPACITY_OCCUPIED" });
+  assert.equal(f.store.get("must-not-overlap"), undefined);
   assert.equal(f.trigger.wakes.length,1);
 });
 
@@ -367,6 +367,8 @@ test('explicit model tasks wait for verified native wake; later models cannot be
   const first=await f.queue.claim('worker-session',0);assert.equal(first.status,'task');if(first.status!=='task')throw Error('missing claim');
   f.queue.report({...first,status:'completed',text:'fixture completed',artifacts:[]});
   f.queue.observeNative(first.attemptId, { state: "idle", workspace: f.dir });
+  await assert.rejects(f.coordinator.send({taskId:'model-two',objective:'fixture',workspace:f.dir,sessionId:'worker-session',model:'deep'}), { code: "CAPACITY_OCCUPIED" });
+  await f.coordinator.accept("model-one", "Independent fixture verification", ["Inspected stopped report"]);
   await f.coordinator.send({taskId:'model-two',objective:'fixture',workspace:f.dir,sessionId:'worker-session',model:'deep'});
   assert.equal((await f.queue.claim('worker-session',0)).status,'retry');
   assert.equal((await f.service().pump()).status,'wake_submitted');assert.equal(f.trigger.wakes[1]?.model,'deep');
@@ -390,7 +392,8 @@ test('native model rejection blocks the task before any claim and permits a corr
   assert.equal((await f.service().pump()).status,'wake_rejected');
   assert.equal((await f.coordinator.sync('invalid-model')).state,'blocked');
   assert.equal((await f.queue.claim('worker-session',0)).status,'retry');
-  assert.equal((await f.coordinator.continue({taskId:'invalid-model',feedback:'use available model',model:'fast'})).ok,true);
+  await assert.rejects(f.coordinator.continue({taskId:'invalid-model',feedback:'use available model',model:'fast'}), { code: "MODEL_BINDING_CHANGED" });
+  assert.equal((await f.coordinator.continue({taskId:'invalid-model',feedback:'Retry the original selection only',model:'bad'})).ok,true);
 });
 
 function fixture(t: { after: (fn: () => void) => void }, sessionId = "worker-session") {
@@ -410,7 +413,7 @@ function fixture(t: { after: (fn: () => void) => void }, sessionId = "worker-ses
   trigger.workspace = dir;
   const service = () => new PersistentDesktopService(config, registration, trigger, store);
   const send = async (taskId = "transport-fixture") => {
-    await coordinator.send({ taskId, objective: "Unit transport fixture only", sessionId: registration.sessionId, workspace: dir, timeoutSeconds: 600 });
+    await coordinator.send({ model: "synthetic-user-choice", taskId, objective: "Unit transport fixture only", sessionId: registration.sessionId, workspace: dir, timeoutSeconds: 600 });
     return new RunJournal(config.runsDir!, store.get(taskId)!.attemptId!);
   };
   t.after(() => { store.close(); fs.rmSync(dir, { recursive: true, force: true }); });
@@ -669,7 +672,7 @@ test("recovery refuses current working or unexpired attempts and stale attempt i
 test("native inspection holds the pump lock so recovery cannot overlap an automatic wake", async (t) => {
   const f = fixture(t);
   const { input } = await expiredClaim(f);
-  await f.send("queued-next");
+  await assert.rejects(f.send("queued-next"), { code: "CAPACITY_OCCUPIED" });
   let release!: () => void;
   let entered!: () => void;
   const inspecting = new Promise<void>(resolve => { entered = resolve; });
@@ -710,7 +713,7 @@ test("installed binding supplies the worker identity without a new listener or e
   const f = fixture(t);
   f.config.serviceConfigFile = serviceRegistrationPath(f.dir);
   writePrivateJson(f.config.serviceConfigFile, f.registration);
-  const result = await f.coordinator.send({ taskId: "bound-default", objective: "Unit binding fixture" });
+  const result = await f.coordinator.send({ model: "synthetic-user-choice", taskId: "bound-default", objective: "Unit binding fixture" });
   assert.equal(result.ok, true);
   const stored = f.store.get("bound-default")!;
   assert.equal(stored.sessionId, f.registration.sessionId);
@@ -721,8 +724,8 @@ test("installed binding supplies the worker identity without a new listener or e
 test("two concurrent service instances reserve one native wake for the session", async (t) => {
   const f = fixture(t);
   await f.send("first");
-  const rejected=await f.send("second");
-  assert.match(rejected.snapshot()?.error ?? "", /unresolved/);
+  await assert.rejects(f.send("second"), { code: "CAPACITY_OCCUPIED" });
+  assert.equal(f.store.get("second"), undefined);
   let entered!: () => void;
   let release!: () => void;
   const submitting = new Promise<void>((resolve) => { entered = resolve; });
@@ -787,8 +790,8 @@ test("unresolved execution leases suppress wake, including claimed timeouts", as
   const journal = await f.send("first");
   const claim = await f.queue.claim(f.registration.sessionId, 0);
   assert.equal(claim.status, "task");
-  const rejected=await f.send("second");
-  assert.match(rejected.snapshot()?.error ?? "", /unresolved/);
+  await assert.rejects(f.send("second"), { code: "CAPACITY_OCCUPIED" });
+  assert.equal(f.store.get("second"), undefined);
   assert.equal((await f.service().pump()).status, "active_lease");
   journal.save({ ...journal.snapshot()!, status: "blocked", error: "deadline passed" });
   assert.equal((await f.service().pump()).status, "native_blocked");
@@ -803,7 +806,8 @@ test("unresolved execution leases suppress wake, including claimed timeouts", as
   if (claim.status !== "task") throw new Error("Expected unit claim");
   f.queue.report({ ...claim, status: "completed", text: "TASK_STATUS: completed\nTEST_RESULT: transport fixture", artifacts: [] });
   f.queue.observeNative(claim.attemptId, { state: "idle", workspace: f.dir });
-  await f.coordinator.continue({taskId:"second",feedback:"first is now proven stopped"});
+  await f.coordinator.accept("first", "Independent fixture verification", ["Inspected stopped report"]);
+  await f.send("second");
   const waiting = f.queue.claim(f.registration.sessionId, 0.1);
   // Second task is claimed immediately; it is now protected by its active lease.
   await waiting;
@@ -839,7 +843,7 @@ test("expired unclaimed tasks and deleted native sessions are never woken", asyn
 
 test("same-chat rework gets one new wake and preserves original task identity and constraints", async (t) => {
   const f = fixture(t);
-  await f.coordinator.send({ taskId: "rework", objective: "Unit fixture", constraints: ["Preserve original constraint"], sessionId: f.registration.sessionId, workspace: f.dir });
+  await f.coordinator.send({ model: "synthetic-user-choice", taskId: "rework", objective: "Unit fixture", constraints: ["Preserve original constraint"], sessionId: f.registration.sessionId, workspace: f.dir });
   assert.equal((await f.service().pump()).status, "wake_submitted");
   const claim = await f.queue.claim(f.registration.sessionId, 0);
   if (claim.status !== "task") throw new Error("Expected unit claim");
@@ -857,15 +861,18 @@ test("same-chat rework gets one new wake and preserves original task identity an
   assert.equal(f.store.get("rework")?.runtimeSource, undefined);
 });
 
-test("service finds queued work beyond its first 500 stored tasks", async (t) => {
+test("service finds old queued work beyond 500 records but unknown history prevents a native wake", async (t) => {
   const f = fixture(t);
   const target = await f.send("oldest-task");
-  f.store.update("oldest-task", { state: "queued" });
-  // Make 500 newer unclaimable records; pagination must reach the durable queue attempt.
-  for (let index = 0; index < 500; index++) f.store.createOrGet({ taskId: `new-${index}`, messageId: `pending-${index}`, objective: "Record only", state: "queued", createdAt: "2099-01-01T00:00:00.000Z" });
-  const result = await f.service().pump();
-  assert.equal(result.status, "wake_submitted");
-  assert.equal(result.attemptId, target.attemptId);
+  for (let index = 0; index < 500; index++) f.store.createOrGet({ taskId: `new-${index}`, messageId: `pending-${index}`, objective: "Unknown historical record", state: "queued", createdAt: "2099-01-01T00:00:00.000Z" });
+  const service = f.service();
+  const candidates = (service as unknown as { candidates(): Array<{ journal: RunJournal }> }).candidates();
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0]!.journal.attemptId, target.attemptId);
+  const result = await service.pump();
+  assert.equal(result.status, "unavailable");
+  assert.match(result.reason ?? "", /historical workflow/);
+  assert.equal(f.trigger.wakes.length, 0);
 });
 
 function fakeLaunchctl(initial?: string) {

@@ -84,6 +84,18 @@ test("same task replay and coordinator reconstruction never dispatch again", asy
   await assert.rejects(restarted.send({ ...input, sessionId: "other" }), { code: "TASK_CONFLICT" });
 });
 
+test("explicit DSH rework retains the caller's revision when internal sync receives a new report", async t => {
+  const f = fixture(t); await f.send();
+  const original = f.store.get("dsh-task")!;
+  f.finish();
+  await assert.rejects(f.coordinator.continue({ taskId: original.taskId, feedback: "Feedback for the original view", operationId: "stale-rework",
+    expectedRevision: original.revision, expectedAttemptId: original.attemptId }), { code: "STALE_REVISION" });
+  assert.notEqual(f.store.get(original.taskId)!.revision, original.revision);
+  assert.equal(f.store.get(original.taskId)!.attemptId, original.attemptId);
+  assert.equal(f.store.operations.get("stale-rework")!.expectedRevision, original.revision);
+  assert.deepEqual(f.counts(), { prompts: 1, selections: 1 });
+});
+
 test("lost dispatch response holds shared capacity and recovers by original events", async t => {
   const f = fixture(t); f.setPromptError(new Error("private credential must not leak")); const result = await f.send();
   assert.equal(result.ok, false); assert.equal(f.store.dshBindings.forTask("dsh-task")!.runOpen, true);
@@ -139,7 +151,7 @@ test("event pagination and replay preserve each request fact exactly once", asyn
 test("missing free-rate capability, busy session and unauthorized plan cause no preparation", async t => {
   const f = fixture(t), contract = f.contract(), input = { contract, objective: contract.objective, sessionId: "original-session" };
   await assert.rejects(new DshTaskCoordinator(f.store, f.client, f.runs).send(input), { code: "COST_VERIFICATION_UNAVAILABLE" });
-  f.setBusy(true); await assert.rejects(f.coordinator.send(input), { code: "SESSION_BUSY" }); f.setBusy(false);
+  f.setBusy(true); await assert.rejects(f.coordinator.send({ ...input, operationId: "busy-check", expectedRevision: null, expectedAttemptId: null }), { code: "SESSION_BUSY" }); f.setBusy(false);
   await assert.rejects(f.coordinator.send({ ...input, contract: { ...contract, collaboration: { ...contract.collaboration, expectedPlanRevision: "old" } } }), { code: "PLAN_STALE" });
   assert.equal(f.store.listTasks().length, 0); assert.deepEqual(f.counts(), { prompts: 0, selections: 0 });
 });
@@ -194,13 +206,15 @@ test("source rate verifier uses exact bound provider, key and model; unknown or 
 });
 
 
-test("explicit native pre-admission rejection releases capacity without inventing a turn", async t => {
+test("explicit native pre-admission rejection preserves the workflow without inventing a turn", async t => {
   const f = fixture(t); f.setPromptError(new DeepSeekRpcError("bridge/session-busy", "rejected", true));
   const result = await f.send(); assert.equal(result.ok, false);
   assert.equal(f.coordinator.executionStatus("dsh-task").remoteStopped, true);
   assert.equal(f.store.dshBindings.forTask("dsh-task")!.runOpen, false);
   assert.equal(f.store.listTaskEvents("dsh-task").events.some(e => e.type === "dsh_completed"), false);
-  f.setPromptError(undefined); assert.equal((await f.send("second-task")).ok, true);
+  f.setPromptError(undefined);
+  await assert.rejects(f.send("second-task"), { code: "CAPACITY_OCCUPIED" });
+  assert.equal(f.store.get("second-task"), undefined);
 });
 
 test("one wrong request model cannot be erased by a later correct request", async t => {
@@ -252,7 +266,7 @@ test("the shared application service routes DSH explicitly and never falls back 
   assert.equal((await service.send(input)).ok, true); f.finish(); await service.sync("dsh-task");
   assert.ok(service.statusView(f.store.get("dsh-task")!).allowedActions.includes("accept"));
   assert.throws(() => service.respond("dsh-task", "allow_once"), { code: "EXECUTOR_CAPABILITY_MISSING" });
-  await assert.rejects(service.send({ ...input, taskId: "different" }), { code: "TASK_CONFLICT" });
+  await assert.rejects(service.send({ ...input, taskId: "different" }), { code: "CAPACITY_OCCUPIED" });
   assert.equal((await service.accept("dsh-task", "Independent source and stop review", ["Verified original native request and current report"])).state, "accepted");
 });
 

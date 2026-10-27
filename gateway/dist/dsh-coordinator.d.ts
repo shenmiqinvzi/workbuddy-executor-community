@@ -1,6 +1,7 @@
 import type { TaskStore, StoredTask } from "./task-store.js";
 import type { DshTransport } from "./dsh-client.js";
 import type { ExecutionSelection } from "./task-contract.js";
+import type { OperationOptions } from "./operation-admission.js";
 type ModelRate = {
     credits: string | null;
     observedAt: string;
@@ -39,16 +40,12 @@ export declare class DshTaskCoordinator {
         hostId?: string;
         taskId?: string;
         workspace?: string;
-    }): Promise<{
-        ok: boolean;
-        created: boolean;
-        task: StoredTask;
-        code: string;
-    } | {
+    } & OperationOptions): Promise<{
         ok: boolean;
         created: boolean;
         task: StoredTask;
     }>;
+    private sendAdmitted;
     private dispatch;
     private fold;
     sync(taskId: string, limit?: number): Promise<StoredTask>;
@@ -78,7 +75,7 @@ export declare class DshTaskCoordinator {
         model?: string;
         timeoutSeconds?: number;
         acceptanceCommands?: string[];
-    }): Promise<{
+    } & OperationOptions): Promise<({
         ok: boolean;
         created: boolean;
         task: StoredTask;
@@ -88,7 +85,8 @@ export declare class DshTaskCoordinator {
         created: boolean;
         task: StoredTask;
         code: string;
-    }>;
+    }) & import("./operation-admission.js").OperationReceipt>;
+    private continueAdmitted;
     accept(taskId: string, note: string, evidence: string[], artifactPaths?: string[]): Promise<StoredTask>;
 }
 export {};

@@ -33,6 +33,7 @@ const tasks = new TaskApplicationService(coordinator, config.maxTaskAttempts ?? 
 const server = new McpServer({ name: "codex-workbuddy-gateway", version: runtimeVersion.packageVersion });
 const timeout = z.number().int().positive().max(86_400).optional();
 const taskId = z.string().min(1).max(200);
+const operation = { operationId: z.string().min(1).max(512).optional(), expectedRevision: z.string().min(1).nullable().optional(), expectedAttemptId: z.string().min(1).nullable().optional() };
 const detail = z.enum(["full", "brief"]).optional().default("brief").describe("full preserves complete records. brief omits repeated goals/history/logs and clips the latest report to 2000 characters, while retaining identity, blockers and artifact paths. Brief summaries are not acceptance evidence.");
 
 server.tool("workbuddy_health", "Probe the configured transport. Online means a connection is available; it does not prove login, model/skill availability, desktop visibility or task success.", { sessionId: z.string().optional(), detail }, ({ sessionId, detail }) => guard(async () => {
@@ -48,18 +49,16 @@ server.tool("workbuddy_health", "Probe the configured transport. Online means a 
   const persistentService=config.backend==="desktop-queue"?(bound?serviceStatus(registrationFile):{installed:false}):undefined;
   const state=persistentService?.state as {updatedAt?:string;status?:string}|undefined;
   const serviceAvailable=Boolean(persistentService?.installed&&persistentService.launchdLoaded&&persistentService.desktopRegistered&&state?.updatedAt&&Date.now()-Date.parse(state.updatedAt)<30_000);
-  return { ok: true, runtime: runtimeVersion, backend: config.backend, online: result.online, desktopSupervision: ["desktop-acp", "desktop-queue"].includes(config.backend), ready: result.ready ?? false, sessionId: result.sessionId??sessionId??persistentService?.sessionId, sessions, persistentService, workerCandidates: config.backend === "desktop-queue"&&!bound ? listDesktopSessions(config.workbuddyConfigDir) : undefined, status: result.online ? "transport_online" : serviceAvailable?(state?.status==="no_task"?"persistent_service_idle":"persistent_service_state"):"offline", message: serviceAvailable&&!result.online?(state?.status==="no_task"?"The persistent service is running. No temporary listener is needed while idle; queued tasks wake enrolled native WorkBuddy chats automatically.":"The persistent service is running; inspect its per-workspace state for active work, blockers or uncertain submission before any retry."):result.raw.msg, next: persistentService?.installed?"Pass workspace to send_task to create/reuse its native worker and route automatically. Queued/installed does not prove execution.":"Call ensure_workspace with an existing absolute project directory for native setup without manual chat creation. Login and native permissions remain in WorkBuddy." };
+  return { ok: true, runtime: runtimeVersion, backend: config.backend, online: result.online, desktopSupervision: ["desktop-acp", "desktop-queue"].includes(config.backend), ready: result.ready ?? false, sessionId: result.sessionId??sessionId??persistentService?.sessionId, sessions, persistentService, workerCandidates: config.backend === "desktop-queue"&&!bound ? listDesktopSessions(config.workbuddyConfigDir) : undefined, status: result.online ? "transport_online" : serviceAvailable?(state?.status==="no_task"?"persistent_service_idle":"persistent_service_state"):"offline", message: serviceAvailable&&!result.online?(state?.status==="no_task"?"The persistent service is running. No temporary listener is needed while idle; queued tasks wake enrolled native WorkBuddy chats automatically.":"The persistent service is running; inspect its per-workspace state for active work, blockers or uncertain submission before any retry."):result.raw.msg, next: persistentService?.installed?"Pass workspace to send_task to create/reuse its native worker and route automatically. Queued/installed does not prove execution.":"After choosing a model, pass a stable taskId, workspace and that model to send_task for admitted native setup. Login and native permissions remain in WorkBuddy." };
 }, detail));
 
-server.tool("workbuddy_ensure_workspace", "Create or reuse a dedicated native WorkBuddy session. Use a stable workerKey such as taskId for a clean conversation in the same workspace; repeating the key reuses its reserved identity, even after uncertain creation. sessionId instead selects an existing real session. Queued tasks retain their original bindings.", {
+server.tool("workbuddy_ensure_workspace", "Compatibility entry. Standalone native preparation is refused; submit the user-selected model with a stable task identity through send_task to acquire shared admission first.", {
   workspaceId: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,199}$/).optional().describe("Optional stable project ID to register for immutable contract dispatch."),
   workspace:z.string().min(1).describe("Existing absolute project directory"),sessionId:z.string().min(1).optional(),title:z.string().min(1).max(200).optional(),model:z.string().trim().min(1).optional().describe("User-selected exact native model ID, required before preparing a session. Changes require an idle session without queued tasks."),detail,
   workerKey:z.string().trim().min(1).max(200).optional().describe("Stable task-scoped key for an isolated native conversation in the same project. Reuse the exact key on reconnect. Cannot be combined with sessionId."),
 }, ({detail,workspaceId,...input})=>guard(async()=>{
   if (!input.model) throw new AdmissionError("MODEL_SELECTION_REQUIRED", "Ask the user to choose an exact model before preparing a session.");
-  const registration = workspaceId ? tasks.registerWorkspace(workspaceId, input.workspace, input.title ?? workspaceId) : undefined;
-  const result = await ensureWorkspace(config,input);
-  return { ...result, contractWorkspace: registration ?? null };
+  throw new AdmissionError("OPERATION_REQUIRED", "Prepare the selected model through an authorized send_task operation; standalone model preparation cannot reserve a second workflow.");
 },detail));
 
 server.tool("workbuddy_list_models", "Query models currently available in WorkBuddy, with optional session's selected model. Use returned IDs for model selection; availability does not prove quota or execution success.", {sessionId:z.string().min(1).optional(),detail}, ({sessionId,detail})=>guard(()=>listModels(config,sessionId),detail));
@@ -69,7 +68,7 @@ server.tool("workbuddy_list_workspaces", "List registered project directories, s
 server.tool("workbuddy_prepare_worker", "Generate instructions for the selected real desktop chat. persistent:true installs a one-time native auto-wake service; false starts a temporary listener. Read-only: generating a prompt does not install or start anything.", { sessionId: z.string().min(1), persistent: z.boolean().optional().default(false) }, ({ sessionId, persistent }) => guard(async () => ({ ok: true, ...new DesktopQueue(config).prepare(sessionId, persistent) })));
 
 server.tool("workbuddy_send_task", "Reserve and dispatch a task to a verified WorkBuddy desktop conversation. Repeated taskId never dispatches twice. Keep polling with workbuddy_wait, independently inspect the result, then continue or accept.", {
-  taskId: taskId.optional(), objective: z.string().min(1), workspace: z.string().optional().describe("Existing absolute project directory; automatically create or reuse its native WorkBuddy worker when sessionId is omitted."),
+  ...operation, taskId: taskId.optional(), objective: z.string().min(1), workspace: z.string().optional().describe("Existing absolute project directory; automatically create or reuse its native WorkBuddy worker when sessionId is omitted."),
   sessionId: z.string().min(1).optional().describe("Real WorkBuddy desktop session ID. Required when several live sessions exist."),
   sessionMode: z.enum(["existing", "new"]).optional().default("existing").describe("Queue uses project routing with existing; pass workspace for automatic native creation or selection. ACP new is version-dependent."),
   model: z.string().trim().min(1).optional().describe("Exact model ID from workbuddy_list_models. The user must choose this exact model before dispatch; queue applies and verifies it at the next native wake."),
@@ -80,6 +79,8 @@ server.tool("workbuddy_send_task", "Reserve and dispatch a task to a verified Wo
   if (!input.contract && !input.model && (!input.taskId || !store.get(input.taskId))) throw new AdmissionError("MODEL_SELECTION_REQUIRED", "Ask the user to choose an exact model before dispatch.");
   return tasks.send(input);
 }, detail));
+
+server.tool("workbuddy_get_operation", "Read the original durable operation receipt. Unfinished operations never trigger a resend.", { operationId: z.string().min(1).max(512) }, ({ operationId }) => guard(async () => ({ ok: true, operation: tasks.getOperation(operationId) })));
 
 server.tool("workbuddy_get_task", "Synchronize progress for the current attempt; includes source/session identity, blockers and real final report. A WorkBuddy turn ending is needs_review, not accepted.", {
   taskId, includeMessages: z.boolean().optional().default(true), limit: z.number().int().positive().max(100).optional().default(100), detail, sinceEventSeq:z.number().int().nonnegative().optional(),
@@ -120,7 +121,7 @@ server.tool("workbuddy_get_messages", "Synchronize and read current-attempt prog
 }, ({ taskId, attemptId, limit, detail }) => guard(async () => ({ ok: true, task: await tasks.sync(taskId, 100), messages: tasks.listMessages(taskId, limit, attemptId) }), detail, { messageAttemptId: attemptId }));
 
 server.tool("workbuddy_continue_task", "Send specific review feedback to the same verified desktop session. Original objective, constraints and checks remain in force. Refuses an overlapping prompt or switching sessions.", {
-  taskId, feedback: z.string().min(1).max(10_000), acceptanceCommands: z.array(z.string()).max(30).optional(), timeoutSeconds: timeout, model: z.string().min(1).optional(), detail,
+  ...operation, taskId, feedback: z.string().min(1).max(10_000), acceptanceCommands: z.array(z.string()).max(30).optional(), timeoutSeconds: timeout, model: z.string().min(1).optional(), detail,
 }, ({ detail, ...input }) => guard(() => tasks.continue(input), detail));
 
 server.tool("workbuddy_reconcile_report", "Restore an existing authenticated, on-time worker report for review when a later native error overwrote it. Requires the current attempt, verified native idle and original turn ownership. Does not dispatch a task or accept a result.", {
@@ -153,7 +154,7 @@ async function guard(action: () => Promise<unknown>, detail: ResultDetail = "ful
     }
     return jsonResult(compact);
   }
-  catch (error) { return jsonResult(resultForDetail({ ok: false, ...(error instanceof AdmissionError ? { code: error.code } : {}), error: error instanceof Error ? error.message : String(error) }, detail)); }
+  catch (error) { return jsonResult(resultForDetail({ ok: false, ...(error instanceof AdmissionError ? { code: error.code } : {}), ...((error as { operationId?: string }).operationId ? { operationId: (error as { operationId: string }).operationId, operationState: (error as { operationState?: string }).operationState, outcomeCode: "OUTCOME_UNKNOWN" } : {}), error: (error as { operationId?: string }).operationId ? "Observe the original operation; no automatic retry is allowed." : error instanceof Error ? error.message : String(error) }, detail)); }
 }
 const summaryCursors = new Map<string,number>();
 function jsonResult(value: unknown) {

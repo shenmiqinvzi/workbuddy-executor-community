@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { AdmissionError } from "./collaboration.js";
 import { verifyValidationEvidence, type ValidationEvidence } from "./worker-result.js";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -171,7 +172,9 @@ export class DesktopQueue {
     });
   }
   start(request: RunRequest): void {
-    return locked(path.join(this.root, "dispatch.lock"), () => this.startLocked(request));
+    const store = new TaskStore(this.config.dbFile);
+    try { store.operations.enqueue(request.taskId, request.attemptId, request, () => locked(path.join(this.root, "dispatch.lock"), () => this.startLocked(request))); }
+    finally { store.close(); }
   }
   private startLocked(request: RunRequest): void {
     const reservedDeadline = request.deadline === undefined ? undefined : Date.parse(request.deadline);
@@ -227,7 +230,8 @@ export class DesktopQueue {
             const ready=readJson<{model:string;sessionId:string;attemptId:string}>(path.join(journal.dir,'model-ready.json'));
             if(ready?.model!==request.model||ready.sessionId!==sessionId||ready.attemptId!==task.attemptId)continue;
           }
-          const claimed = locked(path.join(this.root, "queue-session-locks", `${key(sessionId)}.lock`), () => {
+          let claimed: QueueTask | undefined;
+          try { claimed = store.operations.executeQueueAttempt(task.taskId, task.attemptId, { sessionId, model: request.model, workspace: request.workspace }, () => locked(path.join(this.root, "queue-session-locks", `${key(sessionId)}.lock`), () => {
             const bindingFile = path.join(this.root, "queue-session-locks", `${key(sessionId)}.active.json`);
             const active = readJson<{attemptId: string}>(bindingFile);
             if (active) {
@@ -258,7 +262,10 @@ export class DesktopQueue {
               const prompt = `${request.prompt}${executionContract}\n\n[QUEUE_REPORT_CONTRACT]\n本轮最终交付必须通过队列回报，不能只在聊天中回复完成。完成或受阻时，用 Write 在以下文件写 UTF-8 JSON：\n${resultFile}\n格式：{"status":"completed|blocked|failed","text":"实际改动、验证结果及遗留问题","artifacts":["真实成果绝对路径"]}\n然后用自己的工具原样执行：\n${command}\n只回报实际结果。回报失败仅原命令原样重试一次，仍失败保留结果文件并结束，不排障网关或换 shell。回报成功后结束，不再次 claim。\n[/QUEUE_REPORT_CONTRACT]`;
               return { status: "task" as const, taskId: task.taskId, attemptId: task.attemptId!, sessionId, leaseToken, prompt, workspace: request.workspace, deadline: current.deadline!, reporting: { resultFile, command } };
             });
-          });
+          })); } catch (error) {
+            if (error instanceof AdmissionError && ["OPERATION_REQUIRED", "OUTCOME_UNKNOWN", "CAPACITY_OCCUPIED", "STALE_ATTEMPT", "CANCELLED_TERMINAL", "MODEL_SELECTION_REQUIRED", "MODEL_BINDING_CHANGED"].includes(error.code)) continue;
+            throw error;
+          }
           if (claimed) return claimed;
         }
         if (Date.now() < deadline) await new Promise<void>((resolve) => setTimeout(resolve, 250));

@@ -21,7 +21,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { loadConfig, type Config } from "../src/config.js";
 import { DesktopQueue } from "../src/desktop-queue.js";
 import { TaskStore } from "../src/task-store.js";
-import { WorkBuddyClient } from "../src/workbuddy-client.js";
+import { SelectedModelClient as WorkBuddyClient } from "./support/selected-model-client.js";
 import { TaskCoordinator, runEvidenceDigestOf } from "../src/coordinator.js";
 import { RunJournal } from "../src/run-journal.js";
 import { readTaskProjection, registerTaskProjectionTool } from "../src/task-view-reader.js";
@@ -56,7 +56,7 @@ function fixture(t: { after: (fn: () => void) => void }) {
     fs.rmSync(dir, { recursive: true, force: true });
   });
   const send = (taskId = "authz-task") =>
-    coordinator.send({ taskId, objective: "Authentication fixture", workspace: dir, sessionId: SESSION, constraints: [], timeoutSeconds: 600 });
+    coordinator.send({ model: "synthetic-user-choice", taskId, objective: "Authentication fixture", workspace: dir, sessionId: SESSION, constraints: [], timeoutSeconds: 600 });
   const claimFor = async () => {
     const claim = await queue.claim(SESSION, 0);
     if (claim.status !== "task") throw new Error("expected a claim");

@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { AdmissionError } from "./collaboration.js";
 import { verifyValidationEvidence } from "./worker-result.js";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -196,7 +197,13 @@ export class DesktopQueue {
         });
     }
     start(request) {
-        return locked(path.join(this.root, "dispatch.lock"), () => this.startLocked(request));
+        const store = new TaskStore(this.config.dbFile);
+        try {
+            store.operations.enqueue(request.taskId, request.attemptId, request, () => locked(path.join(this.root, "dispatch.lock"), () => this.startLocked(request)));
+        }
+        finally {
+            store.close();
+        }
     }
     startLocked(request) {
         const reservedDeadline = request.deadline === undefined ? undefined : Date.parse(request.deadline);
@@ -263,43 +270,51 @@ export class DesktopQueue {
                         if (ready?.model !== request.model || ready.sessionId !== sessionId || ready.attemptId !== task.attemptId)
                             continue;
                     }
-                    const claimed = locked(path.join(this.root, "queue-session-locks", `${key(sessionId)}.lock`), () => {
-                        const bindingFile = path.join(this.root, "queue-session-locks", `${key(sessionId)}.active.json`);
-                        const active = readJson(bindingFile);
-                        if (active) {
-                            const previous = new RunJournal(this.root, active.attemptId).snapshot();
-                            if (previous && !hasNativeStopEvidence(previous))
-                                throw new Error("The desktop conversation already has an unfinished queue task; report and verify native stop before claiming another");
-                        }
-                        return locked(path.join(journal.dir, "queue-write.lock"), () => {
-                            const current = journal.snapshot();
-                            if (current.status !== "queued" || journal.cancellationRequested())
-                                return undefined;
-                            if (this.isDue(current)) {
-                                this.expire(journal, current);
-                                return undefined;
+                    let claimed;
+                    try {
+                        claimed = store.operations.executeQueueAttempt(task.taskId, task.attemptId, { sessionId, model: request.model, workspace: request.workspace }, () => locked(path.join(this.root, "queue-session-locks", `${key(sessionId)}.lock`), () => {
+                            const bindingFile = path.join(this.root, "queue-session-locks", `${key(sessionId)}.active.json`);
+                            const active = readJson(bindingFile);
+                            if (active) {
+                                const previous = new RunJournal(this.root, active.attemptId).snapshot();
+                                if (previous && !hasNativeStopEvidence(previous))
+                                    throw new Error("The desktop conversation already has an unfinished queue task; report and verify native stop before claiming another");
                             }
-                            const leaseToken = crypto.randomBytes(24).toString("hex");
-                            writePrivateJson(path.join(journal.dir, "claim.json"), { sessionId, leaseHash: key(leaseToken), desktopPid: actor.desktopPid, claimedAt: new Date().toISOString() });
-                            writePrivateJson(bindingFile, { attemptId: task.attemptId });
-                            journal.save({ ...current, status: "working", pid: actor.desktopPid, runtimeSource: SOURCE, nativeIdleSince: undefined, waitingInput: false });
-                            journal.append("session", "The verified native WorkBuddy desktop conversation claimed this task.", { status: "working", sessionId, runtimeSource: SOURCE });
-                            const contextFile = path.join(journal.dir, "worker-context.json");
-                            const resultFile = path.join(journal.dir, "worker-result.json");
-                            writePrivateJson(contextFile, { sessionId, attemptId: task.attemptId, leaseToken });
-                            const quote = (value) => "'" + value.replaceAll("\\", "/").replaceAll("'", "'\\''") + "'";
-                            const helper = fileURLToPath(new URL("../dist/desktop-worker-cli.js", import.meta.url));
-                            const command = `${quote(process.execPath)} ${quote(helper)} finish --claim-file ${quote(contextFile)} --result-file ${quote(resultFile)}`;
-                            const prefix = `${quote(process.execPath)} ${quote(helper)}`;
-                            const progressFile = path.join(journal.dir, "worker-progress.json");
-                            const commandFile = path.join(journal.dir, "worker-command.json");
-                            const executionContract = `\n截止 ${current.deadline}；最迟 ${current.reportBy} 进入回报阶段，预留时间内不再开新验证；未完成就提交真实 blocked/failed 和部分成果，不自动延时。\n阶段变化或约60秒有意义进展时，Write ${progressFile}，JSON {"stage":"调查/实现/验证/回报","completed":"最近动作","running":"验证或等待事项","blocker":"阻塞或空串"}，执行：\n${prefix} update --claim-file ${quote(contextFile)} --progress-file ${quote(progressFile)}\n测试/浏览器样本使用有界执行器：Write ${commandFile}，JSON {"executable":"绝对可执行文件路径","args":["参数"],"cwd":"工作目录绝对路径","timeoutSeconds":60,"inputs":["被验证源码相对路径"]}，执行：\n${prefix} exec --claim-file ${quote(contextFile)} --command-file ${quote(commandFile)}\n执行器记录命令、退出码、源码哈希、日志路径并清理本命令进程树。124=超时，130=取消，125或cleanupConfirmed=false=监督/清理失败，不能算通过。不得按进程名杀其他进程。正常长任务无需修改文件来证明活动；等待用户输入时说明原因。\n验证当前改动的实际入口和相关异常边界；区分源码检查、Mock、本地浏览器、真实环境，报告实际命令/退出码/证据路径；修改后重跑受影响检查，不用旧结果。回报通常500字以内，详细日志留 artifacts。`;
-                            // Preserve the reporting contract inside the task itself, even
-                            // when a long conversation compacts the outer wake message.
-                            const prompt = `${request.prompt}${executionContract}\n\n[QUEUE_REPORT_CONTRACT]\n本轮最终交付必须通过队列回报，不能只在聊天中回复完成。完成或受阻时，用 Write 在以下文件写 UTF-8 JSON：\n${resultFile}\n格式：{"status":"completed|blocked|failed","text":"实际改动、验证结果及遗留问题","artifacts":["真实成果绝对路径"]}\n然后用自己的工具原样执行：\n${command}\n只回报实际结果。回报失败仅原命令原样重试一次，仍失败保留结果文件并结束，不排障网关或换 shell。回报成功后结束，不再次 claim。\n[/QUEUE_REPORT_CONTRACT]`;
-                            return { status: "task", taskId: task.taskId, attemptId: task.attemptId, sessionId, leaseToken, prompt, workspace: request.workspace, deadline: current.deadline, reporting: { resultFile, command } };
-                        });
-                    });
+                            return locked(path.join(journal.dir, "queue-write.lock"), () => {
+                                const current = journal.snapshot();
+                                if (current.status !== "queued" || journal.cancellationRequested())
+                                    return undefined;
+                                if (this.isDue(current)) {
+                                    this.expire(journal, current);
+                                    return undefined;
+                                }
+                                const leaseToken = crypto.randomBytes(24).toString("hex");
+                                writePrivateJson(path.join(journal.dir, "claim.json"), { sessionId, leaseHash: key(leaseToken), desktopPid: actor.desktopPid, claimedAt: new Date().toISOString() });
+                                writePrivateJson(bindingFile, { attemptId: task.attemptId });
+                                journal.save({ ...current, status: "working", pid: actor.desktopPid, runtimeSource: SOURCE, nativeIdleSince: undefined, waitingInput: false });
+                                journal.append("session", "The verified native WorkBuddy desktop conversation claimed this task.", { status: "working", sessionId, runtimeSource: SOURCE });
+                                const contextFile = path.join(journal.dir, "worker-context.json");
+                                const resultFile = path.join(journal.dir, "worker-result.json");
+                                writePrivateJson(contextFile, { sessionId, attemptId: task.attemptId, leaseToken });
+                                const quote = (value) => "'" + value.replaceAll("\\", "/").replaceAll("'", "'\\''") + "'";
+                                const helper = fileURLToPath(new URL("../dist/desktop-worker-cli.js", import.meta.url));
+                                const command = `${quote(process.execPath)} ${quote(helper)} finish --claim-file ${quote(contextFile)} --result-file ${quote(resultFile)}`;
+                                const prefix = `${quote(process.execPath)} ${quote(helper)}`;
+                                const progressFile = path.join(journal.dir, "worker-progress.json");
+                                const commandFile = path.join(journal.dir, "worker-command.json");
+                                const executionContract = `\n截止 ${current.deadline}；最迟 ${current.reportBy} 进入回报阶段，预留时间内不再开新验证；未完成就提交真实 blocked/failed 和部分成果，不自动延时。\n阶段变化或约60秒有意义进展时，Write ${progressFile}，JSON {"stage":"调查/实现/验证/回报","completed":"最近动作","running":"验证或等待事项","blocker":"阻塞或空串"}，执行：\n${prefix} update --claim-file ${quote(contextFile)} --progress-file ${quote(progressFile)}\n测试/浏览器样本使用有界执行器：Write ${commandFile}，JSON {"executable":"绝对可执行文件路径","args":["参数"],"cwd":"工作目录绝对路径","timeoutSeconds":60,"inputs":["被验证源码相对路径"]}，执行：\n${prefix} exec --claim-file ${quote(contextFile)} --command-file ${quote(commandFile)}\n执行器记录命令、退出码、源码哈希、日志路径并清理本命令进程树。124=超时，130=取消，125或cleanupConfirmed=false=监督/清理失败，不能算通过。不得按进程名杀其他进程。正常长任务无需修改文件来证明活动；等待用户输入时说明原因。\n验证当前改动的实际入口和相关异常边界；区分源码检查、Mock、本地浏览器、真实环境，报告实际命令/退出码/证据路径；修改后重跑受影响检查，不用旧结果。回报通常500字以内，详细日志留 artifacts。`;
+                                // Preserve the reporting contract inside the task itself, even
+                                // when a long conversation compacts the outer wake message.
+                                const prompt = `${request.prompt}${executionContract}\n\n[QUEUE_REPORT_CONTRACT]\n本轮最终交付必须通过队列回报，不能只在聊天中回复完成。完成或受阻时，用 Write 在以下文件写 UTF-8 JSON：\n${resultFile}\n格式：{"status":"completed|blocked|failed","text":"实际改动、验证结果及遗留问题","artifacts":["真实成果绝对路径"]}\n然后用自己的工具原样执行：\n${command}\n只回报实际结果。回报失败仅原命令原样重试一次，仍失败保留结果文件并结束，不排障网关或换 shell。回报成功后结束，不再次 claim。\n[/QUEUE_REPORT_CONTRACT]`;
+                                return { status: "task", taskId: task.taskId, attemptId: task.attemptId, sessionId, leaseToken, prompt, workspace: request.workspace, deadline: current.deadline, reporting: { resultFile, command } };
+                            });
+                        }));
+                    }
+                    catch (error) {
+                        if (error instanceof AdmissionError && ["OPERATION_REQUIRED", "OUTCOME_UNKNOWN", "CAPACITY_OCCUPIED", "STALE_ATTEMPT", "CANCELLED_TERMINAL", "MODEL_SELECTION_REQUIRED", "MODEL_BINDING_CHANGED"].includes(error.code))
+                            continue;
+                        throw error;
+                    }
                     if (claimed)
                         return claimed;
                 }

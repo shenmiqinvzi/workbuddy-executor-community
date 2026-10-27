@@ -36,12 +36,12 @@ node verify-snapshot.mjs
 
 ## 后续顺序
 
-2026-10-25：T3a 契约准入与 T3c 只读资源基础已实现，详见[T3a 边界](T3A_DISPATCH_ADMISSION.md)、[token 观测](T3C_QUOTA_OBSERVATION.md)和[积分缓存](T3C_CREDIT_BALANCE.md)。积分链路已完成本机真实只读联调；未部署、未取得真实桌面或 token 管理统计证据。T3b 共享任务适配与 Windows 桥接源码已实现，见[T3b 说明](T3B_DSH_ADAPTER.md)；真实会话执行仍待新桥接安装后验收。T4 及以下后续阶段仍待交付。总体目标见[协作设计](COLLABORATION_DESIGN.md)、[接口扩展](INTERFACE_CONTRACT.md#8-多-agent-扩展草案vnext-2待实现)与[验收场景](ACCEPTANCE.md)。
+2026-10-25：T3a 契约准入与 T3c 只读资源基础已实现，详见[T3a 边界](T3A_DISPATCH_ADMISSION.md)、[token 观测](T3C_QUOTA_OBSERVATION.md)和[积分缓存](T3C_CREDIT_BALANCE.md)。积分链路已完成本机真实只读联调；未部署、未取得真实桌面或 token 管理统计证据。T3b 共享任务适配与 Windows 桥接源码已实现，见[T3b 说明](T3B_DSH_ADAPTER.md)；真实会话执行仍待新桥接安装后验收。T4A 持久操作与共享容量源码已实现，见[T4A 边界](T4A_OPERATION_ADMISSION.md)；T4B 恢复与 T5–T7 仍待独立交付。总体目标见[协作设计](COLLABORATION_DESIGN.md)、[接口扩展](INTERFACE_CONTRACT.md#8-多-agent-扩展草案vnext-2待实现)与[验收场景](ACCEPTANCE.md)。
 
 1. T3a：初始契约接入真实派工，绑定 workspaceId、有效轮次预算、固定期限；新增协作方案和版本化模型政策。旧 vnext-1 摘要保留，vnext-2 由显式版本分派解析。
 2. T3b：共享 TaskStore 的 DSH 适配、精确会话发现、Windows named pipe、模型读回/请求层证据和取消/返工/独立验收的受控 SDK 已实现；宿主隔离加载与合成执行不替代真实模型验收。新增 HTTP 写入口、完整恢复和前端未交付；插件自动审查故障保留。
 3. T3c：token 估算 quota-1 与独立的 credit-balance-1 缓存汇总接口已实现；[积分链路](T3C_CREDIT_BALANCE.md)已用本机 DSH 四个既有来源完成真实只读联调，去重为两个区域池。真实 token 统计、完整 Key 路由、前端及单任务费用仍未验收；不把共享缓存称为独占/实时余额。
-4. T4：operationId、expectedRevision/AttemptId、方案消费、模型准备与跨入口持久意图/回执；WorkBuddy/DSH 共用容量 1。
+4. T4A：SQLite 操作准入、显式 send/rework 预期版本、元数据方案操作、模型准备前共同占用、跨连接/进程竞争与保守崩溃状态已实现。cancel/respond/reconcile/accept 尚未具备完整操作契约；原生回执恢复、人工恢复和界面留给 T4B。HTTP 继续只读；未安装或真实派工。
 5. T5：文件范围清单、越界变更检查与用户原有改动保护，两执行器采用相同准入与验收规则。
 6. T6：独立检查、不可变 reviewId、源码/证据/执行来源绑定与最终验收。
 7. T7：面板真实读取、手动/推荐/自动三种模式、可解释调度、完整请求归因后单任务计量、发布版本核验与真实桌面/异机验证。

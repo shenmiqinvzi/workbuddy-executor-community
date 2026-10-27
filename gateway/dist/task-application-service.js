@@ -18,16 +18,20 @@ export class TaskApplicationService {
     /** Trusted local setup and authorization seams; no HTTP write routes. */
     registerWorkspace(id, directory, displayName) { return this.coordinator.store.collaboration.registerWorkspace(id, directory, displayName); }
     createCollaborationPlan(contract, options) {
-        return this.coordinator.store.collaboration.createPlan(contract, this.coordinator.modelPolicy(), options);
+        const { operationId, ...parameters } = options;
+        return this.coordinator.store.operations.metadata("plan_create", contract?.taskId ?? "", { contract, ...parameters }, { operationId }, () => this.coordinator.store.collaboration.createPlan(contract, this.coordinator.modelPolicy(), parameters));
     }
-    authorizeCollaborationPlan(planId, revision, source) {
-        return this.coordinator.store.collaboration.authorizePlan(planId, revision, this.coordinator.modelPolicy(), source);
+    authorizeCollaborationPlan(planId, expectedPlanRevision, source, options = {}) {
+        const taskId = this.coordinator.store.collaboration.getPlan(planId).proposal.taskId;
+        return this.coordinator.store.operations.metadata("plan_authorize", taskId, { planId, expectedPlanRevision, source }, options, () => this.coordinator.store.collaboration.authorizePlan(planId, expectedPlanRevision, this.coordinator.modelPolicy(), source), { planId, expectedPlanRevision });
     }
     getCollaborationPlan(planId) { return this.coordinator.store.collaboration.getPlan(planId); }
     readQuotaResources(options = {}) {
         return this.coordinator.store.quotas.read(options);
     }
     readCreditBalances(connectionId) { return this.coordinator.store.creditBalances.read(connectionId); }
+    getOperation(operationId) { return this.coordinator.store.operations.get(operationId); }
+    listUnfinishedOperations() { return this.coordinator.store.operations.listUnfinished(); }
     /** Stored facts only: deliberately bypasses every synchronising coordinator method. */
     readProjection(taskId) {
         return readTaskProjection({ store: this.coordinator.store, runsDir: this.runsDir }, taskId);
@@ -187,12 +191,24 @@ export class TaskApplicationService {
         }
     }
     async send(input) {
+        const executor = input.contract?.execution?.executorId === "dsh" ? "dsh" : "workbuddy";
+        const prior = input.operationId ? this.coordinator.store.operations.get(input.operationId) : null;
+        if (prior && prior.executor !== executor)
+            throw new AdmissionError("OPERATION_CONFLICT", "The original operation selected a different executor.");
+        if (prior && executor === "dsh" && (input.constraints !== undefined || input.acceptanceCommands !== undefined || input.model !== undefined || input.timeoutSeconds !== undefined || input.sessionMode === "new"))
+            throw new AdmissionError("OPERATION_CONFLICT", "The original DSH operation did not include these overrides.");
+        if (prior && executor === "dsh" && !this.dsh) {
+            const { operationId, expectedRevision, expectedAttemptId } = input;
+            const parameters = { contract: input.contract, objective: input.objective, sessionId: input.sessionId, taskId: input.taskId, workspace: input.workspace };
+            const taskId = input.taskId ?? input.contract.taskId;
+            return this.coordinator.store.operations.run("send", taskId, "dsh", parameters, { operationId, expectedRevision, expectedAttemptId }, prior.binding, async () => { throw new AdmissionError("EXECUTOR_UNAVAILABLE", "The original DSH adapter is unavailable."); });
+        }
         if (input.contract?.execution?.executorId === "dsh") {
             if (!this.dsh)
                 throw new AdmissionError("EXECUTOR_UNAVAILABLE", "The original DSH adapter is unavailable; WorkBuddy cannot take over its task");
             if (!input.sessionId || input.constraints !== undefined || input.acceptanceCommands !== undefined || input.model !== undefined || input.timeoutSeconds !== undefined || input.sessionMode === "new")
                 throw new AdmissionError("TASK_CONFLICT", "DSH requires an explicit original session and immutable contract terms");
-            return this.dsh.send({ contract: input.contract, objective: input.objective, sessionId: input.sessionId, taskId: input.taskId, workspace: input.workspace });
+            return this.dsh.send({ contract: input.contract, objective: input.objective, sessionId: input.sessionId, taskId: input.taskId, workspace: input.workspace, operationId: input.operationId, expectedRevision: input.expectedRevision, expectedAttemptId: input.expectedAttemptId });
         }
         return this.coordinator.send(input);
     }
@@ -203,7 +219,14 @@ export class TaskApplicationService {
             throw new Error("The original DSH adapter is unavailable; WorkBuddy cannot take over its task");
         return this.dsh;
     }
-    continue(input) { return this.dshFor(input.taskId)?.continue(input) ?? this.coordinator.continue(input); }
+    continue(input) {
+        const prior = input.operationId ? this.coordinator.store.operations.get(input.operationId) : null;
+        if (prior?.executor === "dsh" && !this.dsh) {
+            const { operationId, expectedRevision, expectedAttemptId, ...parameters } = input;
+            return this.coordinator.store.operations.run("rework", input.taskId, "dsh", parameters, { operationId, expectedRevision, expectedAttemptId }, prior.binding, async () => { throw new AdmissionError("EXECUTOR_UNAVAILABLE", "The original DSH adapter is unavailable."); });
+        }
+        return this.dshFor(input.taskId)?.continue(input) ?? this.coordinator.continue(input);
+    }
     accept(...args) { return this.dshFor(args[0])?.accept(...args) ?? this.coordinator.accept(...args); }
     cancel(...args) { return this.dshFor(args[0])?.cancel(...args) ?? this.coordinator.cancel(...args); }
     respond(...args) { if (this.dshFor(args[0]))

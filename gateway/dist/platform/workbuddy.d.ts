@@ -49,15 +49,7 @@ export declare class WorkBuddyProvider implements AgentProvider {
         sessionId?: string;
         model?: string;
         title?: string;
-    }): Promise<{
-        workspace: string;
-        sessionId: string;
-        next: string;
-        created: boolean;
-        worker: import("../workspace-workers.js").WorkspaceWorker;
-        model?: string;
-        ok: boolean;
-    }>;
+    }): Promise<void>;
     health(): Promise<{
         state: string;
         message: string;

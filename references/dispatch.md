@@ -14,19 +14,15 @@
 ## 新任务
 
 1. `workbuddy_list_models({"detail":"full"})`：展示实际可用模型、精确 ID 与已知费率，让用户选择本次模型。费用未知明确说明，用户了解后仍可确认；只有主动设置免费限定时才要求精确零费率。以下 `用户选定的精确模型ID` 均为占位符，须替换为实际选择，不能原样执行。
-2. `workbuddy_ensure_workspace`：
-
-```json
-{"workspace":"E:/example/project","workerKey":"submit-guard-001","model":"用户选定的精确模型ID","detail":"brief"}
-```
-
-3. 取真实返回的 workspace/sessionId，调用 `workbuddy_send_task`。下例的 sessionId 只是说明变量，不能原样执行：
+2. 已选择并确认后，直接调用 `workbuddy_send_task`；原生会话准备在共享容量准入之后进行。有真实既有 sessionId 时可显式传入，不能编造。
 
 ```json
 {
+  "operationId":"submit-guard-001-send",
+  "expectedRevision":null,
+  "expectedAttemptId":null,
   "taskId":"submit-guard-001",
   "workspace":"E:/example/project",
-  "sessionId":"ensure_workspace 返回的真实 sessionId",
   "model":"用户选定的精确模型ID",
   "objective":"修复提交按钮的重复提交问题：请求期间连续点击只发一次请求，成功正常展示，失败后允许重试。自行定位提交逻辑并完成相关验证。",
   "constraints":["只修改提交逻辑与相关测试","保留用户已有改动，不调整接口契约","改变功能含义的歧义以 blocked 回报"],
@@ -46,6 +42,9 @@ constraints 和 acceptanceCommands 会进入任务说明；后者不会由网关
 
 ```json
 {
+  "operationId":"submit-guard-001-send",
+  "expectedRevision":null,
+  "expectedAttemptId":null,
   "taskId":"submit-guard-001",
   "note":"实际检查后的验收结论",
   "evidence":["填入实际检查、命令结果或被检查源码与预期的对应关系"],
@@ -59,7 +58,9 @@ constraints 和 acceptanceCommands 会进入任务说明；后者不会由网关
 需要返工时先确认原生停止，再调用 `workbuddy_continue_task`：
 
 ```json
-{"taskId":"submit-guard-001","feedback":"填入实际发现的问题及改好标准","model":"用户选定的精确模型ID","detail":"brief"}
+{"operationId":"submit-guard-001-rework-1","expectedRevision":"当前任务返回的实际 revision","expectedAttemptId":"当前实际 attemptId","taskId":"submit-guard-001","feedback":"填入实际发现的问题及改好标准","model":"用户选定的精确模型ID","detail":"brief"}
 ```
+
+OUTCOME_UNKNOWN 保留原操作与名额，调用 `workbuddy_get_operation` 查询原 operationId，不自动重发。示例中的版本占位符必须替换为任务实际值。
 
 返工后重复监督与独立验收；不重发原任务。取消走 cancel_task，并继续确认 remoteStopped。异常处理见 [连接与恢复](setup.md)。

@@ -6,7 +6,8 @@ import test from "node:test";
 import { loadConfig, type Config } from "../src/config.js";
 import { TaskCoordinator } from "../src/coordinator.js";
 import { TaskStore, type StoredTask } from "../src/task-store.js";
-import { WorkBuddyClient, type LocalMessage } from "../src/workbuddy-client.js";
+import type { LocalMessage } from "../src/workbuddy-client.js";
+import { SelectedModelClient as WorkBuddyClient } from "./support/selected-model-client.js";
 import { RunJournal, type RunSnapshot } from "../src/run-journal.js";
 
 class FakeClient extends WorkBuddyClient {
@@ -57,12 +58,12 @@ function event(task: StoredTask, seq: number, text: string, metadata: Record<str
   return { message_id: `${task.attemptId}:${seq}`, role: metadata.type === "result" ? "assistant" : "system", content: [text], metadata: { attemptId: task.attemptId, eventSeq: seq, sessionId: "fixed-session", runtimeSource: "desktop_interactive", ...metadata } };
 }
 function finish(client: FakeClient, task: StoredTask, text = "TASK_STATUS: completed\nARTIFACTS:\n- output.mp4\nCOMMANDS_RUN:\n- render video\nTEST_RESULT: render succeeded") {
-  client.snapshots.set(task.attemptId!, { attemptId: task.attemptId!, taskId: task.taskId, status: "needs_review", sessionId: "fixed-session", updatedAt: new Date().toISOString() });
+  client.snapshots.set(task.attemptId!, { attemptId: task.attemptId!, taskId: task.taskId, status: "needs_review", stopReason: "end_turn", sessionId: "fixed-session", updatedAt: new Date().toISOString() });
   client.batches.push([event(task, 2, text, { type: "result", status: "needs_review", artifacts: ["output.mp4"] })]);
 }
 
 async function send(coordinator: TaskCoordinator, workspace: string, taskId = "video") {
-  return coordinator.send({ taskId, objective: "make a video", workspace, sessionId: "fixed-session", constraints: ["keep the approved script", "use WorkBuddy tools"], acceptanceCommands: ["inspect the exported media"] });
+  return coordinator.send({ model: "synthetic-user-choice", taskId, objective: "make a video", workspace, sessionId: "fixed-session", constraints: ["keep the approved script", "use WorkBuddy tools"], acceptanceCommands: ["inspect the exported media"] });
 }
 
 test("idempotent parallel sends reserve one task and dispatch exactly one desktop prompt", async (t) => {
@@ -76,7 +77,7 @@ test("idempotent parallel sends reserve one task and dispatch exactly one deskto
   assert.equal(duplicate.created, false);
   assert.equal(client.sent.length, 1);
   assert.equal(store.get("video")?.objective, "make a video");
-  await assert.rejects(() => coordinator.send({ taskId: "video", objective: "different duplicate", workspace: dir }), /Task ID conflicts/);
+  await assert.rejects(() => coordinator.send({ model: "synthetic-user-choice", taskId: "video", objective: "different duplicate", workspace: dir }), /Task ID conflicts/);
   assert.equal(client.sent.length, 1);
 });
 
@@ -99,8 +100,8 @@ test("initial submission identity survives reconnects and rejects changed routin
 test("parallel conflicting submissions reserve one contract and never dispatch the conflicting prompt", async t => {
   const { dir, client, coordinator, store } = fixture(t);
   const results = await Promise.allSettled([
-    coordinator.send({ taskId: "conflict", workspace: dir, sessionId: "fixed-session", objective: "first" }),
-    coordinator.send({ taskId: "conflict", workspace: dir, sessionId: "fixed-session", objective: "second" }),
+    coordinator.send({ model: "synthetic-user-choice", taskId: "conflict", workspace: dir, sessionId: "fixed-session", objective: "first" }),
+    coordinator.send({ model: "synthetic-user-choice", taskId: "conflict", workspace: dir, sessionId: "fixed-session", objective: "second" }),
   ]);
   assert.equal(results.filter(r => r.status === "fulfilled").length, 1);
   assert.equal(results.filter(r => r.status === "rejected").length, 1);
@@ -111,8 +112,8 @@ test("parallel conflicting submissions reserve one contract and never dispatch t
 test("legacy submissions remain recoverable but reject observable objective conflicts", async t => {
   const { dir, client, coordinator, store } = fixture(t);
   store.createOrGet({ taskId: "legacy", messageId: "old", objective: "original", workspace: dir, state: "blocked" });
-  assert.equal((await coordinator.send({ taskId: "legacy", objective: "original", workspace: dir })).created, false);
-  await assert.rejects(() => coordinator.send({ taskId: "legacy", objective: "changed" }), /Task ID conflicts/);
+  assert.equal((await coordinator.send({ model: "synthetic-user-choice", taskId: "legacy", objective: "original", workspace: dir })).created, false);
+  await assert.rejects(() => coordinator.send({ model: "synthetic-user-choice", taskId: "legacy", objective: "changed" }), /Task ID conflicts/);
   assert.equal(client.sent.length, 0);
 });
 
@@ -308,7 +309,7 @@ test("one sync covering waiting input, resume and the report keeps per-fact even
     event(task, 3, "Native execution resumed.", { type: "status", status: "working" }),
     event(task, 4, "TASK_STATUS: completed\nUnique report text", { type: "result", status: "needs_review", artifacts: ["output.mp4"] }),
   ]);
-  client.snapshots.set(task.attemptId!, { attemptId: task.attemptId!, taskId: "video", status: "needs_review", sessionId: "fixed-session", updatedAt: new Date().toISOString() });
+  client.snapshots.set(task.attemptId!, { attemptId: task.attemptId!, taskId: "video", status: "needs_review", stopReason: "end_turn", sessionId: "fixed-session", updatedAt: new Date().toISOString() });
   const updated = await coordinator.sync("video");
   assert.equal(updated?.state, "needs_review");
   const events = store.listTaskEvents("video", { limit: 200 }).events;

@@ -129,6 +129,7 @@ cancel_requested 表示已请求停止，未确认停止前继续占用平台并
 
 - MCP：`agent_hub_models({sessionId?})` 查询当前可用模型；`agent_hub_workspaces({})` 查看绑定；`agent_hub_bind_workspace({workspace,sessionId?,model?,title?})` 创建、复用或切换同目录真实会话与默认模型。
 - HTTP：`GET /v1/providers/workbuddy/models`（可选 sessionId 查询参数）；`GET /v1/providers/workbuddy/workspaces`；`POST /v1/providers/workbuddy/workspaces` 接受上述绑定 JSON。
+- T4A 起独立 bind 原生准备返回 OPERATION_REQUIRED；submit/rework 经 TaskCoordinator 的共享 SQLite 准入，Hub 本地名额不能绕过尚未关闭的 TaskStore 工作流。旧 Hub 状态不是共享任务真源。
 - SDK：`hub.models(sessionId?)`、`hub.workspaces()`、`hub.bindWorkspace({workspace,sessionId?,model?,title?})`；CLI：`agent-hub models [sessionId]`、`agent-hub workspaces`、`agent-hub bind @binding.json`。
 - submit 可额外传 model、sessionId。指定 sessionId 时必须同时提供其真实 workspace；模型 ID 从实时列表选择，不用展示名猜测。包括已在 WorkBuddy 配置的自定义模型，不新增提供商或凭据。
 - `hub.rework(id, feedback, model?)` / `agent_hub_rework` 的可选 model 指定下一轮模型；省略沿用任务之前指定值。返工保持原会话。

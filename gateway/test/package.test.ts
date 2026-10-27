@@ -80,7 +80,7 @@ async function fixture() {
   }
   for (const name of ["bin/agent-hub", "bin/agent-hub-mcp", "docs/AGENT_HUB.md", "docs/AGENT_HUB_DESIGN.md"]) files[name] = "fixture\n";
   files["data/platform/api-token"] = "private platform token fixture\n";
-  for(const name of ["WINDOWS_ENV.example","RESTORE.md","scripts/zip.mjs","scripts/verify-release.mjs","scripts/setup.mjs","scripts/doctor.mjs","scripts/deployment-check.mjs","scripts/workbuddy-inspect.mjs","bin/workbuddy-gateway.cmd","docs/INSTALL_WINDOWS.md","docs/DEPLOYMENT_ACCEPTANCE.md","test/support/typescript-loader.mjs","test/support/read-zip.mjs",
+  for(const name of ["WINDOWS_ENV.example","RESTORE.md","scripts/zip.mjs","scripts/verify-release.mjs","scripts/setup.mjs","scripts/doctor.mjs","scripts/deployment-check.mjs","scripts/workbuddy-inspect.mjs","bin/workbuddy-gateway.cmd","docs/INSTALL_WINDOWS.md","docs/DEPLOYMENT_ACCEPTANCE.md","test/support/typescript-loader.mjs","test/support/read-zip.mjs","test/support/selected-model-client.ts",
     ...["deployment-paths","deployment-safety","deployment-acceptance","setup","doctor","inspect-task"].flatMap(name=>[`src/${name}.ts`,`dist/${name}.js`])])files[name]="fixture\n";
   files["dist/platform/client.d.ts"] = "export {};\n";
   for (const name of ["index.mjs", "adapter.mjs", "events.mjs", "transport.mjs", "private-path.mjs", "private-path.d.mts", "package.json", "cordis.patch.yml", "README.md", "test/adapter.test.mjs", "test/events.test.mjs", "test/transport.test.mjs"]) files[`deepseek-plugin/${name}`] = "fixture\n";

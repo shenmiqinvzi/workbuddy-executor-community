@@ -1,3 +1,4 @@
+import { AdmissionError } from "./collaboration.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { NativeDesktopRpcTrigger } from "./native-desktop-trigger.js";
@@ -18,6 +19,16 @@ export function workerRegistration(config) {
 export async function ensureWorkspace(config, input) {
     if (config.backend !== "desktop-queue")
         throw new Error("Automatic native workspaces require desktop-queue");
+    const target = { taskId: input.admissionTaskId ?? "", workspace: input.workspace, sessionId: input.sessionId ?? null, model: input.model ?? "", workerKey: input.workerKey ?? null, title: input.title ?? null };
+    const gate = new TaskStore(config.dbFile);
+    try {
+        if (!input.admissionTaskId)
+            throw new AdmissionError("OPERATION_REQUIRED", "Use a durable authorized task operation for native workspace preparation.");
+        gate.operations.preparationBoundary(input.admissionOperationId, target, undefined, true);
+    }
+    finally {
+        gate.close();
+    }
     if (process.env.WORKBUDDY_REQUIRED_FREE_MODEL && !input.model)
         input = { ...input, model: process.env.WORKBUDDY_REQUIRED_FREE_MODEL };
     const registration = workerRegistration(config);
@@ -28,11 +39,21 @@ export async function ensureWorkspace(config, input) {
         if (registration)
             workers.seed(registration);
         const result = await workers.ensure(input, {
-            createWorker: (...args) => trigger.createWorker(...args),
+            createWorker: (...args) => {
+                const gate = new TaskStore(bound.dbFile);
+                try {
+                    gate.operations.preparationBoundary(input.admissionOperationId, target, args[1]);
+                }
+                finally {
+                    gate.close();
+                }
+                return trigger.createWorker(...args);
+            },
             async setModel(sessionId, model) {
                 // Configuration must not change the model underneath queued or unclosed attempts.
                 const store = new TaskStore(bound.dbFile);
                 try {
+                    store.operations.preparationBoundary(input.admissionOperationId, target, sessionId);
                     for (let offset = 0;; offset += 500) {
                         const tasks = store.listTasks({ limit: 500, offset });
                         for (const task of tasks) {

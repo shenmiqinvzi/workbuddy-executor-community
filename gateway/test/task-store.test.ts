@@ -174,13 +174,15 @@ test("protects Codex terminal decisions and atomically checks acceptance state",
   assert.equal(store.updateAttempt("terminal", "first", { state: "accepted", evidence: ["verified artifact"] }, { expectedStates: ["needs_review"] }).applied, true);
   assert.equal(store.updateAttempt("terminal", "first", { state: "needs_review", evidence: [] }).applied, false);
   assert.deepEqual(store.get("terminal")?.evidence, ["verified artifact"]);
-  store.beginAttempt("terminal", { attemptId: "second", messageId: "second-run", acceptanceCommands: ["original check", "extra check"] });
-  assert.deepEqual(store.get("terminal")?.acceptanceCommands, ["original check", "extra check"]);
-  assert.throws(() => store.beginAttempt("terminal", { attemptId: "third", messageId: "third-run", acceptanceCommands: ["rejected parallel requirement"] }), /active attempt/);
-  assert.deepEqual(store.get("terminal")?.acceptanceCommands, ["original check", "extra check"]);
-  store.update("terminal", { state: "cancelled" });
-  assert.equal(store.updateAttempt("terminal", "second", { state: "needs_review" }).applied, false);
-  assert.equal(store.get("terminal")?.state, "cancelled");
+  assert.throws(() => store.beginAttempt("terminal", { attemptId: "second", messageId: "second-run" }), { code: "CANCELLED_TERMINAL" });
+  store.createOrGet({ taskId: "continuable", messageId: "pending", objective: "Open rework fixture", state: "needs_review", acceptanceCommands: ["original check"] });
+  store.beginAttempt("continuable", { attemptId: "second", messageId: "second-run", acceptanceCommands: ["original check", "extra check"] });
+  assert.deepEqual(store.get("continuable")?.acceptanceCommands, ["original check", "extra check"]);
+  assert.throws(() => store.beginAttempt("continuable", { attemptId: "third", messageId: "third-run", acceptanceCommands: ["rejected parallel requirement"] }), /active attempt/);
+  assert.deepEqual(store.get("continuable")?.acceptanceCommands, ["original check", "extra check"]);
+  store.update("continuable", { state: "cancelled" });
+  assert.equal(store.updateAttempt("continuable", "second", { state: "needs_review" }).applied, false);
+  assert.equal(store.get("continuable")?.state, "cancelled");
 });
 
 test("every creation path seeds the revision and task_received in one transaction, idempotent replays never rewrite (T2-R5)", () => {

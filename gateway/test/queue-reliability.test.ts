@@ -9,7 +9,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { loadConfig, type Config } from '../src/config.js';
 import { DesktopQueue } from '../src/desktop-queue.js';
 import { TaskStore } from '../src/task-store.js';
-import { WorkBuddyClient } from '../src/workbuddy-client.js';
+import { SelectedModelClient as WorkBuddyClient } from "./support/selected-model-client.js";
 import { TaskCoordinator } from '../src/coordinator.js';
 import { RunJournal, hasNativeStopEvidence } from '../src/run-journal.js';
 import { WorkspaceWorkers } from '../src/workspace-workers.js';
@@ -30,7 +30,7 @@ function fixture(t: { after: (fn: () => void) => void }) {
 
 async function claimTask(t: { after: (fn: () => void) => void }) {
   const f = fixture(t);
-  await f.coordinator.send({ taskId: 'task', objective: 'reliability fixture', workspace: f.dir, sessionId: 'session', timeoutSeconds: 120 });
+  await f.coordinator.send({ model: "synthetic-user-choice", taskId: 'task', objective: 'reliability fixture', workspace: f.dir, sessionId: 'session', timeoutSeconds: 120 });
   const claim = await f.queue.claim('session', 0);
   if (claim.status !== 'task') throw Error('Expected claim');
   return { ...f, claim, journal: new RunJournal(f.queue.root, claim.attemptId) };
@@ -149,7 +149,7 @@ test('opening Windows task and routing databases preserves their existing permis
 
 test('an unclaimed task blocks at its startup deadline instead of waiting for the whole task budget', async t => {
   const f = fixture(t);
-  await f.coordinator.send({ taskId: 'task', objective: 'not claimed', workspace: f.dir, sessionId: 'session', timeoutSeconds: 1800 });
+  await f.coordinator.send({ model: "synthetic-user-choice", taskId: 'task', objective: 'not claimed', workspace: f.dir, sessionId: 'session', timeoutSeconds: 1800 });
   const task = f.store.get('task')!;
   const journal = new RunJournal(f.queue.root, task.attemptId!);
   journal.save({ ...journal.snapshot()!, claimDeadline: new Date(Date.now() - 1).toISOString() });

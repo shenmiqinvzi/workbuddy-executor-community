@@ -7,7 +7,7 @@ import { loadConfig } from "../src/config.js";
 import { TaskCoordinator, runEvidenceDigestOf } from "../src/coordinator.js";
 import { TaskApplicationService } from "../src/task-application-service.js";
 import { TaskStore } from "../src/task-store.js";
-import { WorkBuddyClient } from "../src/workbuddy-client.js";
+import { SelectedModelClient as WorkBuddyClient } from "./support/selected-model-client.js";
 import { reportDigest } from "../src/report-authentication.js";
 import type { RunSnapshot } from "../src/run-journal.js";
 import type { Config } from "../src/config.js";
@@ -34,7 +34,7 @@ test("two service instances reuse one task identity and dispatch only once", asy
   const client = new SnapshotClient(config);
   const first = new TaskApplicationService(new TaskCoordinator(config, firstStore, client), 3, config.runsDir);
   const second = new TaskApplicationService(new TaskCoordinator(config, secondStore, client), 3, config.runsDir);
-  const input = { taskId: "same-task", objective: "fix a file", workspace: dir, sessionId: "session-one" };
+  const input = { model: "synthetic-user-choice", taskId: "same-task", objective: "fix a file", workspace: dir, sessionId: "session-one" };
   const results = await Promise.all([first.send(input), second.send(input)]);
   assert.equal(results.filter(result => result && result.created).length, 1);
   assert.equal(client.sent, 1);
@@ -630,7 +630,7 @@ function lifecycleFixture(t: { after: (fn: () => void) => void }) {
 
 test("the sync lifecycle records contract events in order, folds native stop proof into the revision and keeps cancelled tasks mirroring evidence (T2-R1/R2/R3)", async t => {
   const f = lifecycleFixture(t);
-  const sent = await f.coordinator.send({ taskId: "lifecycle", objective: "drive the full lifecycle", workspace: f.dir, sessionId: "session-stage-1", constraints: ["keep scope"], acceptanceCommands: ["run check"] });
+  const sent = await f.coordinator.send({ model: "synthetic-user-choice", taskId: "lifecycle", objective: "drive the full lifecycle", workspace: f.dir, sessionId: "session-stage-1", constraints: ["keep scope"], acceptanceCommands: ["run check"] });
   assert.ok(sent, "dispatch must return a result");
   assert.equal(sent.created, true);
   const taskId = "lifecycle";
@@ -736,7 +736,7 @@ test("the sync lifecycle records contract events in order, folds native stop pro
 
 test("a cancelled task keeps mirroring same-attempt evidence and stop proof without re-dispatch (T2-R3)", async t => {
   const f = lifecycleFixture(t);
-  const sent = await f.coordinator.send({ taskId: "cancelled-flow", objective: "cancel then prove evidence", workspace: f.dir, sessionId: "session-stage-1" });
+  const sent = await f.coordinator.send({ model: "synthetic-user-choice", taskId: "cancelled-flow", objective: "cancel then prove evidence", workspace: f.dir, sessionId: "session-stage-1" });
   assert.ok(sent, "dispatch must return a result");
   assert.equal(sent.created, true);
   const taskId = "cancelled-flow";
