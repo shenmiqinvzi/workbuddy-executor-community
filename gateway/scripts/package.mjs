@@ -18,6 +18,7 @@ REQUIRED_FILES.push("scripts/bounded-job.ps1", "bin/agent-hub", "bin/agent-hub-m
   ...["contracts", "store", "workbuddy", "engine", "http", "client", "ui", "cli", "mcp"].flatMap(name => [`src/platform/${name}.ts`, `dist/platform/${name}.js`, `dist/platform/${name}.d.ts`]));
 REQUIRED_FILES.push("scripts/dsh-host-check.mjs", ...["dsh-bindings", "dsh-client", "dsh-coordinator", "dsh-runtime", "dsh-rate-verifier", "dsh-inspect"].flatMap(name => [`src/${name}.ts`, `dist/${name}.js`, `dist/${name}.d.ts`]));
 REQUIRED_FILES.push("bin/workbuddy-recovery.cmd", "docs/OPERATION_RECOVERY.md", ...["operation-recovery", "recovery-console", "recovery-cli", "run-evidence"].flatMap(name => [`src/${name}.ts`, `dist/${name}.js`]));
+REQUIRED_FILES.push("src/workspace-protection.ts", "dist/workspace-protection.js", "dist/workspace-protection.d.ts");
 const DEPLOYMENT_FILES = ["WINDOWS_ENV.example","RESTORE.md","scripts/zip.mjs","scripts/verify-release.mjs","scripts/setup.mjs","scripts/doctor.mjs","scripts/deployment-check.mjs","scripts/workbuddy-inspect.mjs","bin/workbuddy-gateway.cmd","docs/INSTALL_WINDOWS.md","docs/DEPLOYMENT_ACCEPTANCE.md","test/support/typescript-loader.mjs","test/support/read-zip.mjs","test/support/selected-model-client.ts",
   ...["deployment-paths","deployment-safety","deployment-acceptance","setup","doctor","inspect-task"].flatMap(name=>[`src/${name}.ts`,`dist/${name}.js`])];
 REQUIRED_FILES.push(...DEPLOYMENT_FILES);

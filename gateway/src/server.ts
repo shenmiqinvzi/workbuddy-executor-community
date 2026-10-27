@@ -73,6 +73,7 @@ server.tool("workbuddy_send_task", "Reserve and dispatch a task to a verified Wo
   sessionMode: z.enum(["existing", "new"]).optional().default("existing").describe("Queue uses project routing with existing; pass workspace for automatic native creation or selection. ACP new is version-dependent."),
   model: z.string().trim().min(1).optional().describe("Exact model ID from workbuddy_list_models. The user must choose this exact model before dispatch; queue applies and verifies it at the next native wake."),
   constraints: z.array(z.string()).max(30).optional(), acceptanceCommands: z.array(z.string()).max(30).optional(), timeoutSeconds: timeout,
+  scope: z.object({ allowedChanges: z.array(z.string()).max(100), permittedMetadata: z.array(z.string()).max(100) }).strict().optional().describe("Immutable exact-file/directory/** write scope for a non-contract task. Missing scope grants read-only access. Existing user changes remain protected; cannot be combined with contract."),
   contract: z.unknown().optional().describe("Optional immutable vnext-1/vnext-2 contract. Requires a registered workspace; vnext-2 also requires a plan authorized through the trusted application service. Do not combine with constraints/check overrides."),
   detail,
 }, ({ detail, ...input }) => guard(() => {

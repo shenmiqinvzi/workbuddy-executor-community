@@ -158,6 +158,20 @@ function scopeList(value, field) {
     // That keeps equal declarations with different order on one digest.
     return { value: [...new Set(items)].sort() };
 }
+/** Additive scope parsing for non-contract callers; historical contract digests are unchanged. */
+export function validateTaskScope(value) {
+    if (!isObject(value))
+        return { ok: false, rejection: { code: "invalid_type", field: "scope", message: "scope must be an object." } };
+    const unknown = checkUnknownFields(value, SCOPE_FIELDS, "scope");
+    if (unknown)
+        return { ok: false, rejection: unknown };
+    const allowed = scopeList(value.allowedChanges, "scope.allowedChanges"), metadata = scopeList(value.permittedMetadata, "scope.permittedMetadata");
+    if ("rejection" in allowed)
+        return { ok: false, rejection: allowed.rejection };
+    if ("rejection" in metadata)
+        return { ok: false, rejection: metadata.rejection };
+    return { ok: true, scope: { allowedChanges: allowed.value, permittedMetadata: metadata.value } };
+}
 function requiredChecks(value) {
     if (!Array.isArray(value))
         return { rejection: { code: "invalid_type", field: "requiredChecks", message: "requiredChecks must be an array." } };

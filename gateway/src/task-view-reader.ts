@@ -42,6 +42,7 @@ import {
 import { runtimeVersion } from "./runtime-version.js";
 import { REPORT_AUTHENTICATION_FORMAT } from "./report-authentication.js";
 import { runEvidenceDigestOf } from "./coordinator.js";
+import type { WorkspaceScopeView } from "./workspace-protection.js";
 
 /**
  * The store surface the reader needs.
@@ -51,6 +52,7 @@ import { runEvidenceDigestOf } from "./coordinator.js";
  * without opening a database. Only these two reads are ever performed.
  */
 export interface TaskProjectionStore {
+  workspaceProtection?: { readView(taskId: string, attemptId?: string): WorkspaceScopeView };
   get(taskId: string): StoredTask | undefined;
   listAttempts(taskId: string): StoredAttempt[];
   /**
@@ -113,6 +115,7 @@ export interface TaskProjectionSuccess {
    * has happened.
    */
   contract: PersistedTaskContract | null;
+  workspaceScope?: WorkspaceScopeView;
   projection: TaskViewAdapterResult;
 }
 
@@ -376,6 +379,9 @@ export function readTaskProjection(sources: TaskProjectionSources, taskId: strin
   if (!task) {
     return failure("task_not_found", taskId, null, "taskId", "No stored task has this id.");
   }
+  let workspaceScope: WorkspaceScopeView | undefined;
+  try { workspaceScope = sources.store.workspaceProtection?.readView(taskId, task.attemptId); }
+  catch { return failure("store_unavailable", taskId, task.attemptId ?? null, "store.workspaceProtection", "Reading stored scope facts failed; no workspace scan was performed."); }
 
   // The contract is read once, before any attempt work. Its absence is a
   // normal state for an older task; a read failure or a record that no longer
@@ -425,8 +431,12 @@ export function readTaskProjection(sources: TaskProjectionSources, taskId: strin
   // Without a current attempt there is no round to read files for. The adapter
   // records the gap, and no directory is touched.
   if (!attemptId || !runDir) {
+    try {
+      const after = sources.store.get(taskId);
+      if (!after || after.attemptId !== task.attemptId || after.revision !== task.revision) return failure("read_conflict", taskId, attemptId, "task.revision", "The task changed while its stored facts were read.");
+    } catch { return failure("store_unavailable", taskId, attemptId, "store.get", "Re-reading stored task facts failed."); }
     const projection = adaptTaskViewFacts({ task, attempt: null, snapshot: null, cancellation: null });
-    return { ok: true, readOnly: true, snapshotOnly: true, task: identity, row: task, contract, projection };
+    return { ok: true, readOnly: true, snapshotOnly: true, task: identity, row: task, contract, projection, ...(workspaceScope ? { workspaceScope } : {}) };
   }
 
   const state = readRunFile<RunSnapshot>(path.join(runDir, "state.json"), "state", snapshotShapeProblem);
@@ -483,7 +493,7 @@ export function readTaskProjection(sources: TaskProjectionSources, taskId: strin
   // concurrent acceptance can change state/reviewedAt between the two reads,
   // and returning `after` here would mix the projected (old) facts with the
   // newer row values into one contradictory answer.
-  return { ok: true, readOnly: true, snapshotOnly: true, task: identity, row: task, contract, projection };
+  return { ok: true, readOnly: true, snapshotOnly: true, task: identity, row: task, contract, projection, ...(workspaceScope ? { workspaceScope } : {}) };
 }
 
 function jsonResult(value: unknown) {

@@ -10,6 +10,7 @@ import { readDesktopSession } from "./desktop-runtime.js";
 import { sameExecutable, windowsProcessTable } from "./native-process.js";
 import { DurableRuns, RunJournal, runsDirectory, writePrivateJson, hasNativeStopEvidence, type RunRequest, type RunSnapshot } from "./run-journal.js";
 import { TaskStore } from "./task-store.js";
+import { workspaceRelative } from "./workspace-protection.js";
 import type { LocalMessage } from "./workbuddy-client.js";
 import type { NativeObservation, WakeIntent } from "./persistent-service.js";
 import { diagnoseNativeFailure } from "./native-turn-failure.js";
@@ -172,8 +173,9 @@ export class DesktopQueue {
     });
   }
   start(request: RunRequest): void {
+    if (request.deadline !== undefined && (!Number.isFinite(Date.parse(request.deadline)) || Date.parse(request.deadline) <= Date.now())) throw new Error("The reserved contract deadline is invalid or already expired; no queue request was created");
     const store = new TaskStore(this.config.dbFile);
-    try { store.operations.enqueue(request.taskId, request.attemptId, request, () => locked(path.join(this.root, "dispatch.lock"), () => this.startLocked(request))); }
+    try { store.operations.enqueue(request.taskId, request.attemptId, request, () => locked(path.join(this.root, "dispatch.lock"), () => this.startLocked(request)), () => store.workspaceProtection.verifyDispatch(request.taskId, request.attemptId)); }
     finally { store.close(); }
   }
   private startLocked(request: RunRequest): void {
@@ -242,6 +244,7 @@ export class DesktopQueue {
               const current = journal.snapshot()!;
               if (current.status !== "queued" || journal.cancellationRequested()) return undefined;
               if (this.isDue(current)) { this.expire(journal, current); return undefined; }
+              store.workspaceProtection.verifyDispatch(task.taskId, task.attemptId!);
               const leaseToken = crypto.randomBytes(24).toString("hex");
               writePrivateJson(path.join(journal.dir, "claim.json"), { sessionId, leaseHash: key(leaseToken), desktopPid: actor.desktopPid, claimedAt: new Date().toISOString() } satisfies Claim);
               writePrivateJson(bindingFile, { attemptId: task.attemptId });
@@ -335,6 +338,17 @@ export class DesktopQueue {
       if (journal.cancellationRequested()) throw new Error("Cancellation requested; command refused");
       return snapshot;
     });
+  }
+  authorizeCommandPaths(input:{sessionId:string;attemptId:string;leaseToken:string}, spec:{cwd:string;inputs?:string[]}): RunSnapshot {
+    const snapshot = this.authorizeCommand(input), store = new TaskStore(this.config.dbFile);
+    try {
+      const task = snapshot.taskId ? store.get(snapshot.taskId) : undefined;
+      if (!task || task.attemptId !== input.attemptId) throw new Error("Command scope does not match the current attempt");
+      if (typeof spec.cwd !== "string" || (spec.inputs !== undefined && (!Array.isArray(spec.inputs) || spec.inputs.some(source => typeof source !== "string")))) throw new Error("Command cwd and input paths must be strings");
+      const cwd = store.workspaceProtection.authorizePath(task.taskId, input.attemptId, spec.cwd, "read");
+      for (const source of spec.inputs ?? []) { if (!path.isAbsolute(source)) workspaceRelative(source); store.workspaceProtection.authorizePath(task.taskId, input.attemptId, path.isAbsolute(source) ? source : path.resolve(cwd, source), "read"); }
+      return snapshot;
+    } finally { store.close(); }
   }
   report(input: {sessionId: string; attemptId: string; leaseToken: string; status: "completed" | "blocked" | "failed" | "cancelled"; text: string; artifacts: string[]; validationRecords?: ValidationEvidence[]}): {ok: true; status: string} {
     const actor = this.verifyActor();

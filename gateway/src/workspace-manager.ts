@@ -24,6 +24,7 @@ export async function ensureWorkspace(config: Config, input: {workspace:string;s
   try {
     if (!input.admissionTaskId) throw new AdmissionError("OPERATION_REQUIRED", "Use a durable authorized task operation for native workspace preparation.");
     gate.operations.preparationBoundary(input.admissionOperationId, target, undefined, true);
+    gate.workspaceProtection.verifyPreparation(input.admissionTaskId, input.workspace);
   } finally { gate.close(); }
   if(process.env.WORKBUDDY_REQUIRED_FREE_MODEL&&!input.model)input={...input,model:process.env.WORKBUDDY_REQUIRED_FREE_MODEL};
   const registration=workerRegistration(config);

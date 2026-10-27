@@ -292,13 +292,14 @@ export class OperationAdmission {
     return promise;
   }
   /** Internal queue persistence has its own stable receipt, while retaining its parent's workflow. */
-  enqueue(taskId: string, attemptId: string, parameters: unknown, action: () => void): void {
+  enqueue(taskId: string, attemptId: string, parameters: unknown, action: () => void, preflight?: () => void): void {
     const { record, fresh } = this.store.atomic(() => {
       const admission = this.admit("queue", taskId, "workbuddy", parameters, { operationId: `queue:${attemptId}` }, parameters, false);
       if (admission.fresh) {
         this.claim(taskId, "workbuddy", admission.record.operationId);
         const task = this.store.get(taskId);
         if (task && task.attemptId !== attemptId) throw new AdmissionError("STALE_ATTEMPT", "The queue request is not the current attempt.");
+        preflight?.();
       }
       return admission;
     });

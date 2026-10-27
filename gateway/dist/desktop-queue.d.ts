@@ -71,6 +71,14 @@ export declare class DesktopQueue {
         attemptId: string;
         leaseToken: string;
     }): RunSnapshot;
+    authorizeCommandPaths(input: {
+        sessionId: string;
+        attemptId: string;
+        leaseToken: string;
+    }, spec: {
+        cwd: string;
+        inputs?: string[];
+    }): RunSnapshot;
     report(input: {
         sessionId: string;
         attemptId: string;

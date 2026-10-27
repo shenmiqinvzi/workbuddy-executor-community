@@ -3,6 +3,7 @@ export interface ValidationEvidence {
     path: string;
     sha256: string;
 }
+export declare function readWorkerObject(config: Config, attemptId: string, file: string, filename: string, maxBytes: number): Record<string, unknown>;
 /** Only cited command records and their declared inputs are covered by this check. */
 export declare function readValidationEvidence(config: Config, attemptId: string, records: unknown): ValidationEvidence[];
 export declare function verifyValidationEvidence(config: Config, attemptId: string, records: ValidationEvidence[]): void;

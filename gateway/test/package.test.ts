@@ -73,6 +73,7 @@ async function fixture() {
   }
   for (const name of ["operation-recovery", "recovery-console", "recovery-cli", "run-evidence"]) { files[`src/${name}.ts`] = "export {};\n"; files[`dist/${name}.js`] = "export {};\n"; }
   files["bin/workbuddy-recovery.cmd"] = "@echo off\n"; files["docs/OPERATION_RECOVERY.md"] = "Recovery guide\n";
+  files["src/workspace-protection.ts"] = "export {};\n"; files["dist/workspace-protection.js"] = "export {};\n"; files["dist/workspace-protection.d.ts"] = "export {};\n";
   files["scripts/dsh-host-check.mjs"] = "// isolated host verification fixture\n";
   for (const name of ["dsh-bindings", "dsh-client", "dsh-coordinator", "dsh-runtime", "dsh-rate-verifier", "dsh-inspect"]) { files[`src/${name}.ts`] = "export {};\n"; files[`dist/${name}.js`] = "export {};\n"; files[`dist/${name}.d.ts`] = "export {};\n"; }
   for (const name of ["contracts", "store", "workbuddy", "engine", "http", "client", "ui", "cli", "mcp"]) {

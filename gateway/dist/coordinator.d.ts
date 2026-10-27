@@ -2,6 +2,7 @@ import type { Config } from "./config.js";
 import { TaskStore, type StoredTask, type TaskReport } from "./task-store.js";
 import { WorkBuddyClient } from "./workbuddy-client.js";
 export { runEvidenceDigestOf } from "./run-evidence.js";
+import { type TaskContractScope } from "./task-contract.js";
 import { type ModelObservation } from "./collaboration.js";
 import type { OperationOptions } from "./operation-admission.js";
 export interface SendTaskInput extends OperationOptions {
@@ -15,6 +16,7 @@ export interface SendTaskInput extends OperationOptions {
     model?: string;
     sessionMode?: "existing" | "new";
     contract?: unknown;
+    scope?: TaskContractScope;
 }
 export declare class TaskCoordinator {
     private readonly config;

@@ -26,9 +26,10 @@
  *     than the policy default of 3.
  *   - `blocker` is always null, `checks`, `changes` and `artifacts` are
  *     always empty arrays, and `metrics` is always null. No check has run,
- *     no scope inventory exists and no metric was measured; the adapter's
+ *     the full vNext check inventory and metrics are not supplied; the adapter's
  *     action-capability gaps in `projection.gaps` name each unavailable fact
  *     instead of an empty list pretending "nothing was required".
+ *     T5 adds the separate optional workspaceScope stored-facts extension.
  *   - `timing` keeps only stored instants: createdAt (stored), attemptDeadlineAt
  *     null (no per-attempt deadline is durably bound in this stage),
  *     terminalDecisionAt null (cause/time derivation is contract work that is
@@ -48,6 +49,7 @@ import type { TaskProjectionResult } from "./task-view-reader.js";
 import type { StoredTask } from "./task-store.js";
 import type { PersistedTaskContract } from "./task-contract.js";
 import type { TaskViewDisplayState } from "./task-view.js";
+import type { WorkspaceScopeView } from "./workspace-protection.js";
 
 /** Stage schema marker. Distinct from the full `workbuddy-executor/vnext-1`. */
 export const STAGE_TASK_VIEW_SCHEMA_VERSION = "workbuddy-executor/stage-2";
@@ -75,6 +77,8 @@ export type StageTaskViewUnavailable = (typeof STAGE_TASK_VIEW_UNAVAILABLE)[numb
  * the schemaVersion tells them which guarantees apply.
  */
 export interface StageTaskView {
+  /** T5 persisted scope extension. Absent on older structural adapters. Never a live scan. */
+  workspaceScope?: WorkspaceScopeView;
   schemaVersion: typeof STAGE_TASK_VIEW_SCHEMA_VERSION;
   taskId: string;
   /** Stored persisted view revision; null when the row has none yet. */
@@ -169,5 +173,6 @@ export function stageTaskViewFromProjection(input: {
     changes: [],
     artifacts: [],
     metrics: null,
+    ...(ok?.workspaceScope ? { workspaceScope: ok.workspaceScope } : {}),
   };
 }

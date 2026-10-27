@@ -10,6 +10,7 @@ import { CreditBalanceStore } from "./credit-balance.js";
 import { OperationAdmission } from "./operation-admission.js";
 import { RecoveryStore } from "./operation-recovery.js";
 import { DshBindingStore } from "./dsh-bindings.js";
+import { WorkspaceProtection } from "./workspace-protection.js";
 
 export type TaskState = "queued" | "working" | "completed" | "blocked" | "failed" | "cancelled" | "needs_review" | "accepted";
 
@@ -157,6 +158,7 @@ export class TaskStore {
   readonly dshBindings: DshBindingStore;
   readonly operations: OperationAdmission;
   readonly recoveries: RecoveryStore;
+  readonly workspaceProtection: WorkspaceProtection;
 
   constructor(readonly file: string) {
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
@@ -278,6 +280,7 @@ export class TaskStore {
     `);
     this.recoveries = new RecoveryStore(this.db, this);
     this.operations = new OperationAdmission(this.db, this);
+    this.workspaceProtection = new WorkspaceProtection(this.db, file);
   }
 
   close(): void { this.db.close(); }
@@ -711,6 +714,7 @@ export class TaskStore {
       if (!current) throw new Error(`Unknown task: ${taskId}`);
       if (current.attemptId !== attemptId) return { task: current, applied: false };
       if (options.expectedStates && !options.expectedStates.includes(current.state)) return { task: current, applied: false };
+      this.workspaceProtection.assertAcceptance(taskId, attemptId);
       const task = this.writeUpdate(current, patch);
       this.appendTaskEventInTransaction({
         taskId, attemptId, type: closedEvent.type,

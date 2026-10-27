@@ -240,6 +240,16 @@ function scopeList(value: unknown, field: string): { value: string[] } | { rejec
   return { value: [...new Set(items)].sort() };
 }
 
+/** Additive scope parsing for non-contract callers; historical contract digests are unchanged. */
+export function validateTaskScope(value: unknown): { ok: true; scope: TaskContractScope } | { ok: false; rejection: TaskContractRejection } {
+  if (!isObject(value)) return { ok: false, rejection: { code: "invalid_type", field: "scope", message: "scope must be an object." } };
+  const unknown = checkUnknownFields(value, SCOPE_FIELDS, "scope"); if (unknown) return { ok: false, rejection: unknown };
+  const allowed = scopeList(value.allowedChanges, "scope.allowedChanges"), metadata = scopeList(value.permittedMetadata, "scope.permittedMetadata");
+  if ("rejection" in allowed) return { ok: false, rejection: allowed.rejection };
+  if ("rejection" in metadata) return { ok: false, rejection: metadata.rejection };
+  return { ok: true, scope: { allowedChanges: allowed.value, permittedMetadata: metadata.value } };
+}
+
 function requiredChecks(value: unknown): { value: TaskContractCheck[] } | { rejection: TaskContractRejection } {
   if (!Array.isArray(value)) return { rejection: { code: "invalid_type", field: "requiredChecks", message: "requiredChecks must be an array." } };
   if (value.length > TASK_CONTRACT_LIMITS.requiredChecks) {

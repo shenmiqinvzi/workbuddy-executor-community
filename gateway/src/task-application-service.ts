@@ -283,7 +283,7 @@ export class TaskApplicationService {
     const executor = (input.contract as { execution?: { executorId?: unknown } } | undefined)?.execution?.executorId === "dsh" ? "dsh" : "workbuddy";
     const prior = input.operationId ? this.coordinator.store.operations.get(input.operationId) : null;
     if (prior && prior.executor !== executor) throw new AdmissionError("OPERATION_CONFLICT", "The original operation selected a different executor.");
-    if (prior && executor === "dsh" && (input.constraints !== undefined || input.acceptanceCommands !== undefined || input.model !== undefined || input.timeoutSeconds !== undefined || input.sessionMode === "new")) throw new AdmissionError("OPERATION_CONFLICT", "The original DSH operation did not include these overrides.");
+    if (prior && executor === "dsh" && (input.constraints !== undefined || input.acceptanceCommands !== undefined || input.scope !== undefined || input.model !== undefined || input.timeoutSeconds !== undefined || input.sessionMode === "new")) throw new AdmissionError("OPERATION_CONFLICT", "The original DSH operation did not include these overrides.");
     if (prior && executor === "dsh" && !this.dsh) {
       const { operationId, expectedRevision, expectedAttemptId } = input;
       const parameters = { contract: input.contract, objective: input.objective, sessionId: input.sessionId, taskId: input.taskId, workspace: input.workspace };
@@ -293,7 +293,7 @@ export class TaskApplicationService {
     }
     if ((input.contract as { execution?: { executorId?: unknown } } | undefined)?.execution?.executorId === "dsh") {
       if (!this.dsh) throw new AdmissionError("EXECUTOR_UNAVAILABLE", "The original DSH adapter is unavailable; WorkBuddy cannot take over its task");
-      if (!input.sessionId || input.constraints !== undefined || input.acceptanceCommands !== undefined || input.model !== undefined || input.timeoutSeconds !== undefined || input.sessionMode === "new") throw new AdmissionError("TASK_CONFLICT", "DSH requires an explicit original session and immutable contract terms");
+      if (!input.sessionId || input.constraints !== undefined || input.acceptanceCommands !== undefined || input.scope !== undefined || input.model !== undefined || input.timeoutSeconds !== undefined || input.sessionMode === "new") throw new AdmissionError("TASK_CONFLICT", "DSH requires an explicit original session and immutable contract terms");
       return this.dsh.send({ contract: input.contract, objective: input.objective, sessionId: input.sessionId, taskId: input.taskId, workspace: input.workspace, operationId: input.operationId, expectedRevision: input.expectedRevision, expectedAttemptId: input.expectedAttemptId });
     }
     return this.coordinator.send(input);
@@ -316,7 +316,14 @@ export class TaskApplicationService {
   cancel(...args: Parameters<TaskCoordinator["cancel"]>) { return this.dshFor(args[0])?.cancel(...args) ?? this.coordinator.cancel(...args); }
   respond(...args: Parameters<TaskCoordinator["respond"]>) { if (this.dshFor(args[0])) throw new AdmissionError("EXECUTOR_CAPABILITY_MISSING", "Resolve DSH input in its native UI; this adapter cannot approve permissions"); return this.coordinator.respond(...args); }
   reconcileReport(input: Parameters<TaskCoordinator["reconcileReport"]>[0]) { if (this.dshFor(input.taskId)) throw new AdmissionError("EXECUTOR_CAPABILITY_MISSING", "DSH reports require their original durable request events"); return this.coordinator.reconcileReport(input); }
-  sync(taskId: string, limit?: number) { return this.dshFor(taskId)?.sync(taskId, limit) ?? this.coordinator.sync(taskId, limit); }
+  async sync(taskId: string, limit?: number) {
+    const task = await (this.dshFor(taskId)?.sync(taskId, limit) ?? this.coordinator.sync(taskId, limit));
+    if (task.attemptId && ["needs_review", "completed"].includes(task.state) && this.executionStatus(taskId).remoteStopped && this.coordinator.store.workspaceProtection.readView(taskId).baseline !== "missing") {
+      this.coordinator.store.workspaceProtection.review(taskId, task.attemptId);
+      return this.coordinator.store.get(taskId)!;
+    }
+    return task;
+  }
   requireTask(taskId: string) { return this.coordinator.requireTask(taskId); }
   executionStatus(taskId: string) { return this.dshFor(taskId)?.executionStatus(taskId) ?? this.coordinator.executionStatus(taskId); }
   listTasks(limit: number) { return this.coordinator.store.listTasks({ limit }); }
@@ -331,6 +338,7 @@ export class TaskApplicationService {
     const failed = task.state === "failed";
     const review = task.state === "needs_review" || task.state === "completed";
     const terminal = cancelled || failed;
+    const scope = this.coordinator.store.workspaceProtection.readView(task.taskId, task.attemptId);
     let displayState: TaskStatusView["displayState"];
     if (task.state === "accepted") displayState = "accepted";
     else if (terminal) displayState = stopped ? cancelled ? "cancelled" : "failed" : "waiting_stop";
@@ -348,9 +356,9 @@ export class TaskApplicationService {
       if (!stopped && !execution.cancellationRequested && ["queued", "running", "waiting_input"].includes(displayState)) allowedActions.push("cancel");
       const contract = this.coordinator.store.getContract(task.taskId);
       const attemptLimit = contract.state === "found" ? contract.record.effectiveMaxAttempts : contract.state === "absent" ? this.maxAttempts : 0;
-      if (stopped && task.sessionId && (task.attempt ?? 0) < attemptLimit && (review || task.state === "blocked" || (task.state === "failed" && task.runtimeSource === "dsh"))) allowedActions.push("rework");
+      if (scope.baseline === "present" && stopped && task.sessionId && (task.attempt ?? 0) < attemptLimit && (review || task.state === "blocked" || (task.state === "failed" && task.runtimeSource === "dsh"))) allowedActions.push("rework");
       const reportReady = !["desktop_queue", "dsh"].includes(task.runtimeSource ?? "") || ("reportDigestPresent" in execution && execution.reportDigestPresent === true);
-      if (stopped && review && task.sessionId && task.report?.rawText.trim() && reportReady && (["desktop_interactive", "desktop_queue"].includes(task.runtimeSource ?? "") || (task.runtimeSource === "dsh" && this.dsh))) allowedActions.push("accept");
+      if (scope.baseline === "present" && scope.check?.status === "passed" && stopped && review && task.sessionId && task.report?.rawText.trim() && reportReady && (["desktop_interactive", "desktop_queue"].includes(task.runtimeSource ?? "") || (task.runtimeSource === "dsh" && this.dsh))) allowedActions.push("accept");
     }
     return {
       taskId: task.taskId,
