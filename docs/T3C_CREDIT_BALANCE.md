@@ -6,7 +6,7 @@
 
 源服务须支持 GET `/v1/balance-summary`。本机当前 WorkBuddy2API 已验证该能力；它读取已启用账号的现有积分缓存，按请求区域汇总，不调用 fetch_credits 或模型。只使用既有 API Key，不需要面板令牌，不登录、不创建会话、不刷新上游积分。旧版本返回 404/501 时明确 source_unsupported，不回退到账号管理接口。
 
-来源响应只有 balance、unit、realm、accounts_enabled、accounts_with_credit_data、updated_at。采集器逐字段校验并归一化；不透传额外字段、账号身份、凭据、URL 或原始错误响应。网络超时、重定向拒绝、1 MiB 上限与显式 loopback origin 的限制和 token 来源共用 LocalStatisticsClient，路径只允许两个已登记统计 GET。
+来源响应只有 balance、unit、realm、accounts_enabled、accounts_with_credit_data、updated_at。采集器逐字段校验并归一化；不透传额外字段、账号身份、凭据、URL 或原始错误响应。网络超时、重定向拒绝、1 MiB 上限与显式 loopback origin 的限制和 token 来源共用 LocalStatisticsClient，路径仅允许已登记的统计 GET（T3b 另登记模型目录 GET）。
 
 ## API 与数值含义
 

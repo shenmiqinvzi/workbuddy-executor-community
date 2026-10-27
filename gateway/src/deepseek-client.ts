@@ -2,9 +2,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import http from "node:http";
+import { windowsPrivatePath } from "../deepseek-plugin/private-path.mjs";
 
 export interface DeepSeekHost { hostId: string; socketPath: string; token: string; pid?: number; version?: string; profile?: string; runtimeSource?: string; processAlive?: boolean; }
-export interface DeepSeekSession { sessionId: string; workspace?: string; busy?: boolean; activeRequestId?: string; title?: string; }
+export interface DeepSeekSession { sessionId: string; workspace?: string; busy?: boolean; attached?: boolean; activeRequestId?: string; title?: string; }
 export interface DeepSeekEvent {
   seq: number; requestId: string; turnId?: string;
   type: "accepted" | "started" | "progress" | "completed" | "failed" | "cancelled" | "waiting_input";
@@ -33,11 +34,14 @@ export class DeepSeekClient implements DeepSeekTransport {
       try {
         const file = path.join(this.registryDir, name);
         const stat = fs.lstatSync(file);
-        if (!stat.isFile() || (stat.mode & 0o077) !== 0 || stat.uid !== process.getuid?.()) continue;
+        if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 65536) continue;
+        if (process.platform === "win32") { windowsPrivatePath(this.registryDir, { directory: true }); windowsPrivatePath(file); }
+        else if ((stat.mode & 0o077) !== 0 || stat.uid !== process.getuid?.()) continue;
         const value: unknown = JSON.parse(fs.readFileSync(file, "utf8"));
         if (!value || typeof value !== "object") continue;
         const host = value as Partial<DeepSeekHost>;
-        if (typeof host.hostId === "string" && typeof host.socketPath === "string" && path.isAbsolute(host.socketPath) && typeof host.token === "string" && host.token.length >= 16) hosts.push({ ...host, processAlive: processAlive(host.pid) } as DeepSeekHost);
+        if (typeof host.hostId === "string" && typeof host.socketPath === "string" && path.isAbsolute(host.socketPath) &&
+          (process.platform !== "win32" || /^\\\\\.\\pipe\\workbuddy-dsh-[a-z0-9-]+$/.test(host.socketPath)) && typeof host.token === "string" && host.token.length >= 16) hosts.push({ ...host, processAlive: processAlive(host.pid) } as DeepSeekHost);
       } catch { /* Ignore stale or incomplete registration files. */ }
     }
     return hosts;

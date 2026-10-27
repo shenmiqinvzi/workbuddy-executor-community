@@ -3,6 +3,7 @@ import { type PersistedTaskContract, type TaskContractIntegrity, type TaskContra
 import { CollaborationRegistry, type ModelPolicy, type ModelObservation } from "./collaboration.js";
 import { QuotaStore } from "./quota-observation.js";
 import { CreditBalanceStore } from "./credit-balance.js";
+import { DshBindingStore } from "./dsh-bindings.js";
 export type TaskState = "queued" | "working" | "completed" | "blocked" | "failed" | "cancelled" | "needs_review" | "accepted";
 export interface StoredTask {
     taskId: string;
@@ -155,6 +156,7 @@ export declare class TaskStore {
     readonly collaboration: CollaborationRegistry;
     readonly quotas: QuotaStore;
     readonly creditBalances: CreditBalanceStore;
+    readonly dshBindings: DshBindingStore;
     constructor(file: string);
     close(): void;
     /**
@@ -248,7 +250,7 @@ export declare class TaskStore {
     createTaskWithContract(task: Omit<StoredTask, "createdAt" | "updatedAt" | "objective"> & {
         createdAt?: string;
         objective?: string;
-    }, submitted: unknown, policy: TaskContractPolicy, admissionPolicy?: ModelPolicy): TaskContractCreateResult;
+    }, submitted: unknown, policy: TaskContractPolicy, admissionPolicy?: ModelPolicy, admissionExecutor?: "workbuddy" | "dsh"): TaskContractCreateResult;
     listTasks(options?: {
         state?: TaskState;
         states?: TaskState[];
@@ -320,6 +322,9 @@ export declare class TaskStore {
     listMessages(taskId: string, limit?: number, attemptId?: string): LocalMessage[];
     private writeUpdate;
     private saveAttempt;
+    /** Trusted local composition seam; nested operations use savepoints. */
+    atomic<T>(operation: () => T): T;
+    private transactionDepth;
     private transaction;
 }
 export declare function rowToTask(row: Record<string, unknown>): StoredTask;

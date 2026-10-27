@@ -14,7 +14,11 @@ node scripts/doctor.mjs
 
 生成的 data/workbuddy-mcp.toml 包含这次安装的真实 Node/网关路径；核对后合并进自己的 MCP 配置，不覆盖其他条目。完整步骤见 [Windows 安装指南](https://github.com/shenmiqinvzi/workbuddy-executor-community/blob/main/gateway/docs/INSTALL_WINDOWS.md)。安装不启动或重启 WorkBuddy；首次原生连接应在无其他任务且用户明确允许初始化时进行。
 
-本部署 `.env` 设置 `WORKBUDDY_REQUIRED_FREE_MODEL=deepseek-v4.1-flash`。该开关启用原生配置与唤醒时的模型 ID/免费状态硬校验；不设置时通用网关允许原生模型选择，技能文字本身不提供费用保障。不能为绕过阻塞取消此配置。list_models 的免费信息是本次观察，不代表额度或后续平台一定可用。
+默认先查询目录，再让用户选择并确认本次模型；不预选固定模型，也不要求 x0.00。列出已知费率，缺少或过期的信息显示未知；用户可在了解费用后选择付费或未知费用模型。模型目录不保证余额、实际账单上限或后续平台可用性。
+
+`WORKBUDDY_REQUIRED_FREE_MODEL` 仅用于用户主动要求的免费限定部署；设置后仍在原生配置与唤醒时检查精确模型及零费率。旧安装或已保存任务的限制保持生效，不为消除阻塞擅自清除。要更改运行部署，先取得该配置变更的授权；仓库源码更新不等于已安装环境更新。
+
+统一服务的新默认政策为 `selectionMode=user_choice, requireFree=false`，vnext-2 方案固定执行器、连接、provider、model、推理档位及任务范围，由可信应用记录用户实际确认后派工。方案不是模型替代策略；仅提供推荐不构成授权。DSH 适配器与选择界面进展见仓库设计文档，本技能当前工具仍为 WorkBuddy desktop-queue，不能假称已具备 DSH MCP 派工或面板选择器。
 
 网关在原生模型配置确认后授权本轮领取，再发唤醒；立即领取的 helper 不必等唤醒回执。默认未接单窗口180秒、总期限1800秒、最多三轮；以已有配置和返回的 claimDeadline/deadline 为准。技能文字不能修复正在运行的旧网关。
 

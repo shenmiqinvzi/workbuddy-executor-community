@@ -1,3 +1,4 @@
+import { windowsPrivatePath } from '../private-path.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
@@ -12,15 +13,15 @@ const invoke = (socketPath, token, body, method = 'POST') => new Promise((resolv
 });
 async function fixture(t, options = {}) {
   const root = await fs.mkdtemp(join(tmpdir(), 'dsh-b-'));
+  windowsPrivatePath(root, { protect: true, directory: true });
   const bridge = await startTransport({ root, hostId: 'dsh-test-one', identity: { profile: 'desktop', runtimeSource: 'deepseek-desktop' }, invoke: async (method, params) => ({ method, params }), ...options });
   t.after(async () => { await bridge.close(); await fs.rm(root, { recursive: true, force: true }); });
   return { root, bridge, ...bridge.registration };
 }
-test('Unix transport authenticates and keeps registry/socket private', async t => {
+test('local transport authenticates and keeps registry private', async t => {
   const { root, bridge, socketPath, token } = await fixture(t);
-  assert.equal((await fs.stat(root)).mode & 0o777, 0o700);
-  assert.equal((await fs.stat(socketPath)).mode & 0o777, 0o600);
-  assert.equal((await fs.stat(bridge.registryPath)).mode & 0o777, 0o600);
+  if (process.platform === 'win32') { windowsPrivatePath(root, { directory: true }); windowsPrivatePath(bridge.registryPath); assert.match(socketPath, /^\\\\\.\\pipe\\workbuddy-dsh-/); }
+  else { assert.equal((await fs.stat(root)).mode & 0o777, 0o700); assert.equal((await fs.stat(socketPath)).mode & 0o777, 0o600); assert.equal((await fs.stat(bridge.registryPath)).mode & 0o777, 0o600); }
   assert.equal((await invoke(socketPath, 'wrong', { method: 'health' })).status, 401);
   const result = await invoke(socketPath, token, { method: 'health', params: {} });
   assert.equal(result.ok, true); assert.equal(result.value.method, 'health');
@@ -37,8 +38,9 @@ test('same profile cannot override a live Host and shutdown removes its registra
   await assert.rejects(fs.lstat(bridge.registryPath), { code: 'ENOENT' });
   await assert.rejects(fs.lstat(socketPath), { code: 'ENOENT' });
 });
-test('insecure registry directories fail closed without chmod of existing paths', async t => {
-  const root = await fs.mkdtemp(join(tmpdir(), 'dsh-b-')); await fs.chmod(root, 0o755);
+test('insecure Unix registry directories fail closed without chmod of existing paths', { skip: process.platform === 'win32' }, async t => {
+  const root = await fs.mkdtemp(join(tmpdir(), 'dsh-b-'));
+  windowsPrivatePath(root, { protect: true, directory: true }); await fs.chmod(root, 0o755);
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   await assert.rejects(startTransport({ root, hostId: 'dsh-test-one', identity: {}, invoke: async () => ({}) }), error => error.code === 'bridge/insecure-path');
 });
@@ -49,7 +51,8 @@ test('independent profile identities register concurrently', async t => {
   assert.equal((await fs.readdir(join(root, 'hosts'))).filter(x => x.endsWith('.json')).length, 2);
 });
 test('stale registration can be reclaimed by the same stable Host identity', async t => {
-  const root = await fs.mkdtemp(join(tmpdir(), 'dsh-b-')); await fs.mkdir(join(root, 'hosts'), { mode: 0o700 });
+  const root = await fs.mkdtemp(join(tmpdir(), 'dsh-b-'));
+  windowsPrivatePath(root, { protect: true, directory: true }); await fs.mkdir(join(root, 'hosts'), { mode: 0o700 });
   const registry = join(root, 'hosts', 'dsh-stale-one.json');
   await fs.writeFile(registry, JSON.stringify({ pid: 2147483647, token: 'stale-token', hostId: 'dsh-stale-one' }), { mode: 0o600 });
   const bridge = await startTransport({ root, hostId: 'dsh-stale-one', identity: {}, invoke: async () => ({}) });
@@ -57,7 +60,8 @@ test('stale registration can be reclaimed by the same stable Host identity', asy
   assert.equal(JSON.parse(await fs.readFile(registry, 'utf8')).pid, process.pid);
 });
 test('registration replaced during a stale-owner read is never unlinked as stale', async t => {
-  const root = await fs.mkdtemp(join(tmpdir(), 'dsh-b-')); await fs.mkdir(join(root, 'hosts'), { mode: 0o700 });
+  const root = await fs.mkdtemp(join(tmpdir(), 'dsh-b-'));
+  windowsPrivatePath(root, { protect: true, directory: true }); await fs.mkdir(join(root, 'hosts'), { mode: 0o700 });
   const registry = join(root, 'hosts', 'dsh-race-one.json');
   await fs.writeFile(registry, JSON.stringify({ pid: 2147483647, token: 'old' }), { mode: 0o600 });
   const realRead = fs.readFile; let replaced = false;

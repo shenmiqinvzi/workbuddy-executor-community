@@ -21,7 +21,7 @@ export class LocalStatisticsClient {
         this.credentials = Object.freeze({ ...input, baseUrl: url.origin });
     }
     async read(endpoint, signal) {
-        if (!["/usage/remaining", "/v1/balance-summary"].includes(endpoint))
+        if (!["/usage/remaining", "/v1/balance-summary", "/v1/models"].includes(endpoint))
             throw new StatisticsSourceError("source_unsupported");
         try {
             const response = await fetch(new URL(endpoint, this.origin), { method: "GET", redirect: "error", signal,

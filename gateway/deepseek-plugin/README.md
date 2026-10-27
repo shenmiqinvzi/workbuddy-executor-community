@@ -1,8 +1,8 @@
 # DeepSeek Harness Codex bridge plugin
 
-This bundle runs **inside an existing Harness Desktop or Web profile Host**. It does not launch an independent agent, copy credentials, change permission policy, or inject into the App renderer. The gateway communicates with it through one private local Unix socket.
+This bundle runs **inside an existing Harness Desktop or Web profile Host**. It does not launch an independent agent, copy credentials, change permission policy, or inject into the App renderer. The gateway communicates with it through one private local named pipe on Windows or Unix socket.
 
-Supported native runtime: **0.2.0-rc.2 only**. An older global `dsh`, such as 0.1.6-alpha.2, is incompatible. The plugin checks the Host's resolved `@deepseek-ai/dsh-api-session-controller` package version and required methods before publishing its socket. Its peer requirement also lets native plugin compatibility preflight reject incompatible versions.
+Supported native runtimes: **0.2.0-rc.2 and 0.2.1-rc.2**. An older global `dsh`, such as 0.1.6-alpha.2, is incompatible. The plugin checks the Host's resolved `@deepseek-ai/dsh-api-session-controller` package version and required methods before publishing its socket. Its peer requirement also lets native plugin compatibility preflight reject incompatible versions.
 
 ## Installation
 
@@ -10,11 +10,13 @@ Use the repository's `scripts/install-deepseek-plugin.mjs`, which invokes the **
 
 The installed package is `@codex-local/dsh-codex-bridge`. Its `dsh.bundle.patch` inserts the `codex-deepseek-bridge` plugin. It has no runtime peer imports and no lifecycle scripts, so a linked package can load through the App's own Cordis context without resolving another copy of Cordis.
 
+On Windows pass the existing installation directory with `--app` and optionally a reviewed local tarball with `--package`; the installer does not terminate or restart the App. Reload the profile through its normal lifecycle after installation. Windows registry paths use a verified current-user private ACL; existing ACLs are checked, never repaired.
+
 For a separately running Web Host, install/enable the same bundle in its **web** profile using that Host's compatible 0.2.0-rc.2 CLI. Each profile has a distinct logical Host ID. Do not copy Desktop credentials or configure a second hidden Host as an installation shortcut.
 
 ## Private transport
 
-- Endpoint: `POST /rpc` over the registered Unix socket.
+- Endpoint: `POST /rpc` over the registered Windows named pipe or Unix socket.
 - Header: `Authorization: Bearer <private token>`.
 - Request: `{ "method": "health", "params": {} }`.
 - Success: `{ "ok": true, "value": ... }`.
@@ -35,11 +37,15 @@ RPC request bodies are bounded to 1 MiB, responses to 8 MiB, pending native requ
 | `sessions` | `{}` | `{sessions:[{sessionId,workspace,cwd,busy,running,preset,title,identity}]}` |
 | `create` | `{workspace?,cwd?,agentPreset?,sessionId?,title?}` | verified session summary; native title rename when available; `titleApplied` reports success |
 | `session` | `{sessionId}` | verified summary, including `activeRequestId` when one owned request is active |
-| `prompt` | `{sessionId,requestId,text}` | `{requestId,accepted:true,turnId?,duplicate?}` |
+| `prompt` | `{sessionId,requestId,text,expectedSelection:{providerId,modelId,reasoningEffort}}` | `{requestId,accepted:true,turnId?,duplicate?}` |
 | `events` | `{sessionId,requestId?,afterSeq?:-1,limit?:100}` | `{events,cursor,hasMore}`; limit 1–256, cursor uses original native seq |
 | `cancel` | `{sessionId,requestId}` | `{requested,stopped:false,queueRemoval?,alreadyEnded?}`; termination is proved by subsequent durable events |
 
 A native Session turn is a numeric counter; canonical `turnId` is `<sessionId>:turn:<native turn counter>`, accompanied by `nativeTurn` and the original event. Events carry `seq`, `requestId`, canonical `type`, `turnId?`, `timestamp?`, `text?`, `error?`, `rawType`, `data`, and `raw`. Canonical types are `accepted`, `started`, `progress`, `waiting_input`, `completed`, `failed`, and `cancelled`.
+
+`models` reads the native catalog and returns exact provider/model/reasoning IDs with `credits:null` (the native catalog has no rate proof). `select_model` requires an attached idle original session, performs native selection only when needed, and reads it back. Native selection may also save the host default; it never approves permissions. `prompt` refuses unbound legacy calls and rechecks the expected selection before admission.
+
+For the shared TaskStore adapter, rate-source mapping, independent report format and real-validation boundary, see [T3b](../../docs/T3B_DSH_ADAPTER.md).
 
 ## Execution and recovery guarantees
 

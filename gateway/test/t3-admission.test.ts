@@ -14,7 +14,7 @@ import { WorkBuddyClient } from "../src/workbuddy-client.js";
 import { DesktopQueue } from "../src/desktop-queue.js";
 import { RunJournal } from "../src/run-journal.js";
 import { PersistentDesktopService, type NativeDesktopTrigger, type ServiceRegistration } from "../src/persistent-service.js";
-import { defaultModelPolicy, type ModelObservation } from "../src/collaboration.js";
+import { defaultModelPolicy as userChoicePolicy, legacyFreeModelPolicy as defaultModelPolicy, type ModelObservation } from "../src/collaboration.js";
 import { validateTaskContract, validateSupportedTaskContract, TASK_CONTRACT_V2_SCHEMA_VERSION } from "../src/task-contract.js";
 
 function v1(overrides: Record<string, unknown> = {}) {
@@ -43,6 +43,7 @@ function fixture(t: { after: (fn: () => void) => void }) {
   native.exec("CREATE TABLE sessions(id TEXT PRIMARY KEY,cwd TEXT,is_playground INTEGER,deleted_at INTEGER)");
   native.prepare("INSERT INTO sessions VALUES (?,?,1,NULL)").run("synthetic-session", project); native.close();
   const store = new TaskStore(config.dbFile), client = new WorkBuddyClient(config);
+  store.collaboration.setPolicy(defaultModelPolicy());
   let preparations = 0, observations = 0;
   let prepareHook: (() => Promise<void>) | undefined;
   let observation: Partial<ModelObservation> = {};
@@ -316,5 +317,31 @@ test("native wake rechecks free rate, policy and deadline instead of trusting pr
     assert.equal(wakes,variant==="ok"?1:0,`${variant}: wake must be admitted independently`);
     assert.equal(result.status,variant==="ok"?"wake_submitted":"wake_rejected");
     assert.equal(fs.existsSync(path.join(journal.dir,"model-ready.json")),variant==="ok");
+  }
+});
+
+
+test("new defaults have no fixed model and v1 cannot bypass user confirmation", async t => {
+  const f = fixture(t), policy = userChoicePolicy();
+  assert.equal(policy.requireFree, false); assert.equal(policy.selectionMode, "user_choice"); assert.deepEqual(policy.allowed, []);
+  f.store.collaboration.setPolicy(policy);
+  await assert.rejects(f.send(v1()), { code: "PLAN_CONFIRMATION_REQUIRED" }); assert.equal(f.preparations(), 0);
+});
+
+test("WorkBuddy user-selected paid and unknown models survive independent wake verification", async t => {
+  for (const credits of ["x2.50", null]) {
+    const f = fixture(t); f.store.collaboration.setPolicy(userChoicePolicy());
+    const contract = f.approved({execution:{ ...defaultModelPolicy().allowed[0]!, modelId:"user-chosen-native-model" }});
+    f.setObservation({credits}); await f.send(contract); let wakes=0;
+    const task=f.store.get(contract.taskId)!, attempt=f.store.collaboration.getAttempt(task.attemptId!)!;
+    assert.equal(attempt.model.modelId, "user-chosen-native-model"); assert.equal(attempt.model.credits, credits);
+    const trigger:NativeDesktopTrigger={
+      inspect:async()=>({state:"idle",workspace:f.registration.realPath}),
+      setModel:async(sessionId,model)=>({sessionId,model}),
+      listModels:async()=>({models:[{id:contract.execution.modelId,credits}],currentModel:contract.execution.modelId,sessionId:"synthetic-session"}),
+      wakeIdle:async()=>{wakes++;return {accepted:true,receipt:"synthetic-receipt"};},
+    };
+    const registration:ServiceRegistration={version:1,sessionId:"synthetic-session",workspace:f.registration.realPath,projectDir:path.dirname(f.dir),nodeBin:process.execPath,cdpPort:18491,dbFile:f.config.dbFile,runsDir:f.config.runsDir!,workbuddyConfigDir:f.dir,cliElectronPath:f.config.cliElectronPath};
+    assert.equal((await new PersistentDesktopService(f.config,registration,trigger,f.store).pump()).status,"wake_submitted"); assert.equal(wakes,1);
   }
 });

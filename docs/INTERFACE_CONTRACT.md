@@ -208,7 +208,7 @@ vnext-2 保留目标/工作区/范围/检查/期限/轮次字段；把 vnext-1 �
 
 上例仅为扩展字段片段，不是可提交的完整任务。`connectionId` 指本机登记的模型来源连接，`providerId` 指执行器内对应的原生来源路由；WorkBuddy 连接与 DSH 代理连接分别登记。ID 必须经服务端解析，不能由请求指定任意 URL、凭据或会话文件。
 
-有效模型政策快照、工作区解析、原生会话绑定、方案确认者与时间、额度准入引用均由服务端保存，不接受客户端自报 verified/free/approved 结论。模型与执行器首期在同 task 内固定，返工重新核验原绑定，不允许旧 rework 的 model 参数绕过约定。vnext-1 保持原精确免费政策与既有摘要，旧记录不由 GET 迁移。
+有效模型政策快照、工作区解析、原生会话绑定、方案确认者与时间、额度准入引用均由服务端保存，不接受客户端自报 verified/free/approved 结论。模型与执行器首期在同 task 内固定，返工重新核验原绑定，不允许旧 rework 的 model 参数绕过约定。新默认政策为 `selectionMode=user_choice, requireFree=false, allowed=[]`，空列表表示无额外白名单约束；`allowlist`（含历史未设 selectionMode 的政策）的空列表则拒绝全部模型。默认派工必须引用经用户实际确认的 vnext-2 方案；选择付费或费用未知模型须事先明示费用信息与局限，不承诺硬费用封顶。主动免费限定与历史任务原始政策继续生效，vnext-1 既有摘要不变，旧记录不由 GET 迁移。
 
 ### 8.2 协作方案与确认
 
@@ -257,3 +257,5 @@ scopeId 是匿名稳定标识，不是密钥或原始账号。gateway_pool 只�
 新增目标错误：EXECUTOR_UNAVAILABLE、EXECUTOR_CAPABILITY_MISSING、SESSION_AMBIGUOUS、MODEL_BINDING_CHANGED、PLAN_STALE、PLAN_CONFIRMATION_REQUIRED、POLICY_CHANGED、QUOTA_UNAVAILABLE、QUOTA_EXHAUSTED、COST_CONTROL_UNAVAILABLE。模型/政策/费用拒绝为 403；方案/绑定/耗尽冲突为 409；来源或必要观测不可用为 503。等待确认或额度恢复可以是合法方案状态，不一律包装为任务失败。错误 message 不含连接凭据、原始账号或私有路径。
 
 兼容验收须覆盖旧客户端对新 schema 的明确拒绝、旧报告来源保留、未绑定模型/额度的旧任务显示 null、写入迁移事务与失败回滚、备份与降级限制。不得从旧 model 字符串反推 DSH 来源、实际模型或历史额度；新增能力须逐项开关，不以 schema 名称代表执行器已通过真实验收。
+
+T3b 的受控 DSH SDK、原生请求停止证据与报告认证格式 2 见 [DSH 阶段说明](T3B_DSH_ADAPTER.md)。stage-2 HTTP 结构与只读边界保持不变；不能据此认定完整 vnext-2 面板已实现。

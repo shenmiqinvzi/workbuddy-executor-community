@@ -6,7 +6,7 @@ import { execFileSync } from "node:child_process";
 import { parseArgs } from "node:util";
 import { loadDotEnv, PROJECT_ROOT } from "./env.js";
 import { discoverDesktopPaths, supportedNode } from "./deployment-paths.js";
-import { APPROVED_FREE_MODEL, checkNativeSchema } from "./doctor.js";
+import { checkNativeSchema } from "./doctor.js";
 import { assertTaskRecordsStopped } from "./deployment-safety.js";
 
 const SKILL_FILES = ["SKILL.md", "agents/openai.yaml", "references/setup.md", "references/execution.md", "references/dispatch.md", "references/agent-hub.md"];
@@ -104,21 +104,25 @@ export function setup(action: Action, options: SetupOptions = {}) {
   if (!detected.executable.value || !path.isAbsolute(detected.executable.value) || !fs.statSync(detected.executable.value).isFile()) throw new Error("Select an existing WorkBuddy executable with --workbuddy-app; missing or ambiguous installations are not guessed.");
   if (!detected.config.value || !path.isAbsolute(detected.config.value) || !checkNativeSchema(detected.config.value)) throw new Error("Select a compatible WorkBuddy data directory with --workbuddy-config; open WorkBuddy once first.");
   const app = detected.executable.value, configDir = detected.config.value;
-  if ((env.WORKBUDDY_BACKEND && env.WORKBUDDY_BACKEND !== "desktop-queue") || (env.WORKBUDDY_REQUIRED_FREE_MODEL && env.WORKBUDDY_REQUIRED_FREE_MODEL !== APPROVED_FREE_MODEL)) throw new Error("Existing backend/model policy conflicts; resolve it explicitly. Setup never weakens it.");
+  if (env.WORKBUDDY_BACKEND && env.WORKBUDDY_BACKEND !== "desktop-queue") throw new Error("Existing backend conflicts; resolve it explicitly. Setup never weakens it.");
+  let freeModel = env.WORKBUDDY_REQUIRED_FREE_MODEL || undefined;
+  if (freeModel && (freeModel.length > 200 || /[\r\n]/.test(freeModel))) throw new Error("Invalid explicit free-model restriction.");
   if (!fs.existsSync(path.join(root,"dist","server.js"))) throw new Error("Build the gateway before installation.");
-  const envText = [envLine("WORKBUDDY_BACKEND","desktop-queue"),envLine("WORKBUDDY_NODE_BIN",process.execPath),envLine("WORKBUDDY_CLI_ELECTRON",app),envLine("WORKBUDDY_CONFIG_DIR",configDir),envLine("WORKBUDDY_REQUIRED_FREE_MODEL",APPROVED_FREE_MODEL),"WORKBUDDY_MAX_TASK_ATTEMPTS=3",""].join("\n");
+  const envText = [envLine("WORKBUDDY_BACKEND","desktop-queue"),envLine("WORKBUDDY_NODE_BIN",process.execPath),envLine("WORKBUDDY_CLI_ELECTRON",app),envLine("WORKBUDDY_CONFIG_DIR",configDir),...(freeModel ? [envLine("WORKBUDDY_REQUIRED_FREE_MODEL",freeModel)] : []),"WORKBUDDY_MAX_TASK_ATTEMPTS=3",""].join("\n");
   if (fs.existsSync(envFile)) {
     // Existing .env is never rewritten, including when only a policy is missing.
     const existing: Record<string,string> = {};
     for (const line of fs.readFileSync(envFile,"utf8").split(/\r?\n/)) {
       const m=line.trim().match(/^([A-Z_]+)=(.*)$/); if (m) existing[m[1]!] = m[2]!.trim().replace(/^["']|["']$/g,"");
     }
-    if (existing.WORKBUDDY_BACKEND !== "desktop-queue" || existing.WORKBUDDY_REQUIRED_FREE_MODEL !== APPROVED_FREE_MODEL) throw new Error("Existing .env was preserved. Explicitly set desktop-queue and the approved free-model policy before retrying.");
+    if (existing.WORKBUDDY_BACKEND !== "desktop-queue") throw new Error("Existing .env was preserved. Explicitly resolve the backend before retrying.");
+    if (freeModel && existing.WORKBUDDY_REQUIRED_FREE_MODEL !== freeModel) throw new Error("Existing .env was preserved. Explicitly resolve the free-model policy conflict before retrying.");
+    freeModel = existing.WORKBUDDY_REQUIRED_FREE_MODEL || undefined;
     for (const [key,value] of [["WORKBUDDY_CLI_ELECTRON",app],["WORKBUDDY_CONFIG_DIR",configDir]]) {
       if (existing[key!] && path.resolve(existing[key!]!) !== path.resolve(value!)) throw new Error("Existing .env path conflicts with selected deployment; edit it explicitly before retrying.");
     }
   }
-  const snippet = `[mcp_servers.workbuddy]\ncommand = ${quote(process.execPath)}\nargs = [${quote(path.join(root,"dist","server.js"))}]\ncwd = ${quote(root)}\nstartup_timeout_sec = 30\ntool_timeout_sec = 120\n\n[mcp_servers.workbuddy.env]\nWORKBUDDY_BACKEND = "desktop-queue"\nWORKBUDDY_NODE_BIN = ${quote(process.execPath)}\nWORKBUDDY_REQUIRED_FREE_MODEL = "${APPROVED_FREE_MODEL}"\nWORKBUDDY_CLI_ELECTRON = ${quote(app)}\nWORKBUDDY_CONFIG_DIR = ${quote(configDir)}\n`;
+  const snippet = `[mcp_servers.workbuddy]\ncommand = ${quote(process.execPath)}\nargs = [${quote(path.join(root,"dist","server.js"))}]\ncwd = ${quote(root)}\nstartup_timeout_sec = 30\ntool_timeout_sec = 120\n\n[mcp_servers.workbuddy.env]\nWORKBUDDY_BACKEND = "desktop-queue"\nWORKBUDDY_NODE_BIN = ${quote(process.execPath)}\n${freeModel ? `WORKBUDDY_REQUIRED_FREE_MODEL = ${quote(freeModel)}\n` : ""}WORKBUDDY_CLI_ELECTRON = ${quote(app)}\nWORKBUDDY_CONFIG_DIR = ${quote(configDir)}\n`;
   const skillRoot = path.join(codexHome,"skills","workbuddy-executor"), source = path.join(root,"skills","workbuddy-executor");
   const hashes = Object.fromEntries(SKILL_FILES.map(name => { const filename=path.join(source,name); regularAncestors(filename); return [name,digest(fs.readFileSync(filename))]; }));
   regularAncestors(skillRoot);

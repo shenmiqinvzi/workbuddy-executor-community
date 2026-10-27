@@ -445,9 +445,9 @@ export class PersistentDesktopService {
             enforceModelPolicy(this.store.collaboration.currentPolicy(contractAdmission.policy), contractAdmission.execution);
             const models = await this.trigger.listModels?.(this.registration.sessionId);
             const entry = models?.models.find(model => model.id === request.model);
-            verifySelectedModel(contractAdmission.execution, entry && typeof entry.credits === "string" ? {
-              sessionId: models?.sessionId ?? "", modelId: entry.id, selectedModel: models?.currentModel ?? "", credits: entry.credits, level: "selected", observedAt: new Date().toISOString(),
-            } : undefined, this.registration.sessionId);
+            verifySelectedModel(contractAdmission.execution, entry ? {
+              sessionId: models?.sessionId ?? "", modelId: entry.id, selectedModel: models?.currentModel ?? "", credits: typeof entry.credits === "string" ? entry.credits : null, level: "selected", observedAt: new Date().toISOString(),
+            } : undefined, this.registration.sessionId, contractAdmission.policy.requireFree || this.store.collaboration.currentPolicy(contractAdmission.policy).requireFree);
             enforceModelPolicy(this.store.collaboration.currentPolicy(contractAdmission.policy), contractAdmission.execution);
             contractModelVerified = true;
           }

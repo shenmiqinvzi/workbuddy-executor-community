@@ -260,6 +260,7 @@ function authenticateReport(
     sessionId: task.sessionId,
     runtimeSource,
     snapshotDigest: recomputed,
+    ...(snapshot.driver === "dsh" && snapshot.dsh?.terminal ? { dshProvenance: { hostId: snapshot.dsh.hostId, requestId: snapshot.dsh.requestId, eventSeq: snapshot.dsh.terminal.seq } } : {}),
   });
   if (outcome.state === "authenticated") return { state: "authenticated" };
   switch (outcome.problem) {

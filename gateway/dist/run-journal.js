@@ -9,6 +9,15 @@ const TERMINAL = new Set(["needs_review", "blocked", "failed", "cancelled"]);
 export function hasNativeStopEvidence(snapshot) {
     if (!snapshot)
         return false;
+    if (snapshot.driver === "dsh") {
+        const proof = snapshot.dsh, terminal = proof?.terminal;
+        if (snapshot.runtimeSource === "dsh" && proof?.requestId === snapshot.attemptId && proof.sessionId === snapshot.sessionId && !!proof.hostId && proof.admissionRejected === true && snapshot.nativeStopSource === "not_dispatched" && snapshot.stopReason === "not_dispatched" && Number.isFinite(Date.parse(snapshot.nativeStoppedAt ?? "")))
+            return true;
+        return snapshot.runtimeSource === "dsh" && proof?.requestId === snapshot.attemptId && proof.sessionId === snapshot.sessionId && typeof proof.hostId === "string" && proof.hostId.length > 0 &&
+            !!terminal && Number.isSafeInteger(terminal.seq) && terminal.seq >= 0 && ["completed", "failed", "cancelled"].includes(terminal.type) &&
+            (terminal.rawType === "turn/end" || (terminal.type === "cancelled" && terminal.rawType === "agent/inbox/spliced")) &&
+            Number.isFinite(Date.parse(terminal.at)) && snapshot.nativeStoppedAt === terminal.at && snapshot.nativeStopSource === "dsh_terminal_event";
+    }
     if (snapshot.driver !== "desktop-queue")
         return false;
     // A provider/RPC failure can precede further tool activity. An idle sample

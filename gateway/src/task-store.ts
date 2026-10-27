@@ -7,6 +7,7 @@ import { persistedTaskContract, validateSupportedTaskContract, verifyPersistedCo
 import { AdmissionError, CollaborationRegistry, enforceModelPolicy, verifySelectedModel, type ModelPolicy, type ModelObservation } from "./collaboration.js";
 import { QuotaStore } from "./quota-observation.js";
 import { CreditBalanceStore } from "./credit-balance.js";
+import { DshBindingStore } from "./dsh-bindings.js";
 
 export type TaskState = "queued" | "working" | "completed" | "blocked" | "failed" | "cancelled" | "needs_review" | "accepted";
 
@@ -149,6 +150,7 @@ export class TaskStore {
   readonly collaboration: CollaborationRegistry;
   readonly quotas: QuotaStore;
   readonly creditBalances: CreditBalanceStore;
+  readonly dshBindings: DshBindingStore;
 
   constructor(readonly file: string) {
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
@@ -213,6 +215,7 @@ export class TaskStore {
     this.collaboration = new CollaborationRegistry(this.db);
     this.quotas = new QuotaStore(this.db);
     this.creditBalances = new CreditBalanceStore(this.db, this.quotas);
+    this.dshBindings = new DshBindingStore(this.db);
     // Preserve old task history; extend pre-review-loop databases in place.
     this.transaction(() => {
       const columns = new Set((this.db.prepare("PRAGMA table_info(tasks)").all() as Array<{ name: string }>).map((column) => column.name));
@@ -467,6 +470,7 @@ export class TaskStore {
     submitted: unknown,
     policy: TaskContractPolicy,
     admissionPolicy?: ModelPolicy,
+    admissionExecutor: "workbuddy" | "dsh" = "workbuddy",
   ): TaskContractCreateResult {
     // Validation happens before the transaction opens, so a rejected contract
     // cannot leave a partial write behind.
@@ -506,7 +510,7 @@ export class TaskStore {
         if (admissionPolicy) {
           const currentPolicy = this.collaboration.currentPolicy(admissionPolicy);
           if (currentPolicy.version !== admissionPolicy.version) throw new AdmissionError("POLICY_CHANGED", "The dispatch policy changed before task creation.");
-          const admission = this.collaboration.saveTaskAdmission(task.taskId, contract, contractHash, currentPolicy);
+          const admission = this.collaboration.saveTaskAdmission(task.taskId, contract, contractHash, currentPolicy, admissionExecutor);
           if (task.workspace !== admission.workspace.realPath) throw new AdmissionError("WORKSPACE_CONFLICT", "The task directory differs from its registered workspace.");
           this.db.prepare("UPDATE tasks SET contract_dispatch=1 WHERE task_id=?").run(task.taskId);
         }
@@ -595,6 +599,7 @@ export class TaskStore {
   beginAttempt(taskId: string, reservation: AttemptReservation): StoredTask {
     if (!reservation.attemptId || !reservation.messageId) throw new Error("Attempt and message identity are required");
     return this.transaction(() => {
+      this.dshBindings.assertNoOpen(taskId);
       const current = this.get(taskId);
       if (!current) throw new Error(`Unknown task: ${taskId}`);
       if (current.state === "working" || (current.state === "queued" && current.attemptId)) {
@@ -613,6 +618,10 @@ export class TaskStore {
       }
       const admission = this.collaboration.getTaskAdmission(taskId);
       if (admission) {
+        if (admission.execution.executorId === "dsh") {
+          const binding = this.dshBindings.get(reservation.attemptId);
+          if (!binding || !binding.runOpen || binding.taskId !== taskId || binding.sessionId !== reservation.sessionId || reservation.runtimeSource !== "dsh") throw new AdmissionError("EXECUTOR_UNAVAILABLE", "DSH attempts require their original adapter reservation.");
+        } else if (reservation.runtimeSource === "dsh") throw new AdmissionError("EXECUTOR_UNAVAILABLE", "A WorkBuddy admission cannot become a DSH attempt.");
         if (contract.state !== "found" || contract.record.contractHash !== admission.contractHash) throw new AdmissionError("CONTRACT_INTEGRITY", "The task admission no longer matches its contract.");
         const workspace = this.collaboration.getWorkspace(contract.record.contract.workspaceId);
         if (workspace.realPath !== current.workspace || workspace.device !== admission.workspace.device || workspace.inode !== admission.workspace.inode) throw new AdmissionError("WORKSPACE_CONFLICT", "The task directory identity changed.");
@@ -622,7 +631,7 @@ export class TaskStore {
         if (attemptNumber > policy.maxAttempts || contract.record.contract.timeoutSeconds > policy.maxTimeoutSeconds) throw new AdmissionError("POLICY_CHANGED", "The current policy no longer admits this attempt.");
         const observed = reservation.modelObservation;
         if (!current.sessionId || reservation.sessionId !== current.sessionId) throw new AdmissionError("MODEL_BINDING_CHANGED", "The contract session changed before attempt reservation.");
-        verifySelectedModel(admission.execution, observed, current.sessionId);
+        verifySelectedModel(admission.execution, observed, current.sessionId, admission.policy.requireFree || policy.requireFree);
         this.collaboration.saveAttempt({ taskId, attemptId: reservation.attemptId, model: observed, deadlineAt: new Date(Date.now() + contract.record.contract.timeoutSeconds * 1000).toISOString() });
       }
       const updated = this.writeUpdate(current, {
@@ -775,16 +784,25 @@ export class TaskStore {
       ON CONFLICT(attempt_id) DO UPDATE SET snapshot_json = excluded.snapshot_json`).run(task.attemptId, task.taskId, snapshot.attempt, JSON.stringify(snapshot));
   }
 
+  /** Trusted local composition seam; nested operations use savepoints. */
+  atomic<T>(operation: () => T): T { return this.transaction(operation); }
+  private transactionDepth = 0;
   private transaction<T>(operation: () => T): T {
-    this.db.exec("BEGIN IMMEDIATE");
+    const depth = this.transactionDepth++, savepoint = `task_store_${depth}`;
+    let started = false;
     try {
+      this.db.exec(depth ? `SAVEPOINT ${savepoint}` : "BEGIN IMMEDIATE");
+      started = true;
       const result = operation();
-      this.db.exec("COMMIT");
+      this.db.exec(depth ? `RELEASE SAVEPOINT ${savepoint}` : "COMMIT");
       return result;
     } catch (error) {
-      this.db.exec("ROLLBACK");
+      if (started) {
+        this.db.exec(depth ? `ROLLBACK TO SAVEPOINT ${savepoint}` : "ROLLBACK");
+        if (depth) this.db.exec(`RELEASE SAVEPOINT ${savepoint}`);
+      }
       throw error;
-    }
+    } finally { this.transactionDepth--; }
   }
 }
 

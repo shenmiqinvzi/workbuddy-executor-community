@@ -1,3 +1,4 @@
+import { windowsPrivatePath } from '../private-path.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { promises as fs } from 'node:fs';
@@ -7,6 +8,7 @@ import { createAdapter, verifyCapabilities, logicalIdentity } from '../adapter.m
 const sig = () => new AbortController().signal;
 async function fixture(t, overrides = {}) {
   const root = await fs.mkdtemp(join(tmpdir(), 'dsh-ad-'));
+  windowsPrivatePath(root, { protect: true, directory: true });
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const profile = { name: 'desktop', dir: root };
   const events = [];
@@ -19,6 +21,8 @@ async function fixture(t, overrides = {}) {
     async list() { return { items: [{ sessionId: 'session-one', cwd: root, running: agent.status === 'running' }] }; },
     async create() { return { sessionId: 'session-one' }; },
     async rename({ title }) { append('session/title', { title }); return { title, seq: events.length - 1 }; },
+    async modelCatalog() { return { groups: [{ id: 'synthetic-provider', models: [{ id: 'synthetic-model', credits: 'x0.00', reasoning: { efforts: [{ id: 'low' }, { id: 'high' }] } }] }] }; },
+    async selectModel({ sessionId, ...selected }) { assert.equal(sessionId, 'session-one'); append('model/selection', selected); return { sessionId, selected }; },
     async prompt({ requestId, content, mode }) {
       assert.equal(mode, 'queue'); prompts++;
       const message = { id: 'message-one', source: { kind: 'user', rpcId: requestId }, content };
@@ -36,14 +40,14 @@ async function fixture(t, overrides = {}) {
   };
   const ctx = { sessionController: controller, agents: { get: () => agent }, get: key => key === 'profileContext' ? profile : key === 'pluginPackages' ? { packageOf: () => ({ version: '0.2.0-rc.2' }) } : undefined };
   const identity = await logicalIdentity(ctx);
-  const adapter = await createAdapter(ctx, { root, ...identity });
+  const adapter = await createAdapter(ctx, { root, ...identity, allowLegacyPrompt: true });
   return { root, ctx, profile, identity, adapter, events, append, agent, controller, counts: () => ({ prompts, cancellations, removals }) };
 }
 test('adapter dispatches once and reconstructs results after plugin restart', async t => {
   const f = await fixture(t);
   const input = { sessionId: 'session-one', requestId: 'request-one', text: 'create file' };
   const one = await f.adapter.invoke('prompt', input, sig()); assert.equal(one.accepted, true);
-  const restarted = await createAdapter(f.ctx, { root: f.root, ...f.identity });
+  const restarted = await createAdapter(f.ctx, { root: f.root, ...f.identity, allowLegacyPrompt: true });
   const two = await restarted.invoke('prompt', input, sig()); assert.equal(two.duplicate, true); assert.equal(f.counts().prompts, 1);
   const page = await restarted.invoke('events', { sessionId: input.sessionId, requestId: input.requestId, afterSeq: -1, limit: 100 }, sig());
   assert.equal(page.events.at(-1).type, 'completed'); assert.equal(page.events.at(-1).text, 'actual result');
@@ -128,4 +132,39 @@ test('active cancellation with synchronous live proof requests stop but never pr
   const result = await f.adapter.invoke('cancel', { sessionId: 'session-one', requestId: 'ours' }, sig());
   assert.deepEqual(result, { requested: true, stopped: false });
   assert.equal(f.counts().cancellations, 1);
+});
+
+
+test('native model catalog is read-only and does not invent free rates', async t => {
+  const f = await fixture(t);
+  const catalog = await f.adapter.invoke('models', {}, sig());
+  assert.equal(catalog.pricingVerified, false);
+  assert.deepEqual(catalog.models, [{ providerId: 'synthetic-provider', modelId: 'synthetic-model', reasoningEfforts: ['low', 'high'], credits: null }]);
+  assert.equal(f.counts().prompts, 0);
+});
+
+test('model preparation reads back the exact native selection and busy sessions refuse it', async t => {
+  const f = await fixture(t);
+  const input = { sessionId: 'session-one', providerId: 'synthetic-provider', modelId: 'synthetic-model', reasoningEffort: 'high' };
+  const ready = await f.adapter.invoke('select_model', input, sig());
+  assert.deepEqual(ready.selectedModel, { providerId: input.providerId, modelId: input.modelId, reasoningEffort: 'high' });
+  f.agent.status = 'running';
+  await assert.rejects(f.adapter.invoke('select_model', { ...input, reasoningEffort: 'low' }, sig()), e => e.code === 'bridge/session-busy');
+  f.agent.status = 'idle';
+  await assert.rejects(f.adapter.invoke('prompt', { sessionId: 'session-one', requestId: 'bound-request', text: 'task', expectedSelection: { ...ready.selectedModel, modelId: 'other-model' } }, sig()), e => e.code === 'bridge/model-drift' && e.admissionRejected);
+  assert.equal(f.counts().prompts, 0);
+});
+
+test('0.2.1-rc.2 host metadata is supported without a version exemption', async t => {
+  const f = await fixture(t); const get = f.ctx.get;
+  f.ctx.get = key => key === 'pluginPackages' ? { packageOf: () => ({ version: '0.2.1-rc.2' }) } : get(key);
+  assert.equal((await logicalIdentity(f.ctx)).identity.version, '0.2.1-rc.2');
+});
+
+
+test('production bridge rejects unbound legacy prompts before native admission', async t => {
+  const f = await fixture(t);
+  const adapter = await createAdapter(f.ctx, { root: f.root, ...f.identity });
+  await assert.rejects(adapter.invoke('prompt', { sessionId: 'session-one', requestId: 'unbound', text: 'task' }, sig()), e => e.code === 'bridge/model-required' && e.admissionRejected);
+  assert.equal(f.counts().prompts, 0);
 });

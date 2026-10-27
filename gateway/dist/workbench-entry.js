@@ -19,6 +19,7 @@ import { runsDirectory } from "./run-journal.js";
 import { WorkbenchHttpServer, workbenchHealth, workbenchPortFromEnv } from "./workbench-http.js";
 import { WorkBuddyQuotaCollector } from "./quota-observation.js";
 import { WorkBuddyCreditBalanceCollector } from "./credit-balance.js";
+import { configuredDshCoordinator } from "./dsh-runtime.js";
 const config = loadConfig();
 const store = new TaskStore(config.dbFile);
 const client = new WorkBuddyClient(config);
@@ -27,7 +28,7 @@ const coordinator = new TaskCoordinator(config, store, client);
 // WORKBUDDY_RUNS_DIR when set, otherwise the runs directory next to the task
 // database. An empty fallback here would make the read paths resolve run
 // records against the process working directory and silently misread them.
-const service = new TaskApplicationService(coordinator, config.maxTaskAttempts ?? 3, runsDirectory(config));
+const service = new TaskApplicationService(coordinator, config.maxTaskAttempts ?? 3, runsDirectory(config), configuredDshCoordinator(store, runsDirectory(config)));
 const server = new WorkbenchHttpServer({
     service,
     health: () => workbenchHealth({

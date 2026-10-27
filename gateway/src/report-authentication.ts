@@ -50,6 +50,7 @@ export interface ReportAuthentication {
   reportDigest: string;
   /** When the queue accepted the report, as an ISO-8601 instant. */
   authenticatedAt: string;
+  dshProvenance?: { hostId: string; requestId: string; eventSeq: number };
 }
 
 export interface ReportDigestInput {
@@ -88,6 +89,7 @@ export interface ReportAuthenticationExpectation {
   attemptId: string;
   sessionId: string;
   runtimeSource: string;
+  dshProvenance?: { hostId: string; requestId: string; eventSeq: number };
   /** The digest recomputed from the snapshot's own content and reported status. */
   snapshotDigest: string;
 }
@@ -109,8 +111,12 @@ export function verifyReportAuthentication(
   expectation: ReportAuthenticationExpectation,
 ): ReportAuthenticationOutcome {
   if (!record) return { state: "unknown", problem: "missing" };
-  if (record.formatVersion !== REPORT_AUTHENTICATION_FORMAT) {
+  if (record.formatVersion !== REPORT_AUTHENTICATION_FORMAT && !(record.formatVersion === 2 && expectation.runtimeSource === "dsh")) {
     return { state: "unknown", problem: "unsupported_format" };
+  }
+  if (record.formatVersion === 2) {
+    const proof = record.dshProvenance, expected = expectation.dshProvenance;
+    if (!proof || !expected || !nonBlank(proof.hostId) || proof.hostId !== expected.hostId || proof.requestId !== expectation.attemptId || proof.requestId !== expected.requestId || !Number.isSafeInteger(proof.eventSeq) || proof.eventSeq < 0 || proof.eventSeq !== expected.eventSeq) return { state: "unknown", problem: "binding_mismatch" };
   }
   if (
     !nonBlank(record.taskId) ||

@@ -19,6 +19,8 @@ import { runtimeVersion } from "./runtime-version.js";
 import { progressDelta } from "./progress-summary.js";
 import { registerTaskProjectionTool } from "./task-view-reader.js";
 import { runsDirectory } from "./run-journal.js";
+import { AdmissionError } from "./collaboration.js";
+import { configuredDshCoordinator } from "./dsh-runtime.js";
 // Load this installation's .env so the MCP host does not have to export it or
 // run the POSIX launcher. Explicit host variables always win.
 loadDotEnv();
@@ -26,7 +28,7 @@ const config = loadConfig();
 const client = new WorkBuddyClient(config);
 const store = new TaskStore(config.dbFile);
 const coordinator = new TaskCoordinator(config, store, client);
-const tasks = new TaskApplicationService(coordinator, config.maxTaskAttempts ?? 3, runsDirectory(config));
+const tasks = new TaskApplicationService(coordinator, config.maxTaskAttempts ?? 3, runsDirectory(config), configuredDshCoordinator(store, runsDirectory(config)));
 const server = new McpServer({ name: "codex-workbuddy-gateway", version: runtimeVersion.packageVersion });
 const timeout = z.number().int().positive().max(86_400).optional();
 const taskId = z.string().min(1).max(200);
@@ -52,9 +54,11 @@ server.tool("workbuddy_health", "Probe the configured transport. Online means a 
 }, detail));
 server.tool("workbuddy_ensure_workspace", "Create or reuse a dedicated native WorkBuddy session. Use a stable workerKey such as taskId for a clean conversation in the same workspace; repeating the key reuses its reserved identity, even after uncertain creation. sessionId instead selects an existing real session. Queued tasks retain their original bindings.", {
     workspaceId: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,199}$/).optional().describe("Optional stable project ID to register for immutable contract dispatch."),
-    workspace: z.string().min(1).describe("Existing absolute project directory"), sessionId: z.string().min(1).optional(), title: z.string().min(1).max(200).optional(), model: z.string().trim().min(1).optional().describe("Optional exact native model ID. Changes require an idle session without queued tasks."), detail,
+    workspace: z.string().min(1).describe("Existing absolute project directory"), sessionId: z.string().min(1).optional(), title: z.string().min(1).max(200).optional(), model: z.string().trim().min(1).optional().describe("User-selected exact native model ID, required before preparing a session. Changes require an idle session without queued tasks."), detail,
     workerKey: z.string().trim().min(1).max(200).optional().describe("Stable task-scoped key for an isolated native conversation in the same project. Reuse the exact key on reconnect. Cannot be combined with sessionId."),
 }, ({ detail, workspaceId, ...input }) => guard(async () => {
+    if (!input.model)
+        throw new AdmissionError("MODEL_SELECTION_REQUIRED", "Ask the user to choose an exact model before preparing a session.");
     const registration = workspaceId ? tasks.registerWorkspace(workspaceId, input.workspace, input.title ?? workspaceId) : undefined;
     const result = await ensureWorkspace(config, input);
     return { ...result, contractWorkspace: registration ?? null };
@@ -66,11 +70,15 @@ server.tool("workbuddy_send_task", "Reserve and dispatch a task to a verified Wo
     taskId: taskId.optional(), objective: z.string().min(1), workspace: z.string().optional().describe("Existing absolute project directory; automatically create or reuse its native WorkBuddy worker when sessionId is omitted."),
     sessionId: z.string().min(1).optional().describe("Real WorkBuddy desktop session ID. Required when several live sessions exist."),
     sessionMode: z.enum(["existing", "new"]).optional().default("existing").describe("Queue uses project routing with existing; pass workspace for automatic native creation or selection. ACP new is version-dependent."),
-    model: z.string().trim().min(1).optional().describe("Exact model ID from workbuddy_list_models. Queue applies and verifies it at the next native wake; omit to use the session's selected model."),
+    model: z.string().trim().min(1).optional().describe("Exact model ID from workbuddy_list_models. The user must choose this exact model before dispatch; queue applies and verifies it at the next native wake."),
     constraints: z.array(z.string()).max(30).optional(), acceptanceCommands: z.array(z.string()).max(30).optional(), timeoutSeconds: timeout,
     contract: z.unknown().optional().describe("Optional immutable vnext-1/vnext-2 contract. Requires a registered workspace; vnext-2 also requires a plan authorized through the trusted application service. Do not combine with constraints/check overrides."),
     detail,
-}, ({ detail, ...input }) => guard(() => tasks.send(input), detail));
+}, ({ detail, ...input }) => guard(() => {
+    if (!input.contract && !input.model && (!input.taskId || !store.get(input.taskId)))
+        throw new AdmissionError("MODEL_SELECTION_REQUIRED", "Ask the user to choose an exact model before dispatch.");
+    return tasks.send(input);
+}, detail));
 server.tool("workbuddy_get_task", "Synchronize progress for the current attempt; includes source/session identity, blockers and real final report. A WorkBuddy turn ending is needs_review, not accepted.", {
     taskId, includeMessages: z.boolean().optional().default(true), limit: z.number().int().positive().max(100).optional().default(100), detail, sinceEventSeq: z.number().int().nonnegative().optional(),
 }, ({ taskId, includeMessages, limit, detail, sinceEventSeq }) => guard(async () => {
@@ -136,7 +144,7 @@ async function guard(action, detail = "full", options = {}) {
         return jsonResult(compact);
     }
     catch (error) {
-        return jsonResult(resultForDetail({ ok: false, error: error instanceof Error ? error.message : String(error) }, detail));
+        return jsonResult(resultForDetail({ ok: false, ...(error instanceof AdmissionError ? { code: error.code } : {}), error: error instanceof Error ? error.message : String(error) }, detail));
     }
 }
 const summaryCursors = new Map();

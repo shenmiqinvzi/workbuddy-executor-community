@@ -1,4 +1,5 @@
 import type { TaskCoordinator, SendTaskInput } from "./coordinator.js";
+import type { DshTaskCoordinator } from "./dsh-coordinator.js";
 import type { StoredTask, StoredTaskEvent } from "./task-store.js";
 import { STAGE_TASK_VIEW_UNAVAILABLE, STAGE_TASK_VIEW_SCHEMA_VERSION, type StageTaskView } from "./task-view-stage.js";
 /** A conservative status projection for existing tasks. This is not the vNext TaskView. */
@@ -78,7 +79,8 @@ export declare class TaskApplicationService {
     private readonly coordinator;
     private readonly maxAttempts;
     private readonly runsDir;
-    constructor(coordinator: TaskCoordinator, maxAttempts: number, runsDir: string);
+    readonly dsh?: DshTaskCoordinator | undefined;
+    constructor(coordinator: TaskCoordinator, maxAttempts: number, runsDir: string, dsh?: DshTaskCoordinator | undefined);
     /** Trusted local setup and authorization seams; no HTTP write routes. */
     registerWorkspace(id: string, directory: string, displayName: string): import("./collaboration.js").RegisteredWorkspace;
     createCollaborationPlan(contract: unknown, options: {
@@ -238,26 +240,25 @@ export declare class TaskApplicationService {
         ok: boolean;
         created: boolean;
         task: StoredTask;
-        next: string;
-        error?: undefined;
     } | {
         ok: boolean;
         task: StoredTask;
         error: string;
         created?: undefined;
         next?: undefined;
-    } | {
-        ok: boolean;
-        created: boolean;
-        task: StoredTask;
-        message: string;
-    } | {
-        ok: boolean;
-        created: boolean;
-        task: StoredTask;
-        message?: undefined;
     }>;
+    private dshFor;
     continue(input: Parameters<TaskCoordinator["continue"]>[0]): Promise<{
+        ok: boolean;
+        created: boolean;
+        task: StoredTask;
+        code: string;
+    } | {
+        ok: boolean;
+        created: boolean;
+        task: StoredTask;
+        code?: undefined;
+    }> | Promise<{
         ok: boolean;
         created: boolean;
         task: StoredTask;
@@ -272,6 +273,16 @@ export declare class TaskApplicationService {
     }>;
     accept(...args: Parameters<TaskCoordinator["accept"]>): Promise<StoredTask>;
     cancel(...args: Parameters<TaskCoordinator["cancel"]>): Promise<{
+        state: string;
+        remoteStopped: boolean;
+        cancellationRequested: boolean;
+        reportDigestPresent: boolean;
+        observedAt: string | undefined;
+        deadline: string | undefined;
+        stopProofScope: string;
+        ok: boolean;
+        task: StoredTask;
+    }> | Promise<{
         message: string;
         state: string;
         remoteStopped: boolean;
@@ -488,6 +499,14 @@ export declare class TaskApplicationService {
     sync(taskId: string, limit?: number): Promise<StoredTask>;
     requireTask(taskId: string): StoredTask;
     executionStatus(taskId: string): {
+        state: string;
+        remoteStopped: boolean;
+        cancellationRequested: boolean;
+        reportDigestPresent: boolean;
+        observedAt: string | undefined;
+        deadline: string | undefined;
+        stopProofScope: string;
+    } | {
         state: string;
         remoteStopped: boolean;
         cancellationRequested?: undefined;

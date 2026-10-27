@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import http from "node:http";
+import { windowsPrivatePath } from "../deepseek-plugin/private-path.mjs";
 export class DeepSeekRpcError extends Error {
     code;
     admissionRejected;
@@ -29,13 +30,20 @@ export class DeepSeekClient {
             try {
                 const file = path.join(this.registryDir, name);
                 const stat = fs.lstatSync(file);
-                if (!stat.isFile() || (stat.mode & 0o077) !== 0 || stat.uid !== process.getuid?.())
+                if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 65536)
+                    continue;
+                if (process.platform === "win32") {
+                    windowsPrivatePath(this.registryDir, { directory: true });
+                    windowsPrivatePath(file);
+                }
+                else if ((stat.mode & 0o077) !== 0 || stat.uid !== process.getuid?.())
                     continue;
                 const value = JSON.parse(fs.readFileSync(file, "utf8"));
                 if (!value || typeof value !== "object")
                     continue;
                 const host = value;
-                if (typeof host.hostId === "string" && typeof host.socketPath === "string" && path.isAbsolute(host.socketPath) && typeof host.token === "string" && host.token.length >= 16)
+                if (typeof host.hostId === "string" && typeof host.socketPath === "string" && path.isAbsolute(host.socketPath) &&
+                    (process.platform !== "win32" || /^\\\\\.\\pipe\\workbuddy-dsh-[a-z0-9-]+$/.test(host.socketPath)) && typeof host.token === "string" && host.token.length >= 16)
                     hosts.push({ ...host, processAlive: processAlive(host.pid) });
             }
             catch { /* Ignore stale or incomplete registration files. */ }

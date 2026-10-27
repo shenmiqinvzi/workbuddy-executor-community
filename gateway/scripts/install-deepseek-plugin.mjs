@@ -5,6 +5,7 @@ import os from "node:os";
 import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { privateDirectory } from "../deepseek-plugin/transport.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const argumentsList = process.argv.slice(2);
@@ -16,31 +17,36 @@ function option(name, fallback) {
   return value;
 }
 const profile = option("--profile", "desktop");
-const application = path.resolve(option("--app", "/Applications/DeepSeek Harness.app"));
+const appOption = option("--app", process.platform === "darwin" ? "/Applications/DeepSeek Harness.app" : undefined);
+if (!appOption) throw new Error("Pass --app with the existing Harness installation directory");
+const application = path.resolve(appOption);
 if (!new Set(["desktop", "web"]).has(profile)) throw new Error("Supported profiles: desktop, web");
-if (process.platform !== "darwin") throw new Error("This installer currently supports the macOS Harness App only");
-const binary = path.join(application, "Contents/MacOS/DeepSeek Harness");
-const cli = path.join(application, "Contents/Resources/app.asar/dsh/node_modules/@deepseek-ai/dsh-desktop-host/lib/cli.js");
-const plugin = path.join(root, "deepseek-plugin");
-const manifest = JSON.parse(fs.readFileSync(path.join(plugin, "package.json"), "utf8"));
+if (!["darwin", "win32"].includes(process.platform)) throw new Error("Use the existing Harness desktop installation on Windows or macOS");
+const binary = process.platform === "win32" ? path.join(application, "DeepSeek Harness.exe") : path.join(application, "Contents/MacOS/DeepSeek Harness");
+const cli = process.platform === "win32" ? path.join(application, "resources/app/dsh/node_modules/@deepseek-ai/dsh-desktop-host/lib/cli.js") : path.join(application, "Contents/Resources/app.asar/dsh/node_modules/@deepseek-ai/dsh-desktop-host/lib/cli.js");
+if (!fs.existsSync(binary) || (process.platform === "win32" && !fs.existsSync(cli))) throw new Error("The selected installation lacks its supported bundled CLI; no profile was changed");
+const plugin = path.resolve(option("--package", path.join(root, "deepseek-plugin")));
+if (!fs.existsSync(plugin)) throw new Error("The bridge package does not exist");
+const manifest = JSON.parse(fs.readFileSync(path.join(root, "deepseek-plugin/package.json"), "utf8"));
 const env = { ...process.env, ELECTRON_RUN_AS_NODE: "1" };
-const version = spawnSync(binary, ["--expose-internals", cli, "--version"], { env, encoding: "utf8" });
+const version = spawnSync(binary, ["--expose-internals", cli, "--version"], { env, encoding: "utf8", windowsHide: true });
 if (version.status !== 0) throw new Error(`Cannot run the selected App's CLI: ${version.stderr || version.error?.message}`);
-const expected = manifest.peerDependencies?.["@deepseek-ai/dsh-api-session-controller"];
-if (version.stdout.trim() !== expected) throw new Error(`Harness version ${version.stdout.trim()} is not the plugin's supported version ${expected}`);
+const supported = ["0.2.0-rc.2", "0.2.1-rc.2"];
+if (!supported.includes(version.stdout.trim())) throw new Error("The existing Harness CLI version is not supported; no profile was changed");
 
 const harnessHome = path.resolve(process.env.DSH_HOME || path.join(os.homedir(), ".dsh"));
 const profileDirectory = path.join(harnessHome, "profiles", profile);
 const profileManifest = path.join(profileDirectory, "package.json");
 if (!fs.existsSync(profileManifest)) throw new Error("Open the selected Harness profile once before installing its bridge");
 const backup = path.join(harnessHome, "codex-bridge", "backups", `${Date.now()}-${crypto.randomBytes(4).toString("hex")}`);
-fs.mkdirSync(backup, { recursive: true, mode: 0o700 });
+await privateDirectory(path.join(harnessHome, "codex-bridge"));
+await privateDirectory(backup);
 for (const filename of ["package.json", "cordis.patch.yml", "pnpm-lock.yaml"]) {
   const source = path.join(profileDirectory, filename);
   if (fs.existsSync(source)) fs.writeFileSync(path.join(backup, filename), fs.readFileSync(source), { flag: "wx", mode: 0o600 });
 }
 const installation = spawnSync(binary, ["--expose-internals", cli, "plugin", "--profile", profile, "add", "--ignore-scripts", "--config.auto-install-peers=false", plugin], {
-  env, cwd: root, stdio: "inherit",
+  env, cwd: root, stdio: "inherit", windowsHide: true,
 });
 if (installation.status !== 0) throw new Error(`Harness plugin install failed; previous profile files are backed up at ${backup}`);
 

@@ -15,7 +15,9 @@ export interface ModelPolicy {
     version: string;
     maxAttempts: number;
     maxTimeoutSeconds: number;
-    requireFree: true;
+    requireFree: boolean;
+    /** Missing on stored legacy policies: an explicit allowlist. */
+    selectionMode?: "allowlist" | "user_choice";
     allowed: ExecutionSelection[];
 }
 export interface CollaborationPlan {
@@ -45,9 +47,12 @@ export interface ModelObservation {
     sessionId: string;
     modelId: string;
     selectedModel: string;
-    credits: string;
+    credits: string | null;
     observedAt: string;
     level: "selected";
+    providerId?: string;
+    connectionId?: string;
+    reasoningEffort?: string | null;
 }
 export interface AttemptAdmission {
     taskId: string;
@@ -55,9 +60,11 @@ export interface AttemptAdmission {
     deadlineAt: string;
     model: ModelObservation;
 }
+export declare function legacyFreeModelPolicy(maxAttempts?: number): ModelPolicy;
+/** New installations have no preselected model. Selection is authorized through a plan. */
 export declare function defaultModelPolicy(maxAttempts?: number): ModelPolicy;
 export declare function enforceModelPolicy(policy: ModelPolicy, execution: ExecutionSelection): void;
-export declare function verifySelectedModel(execution: ExecutionSelection, observed: ModelObservation | undefined, sessionId: string): asserts observed is ModelObservation;
+export declare function verifySelectedModel(execution: ExecutionSelection, observed: ModelObservation | undefined, sessionId: string, requireFree?: boolean): asserts observed is ModelObservation;
 /** Server-owned registry on the SAME SQLite connection as tasks and contracts.
  * No HTTP write routes or environment credentials are exposed by this module. */
 export declare class CollaborationRegistry {
@@ -76,9 +83,9 @@ export declare class CollaborationRegistry {
     getPlan(planId: string): CollaborationPlan;
     /** Called only by a trusted application action after actual user authorization. */
     authorizePlan(planId: string, revision: string, policy: ModelPolicy, authorizationSource: string): CollaborationPlan;
-    prepare(contract: SupportedTaskContract, contractHash: string, policy: ModelPolicy): TaskAdmission;
+    prepare(contract: SupportedTaskContract, contractHash: string, policy: ModelPolicy, executor?: "workbuddy" | "dsh"): TaskAdmission;
     /** Must run inside the task/contract creation transaction; rechecks policy and plan. */
-    saveTaskAdmission(taskId: string, contract: SupportedTaskContract, contractHash: string, policy: ModelPolicy): TaskAdmission;
+    saveTaskAdmission(taskId: string, contract: SupportedTaskContract, contractHash: string, policy: ModelPolicy, executor?: "workbuddy" | "dsh"): TaskAdmission;
     getTaskAdmission(taskId: string): TaskAdmission | null;
     saveAttempt(record: AttemptAdmission): void;
     getAttempt(attemptId: string): AttemptAdmission | null;

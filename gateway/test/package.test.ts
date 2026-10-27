@@ -71,6 +71,8 @@ async function fixture() {
     files[`src/deepseek-${name}.ts`] = "export {};\n";
     files[`dist/deepseek-${name}.js`] = "export {};\n";
   }
+  files["scripts/dsh-host-check.mjs"] = "// isolated host verification fixture\n";
+  for (const name of ["dsh-bindings", "dsh-client", "dsh-coordinator", "dsh-runtime", "dsh-rate-verifier", "dsh-inspect"]) { files[`src/${name}.ts`] = "export {};\n"; files[`dist/${name}.js`] = "export {};\n"; files[`dist/${name}.d.ts`] = "export {};\n"; }
   for (const name of ["contracts", "store", "workbuddy", "engine", "http", "client", "ui", "cli", "mcp"]) {
     files[`src/platform/${name}.ts`] = "export {};\n";
     files[`dist/platform/${name}.js`] = "export {};\n";
@@ -81,7 +83,7 @@ async function fixture() {
   for(const name of ["WINDOWS_ENV.example","RESTORE.md","scripts/zip.mjs","scripts/verify-release.mjs","scripts/setup.mjs","scripts/doctor.mjs","scripts/deployment-check.mjs","scripts/workbuddy-inspect.mjs","bin/workbuddy-gateway.cmd","docs/INSTALL_WINDOWS.md","docs/DEPLOYMENT_ACCEPTANCE.md","test/support/typescript-loader.mjs","test/support/read-zip.mjs",
     ...["deployment-paths","deployment-safety","deployment-acceptance","setup","doctor","inspect-task"].flatMap(name=>[`src/${name}.ts`,`dist/${name}.js`])])files[name]="fixture\n";
   files["dist/platform/client.d.ts"] = "export {};\n";
-  for (const name of ["index.mjs", "adapter.mjs", "events.mjs", "transport.mjs", "package.json", "cordis.patch.yml", "README.md", "test/adapter.test.mjs", "test/events.test.mjs", "test/transport.test.mjs"]) files[`deepseek-plugin/${name}`] = "fixture\n";
+  for (const name of ["index.mjs", "adapter.mjs", "events.mjs", "transport.mjs", "private-path.mjs", "private-path.d.mts", "package.json", "cordis.patch.yml", "README.md", "test/adapter.test.mjs", "test/events.test.mjs", "test/transport.test.mjs"]) files[`deepseek-plugin/${name}`] = "fixture\n";
   for (const [name, content] of Object.entries(files)) {
     const target = path.join(source, name);
     await fs.mkdir(path.dirname(target), { recursive: true });

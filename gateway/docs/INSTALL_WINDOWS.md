@@ -47,7 +47,7 @@ node scripts/setup.mjs install --apply --workbuddy-app "D:/Apps/WorkBuddy/WorkBu
 
 ## 4. 首次真实连接
 
-先确认没有其他 WorkBuddy 任务运行，明确允许本次原生连接初始化；首次建立原生连接可能需要应用正常重启。通过 Codex 按技能流程核对免费模型并调用 ensure_workspace，使用新的专用样本目录及稳定任务身份。模型未知、不免费或原生权限等待时如实处理，不自动切模型。
+先确认没有其他 WorkBuddy 任务运行，明确允许本次原生连接初始化；首次建立原生连接可能需要应用正常重启。通过 Codex 按技能流程展示可用模型及已知费用，由用户选择并确认，再调用 ensure_workspace，使用新的专用样本目录及稳定任务身份。付费和费用未知可在用户了解后选择；只有主动免费限定才要求零费率，不自动切模型。新安装不默认写入固定免费模型，升级保留已有显式限制。
 
 ```powershell
 node scripts/doctor.mjs --live
