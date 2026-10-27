@@ -174,6 +174,8 @@ export class DesktopQueue {
     return locked(path.join(this.root, "dispatch.lock"), () => this.startLocked(request));
   }
   private startLocked(request: RunRequest): void {
+    const reservedDeadline = request.deadline === undefined ? undefined : Date.parse(request.deadline);
+    if (reservedDeadline !== undefined && (!Number.isFinite(reservedDeadline) || reservedDeadline <= Date.now() || reservedDeadline > Date.now() + request.timeoutSeconds * 1000)) throw new Error("The reserved contract deadline is invalid or already expired; no queue request was created");
     // A new task/session cannot bypass any unresolved native execution.
     if (fs.existsSync(this.root)) for (const name of fs.readdirSync(this.root)) {
       if (!/^run-[a-f0-9-]{36}$/.test(name) || name === request.attemptId) continue;
@@ -195,9 +197,9 @@ export class DesktopQueue {
     fs.writeFileSync(path.join(journal.dir, "request.json"), JSON.stringify({ ...request, sessionId }), { flag: "wx", mode: 0o600 });
     const now = Date.now();
     journal.save({ attemptId: request.attemptId, taskId: request.taskId, sessionId, driver: "desktop-queue", status: "queued",
-      deadline: new Date(now + request.timeoutSeconds * 1000).toISOString(),
-      claimDeadline: new Date(now + Math.min(request.timeoutSeconds, this.config.claimTimeoutSeconds ?? 180) * 1000).toISOString(),
-      reportBy: new Date(now + request.timeoutSeconds * 1000 - Math.min(120000, Math.max(5000, request.timeoutSeconds * 100))).toISOString(),
+      deadline: new Date(reservedDeadline ?? now + request.timeoutSeconds * 1000).toISOString(),
+      claimDeadline: new Date(Math.min(reservedDeadline ?? Infinity, now + Math.min(request.timeoutSeconds, this.config.claimTimeoutSeconds ?? 180) * 1000)).toISOString(),
+      reportBy: new Date(reservedDeadline === undefined ? now + request.timeoutSeconds * 1000 - Math.min(120000, Math.max(5000, request.timeoutSeconds * 100)) : reservedDeadline - Math.min((reservedDeadline - now) / 2, 120000, Math.max(5000, (reservedDeadline - now) / 10))).toISOString(),
       updatedAt: new Date(now).toISOString() });
     journal.append("status", "Task queued for the specified native WorkBuddy desktop worker; waiting for its claim.", { status: "queued", sessionId });
   }

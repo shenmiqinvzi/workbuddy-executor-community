@@ -17,6 +17,22 @@
  */
 /** The only contract schema version this build accepts. */
 export declare const TASK_CONTRACT_SCHEMA_VERSION = "workbuddy-executor/vnext-1";
+export declare const TASK_CONTRACT_V2_SCHEMA_VERSION = "workbuddy-executor/vnext-2";
+export interface ExecutionSelection {
+    executorId: "workbuddy" | "dsh";
+    connectionId: string;
+    providerId: string;
+    modelId: string;
+    reasoningEffort: string | null;
+}
+export interface NormalizedTaskContractV2 extends Omit<NormalizedTaskContract, "model"> {
+    execution: ExecutionSelection;
+    collaboration: {
+        planId: string;
+        expectedPlanRevision: string;
+    };
+}
+export type SupportedTaskContract = NormalizedTaskContract | NormalizedTaskContractV2;
 /**
  * Server policy for the attempt budget.
  *
@@ -86,7 +102,7 @@ export type TaskContractValidation = {
     rejection: TaskContractRejection;
 };
 /** The digest of a normalized contract. */
-export declare function taskContractHash(contract: NormalizedTaskContract): string;
+export declare function taskContractHash(contract: SupportedTaskContract): string;
 /**
  * The server-generated agreement version.
  *
@@ -104,7 +120,7 @@ export interface PersistedTaskContract {
     agreementVersion: string;
     contractHash: string;
     schemaVersion: string;
-    contract: NormalizedTaskContract;
+    contract: SupportedTaskContract;
     /** What the client asked for. */
     requestedMaxAttempts: number;
     /** What the server policy allows. Server-owned, never a request field. */
@@ -114,7 +130,7 @@ export interface PersistedTaskContract {
     createdAt: string;
 }
 /** Build the record for a validated contract. */
-export declare function persistedTaskContract(contract: NormalizedTaskContract, contractHash: string, createdAt: string, policy: TaskContractPolicy): PersistedTaskContract;
+export declare function persistedTaskContract(contract: SupportedTaskContract, contractHash: string, createdAt: string, policy: TaskContractPolicy): PersistedTaskContract;
 /** Why a stored contract cannot be trusted. */
 export type TaskContractIntegrityProblem = "shape" | "identity" | "schema" | "digest" | "agreement_version" | "attempt_budget";
 export interface TaskContractIntegrity {
@@ -158,3 +174,15 @@ export declare function verifyPersistedContract(row: StoredContractRow): {
  * to submit a check conclusion instead of a check definition.
  */
 export declare function validateTaskContract(input: unknown): TaskContractValidation;
+/** Explicit version dispatch; the v1-only parser above intentionally stays strict. */
+export declare function validateSupportedTaskContract(input: unknown): {
+    ok: true;
+    contract: SupportedTaskContract;
+    contractHash: string;
+} | {
+    ok: false;
+    rejection: TaskContractRejection;
+};
+export declare function contractExecution(contract: SupportedTaskContract): ExecutionSelection;
+/** Plan terms exclude task identity and the plan reference, avoiding a circular digest. */
+export declare function collaborationTermsHash(contract: SupportedTaskContract): string;

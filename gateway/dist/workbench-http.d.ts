@@ -1,5 +1,5 @@
 /**
- * Stage-1 local read-only HTTP adapter (`/workbench/v1`).
+ * Local read-only HTTP adapter (`/workbench/v1`), task stage-2 plus quota-1.
  *
  * Contract source: docs/INTERFACE_CONTRACT.md section 1; stage scope fixed by
  * the 2026-10-23 development handoff, task T1.
@@ -10,10 +10,8 @@
  *   - GET /workbench/v1/tasks/:taskId — one stage view snapshot.
  *
  * What this adapter deliberately does not serve:
- *   - No GET task events: the contract requires a durable cross-attempt event
- *     cursor and a native-event dedup source (T2); neither exists in storage,
- *     so /tasks/:taskId/events answers 501 rather than a fabricated empty
- *     event stream.
+ *   - Task events use the T2 persistent cross-attempt cursor. Resource quota
+ *     reads use a separate versioned cache populated only by its collector.
  *   - No POST /tasks, rework, cancel, reviews or accept: write entries depend
  *     on later-stage idempotency, exclusivity and evidence binding; any
  *     non-GET method on a known path answers 405.

@@ -3,7 +3,10 @@ import path from "node:path";
 import { randomBytes } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import type { LocalMessage } from "./workbuddy-client.js";
-import { persistedTaskContract, validateTaskContract, verifyPersistedContract, type NormalizedTaskContract, type PersistedTaskContract, type TaskContractIntegrity, type TaskContractPolicy, type TaskContractRejection } from "./task-contract.js";
+import { persistedTaskContract, validateSupportedTaskContract, verifyPersistedContract, type PersistedTaskContract, type TaskContractIntegrity, type TaskContractPolicy, type TaskContractRejection } from "./task-contract.js";
+import { AdmissionError, CollaborationRegistry, enforceModelPolicy, verifySelectedModel, type ModelPolicy, type ModelObservation } from "./collaboration.js";
+import { QuotaStore } from "./quota-observation.js";
+import { CreditBalanceStore } from "./credit-balance.js";
 
 export type TaskState = "queued" | "working" | "completed" | "blocked" | "failed" | "cancelled" | "needs_review" | "accepted";
 
@@ -118,6 +121,7 @@ export interface AttemptReservation {  attemptId: string;
   runtimeSource?: string;
   state?: "queued" | "working";
   acceptanceCommands?: string[];
+  modelObservation?: ModelObservation;
 }
 
 export interface StoredAttempt {
@@ -142,6 +146,9 @@ export interface StoredAttempt {
 
 export class TaskStore {
   private readonly db: DatabaseSync;
+  readonly collaboration: CollaborationRegistry;
+  readonly quotas: QuotaStore;
+  readonly creditBalances: CreditBalanceStore;
 
   constructor(readonly file: string) {
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
@@ -203,6 +210,9 @@ export class TaskStore {
         FOREIGN KEY(task_id) REFERENCES tasks(task_id)
       );
     `);
+    this.collaboration = new CollaborationRegistry(this.db);
+    this.quotas = new QuotaStore(this.db);
+    this.creditBalances = new CreditBalanceStore(this.db, this.quotas);
     // Preserve old task history; extend pre-review-loop databases in place.
     this.transaction(() => {
       const columns = new Set((this.db.prepare("PRAGMA table_info(tasks)").all() as Array<{ name: string }>).map((column) => column.name));
@@ -211,6 +221,7 @@ export class TaskStore {
         session_id: "TEXT", runtime_source: "TEXT", attempt_id: "TEXT", attempt: "INTEGER", last_event_seq: "INTEGER",
         artifacts_json: "TEXT", evidence_json: "TEXT", blocking_reason: "TEXT", submission_hash: "TEXT",
         revision: "TEXT", run_evidence_digest: "TEXT",
+        contract_dispatch: "INTEGER NOT NULL DEFAULT 0",
       })) {
         if (!columns.has(name)) this.db.exec(`ALTER TABLE tasks ADD COLUMN ${name} ${type}`);
       }
@@ -429,6 +440,10 @@ export class TaskStore {
       createdAt: String(row.created_at),
     });
     if (!verified.ok) return { state: "integrity_failure", integrity: verified.integrity };
+    const task = this.db.prepare("SELECT workspace,contract_dispatch FROM tasks WHERE task_id=?").get(taskId);
+    const admission = this.collaboration.getTaskAdmission(taskId);
+    if ((task?.contract_dispatch === 1 || "execution" in verified.record.contract) && !admission) return { state: "integrity_failure", integrity: { problem: "identity", detail: "the dispatch admission is missing" } };
+    if (admission && (admission.contractHash !== verified.record.contractHash || admission.workspace.id !== verified.record.contract.workspaceId || admission.workspace.realPath !== task?.workspace)) return { state: "integrity_failure", integrity: { problem: "identity", detail: "the dispatch admission does not match the stored task and contract" } };
     return { state: "found", record: verified.record };
   }
 
@@ -451,13 +466,15 @@ export class TaskStore {
     task: Omit<StoredTask, "createdAt" | "updatedAt" | "objective"> & { createdAt?: string; objective?: string },
     submitted: unknown,
     policy: TaskContractPolicy,
+    admissionPolicy?: ModelPolicy,
   ): TaskContractCreateResult {
     // Validation happens before the transaction opens, so a rejected contract
     // cannot leave a partial write behind.
-    const validated = validateTaskContract(submitted);
+    const validated = validateSupportedTaskContract(submitted);
     if (!validated.ok) return { status: "rejected", rejection: validated.rejection };
     const contract = validated.contract;
     const contractHash = validated.contractHash;
+    if ("execution" in contract && !admissionPolicy) return { status: "rejected", rejection: { code: "invalid_value", field: "collaboration", message: "vnext-2 requires trusted dispatch admission, not storage-only approval." } };
 
     if (contract.taskId !== task.taskId) {
       return { status: "rejected", rejection: { code: "task_mismatch", field: "taskId", message: "The contract belongs to another task." } };
@@ -486,6 +503,13 @@ export class TaskStore {
         json(task.artifacts), json(task.evidence), task.blockingReason ?? null, task.submissionHash ?? null, revision,
       );
       if (Number(inserted.changes) > 0) {
+        if (admissionPolicy) {
+          const currentPolicy = this.collaboration.currentPolicy(admissionPolicy);
+          if (currentPolicy.version !== admissionPolicy.version) throw new AdmissionError("POLICY_CHANGED", "The dispatch policy changed before task creation.");
+          const admission = this.collaboration.saveTaskAdmission(task.taskId, contract, contractHash, currentPolicy);
+          if (task.workspace !== admission.workspace.realPath) throw new AdmissionError("WORKSPACE_CONFLICT", "The task directory differs from its registered workspace.");
+          this.db.prepare("UPDATE tasks SET contract_dispatch=1 WHERE task_id=?").run(task.taskId);
+        }
         const stored = this.get(task.taskId)!;
         this.saveAttempt(stored);
         this.appendTaskEventInTransaction({
@@ -581,6 +605,26 @@ export class TaskStore {
       }
       const history = this.db.prepare("SELECT COALESCE(MAX(attempt), 0) AS last_attempt FROM task_attempts WHERE task_id = ?").get(taskId) as { last_attempt: number };
       const attemptNumber = Math.max(current.attempt ?? 0, Number(history.last_attempt)) + 1;
+      const contract = this.getContract(taskId);
+      if (contract.state === "integrity_failure") throw new AdmissionError("CONTRACT_INTEGRITY", "The stored contract failed integrity verification.");
+      if (contract.state === "found") {
+        if (["accepted", "cancelled"].includes(current.state)) throw new AdmissionError("CANCELLED_TERMINAL", "Closed contract tasks cannot start another attempt.");
+        if (attemptNumber > contract.record.effectiveMaxAttempts) throw new AdmissionError("ATTEMPT_LIMIT", "The immutable contract attempt limit was reached.");
+      }
+      const admission = this.collaboration.getTaskAdmission(taskId);
+      if (admission) {
+        if (contract.state !== "found" || contract.record.contractHash !== admission.contractHash) throw new AdmissionError("CONTRACT_INTEGRITY", "The task admission no longer matches its contract.");
+        const workspace = this.collaboration.getWorkspace(contract.record.contract.workspaceId);
+        if (workspace.realPath !== current.workspace || workspace.device !== admission.workspace.device || workspace.inode !== admission.workspace.inode) throw new AdmissionError("WORKSPACE_CONFLICT", "The task directory identity changed.");
+        enforceModelPolicy(admission.policy, admission.execution);
+        const policy = this.collaboration.currentPolicy(admission.policy);
+        enforceModelPolicy(policy, admission.execution);
+        if (attemptNumber > policy.maxAttempts || contract.record.contract.timeoutSeconds > policy.maxTimeoutSeconds) throw new AdmissionError("POLICY_CHANGED", "The current policy no longer admits this attempt.");
+        const observed = reservation.modelObservation;
+        if (!current.sessionId || reservation.sessionId !== current.sessionId) throw new AdmissionError("MODEL_BINDING_CHANGED", "The contract session changed before attempt reservation.");
+        verifySelectedModel(admission.execution, observed, current.sessionId);
+        this.collaboration.saveAttempt({ taskId, attemptId: reservation.attemptId, model: observed, deadlineAt: new Date(Date.now() + contract.record.contract.timeoutSeconds * 1000).toISOString() });
+      }
       const updated = this.writeUpdate(current, {
         state: reservation.state ?? "queued", attemptId: reservation.attemptId, attempt: attemptNumber,
         messageId: reservation.messageId, lastMessageId: reservation.messageId,

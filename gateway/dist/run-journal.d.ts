@@ -12,6 +12,8 @@ export interface RunRequest {
     model?: string;
     sessionMode?: "existing" | "new";
     timeoutSeconds: number;
+    /** Trusted contract reservation; never extended when the queue receives it. */
+    deadline?: string;
 }
 export interface RunSnapshot {
     attemptId: string;

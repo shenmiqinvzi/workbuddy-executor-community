@@ -15,6 +15,14 @@ export interface NativeObservation {
     };
 }
 export interface NativeDesktopTrigger {
+    listModels?(sessionId?: string): Promise<{
+        models: Array<{
+            id: string;
+            credits?: unknown;
+        }>;
+        currentModel?: string;
+        sessionId?: string;
+    }>;
     inspect(sessionId: string, options?: {
         readOnly?: boolean;
     }): Promise<NativeObservation>;
@@ -107,7 +115,7 @@ export declare function pumpWorkspaceWorkers(config: Config, registration: Servi
     workers: (PumpResult & {
         workspace: string;
     })[];
-    status?: "waiting_input" | "binding_mismatch" | "stop_unconfirmed" | "no_task" | "session_busy" | "listener_ready" | "active_lease" | "unavailable" | "deadline_passed" | "wake_submitted" | "wake_pending" | "wake_uncertain" | "wake_rejected" | "native_blocked" | "stop_confirmed" | undefined;
+    status?: "waiting_input" | "binding_mismatch" | "stop_unconfirmed" | "unavailable" | "no_task" | "session_busy" | "listener_ready" | "active_lease" | "deadline_passed" | "wake_submitted" | "wake_pending" | "wake_uncertain" | "wake_rejected" | "native_blocked" | "stop_confirmed" | undefined;
     sessionId?: string | undefined;
     attemptId?: string;
     wakeId?: string;

@@ -1,5 +1,5 @@
 /**
- * Stage-1 local read-only HTTP adapter (`/workbench/v1`).
+ * Local read-only HTTP adapter (`/workbench/v1`), task stage-2 plus quota-1.
  *
  * Contract source: docs/INTERFACE_CONTRACT.md section 1; stage scope fixed by
  * the 2026-10-23 development handoff, task T1.
@@ -10,10 +10,8 @@
  *   - GET /workbench/v1/tasks/:taskId — one stage view snapshot.
  *
  * What this adapter deliberately does not serve:
- *   - No GET task events: the contract requires a durable cross-attempt event
- *     cursor and a native-event dedup source (T2); neither exists in storage,
- *     so /tasks/:taskId/events answers 501 rather than a fabricated empty
- *     event stream.
+ *   - Task events use the T2 persistent cross-attempt cursor. Resource quota
+ *     reads use a separate versioned cache populated only by its collector.
  *   - No POST /tasks, rework, cancel, reviews or accept: write entries depend
  *     on later-stage idempotency, exclusivity and evidence binding; any
  *     non-GET method on a known path answers 405.
@@ -286,6 +284,8 @@ export class WorkbenchHttpServer {
         // would be legal; POST write entries (tasks submit, rework, cancel,
         // reviews, accept) are not opened in this stage at all.
         const isKnownPath = pathname === HEALTH_PATH
+          || pathname === "/workbench/v1/resources/quotas"
+          || pathname === "/workbench/v1/resources/credit-balances"
           || pathname === TASKS_PREFIX
           || /^\/workbench\/v1\/tasks\/[^/]+(\/(rework|cancel|reviews|accept|events|export))?$/.test(pathname);
         if (isKnownPath) {
@@ -298,6 +298,28 @@ export class WorkbenchHttpServer {
       }
       if (pathname === HEALTH_PATH) {
         this.send(response, 200, this.options.health(this.options.service));
+        return;
+      }
+      if (pathname === "/workbench/v1/resources/quotas") {
+        const connectionId=url.searchParams.get("connectionId")??undefined;
+        const modelId=url.searchParams.get("modelId")??undefined;
+        const rawLimit=url.searchParams.get("limit");
+        if ((connectionId!==undefined&&(!connectionId||connectionId.length>200)) || (modelId!==undefined&&(!modelId||modelId.length>200)) ||
+            (rawLimit!==null&&(!/^\d{1,3}$/.test(rawLimit)||Number(rawLimit)<1||Number(rawLimit)>200)) ||
+            [...url.searchParams.keys()].some(key=>!["connectionId","modelId","limit"].includes(key))) {
+          this.refuse(response,400,"INVALID_RESOURCE_QUERY","Use registered connection/model identifiers and a limit from 1 to 200.");return;
+        }
+        try {this.send(response,200,this.options.service.readQuotaResources({connectionId,modelId,limit:rawLimit===null?undefined:Number(rawLimit)}));}
+        catch {this.refuse(response,503,"RESOURCE_STORE_UNAVAILABLE","The saved quota resource view could not be read.");}
+        return;
+      }
+      if (pathname === "/workbench/v1/resources/credit-balances") {
+        const connectionId=url.searchParams.get("connectionId")??undefined;
+        if ((connectionId!==undefined&&(!connectionId||connectionId.length>200))||[...url.searchParams.keys()].some(key=>key!=="connectionId")) {
+          this.refuse(response,400,"INVALID_RESOURCE_QUERY","Use a registered credit connection identifier.");return;
+        }
+        try {this.send(response,200,this.options.service.readCreditBalances(connectionId));}
+        catch {this.refuse(response,503,"RESOURCE_STORE_UNAVAILABLE","The saved credit balance view could not be read.");}
         return;
       }
       if (pathname === TASKS_PREFIX) {

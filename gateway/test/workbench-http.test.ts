@@ -395,6 +395,8 @@ test("workbench entry subprocess resolves the default runs directory next to the
       WORKBUDDY_CLI_ELECTRON: path.join(dir, "no-electron.exe"),
       WORKBUDDY_TOKEN_FILE: path.join(dir, "credentials.json"),
       WORKBUDDY_SERVICE_CONFIG: path.join(dir, "persistent-service.json"),
+      WORKBUDDY_QUOTA_SOURCE_URL: "",
+      WORKBUDDY_CREDIT_SOURCE_URL: "",
       // WORKBUDDY_RUNS_DIR deliberately absent: the default must resolve next to the db.
     },
     // stdio ignored so no pipe keeps the test runner waiting after kill.

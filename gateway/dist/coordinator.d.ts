@@ -2,6 +2,7 @@ import type { Config } from "./config.js";
 import { TaskStore, type StoredTask, type TaskReport } from "./task-store.js";
 import { WorkBuddyClient } from "./workbuddy-client.js";
 import { type RunSnapshot } from "./run-journal.js";
+import { type ModelObservation } from "./collaboration.js";
 export interface SendTaskInput {
     taskId?: string;
     objective: string;
@@ -12,12 +13,14 @@ export interface SendTaskInput {
     sessionId?: string;
     model?: string;
     sessionMode?: "existing" | "new";
+    contract?: unknown;
 }
 export declare class TaskCoordinator {
     private readonly config;
     readonly store: TaskStore;
     private readonly client;
     private readonly resolveWorkspace;
+    private readonly observeModel;
     constructor(config: Config, store: TaskStore, client: WorkBuddyClient, resolveWorkspace?: (config: Config, input: {
         workspace: string;
         sessionId?: string;
@@ -27,14 +30,10 @@ export declare class TaskCoordinator {
     }) => Promise<{
         workspace: string;
         sessionId: string;
-    }>);
+    }>, observeModel?: (config: Config, sessionId: string, model: string) => Promise<ModelObservation>);
+    modelPolicy(): import("./collaboration.js").ModelPolicy;
     private requireDesktop;
     send(input: SendTaskInput): Promise<{
-        ok: boolean;
-        created: boolean;
-        task: StoredTask;
-        message: string;
-    } | {
         ok: boolean;
         created: boolean;
         task: StoredTask;
@@ -46,7 +45,18 @@ export declare class TaskCoordinator {
         error: string;
         created?: undefined;
         next?: undefined;
-    } | undefined>;
+    } | {
+        ok: boolean;
+        created: boolean;
+        task: StoredTask;
+        message: string;
+    } | {
+        ok: boolean;
+        created: boolean;
+        task: StoredTask;
+        message?: undefined;
+    }>;
+    private sendWithContract;
     private dispatch;
     sync(taskId: string, limit?: number): Promise<StoredTask>;
     /**
@@ -85,7 +95,7 @@ export declare class TaskCoordinator {
         error: string;
         created?: undefined;
         next?: undefined;
-    } | undefined>;
+    }>;
     accept(taskId: string, note: string, evidence: string[], artifactPaths?: string[]): Promise<StoredTask>;
     respond(taskId: string, decision: "allow_once" | "reject_once" | "cancel" | "submit", content?: Record<string, unknown>): {
         ok: boolean;

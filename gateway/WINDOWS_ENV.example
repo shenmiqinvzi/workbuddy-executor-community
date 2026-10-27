@@ -7,3 +7,17 @@ WORKBUDDY_BACKEND=desktop-queue
 WORKBUDDY_REQUIRED_FREE_MODEL=deepseek-v4.1-flash
 WORKBUDDY_MAX_TASK_ATTEMPTS=3
 WORKBUDDY_CLAIM_TIMEOUT_SECONDS=180
+
+# Optional quota observation for workbench-entry only; off unless URL is set.
+# Set these privately in the process environment; never commit real values.
+# Use an explicit loopback origin without /v1. No automatic login/probe occurs.
+# WORKBUDDY_QUOTA_SOURCE_ID=workbuddy2api-local
+# WORKBUDDY_QUOTA_SOURCE_URL=http://127.0.0.1:8788
+# WORKBUDDY_QUOTA_API_KEY=YOUR_PRIVATE_API_KEY
+# WORKBUDDY_QUOTA_PANEL_TOKEN=YOUR_EXISTING_PANEL_SESSION_TOKEN
+
+# Optional cached credit summaries (separate from token estimates).
+# Requires /v1/balance-summary on the source; no panel token or login is used.
+# WORKBUDDY_CREDIT_SOURCE_ID=workbuddy2api-credit
+# WORKBUDDY_CREDIT_SOURCE_URL=http://127.0.0.1:8788
+# WORKBUDDY_CREDIT_API_KEY=YOUR_EXISTING_DSH_PROVIDER_API_KEY

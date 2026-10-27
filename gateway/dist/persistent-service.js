@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { enforceModelPolicy, verifySelectedModel } from "./collaboration.js";
 import path from "node:path";
 import crypto from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
@@ -411,7 +412,9 @@ export class PersistentDesktopService {
         if (!evidence.registered)
             return this.result("unavailable", { ...identity, reason: evidence.reason });
         const request = journal.request();
-        const modelReady = () => { if (request.model)
+        const contractAdmission = this.store.collaboration.getTaskAdmission(task.taskId);
+        let contractModelVerified = false;
+        const modelReady = () => { if (request.model && (!contractAdmission || contractModelVerified))
             writePrivateJson(path.join(journal.dir, 'model-ready.json'), { model: request.model, sessionId: this.registration.sessionId, attemptId: journal.attemptId }); };
         if (request.sessionId !== this.registration.sessionId || (request.workspace && path.resolve(request.workspace) !== this.registration.workspace) || (task.workspace && path.resolve(task.workspace) !== this.registration.workspace) || (evidence.cwd && path.resolve(evidence.cwd) !== this.registration.workspace)) {
             return this.result("binding_mismatch", { ...identity, reason: "The registered workspace or session no longer matches the queued task" });
@@ -479,11 +482,32 @@ export class PersistentDesktopService {
             // the prompt; otherwise a perfectly valid immediate claim sees no task.
             if (request.model) {
                 try {
+                    const contract = this.store.getContract(task.taskId);
+                    if (contract.state === "integrity_failure")
+                        throw new Error("Contract dispatch admission failed integrity verification");
+                    if (contractAdmission) {
+                        const attempt = this.store.collaboration.getAttempt(journal.attemptId);
+                        const workspace = this.store.collaboration.getWorkspace(contractAdmission.workspace.id);
+                        if (workspace.realPath !== request.workspace || workspace.device !== contractAdmission.workspace.device || workspace.inode !== contractAdmission.workspace.inode ||
+                            !attempt || attempt.deadlineAt !== request.deadline || attempt.deadlineAt !== snapshot.deadline || contractAdmission.execution.modelId !== request.model)
+                            throw new Error("Contract attempt, directory, deadline or model binding changed before wake");
+                        enforceModelPolicy(this.store.collaboration.currentPolicy(contractAdmission.policy), contractAdmission.execution);
+                    }
                     if (!this.trigger.setModel)
                         throw new Error("Native model preparation is unavailable; refusing an unverified wake");
                     const configured = await this.trigger.setModel(this.registration.sessionId, request.model);
                     if (configured.sessionId !== this.registration.sessionId || configured.model !== request.model)
                         throw new Error("Native model preparation returned a different session or model");
+                    if (contractAdmission) {
+                        enforceModelPolicy(this.store.collaboration.currentPolicy(contractAdmission.policy), contractAdmission.execution);
+                        const models = await this.trigger.listModels?.(this.registration.sessionId);
+                        const entry = models?.models.find(model => model.id === request.model);
+                        verifySelectedModel(contractAdmission.execution, entry && typeof entry.credits === "string" ? {
+                            sessionId: models?.sessionId ?? "", modelId: entry.id, selectedModel: models?.currentModel ?? "", credits: entry.credits, level: "selected", observedAt: new Date().toISOString(),
+                        } : undefined, this.registration.sessionId);
+                        enforceModelPolicy(this.store.collaboration.currentPolicy(contractAdmission.policy), contractAdmission.execution);
+                        contractModelVerified = true;
+                    }
                     modelReady();
                 }
                 catch (error) {

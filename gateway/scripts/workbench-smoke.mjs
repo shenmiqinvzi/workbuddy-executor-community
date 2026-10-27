@@ -17,6 +17,8 @@ import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import http from "node:http";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport, getDefaultEnvironment } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 const gatewayRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = path.join(gatewayRoot, "..");
@@ -285,8 +287,22 @@ try {
     note: "task database (main file) and run files byte-identical after all reads; sqlite -wal/-shm engine bookkeeping is excluded",
   });
 
-  // MCP tool still registered (compiled server module imports work)
-  step("mcp-untouched", { ok: true, note: "no MCP code path modified; workbuddy_get_task sync handler unchanged" });
+  // Exercise the compiled MCP entry, rather than asserting registration from
+  // a comment. All configuration and data belong to this synthetic sample.
+  const transport = new StdioClientTransport({ command: process.execPath, args: [path.join(gatewayRoot,"dist/server.js")], cwd: gatewayRoot, stderr: "pipe",
+    env: { ...getDefaultEnvironment(), WORKBUDDY_BACKEND:"desktop-queue", WORKBUDDY_DB_FILE:path.join(dir,"mcp.sqlite"),
+      WORKBUDDY_RUNS_DIR:path.join(dir,"mcp-runs"), WORKBUDDY_CONFIG_DIR:path.join(dir,"synthetic-native"),
+      WORKBUDDY_CLI_ELECTRON:path.join(dir,"missing.exe"), WORKBUDDY_TOKEN_FILE:path.join(dir,"unused-token.json"),
+      WORKBUDDY_SERVICE_CONFIG:path.join(dir,"unused-service.json") } });
+  transport.stderr?.on("data",()=>{});
+  const mcp = new Client({name:"workbench-smoke",version:"1"});
+  try {
+    await mcp.connect(transport,{timeout:10000});
+    const {tools}=await mcp.listTools({}, {timeout:10000});
+    const send=tools.find(tool=>tool.name==="workbuddy_send_task");
+    const workspace=tools.find(tool=>tool.name==="workbuddy_ensure_workspace");
+    step("compiled-mcp-registration", {ok:tools.some(tool=>tool.name==="workbuddy_get_task") && Boolean(send?.inputSchema.properties?.contract) && Boolean(workspace?.inputSchema.properties?.workspaceId),tools:tools.length});
+  } finally {await mcp.close();}
 } finally {
   await server.close();
   store.close();

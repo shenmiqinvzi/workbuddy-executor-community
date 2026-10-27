@@ -79,6 +79,94 @@ export declare class TaskApplicationService {
     private readonly maxAttempts;
     private readonly runsDir;
     constructor(coordinator: TaskCoordinator, maxAttempts: number, runsDir: string);
+    /** Trusted local setup and authorization seams; no HTTP write routes. */
+    registerWorkspace(id: string, directory: string, displayName: string): import("./collaboration.js").RegisteredWorkspace;
+    createCollaborationPlan(contract: unknown, options: {
+        mode: "manual" | "recommend";
+        reason: string;
+        ttlSeconds?: number;
+    }): import("./collaboration.js").CollaborationPlan;
+    authorizeCollaborationPlan(planId: string, revision: string, source: string): import("./collaboration.js").CollaborationPlan;
+    getCollaborationPlan(planId: string): import("./collaboration.js").CollaborationPlan;
+    readQuotaResources(options?: {
+        connectionId?: string;
+        modelId?: string;
+        limit?: number;
+    }): {
+        schemaVersion: string;
+        readOnly: true;
+        connections: {
+            connectionId: string;
+            status: string;
+            errorCode: string | null;
+            snapshotId: string | null;
+            collectedAt: string | null;
+            sourceObservedAt: string | null;
+            expiresAt: string | null;
+            freshness: string;
+        }[];
+        observations: ({
+            connectionId: string;
+            snapshotId: string;
+            sourceObservedAt: string | null;
+            collectedAt: string;
+            scopeId: string;
+            scopeKind: "gateway_pool";
+            shared: true;
+            modelId: string;
+            realm: string;
+            unit: "tokens";
+            valueKind: "estimated" | "unavailable";
+            availability: "available" | "exhausted" | "unknown";
+            used: number | null;
+            budget: number | null;
+            remaining: number | null;
+            resetAt: string | null;
+            method: string;
+            limitations: string[];
+        } & {
+            connectionIds: string[];
+        })[];
+        truncated: boolean;
+        attribution: "connection_only";
+        actualTaskCredits: null;
+        actualTaskTokens: null;
+    };
+    readCreditBalances(connectionId?: string): {
+        schemaVersion: string;
+        readOnly: true;
+        connections: {
+            connectionId: string;
+            status: string;
+            errorCode: string | null;
+            snapshotId: string | null;
+            collectedAt: string | null;
+            cacheFreshness: string;
+        }[];
+        balances: {
+            shared: true;
+            scopeKind: "gateway_region_pool";
+            balanceFreshness: string;
+            limitations: string[];
+            errorCode: string | null;
+            snapshotId: string;
+            connectionId: string;
+            scopeId: string;
+            realm: "cn" | "intl";
+            unit: "credit";
+            valueKind: "reported_cache";
+            balance: number | null;
+            accountsEnabled: number;
+            accountsWithData: number;
+            coverage: "complete" | "partial" | "unavailable";
+            latestMemberObservedAt: string | null;
+            collectedAt: string;
+            cacheExpiresAt: string;
+            connectionIds: string[];
+        }[];
+        actualTaskCredits: null;
+        attribution: "connection_only";
+    };
     /** Stored facts only: deliberately bypasses every synchronising coordinator method. */
     readProjection(taskId: string): import("./task-view-reader.js").TaskProjectionResult;
     /**
@@ -130,8 +218,8 @@ export declare class TaskApplicationService {
      * Pure read: afterEventId is exclusive (0 = from the beginning), limit is
      * bounded 1-200 (default 100), events ascend by the monotonic per-task
      * eventId, and nothing is written — a missing task is a task_not_found
-     * failure, never an implicit creation. nextEventId is null when the page
-     * already reached the end of the stream.
+     * failure, never an implicit creation. nextEventId is the last returned id,
+     * or the original afterEventId on an empty page, including at stream end.
      */
     listTaskEvents(taskId: string, options?: {
         afterEventId?: number;
@@ -150,11 +238,6 @@ export declare class TaskApplicationService {
         ok: boolean;
         created: boolean;
         task: StoredTask;
-        message: string;
-    } | {
-        ok: boolean;
-        created: boolean;
-        task: StoredTask;
         next: string;
         error?: undefined;
     } | {
@@ -163,7 +246,17 @@ export declare class TaskApplicationService {
         error: string;
         created?: undefined;
         next?: undefined;
-    } | undefined>;
+    } | {
+        ok: boolean;
+        created: boolean;
+        task: StoredTask;
+        message: string;
+    } | {
+        ok: boolean;
+        created: boolean;
+        task: StoredTask;
+        message?: undefined;
+    }>;
     continue(input: Parameters<TaskCoordinator["continue"]>[0]): Promise<{
         ok: boolean;
         created: boolean;
@@ -176,7 +269,7 @@ export declare class TaskApplicationService {
         error: string;
         created?: undefined;
         next?: undefined;
-    } | undefined>;
+    }>;
     accept(...args: Parameters<TaskCoordinator["accept"]>): Promise<StoredTask>;
     cancel(...args: Parameters<TaskCoordinator["cancel"]>): Promise<{
         message: string;
