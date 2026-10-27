@@ -1,6 +1,7 @@
 import type { TaskCoordinator, SendTaskInput } from "./coordinator.js";
 import type { DshTaskCoordinator } from "./dsh-coordinator.js";
 import type { OperationOptions } from "./operation-admission.js";
+import type { RecoveryInput } from "./operation-recovery.js";
 import type { StoredTask, StoredTaskEvent } from "./task-store.js";
 import { STAGE_TASK_VIEW_UNAVAILABLE, STAGE_TASK_VIEW_SCHEMA_VERSION, type StageTaskView } from "./task-view-stage.js";
 /** A conservative status projection for existing tasks. This is not the vNext TaskView. */
@@ -172,6 +173,51 @@ export declare class TaskApplicationService {
     };
     getOperation(operationId: string): import("./operation-admission.js").OperationRecord | null;
     listUnfinishedOperations(): import("./operation-admission.js").OperationRecord[];
+    readOperationRecovery(targetOperationId: string): {
+        schemaVersion: "operation-recovery-1";
+        operation: import("./operation-admission.js").OperationRecord;
+        operationToken: string;
+        revision: string | null;
+        attemptId: string | null;
+        evidenceToken: string;
+        runEvidenceDigest: string | null;
+        available: string[];
+        proof: {
+            reconcile: "queue_receipt" | "dsh_receipt" | null;
+            close: "not_dispatched" | "native_stopped" | null;
+        };
+        capacity: {
+            taskId: string;
+            executor: string;
+            operationId: string;
+        } | null;
+        history: import("./operation-recovery.js").RecoveryDecision[];
+        note: string;
+    };
+    getOperationRecoveryDecision(operationId: string): import("./operation-recovery.js").RecoveryDecision | null;
+    authorizeOperationRecovery(input: RecoveryInput, actor: string): `${string}-${string}-${string}-${string}-${string}`;
+    resolveOperationRecovery(input: RecoveryInput, authorizationId: string): import("./operation-recovery.js").RecoveryDecision;
+    observeOperationRecovery(targetOperationId: string): Promise<{
+        schemaVersion: "operation-recovery-1";
+        operation: import("./operation-admission.js").OperationRecord;
+        operationToken: string;
+        revision: string | null;
+        attemptId: string | null;
+        evidenceToken: string;
+        runEvidenceDigest: string | null;
+        available: string[];
+        proof: {
+            reconcile: "queue_receipt" | "dsh_receipt" | null;
+            close: "not_dispatched" | "native_stopped" | null;
+        };
+        capacity: {
+            taskId: string;
+            executor: string;
+            operationId: string;
+        } | null;
+        history: import("./operation-recovery.js").RecoveryDecision[];
+        note: string;
+    }>;
     /** Stored facts only: deliberately bypasses every synchronising coordinator method. */
     readProjection(taskId: string): import("./task-view-reader.js").TaskProjectionResult;
     /**

@@ -8,6 +8,7 @@ import { AdmissionError, CollaborationRegistry, enforceModelPolicy, verifySelect
 import { QuotaStore } from "./quota-observation.js";
 import { CreditBalanceStore } from "./credit-balance.js";
 import { OperationAdmission } from "./operation-admission.js";
+import { RecoveryStore } from "./operation-recovery.js";
 import { DshBindingStore } from "./dsh-bindings.js";
 
 export type TaskState = "queued" | "working" | "completed" | "blocked" | "failed" | "cancelled" | "needs_review" | "accepted";
@@ -155,6 +156,7 @@ export class TaskStore {
   readonly creditBalances: CreditBalanceStore;
   readonly dshBindings: DshBindingStore;
   readonly operations: OperationAdmission;
+  readonly recoveries: RecoveryStore;
 
   constructor(readonly file: string) {
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
@@ -274,6 +276,7 @@ export class TaskStore {
       CREATE INDEX IF NOT EXISTS task_events_by_task ON task_events(task_id, event_id);
       CREATE UNIQUE INDEX IF NOT EXISTS task_events_source_ref ON task_events(task_id, source_ref) WHERE source_ref IS NOT NULL;
     `);
+    this.recoveries = new RecoveryStore(this.db, this);
     this.operations = new OperationAdmission(this.db, this);
   }
 
@@ -388,6 +391,7 @@ export class TaskStore {
     return this.transaction(() => {
       const existing = this.get(task.taskId);
       if (existing) return { task: existing, created: false };
+      this.recoveries.assertOpen(task.taskId);
       const now = task.createdAt ?? new Date().toISOString();
       // Every legitimate creation path must produce the initial revision and
       // task_received inside the same transaction (T2-R5); idempotent replays
@@ -497,6 +501,7 @@ export class TaskStore {
 
     return this.transaction(() => {
       const now = task.createdAt ?? new Date().toISOString();
+      this.recoveries.assertOpen(task.taskId);
       // Same T2-R5 invariant as createOrGet: the winning creator writes the
       // initial revision in the same transaction; conflicting/existing rows
       // are returned untouched.
@@ -604,6 +609,7 @@ export class TaskStore {
   beginAttempt(taskId: string, reservation: AttemptReservation): StoredTask {
     if (!reservation.attemptId || !reservation.messageId) throw new Error("Attempt and message identity are required");
     return this.transaction(() => {
+      this.recoveries.assertOpen(taskId);
       this.dshBindings.assertNoOpen(taskId);
       const current = this.get(taskId);
       if (!current) throw new Error(`Unknown task: ${taskId}`);
@@ -746,6 +752,7 @@ export class TaskStore {
   }
 
   private writeUpdate(current: StoredTask, patch: TaskUpdate, options: { suppressFactEvents?: boolean } = {}): StoredTask {
+    this.recoveries.assertOpen(current.taskId);
     const merged = { ...current, ...Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined)), updatedAt: new Date().toISOString() };
     const before = taskFactSignature(current);
     const after = taskFactSignature(merged);

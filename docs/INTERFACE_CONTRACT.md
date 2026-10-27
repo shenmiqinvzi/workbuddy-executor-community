@@ -261,3 +261,12 @@ scopeId 是匿名稳定标识，不是密钥或原始账号。gateway_pool 只�
 兼容验收须覆盖旧客户端对新 schema 的明确拒绝、旧报告来源保留、未绑定模型/额度的旧任务显示 null、写入迁移事务与失败回滚、备份与降级限制。不得从旧 model 字符串反推 DSH 来源、实际模型或历史额度；新增能力须逐项开关，不以 schema 名称代表执行器已通过真实验收。
 
 T3b 的受控 DSH SDK、原生请求停止证据与报告认证格式 2 见 [DSH 阶段说明](T3B_DSH_ADAPTER.md)。stage-2 HTTP 结构与只读边界保持不变；不能据此认定完整 vnext-2 面板已实现。
+
+
+## T4B 原操作恢复入口
+
+`operation-recovery-1` 与既有 TaskView/schema 分开。`workbuddy_get_operation_recovery({operationId})` 读取原操作、operationToken、revision/attempt、evidenceToken、可用动作、占用与不可变恢复审计；不写入或调用原生来源。`workbuddy_observe_operation_recovery({operationId})` 显式沿原绑定收集既有事件，保存证据，不准备/派工/取消。
+
+可信应用的恢复请求含稳定 operationId、targetOperationId、action（reconcile/close）、reason、expectedOperationToken、expectedEvidenceToken、expectedRevision/expectedAttemptId。实际人工确认后生成短期、绑定完整参数且只能消费一次的授权；决定与关闭事件/容量释放同一 SQLite 事务。相同恢复键先重放，变参冲突；旧预览和变化后的证据拒绝。浏览器、MCP 不能传 approved/stopped 代替授权或证明。
+
+本地入口为 `node dist/recovery-cli.js`，详见[恢复指南](../gateway/docs/OPERATION_RECOVERY.md)与[阶段设计](T4B_OPERATION_RECOVERY.md)。关闭不等于 accepted；未处置的历史未知继续阻塞。原发送结果不重写，不确定原操作被处置后返回 OPERATION_RESOLVED/recoveryOperationId；HTTP 仍无新写路由，完整新版 cancel/respond/accept 契约及 Web 操作另行交付。

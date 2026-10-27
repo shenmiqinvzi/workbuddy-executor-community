@@ -112,10 +112,11 @@ export class DshTaskCoordinator {
     try {
       enforceModelPolicy(this.policy(), binding.execution);
       const before = await this.checkedSession(binding, task.workspace!);
-      this.store.operations.nativeBoundary(task.taskId, binding.attemptId);
+      this.store.operations.nativeBoundary(task.taskId, binding.attemptId, "prepare");
       const ready = prepare && !same(before.selectedModel, expected) ? await this.client.selectModel({ hostId: binding.hostId, sessionId: binding.sessionId, ...expected }) : before;
       if (ready.sessionId !== binding.sessionId || !same(ready.selectedModel, expected)) return fail("MODEL_BINDING_CHANGED", "Native model readback differs; no prompt was sent.");
       await this.checkedSession(binding, task.workspace!);
+      for (const op of this.store.operations.forTask(task.taskId)) if (["reserved", "effect_started"].includes(op.state) && op.kind === "send") this.store.operations.preparationReturned(op.operationId);
       const model = await this.observation(binding.execution, binding.sessionId, binding.taskId);
       this.store.atomic(() => {
         const current = this.store.dshBindings.get(binding.attemptId)!;
@@ -167,7 +168,7 @@ export class DshTaskCoordinator {
     try { cancellation = JSON.parse(fs.readFileSync(path.join(journal.dir, "cancel.json"), "utf8")); } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
     this.store.updateAttempt(taskId, journal.attemptId, { runEvidenceDigest: runEvidenceDigestOf(snapshot, cancellation) });
   }
-  async sync(taskId: string, limit = 100): Promise<StoredTask> {
+  async sync(taskId: string, limit = 100, observeOnly = false): Promise<StoredTask> {
     const binding = this.binding(taskId), task = this.task(taskId);
     if (!binding.runOpen || !task.attemptId) return task;
     let page;
@@ -200,7 +201,7 @@ export class DshTaskCoordinator {
         const modelMatches = same(effective, selection(binding.execution));
         if (effective && !modelMatches) {
           patch.state = "blocked"; patch.blockingReason = "The native request model differs from its immutable selection."; snapshot.error = "model_binding_drift"; snapshot.status = "blocked";
-          if (!current.cancelRequested) { current = { ...current, cancelRequested: true }; cancelOriginal = true; }
+          if (!observeOnly && !current.cancelRequested) { current = { ...current, cancelRequested: true }; cancelOriginal = true; }
         }
         if (["completed", "failed", "cancelled"].includes(event.type)) {
           if ((event.rawType !== "turn/end" && !(event.type === "cancelled" && event.rawType === "agent/inbox/spliced")) || !event.timestamp || !Number.isFinite(Date.parse(event.timestamp)) || (current.turnId && event.turnId !== current.turnId)) return fail("SOURCE_IDENTITY_MISMATCH", "A terminal report is not a bound durable native stop event.");
@@ -219,7 +220,7 @@ export class DshTaskCoordinator {
         if (Object.keys(patch).length) this.store.updateAttempt(taskId, binding.attemptId, patch);
         this.store.appendTaskEvent({ taskId, attemptId: binding.attemptId, type: config ? "native_request_observed" : `dsh_${event.type}`, occurredAt: event.timestamp ?? new Date().toISOString(), observedAt: new Date().toISOString(), actor: "dsh", payload: { nativeEventSeq: event.seq, requestId: binding.requestId, rawType: event.rawType ?? null, ...(event.text ? { text: event.text } : {}), ...(config ? { effectiveModel: snapshot.dsh?.effectiveModel ?? null } : {}) }, sourceRef: `${binding.attemptId}:dsh:${event.seq}` });
       }
-      if (current.runOpen && !current.cancelRequested && Date.parse(snapshot.deadline ?? "") <= Date.now()) {
+      if (!observeOnly && current.runOpen && !current.cancelRequested && Date.parse(snapshot.deadline ?? "") <= Date.now()) {
         current = { ...current, cancelRequested: true }; cancelOriginal = true;
         snapshot.status = "blocked"; snapshot.error = "deadline"; journal.cancel("deadline");
         this.store.updateAttempt(taskId, binding.attemptId, { state: "blocked", blockingReason: "The fixed DSH deadline elapsed; stop remains unconfirmed." });

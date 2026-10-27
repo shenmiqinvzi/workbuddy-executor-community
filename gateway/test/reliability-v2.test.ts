@@ -88,10 +88,18 @@ test("same task rework retains session and history; overlapping and duplicate di
 
 async function validatedReport(f: ReturnType<typeof fixture>) {
  const c=await f.send(),source=path.join(f.dir,"source.js");fs.writeFileSync(source,"verified source");
+ // Follow the actual claim's JSON example, as a native worker does, rather
+ // than supplying a hand-built report that hides omissions in that example.
+ const reportContract=c.prompt.split("[QUEUE_REPORT_CONTRACT]")[1];
+ const templateLine=reportContract?.split("\n").find(line=>line.startsWith("格式："));
+ assert.ok(templateLine,"Claim must carry a file-report JSON example");
+ const template=JSON.parse(templateLine.slice("格式：".length));
+ assert.ok(Array.isArray(template.validationRecords)&&template.validationRecords.length>0,"Claim report template must show how to cite validation records");
  const hash=crypto.createHash("sha256").update("verified source").digest("hex"),dir=path.join(c.journal.dir,"commands"),record=path.join(dir,crypto.randomUUID()+".json");
  fs.mkdirSync(dir);fs.writeFileSync(record,JSON.stringify({endedAt:new Date().toISOString(),exitCode:0,cleanupConfirmed:true,before:{[source]:hash},after:{[source]:hash}}));
- fs.writeFileSync(c.reporting.resultFile,JSON.stringify({status:"completed",text:"actual validated result",artifacts:[source],validationRecords:[record]}));
+ fs.writeFileSync(c.reporting.resultFile,JSON.stringify({...template,status:"completed",text:"actual validated result",artifacts:[source],validationRecords:template.validationRecords.map(()=>record)}));
  const input=readWorkerResult(f.config,path.join(c.journal.dir,"worker-context.json"),c.reporting.resultFile);
+ assert.deepEqual(input.validationRecords,[{path:record,sha256:crypto.createHash("sha256").update(fs.readFileSync(record)).digest("hex")}]);
  f.queue.report(input);f.setState("idle");await f.service().pump();await f.coordinator.sync("task");
  return {...c,source,record,input};
 }

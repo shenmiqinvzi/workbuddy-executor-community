@@ -49,3 +49,8 @@ status 按实际选 completed、blocked 或 failed。validationRecords 可选，
 正常使用增量 brief 和45–55秒 wait；查证才请求 full/历史 attempt。重连复用 task/attempt/session，传 sinceEventSeq 延续游标。brief 不是验收证据，仍须真实认证报告、原生停止证明、Codex 独立检查。
 
 受控验收记录每次监督工具名称、耗时、返回字节数，单列 worker 最终报告字节数、从派发到停止的耗时、人工纠错/终止次数。预定 cancel/返工与异常人工干预分开统计。网关内部泵轮询不是 Codex 监督调用；不要混算或据此估算 token 节省。
+
+
+### 不确定操作恢复（T4B）
+
+先用 `workbuddy_get_operation_recovery({operationId})` 查看原证据与审计；需要收集原来源事件时显式调用 `workbuddy_observe_operation_recovery`。恢复查询不授权派工，找不到回执不能重发。人工处置通过本地 `node dist/recovery-cli.js show|observe|reconcile|close` 控制台，先展示原绑定与影响，再实际确认。reconcile 保留容量；close 需要可靠停止或无 attempt 的未派工证明，不接受报告、不虚构停止。历史缺证继续阻塞，不删除记录、不换身份或模型。部署与真实模型操作仍需原有授权。

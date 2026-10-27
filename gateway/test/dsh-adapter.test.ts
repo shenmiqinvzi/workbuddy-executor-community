@@ -106,6 +106,31 @@ test("lost dispatch response holds shared capacity and recovers by original even
   assert.equal(JSON.stringify(f.store.get("dsh-task")).includes("private credential"), false);
 });
 
+test("T4B: original DSH events reconcile an uncertain prompt and authorize a separate stopped closure", async t => {
+  const f = fixture(t); f.setPromptError(new Error("Synthetic lost native receipt")); await f.send();
+  const operation = f.store.operations.forTask("dsh-task").find(op => op.kind === "send")!;
+  assert.equal(operation.state, "outcome_unknown");
+  assert.deepEqual(f.store.recoveries.inspect(operation.operationId, f.runs).available, []);
+  f.finish(); await f.coordinator.sync("dsh-task", 100, true);
+  function decide(action: "close" | "reconcile") {
+    const view = f.store.recoveries.inspect(operation.operationId, f.runs);
+    const input = { action, operationId: `dsh-${action}`, targetOperationId: operation.operationId, expectedOperationToken: view.operationToken,
+      expectedEvidenceToken: view.evidenceToken, expectedRevision: view.revision, expectedAttemptId: view.attemptId, reason: "Synthetic human verified original native events" };
+    return f.store.recoveries.resolve(input, f.runs, f.store.recoveries.authorize(input, f.runs, "synthetic-human"));
+  }
+  assert.equal(decide("reconcile").proof, "dsh_receipt"); assert.equal(f.store.operations.occupant()!.taskId, "dsh-task");
+  assert.equal(decide("close").proof, "native_stopped"); assert.equal(f.store.get("dsh-task")!.state, "cancelled");
+  assert.equal(f.store.operations.occupant(), null); assert.deepEqual(f.counts(), { prompts: 1, selections: 1 });
+});
+
+test("T4B: explicit DSH recovery observation never sends a cancellation on model drift", async t => {
+  const f = fixture(t); await f.send(); let cancels = 0;
+  f.client.cancel = async () => { cancels++; return { requested: true, stopped: false }; };
+  f.event("started"); f.event("progress", { data: { header: { config: { provider: f.execution.providerId, model: "different-model" } } } });
+  await f.coordinator.sync("dsh-task", 100, true); assert.equal(cancels, 0); assert.equal(f.store.dshBindings.forTask("dsh-task")!.cancelRequested, false);
+  assert.equal(f.store.operations.occupant()!.taskId, "dsh-task"); assert.deepEqual(f.counts(), { prompts: 1, selections: 1 });
+});
+
 test("cancel acknowledgements and idle never prove the original request stopped", async t => {
   const f = fixture(t); await f.send(); const result = await f.coordinator.cancel("dsh-task");
   assert.equal(result.remoteStopped, false); assert.equal(result.cancellationRequested, true);

@@ -81,6 +81,8 @@ server.tool("workbuddy_send_task", "Reserve and dispatch a task to a verified Wo
 }, detail));
 
 server.tool("workbuddy_get_operation", "Read the original durable operation receipt. Unfinished operations never trigger a resend.", { operationId: z.string().min(1).max(512) }, ({ operationId }) => guard(async () => ({ ok: true, operation: tasks.getOperation(operationId) })));
+server.tool("workbuddy_get_operation_recovery", "Read original recovery evidence, available local actions and immutable audits; no native calls or writes.", { operationId: z.string().min(1).max(512) }, ({ operationId }) => guard(async () => ({ ok: true, recovery: tasks.readOperationRecovery(operationId) })));
+server.tool("workbuddy_observe_operation_recovery", "Explicitly collect the original source's existing report/stop events without dispatching, selecting models or cancelling. Human decisions require the local recovery console.", { operationId: z.string().min(1).max(512) }, ({ operationId }) => guard(async () => ({ ok: true, recovery: await tasks.observeOperationRecovery(operationId) })));
 
 server.tool("workbuddy_get_task", "Synchronize progress for the current attempt; includes source/session identity, blockers and real final report. A WorkBuddy turn ending is needs_review, not accepted.", {
   taskId, includeMessages: z.boolean().optional().default(true), limit: z.number().int().positive().max(100).optional().default(100), detail, sinceEventSeq:z.number().int().nonnegative().optional(),
@@ -154,7 +156,7 @@ async function guard(action: () => Promise<unknown>, detail: ResultDetail = "ful
     }
     return jsonResult(compact);
   }
-  catch (error) { return jsonResult(resultForDetail({ ok: false, ...(error instanceof AdmissionError ? { code: error.code } : {}), ...((error as { operationId?: string }).operationId ? { operationId: (error as { operationId: string }).operationId, operationState: (error as { operationState?: string }).operationState, outcomeCode: "OUTCOME_UNKNOWN" } : {}), error: (error as { operationId?: string }).operationId ? "Observe the original operation; no automatic retry is allowed." : error instanceof Error ? error.message : String(error) }, detail)); }
+  catch (error) { return jsonResult(resultForDetail({ ok: false, ...(error instanceof AdmissionError ? { code: error.code } : {}), ...((error as { operationId?: string }).operationId ? { operationId: (error as { operationId: string }).operationId, operationState: (error as { operationState?: string }).operationState, ...((error as { recoveryOperationId?: string }).recoveryOperationId ? { recoveryOperationId: (error as { recoveryOperationId: string }).recoveryOperationId } : { outcomeCode: "OUTCOME_UNKNOWN" }) } : {}), error: (error as { operationId?: string }).operationId ? "Observe the original operation; no automatic retry is allowed." : error instanceof Error ? error.message : String(error) }, detail)); }
 }
 const summaryCursors = new Map<string,number>();
 function jsonResult(value: unknown) {

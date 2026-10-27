@@ -71,6 +71,8 @@ async function fixture() {
     files[`src/deepseek-${name}.ts`] = "export {};\n";
     files[`dist/deepseek-${name}.js`] = "export {};\n";
   }
+  for (const name of ["operation-recovery", "recovery-console", "recovery-cli", "run-evidence"]) { files[`src/${name}.ts`] = "export {};\n"; files[`dist/${name}.js`] = "export {};\n"; }
+  files["bin/workbuddy-recovery.cmd"] = "@echo off\n"; files["docs/OPERATION_RECOVERY.md"] = "Recovery guide\n";
   files["scripts/dsh-host-check.mjs"] = "// isolated host verification fixture\n";
   for (const name of ["dsh-bindings", "dsh-client", "dsh-coordinator", "dsh-runtime", "dsh-rate-verifier", "dsh-inspect"]) { files[`src/${name}.ts`] = "export {};\n"; files[`dist/${name}.js`] = "export {};\n"; files[`dist/${name}.d.ts`] = "export {};\n"; }
   for (const name of ["contracts", "store", "workbuddy", "engine", "http", "client", "ui", "cli", "mcp"]) {
@@ -98,6 +100,7 @@ test("release archive uses a file allowlist and hashes every included file", asy
     const selected = await collectReleaseFiles(value.source);
     assert.ok(selected.includes("docs/native-stop-verification.json"), "the public validation summary linked by the install guide belongs in the archive");
     assert.ok(selected.includes("src/server.ts"));
+    for (const name of ["bin/workbuddy-recovery.cmd", "docs/OPERATION_RECOVERY.md", "dist/operation-recovery.js", "dist/recovery-cli.js"]) assert.ok(selected.includes(name), name);
     for(const name of ["WINDOWS_ENV.example","scripts/setup.mjs","scripts/doctor.mjs","scripts/deployment-check.mjs","scripts/zip.mjs","bin/workbuddy-gateway.cmd","docs/INSTALL_WINDOWS.md","docs/DEPLOYMENT_ACCEPTANCE.md"])assert.ok(selected.includes(name),name);
     assert.ok(selected.includes(".env.example"));
     assert.ok(selected.includes("docs/CODEX_WORKFLOW.md"));
