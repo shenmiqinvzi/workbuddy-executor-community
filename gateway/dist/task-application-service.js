@@ -19,11 +19,19 @@ export class TaskApplicationService {
     registerWorkspace(id, directory, displayName) { return this.coordinator.store.collaboration.registerWorkspace(id, directory, displayName); }
     createCollaborationPlan(contract, options) {
         const { operationId, ...parameters } = options;
-        return this.coordinator.store.operations.metadata("plan_create", contract?.taskId ?? "", { contract, ...parameters }, { operationId }, () => this.coordinator.store.collaboration.createPlan(contract, this.coordinator.modelPolicy(), parameters));
+        return this.coordinator.store.operations.metadata("plan_create", contract?.taskId ?? "", { contract, ...parameters }, { operationId }, () => this.coordinator.store.collaboration.createPlan(contract, this.planPolicy(contract), parameters));
     }
     authorizeCollaborationPlan(planId, expectedPlanRevision, source, options = {}) {
-        const taskId = this.coordinator.store.collaboration.getPlan(planId).proposal.taskId;
-        return this.coordinator.store.operations.metadata("plan_authorize", taskId, { planId, expectedPlanRevision, source }, options, () => this.coordinator.store.collaboration.authorizePlan(planId, expectedPlanRevision, this.coordinator.modelPolicy(), source), { planId, expectedPlanRevision });
+        const proposal = this.coordinator.store.collaboration.getPlan(planId).proposal, taskId = proposal.taskId;
+        return this.coordinator.store.operations.metadata("plan_authorize", taskId, { planId, expectedPlanRevision, source }, options, () => this.coordinator.store.collaboration.authorizePlan(planId, expectedPlanRevision, this.planPolicy(proposal), source), { planId, expectedPlanRevision });
+    }
+    planPolicy(contract) {
+        if (contract?.execution?.executorId === "dsh") {
+            if (!this.dsh)
+                throw new AdmissionError("EXECUTOR_UNAVAILABLE", "The selected DSH source is unavailable; no fallback is allowed.");
+            return this.dsh.policy();
+        }
+        return this.coordinator.modelPolicy();
     }
     getCollaborationPlan(planId) { return this.coordinator.store.collaboration.getPlan(planId); }
     readQuotaResources(options = {}) {

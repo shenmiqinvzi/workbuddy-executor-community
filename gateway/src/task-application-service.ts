@@ -89,12 +89,19 @@ export class TaskApplicationService {
   createCollaborationPlan(contract: unknown, options: { mode: "manual" | "recommend"; reason: string; ttlSeconds?: number } & Pick<OperationOptions, "operationId">) {
     const { operationId, ...parameters } = options;
     return this.coordinator.store.operations.metadata("plan_create", (contract as { taskId?: string })?.taskId ?? "", { contract, ...parameters }, { operationId },
-      () => this.coordinator.store.collaboration.createPlan(contract, this.coordinator.modelPolicy(), parameters));
+      () => this.coordinator.store.collaboration.createPlan(contract, this.planPolicy(contract), parameters));
   }
   authorizeCollaborationPlan(planId: string, expectedPlanRevision: string, source: string, options: Pick<OperationOptions, "operationId"> = {}) {
-    const taskId = this.coordinator.store.collaboration.getPlan(planId).proposal.taskId;
+    const proposal = this.coordinator.store.collaboration.getPlan(planId).proposal, taskId = proposal.taskId;
     return this.coordinator.store.operations.metadata("plan_authorize", taskId, { planId, expectedPlanRevision, source }, options,
-      () => this.coordinator.store.collaboration.authorizePlan(planId, expectedPlanRevision, this.coordinator.modelPolicy(), source), { planId, expectedPlanRevision });
+      () => this.coordinator.store.collaboration.authorizePlan(planId, expectedPlanRevision, this.planPolicy(proposal), source), { planId, expectedPlanRevision });
+  }
+  private planPolicy(contract: unknown) {
+    if ((contract as { execution?: { executorId?: string } })?.execution?.executorId === "dsh") {
+      if (!this.dsh) throw new AdmissionError("EXECUTOR_UNAVAILABLE", "The selected DSH source is unavailable; no fallback is allowed.");
+      return this.dsh.policy();
+    }
+    return this.coordinator.modelPolicy();
   }
   getCollaborationPlan(planId: string) { return this.coordinator.store.collaboration.getPlan(planId); }
   readQuotaResources(options: { connectionId?: string; modelId?: string; limit?: number } = {}) {

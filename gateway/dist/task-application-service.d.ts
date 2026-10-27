@@ -91,6 +91,7 @@ export declare class TaskApplicationService {
         ttlSeconds?: number;
     } & Pick<OperationOptions, "operationId">): import("./collaboration.js").CollaborationPlan;
     authorizeCollaborationPlan(planId: string, expectedPlanRevision: string, source: string, options?: Pick<OperationOptions, "operationId">): import("./collaboration.js").CollaborationPlan;
+    private planPolicy;
     getCollaborationPlan(planId: string): import("./collaboration.js").CollaborationPlan;
     readQuotaResources(options?: {
         connectionId?: string;

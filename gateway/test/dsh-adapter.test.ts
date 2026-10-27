@@ -7,7 +7,9 @@ import http from "node:http";
 import { DatabaseSync } from "node:sqlite";
 import { TaskStore } from "../src/task-store.js";
 import { TaskApplicationService } from "../src/task-application-service.js";
-import type { TaskCoordinator } from "../src/coordinator.js";
+import { TaskCoordinator } from "../src/coordinator.js";
+import { loadConfig } from "../src/config.js";
+import { WorkBuddyClient } from "../src/workbuddy-client.js";
 import { configuredDshCoordinator } from "../src/dsh-runtime.js";
 import { DshTaskCoordinator } from "../src/dsh-coordinator.js";
 import { discoverDshSessions, type DshTransport, type DshSelection } from "../src/dsh-client.js";
@@ -61,6 +63,32 @@ function fixture(t: { after: (fn: () => void | Promise<void>) => void }, chosenM
   return { dir, store, runs, client, free, coordinator, contract, send, event, finish, events, execution,
     counts: () => ({ prompts, selections }), setBusy: (value: boolean) => { busy = value; }, setLost: (value: boolean) => { lost = value; }, setPromptError: (error?: Error) => { promptError = error; }, setSelectionError: (error?: Error) => { selectionError = error; }, setSelected: (value: DshSelection | null) => { selected = value; } };
 }
+
+test("DSH plans use their dispatch policy when WorkBuddy has a different default attempt limit", async t => {
+  const f = fixture(t);
+  const db = new DatabaseSync(f.store.file); db.prepare("DELETE FROM collaboration_policy").run(); db.close();
+  const config = { ...loadConfig(), maxTaskAttempts: 1, dbFile: f.store.file, runsDir: f.runs };
+  const wb = new TaskCoordinator(config, f.store, new WorkBuddyClient(config));
+  assert.notEqual(wb.modelPolicy().version, f.coordinator.policy().version);
+  const service = new TaskApplicationService(wb, 1, f.runs, f.coordinator);
+  const proposal = { ...f.contract(), maxAttempts: 1 };
+  const plan = service.createCollaborationPlan(proposal, { mode: "manual", reason: "Explicit synthetic DSH choice" });
+  service.authorizeCollaborationPlan(plan.planId, plan.revision, "synthetic-user");
+  const contract = { ...proposal, collaboration: { planId: plan.planId, expectedPlanRevision: plan.revision } };
+  assert.equal((await service.send({ taskId: contract.taskId, objective: contract.objective, contract, workspace: f.dir, sessionId: "original-session" })).ok, true);
+  assert.deepEqual(f.counts(), { prompts: 1, selections: 1 });
+  f.finish(); await service.sync(contract.taskId);
+  await assert.rejects(service.continue({ taskId: contract.taskId, feedback: "No extra attempt" }), { code: "ATTEMPT_LIMIT" });
+});
+
+test("DSH plan authorization still detects a real policy change before native preparation", t => {
+  const f = fixture(t), wb = { store: f.store, modelPolicy: () => f.coordinator.policy() } as unknown as TaskCoordinator;
+  const service = new TaskApplicationService(wb, 3, f.runs, f.coordinator);
+  const plan = service.createCollaborationPlan(f.contract(), { mode: "manual", reason: "Explicit synthetic choice" });
+  f.store.collaboration.setPolicy({ ...defaultModelPolicy(), maxAttempts: 1 });
+  assert.throws(() => service.authorizeCollaborationPlan(plan.planId, plan.revision, "synthetic-user"), { code: "POLICY_CHANGED" });
+  assert.deepEqual(f.counts(), { prompts: 0, selections: 0 });
+});
 
 test("DSH uses shared tasks, authenticated native report, revision and independent acceptance", async t => {
   const f = fixture(t), result = await f.send(); assert.equal(result.ok, true); f.finish();
