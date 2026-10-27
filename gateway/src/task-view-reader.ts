@@ -9,7 +9,7 @@
  *   - A read-only view of what is already stored. It reports what it could not
  *     establish instead of filling the gaps.
  *   - A snapshot of files read one after another, not a transaction. The read
- *     re-checks the current attempt afterwards and refuses to assemble a result
+ *     re-checks the current attempt and revision afterwards and refuses to assemble a result
  *     if the attempt changed, because joining two rounds would describe neither.
  *
  * What this is not:
@@ -41,6 +41,7 @@ import {
 } from "./task-view-adapter.js";
 import { runtimeVersion } from "./runtime-version.js";
 import { REPORT_AUTHENTICATION_FORMAT } from "./report-authentication.js";
+import { runEvidenceDigestOf } from "./coordinator.js";
 
 /**
  * The store surface the reader needs.
@@ -73,6 +74,7 @@ export type TaskProjectionFailureCode =
   | "task_not_found"
   | "invalid_attempt_id"
   | "read_conflict"
+  | "evidence_stale"
   | "store_unavailable"
   | "contract_integrity"
   | "state_unreadable"
@@ -94,6 +96,16 @@ export interface TaskProjectionSuccess {
   readOnly: true;
   snapshotOnly: true;
   task: TaskProjectionIdentity;
+  /**
+   * The task row this projection was actually built from: the first
+   * `store.get` read, whose attempt identity is re-checked against a second
+   * read before the facts are assembled. Callers that need row facts
+   * (workspace path, binding, createdAt, reviewedAt) must use this row
+   * instead of fetching the task again, because a second read can already
+   * describe newer row values (a concurrent acceptance with the same
+   * attemptId); using it would mix two snapshots into one answer.
+   */
+  row: StoredTask;
   /**
    * The immutable initial contract, or null for a task that predates one.
    * A stored contract proves the terms were persisted; it does not prove that a
@@ -414,7 +426,7 @@ export function readTaskProjection(sources: TaskProjectionSources, taskId: strin
   // records the gap, and no directory is touched.
   if (!attemptId || !runDir) {
     const projection = adaptTaskViewFacts({ task, attempt: null, snapshot: null, cancellation: null });
-    return { ok: true, readOnly: true, snapshotOnly: true, task: identity, contract, projection };
+    return { ok: true, readOnly: true, snapshotOnly: true, task: identity, row: task, contract, projection };
   }
 
   const state = readRunFile<RunSnapshot>(path.join(runDir, "state.json"), "state", snapshotShapeProblem);
@@ -446,13 +458,32 @@ export function readTaskProjection(sources: TaskProjectionSources, taskId: strin
     );
   }
 
+  // Task/attempt rows and file evidence must describe the same revision.
+  // A second connection may commit even when the attempt identity is stable.
+  if (after.revision !== task.revision) {
+    return failure("read_conflict", taskId, attemptId, "task.revision", "The task revision changed while its evidence was being read; retry the query.");
+  }
+  if (task.runEvidenceDigest) {
+    if (!state.value || runEvidenceDigestOf(state.value, cancel.value) !== task.runEvidenceDigest) {
+      return failure("evidence_stale", taskId, attemptId, "task.runEvidenceDigest", "Run evidence differs from the persisted revision; synchronise explicitly and retry. This query performed no write.");
+    }
+  } else if (task.revision && state.value) {
+    return failure("evidence_stale", taskId, attemptId, "task.runEvidenceDigest", "Run evidence has not been bound to this revision; synchronise explicitly and retry. This query performed no write.");
+  }
+
   const projection = adaptTaskViewFacts({
     task,
     attempt,
     snapshot: state.value,
     cancellation: cancel.value,
   });
-  return { ok: true, readOnly: true, snapshotOnly: true, task: identity, contract, projection };
+  // `row` is the task row the projection was actually built from (`task`,
+  // the first store.get). The re-read `after` row is only used for the
+  // attempt-identity conflict check above: even with the same attemptId a
+  // concurrent acceptance can change state/reviewedAt between the two reads,
+  // and returning `after` here would mix the projected (old) facts with the
+  // newer row values into one contradictory answer.
+  return { ok: true, readOnly: true, snapshotOnly: true, task: identity, row: task, contract, projection };
 }
 
 function jsonResult(value: unknown) {

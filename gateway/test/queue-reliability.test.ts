@@ -61,6 +61,41 @@ test('a real report survives a brief write lock held by another process', async 
   assert.equal(f.coordinator.executionStatus('task').remoteStopped, false);
 });
 
+test('Windows report retries a retiring lock without stealing it', {skip: process.platform !== 'win32'}, async t => {
+  const f = await claimTask(t);
+  const lock = path.join(f.journal.dir, 'queue-write.lock');
+  const original = fs.openSync.bind(fs);
+  let attempts = 0;
+  const mocked = t.mock.method(fs, 'openSync', (...args: any[]) => {
+    if (args[0] === lock && args[1] === 'wx' && attempts++ === 0) {
+      throw Object.assign(new Error('Synthetic delete-pending lock'), {code:'EPERM'});
+    }
+    return (original as (...values: any[]) => number)(...args);
+  });
+  try {
+    const result = f.queue.report({...f.claim,status:'completed',text:'Report after transient lock retirement',artifacts:[]});
+    assert.equal(result.status, 'needs_review');
+    assert.equal(attempts, 2);
+  } finally { mocked.mock.restore(); }
+});
+
+test('Windows permanent lock access denial remains a bounded failure', {skip: process.platform !== 'win32'}, async t => {
+  const f = await claimTask(t);
+  const lock = path.join(f.journal.dir, 'queue-write.lock');
+  const original = fs.openSync.bind(fs);
+  const mocked = t.mock.method(fs, 'openSync', (...args: any[]) => {
+    if (args[0] === lock && args[1] === 'wx') {
+      throw Object.assign(new Error('Synthetic persistent access denial'), {code:'EPERM'});
+    }
+    return (original as (...values: any[]) => number)(...args);
+  });
+  try {
+    assert.throws(() => f.queue.report({...f.claim,status:'completed',text:'Must not bypass denied lock',artifacts:[]}),
+      error => (error as NodeJS.ErrnoException).code === 'EPERM');
+    assert.equal(f.journal.snapshot()?.status, 'working');
+  } finally { mocked.mock.restore(); }
+});
+
 test('an authenticated late report is retained as blocked and cannot manufacture completion', async t => {
   const f = await claimTask(t);
   f.journal.save({ ...f.journal.snapshot()!, deadline: new Date(Date.now() - 1000).toISOString() });

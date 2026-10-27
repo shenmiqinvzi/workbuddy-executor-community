@@ -97,10 +97,14 @@ function locked(file, action) {
             fd = fs.openSync(file, "wx", 0o600);
         }
         catch (error) {
-            if (error.code !== "EEXIST")
+            const retiring = process.platform === "win32" && error.code === "EPERM";
+            if (error.code !== "EEXIST" && !retiring)
                 throw error;
             try {
-                const owner = readJson(file);
+                // Windows can report EPERM while another process's unlink is still
+                // retiring the file. Retry within the existing bound, without reading
+                // or stealing a lock whose ownership we cannot establish.
+                const owner = retiring ? undefined : readJson(file);
                 if (owner && Number.isSafeInteger(owner.pid) && owner.pid > 0 && !alive(owner.pid)) {
                     fs.unlinkSync(file);
                     continue;
@@ -109,12 +113,16 @@ function locked(file, action) {
             catch (readError) {
                 // The creator may not have written its PID yet, or another process
                 // released the file. A partial JSON write is not permission to steal it.
-                if (!(readError instanceof SyntaxError) && readError.code !== "ENOENT")
+                if (!(readError instanceof SyntaxError) && readError.code !== "ENOENT" &&
+                    !(process.platform === "win32" && readError.code === "EPERM"))
                     throw readError;
             }
             const remaining = until - performance.now();
-            if (remaining <= 0)
+            if (remaining <= 0) {
+                if (retiring)
+                    throw error; // Persistent access denial remains an error.
                 throw new Error("Queue record stayed busy for 2 seconds; retry this call without resending the task");
+            }
             Atomics.wait(sleeper, 0, 0, Math.min(20, remaining));
         }
     }

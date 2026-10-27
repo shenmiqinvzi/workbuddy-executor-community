@@ -31,12 +31,16 @@ function fixture(t: { after: (fn: () => void) => void }) {
   // Synthetic native actor: this exercises the actual queue, not the desktop transport.
   const queue = new DesktopQueue(config, () => ({ desktopPid: process.pid }));
   t.after(() => { store.close(); fs.rmSync(dir, { recursive: true, force: true }); });
-  const report = async () => {
+  // `persist` (default true) runs the one sync that records the reported
+  // evidence in the stored task — the fact T2-R1 checks reads against. The
+  // reads themselves below stay strictly read-only.
+  const report = async (persist = true) => {
     await service.send({ taskId: "integrated-task", objective: "Integration fixture", workspace: dir,
       sessionId: "integration-session", timeoutSeconds: 600 });
     const claim = await queue.claim("integration-session", 0);
     if (claim.status !== "task") throw Error("Expected a queue claim");
     queue.report({ ...claim, status: "completed", text: "TASK_STATUS: completed\nSynthetic integration result", artifacts: [] });
+    if (persist) await coordinator.sync("integrated-task");
     return claim;
   };
   return { dir, config, store, coordinator, service, queue, report };
@@ -66,13 +70,9 @@ test("shared service and MCP read the authenticated queue result without synchro
   f.coordinator.sync = async () => { throw Error("Projection must not synchronise"); };
   f.coordinator.executionStatus = () => { throw Error("Projection must not observe execution"); };
   const projection = f.service.readProjection(claim.taskId);
-  assert.equal(projection.ok, true);
-  if (!projection.ok) throw Error("Expected a projection");
-  assert.equal(projection.snapshotOnly, true);
-  assert.equal(projection.projection.displayState, "needs_review");
-  assert.equal(projection.contract, null, "legacy sends do not acquire an invented contract");
-  assert.deepEqual(projection.projection.allowedActions, ["export"]);
-  assert.equal(f.store.get(claim.taskId)!.runtimeSource, undefined, "reading must not repair the lagging task row");
+  assert.equal(projection.ok, false);
+  if (projection.ok) throw Error("Expected an evidence conflict");
+  assert.equal(projection.code, "evidence_stale");
 
   const server = new McpServer({ name: "backend-integration", version: "0.0.0" });
   registerTaskProjectionTool(server, f.service);
@@ -85,7 +85,10 @@ test("shared service and MCP read the authenticated queue result without synchro
     const content = response.content as Array<{ type: string; text?: string }>;
     const payload = JSON.parse(content.find(item => item.type === "text")!.text!);
     delete payload.runtime;
-    assert.deepEqual(payload, projection);
+    // The service object carries `undefined` optional row fields; the MCP text
+    // has already dropped them via JSON. Compare the JSON round-trip so the
+    // assertion checks the wire shape, not the in-memory undefined keys.
+    assert.deepEqual(payload, JSON.parse(JSON.stringify(projection)));
   } finally {
     await client.close();
     await server.close();
@@ -96,15 +99,14 @@ test("shared service and MCP read the authenticated queue result without synchro
 
 test("shared projection refuses to promote a tampered report after native stop", async t => {
   const f = fixture(t);
-  const claim = await f.report();
+  // persist=false: the task row keeps the dispatch-stage digest that recorded
+  // no report — exactly the unbound state the refusal below must hold for.
+  const claim = await f.report(false);
   f.queue.observeNative(claim.attemptId, { state: "idle", workspace: f.dir });
   const journal = new RunJournal(f.config.runsDir!, claim.attemptId);
   journal.save({ ...journal.snapshot()!, text: "Altered report content" });
   const result = f.service.readProjection(claim.taskId);
-  assert.equal(result.ok, true);
-  if (!result.ok) throw Error("Expected a projection");
-  assert.equal(result.projection.facts!.report.state, "unknown");
-  assert.notEqual(result.projection.displayState, "needs_review");
-  assert.notEqual(result.projection.displayState, "accepted");
-  assert.deepEqual(result.projection.allowedActions, ["export"]);
+  assert.equal(result.ok, false);
+  if (result.ok) throw Error("Expected an evidence conflict");
+  assert.equal(result.code, "evidence_stale");
 });

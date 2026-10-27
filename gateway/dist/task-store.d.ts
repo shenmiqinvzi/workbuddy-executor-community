@@ -27,6 +27,18 @@ export interface StoredTask {
     artifacts?: string[];
     evidence?: string[];
     blockingReason?: string;
+    /**
+     * Persistent, unguessable view revision. Regenerated inside the same
+     * transaction whenever a persisted fact changes; never derived from time.
+     */
+    revision?: string;
+    /**
+     * Digest of the external run evidence this task's view depends on (native
+     * stop proof, report authentication, per-attempt report digest). Changing
+     * evidence changes the view, so it is part of the fact signature (T2-R1).
+     * Written only by supervised sync/acceptance paths, never by reads.
+     */
+    runEvidenceDigest?: string;
 }
 export interface TaskReport {
     status?: string;
@@ -36,10 +48,40 @@ export interface TaskReport {
     remainingProblems?: string;
     rawText: string;
 }
-type NullableTaskFields = "report" | "reviewNote" | "reviewedAt" | "sessionId" | "runtimeSource" | "attemptId" | "attempt" | "lastEventSeq" | "artifacts" | "evidence" | "blockingReason" | "constraints" | "acceptanceCommands" | "cancelNote";
+type NullableTaskFields = "report" | "reviewNote" | "reviewedAt" | "sessionId" | "runtimeSource" | "attemptId" | "attempt" | "lastEventSeq" | "artifacts" | "evidence" | "blockingReason" | "constraints" | "acceptanceCommands" | "cancelNote" | "runEvidenceDigest";
+/**
+ * Write-path event hint, not a stored column (T2-R2): true means the patch's
+ * blockingReason came from an explicit worker input request (waiting_input or
+ * metadata.blockedReason), the only source allowed to emit input_requested.
+ * A blocked report without this hint is a worker failure and must not
+ * fabricate an input request.
+ */
+export interface TaskPatchHints {
+    inputRequested?: boolean;
+}
 export type TaskUpdate = Partial<Pick<StoredTask, "state" | "messageId" | "lastMessageId">> & {
     [Field in NullableTaskFields]?: StoredTask[Field] | null;
-};
+} & TaskPatchHints;
+/**
+ * A persisted task event: one logical fact about a task, identified by a
+ * monotonically increasing eventId across all attempts of that task.
+ *
+ * `eventId` is allocated per task inside the writing transaction. Native
+ * per-attempt sequences are preserved as `payload.nativeEventSeq`; replaying
+ * the same native event must not create a second logical event (deduplicated
+ * by sourceRef).
+ */
+export interface StoredTaskEvent {
+    taskId: string;
+    eventId: number;
+    attemptId: string | null;
+    type: string;
+    occurredAt: string;
+    observedAt: string;
+    actor: string;
+    payload: Record<string, unknown>;
+    sourceRef: string | null;
+}
 /**
  * The outcome of creating a task together with its initial contract.
  *
@@ -108,6 +150,63 @@ export declare class TaskStore {
     private readonly db;
     constructor(file: string);
     close(): void;
+    /**
+     * Append one logical task event with a monotonic per-task eventId.
+     *
+     * When `sourceRef` is set and already stored for this task, the event is a
+     * replay of something already recorded: nothing is inserted and the existing
+     * event is returned (idempotent dedup, contract :150). Otherwise the eventId
+     * is allocated as MAX(event_id)+1 for the task inside the current
+     * transaction.
+     */
+    appendTaskEvent(event: Omit<StoredTaskEvent, "eventId"> & {
+        eventId?: number;
+    }): StoredTaskEvent;
+    /** Transaction-aware core of appendTaskEvent; caller must hold a transaction. */
+    private appendTaskEventInTransaction;
+    /**
+     * Mirror per-attempt journal events into the persistent task event stream.
+     *
+     * Each journal event keeps its per-attempt sequence as the dedup key
+     * (`attemptId:type:journal:seq`), so re-syncing the same native event never
+     * produces a second logical event. Returns the events actually appended
+     * (replays are omitted), in journal order.
+     */
+    mirrorJournalEvents(taskId: string, events: Array<{
+        seq: number;
+        type: string;
+        createdAt: string;
+        metadata?: Record<string, unknown>;
+        contentText?: string;
+    }>, context: {
+        attemptId: string;
+        actor: string;
+        observedAt?: string;
+        contentText?: string;
+    }): StoredTaskEvent[];
+    /**
+     * Read the persistent event stream for a task, ascending by eventId.
+     *
+     * afterEventId is exclusive (0 = from the beginning); limit is bounded to
+     * 200 per the events contract. Read-only: it writes nothing.
+     *
+     * nextEventId is the resumption cursor for THIS page (contract :27): the
+     * last eventId actually returned, so a consumer paging with it can never
+     * skip unread events. An empty page keeps the caller's afterEventId (the
+     * stream simply has nothing more at that position), and an empty stream
+     * yields 0. The stream-wide high-water mark is not a consumer cursor;
+     * conflating the two silently skipped events between the last page and
+     * the tail (T2-R6).
+     */
+    listTaskEvents(taskId: string, options?: {
+        afterEventId?: number;
+        limit?: number;
+    }): {
+        events: StoredTaskEvent[];
+        nextEventId: number;
+    };
+    /** Whether the task has any persistent event with eventId > afterEventId. */
+    hasTaskEventAfter(taskId: string, afterEventId: number): boolean;
     createOrGet(task: Omit<StoredTask, "createdAt" | "updatedAt"> & {
         createdAt?: string;
     }): {
@@ -149,6 +248,36 @@ export declare class TaskStore {
         limit?: number;
         offset?: number;
     }): StoredTask[];
+    /**
+     * Stage read path for the stable list contract: `created_at` ascending with
+     * `task_id` as the tiebreaker, bounded by a keyset cursor instead of an
+     * offset, so concurrent updates cannot shift rows between pages.
+     *
+     * This deliberately does not replace listTasks: the existing MCP list keeps
+     * its updated_at DESC + offset behaviour unchanged, and callers must not
+     * silently switch between the two orders. createdAt is compared as stored
+     * text; every writer in this build stores Date.toISOString() values, so the
+     * byte order is the chronological order.
+     *
+     * Read-only: it writes nothing, never repairs stored timestamps and never
+     * touches the filesystem.
+     */
+    listTasksByCreatedCursor(options: {
+        limit: number;
+        afterTaskId?: string;
+    }): {
+        tasks: StoredTask[];
+        anchorFound: boolean;
+    };
+    /**
+     * Whether at least one task sorts strictly after the cursor row.
+     *
+     * The read is one indexed lookup, so the list entry can promise "there is
+     * another page" only when one really exists; a full final page then ends
+     * with nextAfterTaskId null instead of a cursor the client must try once
+     * and learn was empty.
+     */
+    hasTaskAfterCursor(afterTaskId: string): boolean;
     /** Reserve before spawning a worker, atomically across MCP processes. */
     beginAttempt(taskId: string, reservation: AttemptReservation): StoredTask;
     update(taskId: string, patch: TaskUpdate): StoredTask;
@@ -156,6 +285,24 @@ export declare class TaskStore {
     updateAttempt(taskId: string, attemptId: string, patch: Omit<TaskUpdate, "attemptId" | "attempt">, options?: {
         expectedStates?: TaskState[];
         preserveTerminal?: boolean;
+    }): {
+        task: StoredTask;
+        applied: boolean;
+    };
+    /**
+     * Accept the reviewed attempt and close the task as one transaction
+     * (T2-R4): the accepted state, review facts and the terminal task_closed
+     * event commit together or not at all, so a crash between them can never
+     * leave an accepted task without its closure event.
+     */
+    acceptAttempt(taskId: string, attemptId: string, patch: Omit<TaskUpdate, "attemptId" | "attempt">, closedEvent: {
+        type: "task_closed";
+        occurredAt: string;
+        actor: string;
+        payload: Record<string, unknown>;
+        sourceRef: string | null;
+    }, options?: {
+        expectedStates?: TaskState[];
     }): {
         task: StoredTask;
         applied: boolean;

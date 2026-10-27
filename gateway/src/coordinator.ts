@@ -7,11 +7,12 @@ import crypto from "node:crypto";
 import type { Config } from "./config.js";
 import { TaskStore, type StoredTask, type TaskReport, type TaskState, type TaskUpdate } from "./task-store.js";
 import { WorkBuddyClient, messageText } from "./workbuddy-client.js";
-import { RunJournal, runsDirectory, hasNativeStopEvidence } from "./run-journal.js";
+import { RunJournal, runsDirectory, hasNativeStopEvidence, type RunSnapshot } from "./run-journal.js";
 import { readServiceRegistration } from "./persistent-service.js";
 import { PersistentDesktopService, reconcileReportedAttempt, registeredServiceConfig } from "./persistent-service.js";
 import { NativeDesktopRpcTrigger } from "./native-desktop-trigger.js";
 import { verifyValidationEvidence } from "./worker-result.js";
+import { snapshotReportDigest } from "./report-authentication.js";
 
 export interface SendTaskInput {
   taskId?: string; objective: string; workspace?: string; constraints?: string[]; acceptanceCommands?: string[];
@@ -71,7 +72,15 @@ export class TaskCoordinator {
     try {
       if(this.config.backend==='desktop-queue'&&input.sessionMode==='new')throw new Error("Use workspace or ensure_workspace for native project routing; sessionMode:new is not supported by the queue");
       await this.client.sendMessage(prompt, task.workspace, input.timeoutSeconds, input.sessionId ?? task.sessionId, { taskId: task.taskId, attemptId, model: input.model, sessionMode: input.sessionMode });
-      return { ok: true, created: true, task: this.store.get(task.taskId), next: "Use bounded workbuddy_wait calls. Stop on errors, permission waits or deadline; do not redispatch or ask the worker to debug the gateway. Inspect artifacts and accept only with independent evidence." };
+      // T2-R1 round 3: the queue writes the attempt's state.json during
+      // dispatch, so the row must not be persisted BEHIND its own run file —
+      // otherwise a plain read of a freshly dispatched task would refuse the
+      // file's (dispatch-stage or later) facts against a revision persisted
+      // before they existed. Fold the just-written snapshot's evidence into
+      // the row now; the folded queued digest carries stopped:false, so it
+      // can never suppress the new round's native_stop_confirmed.
+      const dispatched = this.store.get(task.taskId);
+      if (dispatched) return { ok: true, created: true, task: this.recordRunEvidence(dispatched), next: "Use bounded workbuddy_wait calls. Stop on errors, permission waits or deadline; do not redispatch or ask the worker to debug the gateway. Inspect artifacts and accept only with independent evidence." };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const journal = new RunJournal(runsDirectory(this.config), attemptId);
@@ -83,15 +92,82 @@ export class TaskCoordinator {
   }
   async sync(taskId: string, limit = 100): Promise<StoredTask> {
     const task = this.requireTask(taskId);
-    if (task.state === "accepted" || task.state === "cancelled") return task;
+    // Terminal business states keep their protection (no re-dispatch, no new
+    // business-state writes — updateAttempt/preserveTerminal still guard
+    // that), but T2-R3: real evidence for the same attempt that arrives after
+    // a cancel/accept must still be collected, mirrored, and its consumption
+    // position persisted. Skipping the cursor advance left a terminal task
+    // re-reading the same first page forever, so later journal events (the
+    // worker's cancelled report, the native stop proof) were never delivered
+    // and the task never closed.
+    const terminal = task.state === "accepted" || task.state === "cancelled";
+    // Historical closed tasks can retain their durable report/messages after
+    // their run directory was removed. Do not turn reading that history into
+    // an attempt to consume a nonexistent journal. Later evidence is still
+    // collected whenever a snapshot exists for the same attempt.
+    if (terminal && (!task.attemptId || !/^run-[a-f0-9-]{36}$/.test(task.attemptId) || !this.client.runSnapshot(task.attemptId))) return task;
     const messages = await this.client.messages({ afterMessageId: task.lastMessageId, limit });
-    if (!messages.length) return task;
+    if (!messages.length) {
+      // Nothing new on the wire; still reconcile run-file evidence (a stop
+      // proof may have appeared without any message) and, for terminal tasks
+      // whose evidence is complete, close the task exactly once.
+      const evidenced = this.recordRunEvidence(task);
+      return terminal ? this.closeTerminalTask(evidenced) : evidenced;
+    }
     this.store.addMessages(taskId, messages);
-    const patch: TaskUpdate = {};
+    // Mirror per-attempt journal events into the persistent task event stream.
+    // Dedup is by attempt+type+journal seq, so replaying the same native event
+    // never produces a second logical event. This mirrors only; it fabricates
+    // no events for gaps and writes nothing on plain reads without messages.
+    const journalEvents = messages
+      .filter((message) => {
+        const meta = message.metadata ?? {};
+        return typeof meta.eventSeq === "number" && typeof meta.type === "string" &&
+          (!task.attemptId || !meta.attemptId || meta.attemptId === task.attemptId);
+      })
+      .map((message) => {
+        const meta = message.metadata ?? {};
+        // T2-R2: each journal event carries the text of the message that
+        // reported it, so mirrored payloads never borrow another message's
+        // content (a batch may hold the permission request AND the report).
+        return { seq: Number(meta.eventSeq), type: String(meta.type), createdAt: message.created_at ?? new Date(0).toISOString(), metadata: meta, contentText: messageText(message) };
+      });
+    if (journalEvents.length && task.attemptId) {
+      // T2-R2: preserve the source message content when the journal metadata
+      // carries no text of its own (e.g. synthetic permission requests).
+      this.store.mirrorJournalEvents(taskId, journalEvents, {
+        attemptId: task.attemptId,
+        actor: "workbuddy",
+        contentText: messages.map((message) => messageText(message)).find((text) => text.trim()) ?? undefined,
+      });
+    }
+    if (terminal) {
+      // Same-attempt evidence after the terminal decision: mirror only. No
+      // business-state patch is applied; the attempt guard below refuses
+      // state writes anyway. T2-R3: the consumption cursor still advances
+      // (persisted, never regressed) so the next sync reads past what this
+      // one already mirrored, and the stop proof closes the task once.
+      const cursor: TaskUpdate = {};
+      const lastMessage = messages[messages.length - 1]!;
+      if (lastMessage.message_id !== task.lastMessageId) cursor.lastMessageId = lastMessage.message_id;
+      const seqs = messages.map((message) => (message.metadata ?? {}).eventSeq).filter((value): value is number => typeof value === "number");
+      const highestSeq = seqs.length ? Math.max(...seqs) : null;
+      if (highestSeq !== null && highestSeq > (task.lastEventSeq ?? 0)) cursor.lastEventSeq = highestSeq;
+      const current = task.attemptId
+        ? this.store.updateAttempt(taskId, task.attemptId, cursor).task
+        : Object.keys(cursor).length ? this.store.update(taskId, cursor) : task;
+      return this.closeTerminalTask(this.recordRunEvidence(current));
+    }
+    // T2-R2: apply each message as its own patch instead of merging the
+    // whole batch. Merging collapsed intermediate facts (a waiting_input
+    // that was answered later in the same batch never produced
+    // input_requested/input_resolved), and it attributed one shared
+    // contentText to every mirrored journal event. Per-message writes keep
+    // event semantics and source text bound to the exact message.
     for (const message of messages) {
       const meta = message.metadata ?? {};
       if (task.attemptId && meta.attemptId && meta.attemptId !== task.attemptId) continue;
-      patch.lastMessageId = message.message_id;
+      const patch: TaskUpdate = { lastMessageId: message.message_id };
       if (typeof meta.eventSeq === "number") patch.lastEventSeq = meta.eventSeq;
       if (typeof meta.sessionId === "string") patch.sessionId = meta.sessionId;
       if (typeof meta.runtimeSource === "string") patch.runtimeSource = meta.runtimeSource;
@@ -102,18 +178,98 @@ export class TaskCoordinator {
         patch.state = "needs_review"; patch.blockingReason = null;
         patch.report = parseReport(snapshot.text); patch.artifacts = snapshot.artifacts ?? [];
       }
-      if (meta.status === "waiting_input") { patch.state = "blocked"; patch.blockingReason = messageText(message); }
-      else if (meta.status === "working" || meta.status === "queued") { patch.state = meta.status; patch.blockingReason = null; }
+      if (meta.status === "waiting_input") {
+        patch.state = "blocked";
+        patch.blockingReason = messageText(message);
+        // The worker explicitly asked for input: this is the only source the
+        // event stream may label input_requested (T2-R2).
+        patch.inputRequested = true;
+      } else if (meta.status === "working" || meta.status === "queued") { patch.state = meta.status; patch.blockingReason = null; }
       if (meta.type === "result" || message.role === "assistant") {
         const report = parseReport(messageText(message));
         patch.report = report;
         const declared = typeof meta.status === "string" ? meta.status : report.status;
         patch.state = declared === "completed" || declared === "needs_review" ? "needs_review" : ["blocked", "failed", "cancelled"].includes(declared ?? "") ? declared as TaskState : "blocked";
+        // A blocked report is a worker failure unless the metadata explicitly
+        // names it as an input request; the report text itself is not proof
+        // of an input request (T2-R2).
         patch.blockingReason = typeof meta.blockedReason === "string" ? meta.blockedReason : patch.state === "blocked" ? report.rawText : null;
+        // T2-R2 round 3: blockedReason is a generic failure reason (claim
+        // timeouts, dispatch errors and worker failures all carry it), so it
+        // never proves the worker asked for user input. Only the explicit
+        // waiting_input status above may set inputRequested; a timeout keeps
+        // its failure facts without a fabricated input request.
+        patch.inputRequested = false;
         if (Array.isArray(meta.artifacts)) patch.artifacts = meta.artifacts.filter((value): value is string => typeof value === "string");
       }
+      const stepped = task.attemptId ? this.store.updateAttempt(taskId, task.attemptId, patch).task : this.store.update(taskId, patch);
+      void stepped;
     }
-    return task.attemptId ? this.store.updateAttempt(taskId, task.attemptId, patch).task : this.store.update(taskId, patch);
+    const updated = this.requireTask(taskId);
+    return this.recordRunEvidence(updated);
+  }
+
+  /**
+   * Close a cancelled/accepted task exactly once (T2-R3): once the business
+   * terminal decision AND the native stop proof are both on record, record
+   * the durable closure event. Dedup is by sourceRef (attempt+type), so
+   * repeated syncs never duplicate it; no business state changes here and no
+   * worker is re-dispatched. A terminal task without stop evidence stays
+   * open until that proof arrives.
+   */
+  private closeTerminalTask(task: StoredTask): StoredTask {
+    if (task.state !== "accepted" && task.state !== "cancelled") return task;
+    if (!task.attemptId || !/^run-[a-f0-9-]{36}$/.test(task.attemptId)) return task;
+    if (!hasNativeStopEvidenceFromDigest(task.runEvidenceDigest)) return task;
+    this.store.appendTaskEvent({
+      taskId: task.taskId, attemptId: task.attemptId, type: "task_closed",
+      occurredAt: task.updatedAt, observedAt: new Date().toISOString(), actor: task.state === "accepted" ? "codex" : "gateway",
+      payload: { closedAs: task.state, attempt: task.attempt ?? null },
+      sourceRef: `${task.attemptId}:task_closed`,
+    });
+    return task;
+  }
+
+  /**
+   * Fold the current run snapshot's stop/authentication evidence into the
+   * task row (T2-R1): the digest is part of the fact signature, so stop
+   * evidence appearing or changing regenerates the revision without any task
+   * business field changing. First-time confirmed stop proof also records the
+   * contract's native_stop_confirmed event, deduplicated by sourceRef.
+   * Plain reads without a snapshot write nothing.
+   */
+  private recordRunEvidence(task: StoredTask): StoredTask {
+    if (!task.attemptId || !/^run-[a-f0-9-]{36}$/.test(task.attemptId)) return task;
+    const snapshot = this.client.runSnapshot(task.attemptId);
+    // A reused or corrupt journal is not this task's evidence.
+    if (!snapshot || snapshot.taskId !== task.taskId || snapshot.attemptId !== task.attemptId ||
+        (task.sessionId && snapshot.sessionId !== task.sessionId)) return task;
+    let cancellation: { requestedAt?: string; reason?: string } | undefined;
+    try {
+      cancellation = JSON.parse(fs.readFileSync(path.join(runsDirectory(this.config), task.attemptId, "cancel.json"), "utf8"));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    const digest = runEvidenceDigestOf(snapshot, cancellation);
+    const stopped = JSON.parse(digest).stopped === true;
+    const current = this.requireTask(task.taskId);
+    // T2-R2: the stop event is emitted once per ATTEMPT. The stored digest is
+    // bound to its attemptId, so a previous round's stop proof can never
+    // suppress this round's confirmation.
+    if (stopped && !digestRecordsStopFor(current.runEvidenceDigest, current.attemptId)) {
+      this.store.appendTaskEvent({
+        taskId: task.taskId, attemptId: task.attemptId, type: "native_stop_confirmed",
+        occurredAt: snapshot.nativeStoppedAt ?? snapshot.updatedAt ?? new Date().toISOString(),
+        observedAt: new Date().toISOString(), actor: "workbuddy",
+        payload: { stopReason: snapshot.stopReason ?? null, nativeStoppedAt: snapshot.nativeStoppedAt ?? null, digest },
+        sourceRef: `${task.attemptId}:native_stop:${snapshot.nativeStoppedAt ?? "evidence"}`,
+      });
+    }
+    if (digest === current.runEvidenceDigest) return current;
+    // The evidence digest is a fact: changing it regenerates the revision.
+    // No business field (state/report/session) changes here; terminal tasks
+    // keep their state because the patch carries no state change.
+    return task.attemptId ? this.store.updateAttempt(task.taskId, task.attemptId, { runEvidenceDigest: digest }).task : current;
   }
   async continue(input: { taskId: string; feedback: string; acceptanceCommands?: string[]; timeoutSeconds?: number; model?: string }) {
     this.requireDesktop();
@@ -153,7 +309,19 @@ export class TaskCoordinator {
       return `Inspected artifact: ${file} (${stat.size} bytes)`;
     });
     if (!task.attemptId) throw new Error("Legacy tasks cannot be accepted without a durable desktop execution attempt");
-    const accepted = this.store.updateAttempt(taskId, task.attemptId, { state: "accepted", evidence: [...evidence, ...artifactEvidence], artifacts: [...new Set([...(task.artifacts ?? []), ...artifactPaths])], reviewNote: note, reviewedAt: new Date().toISOString() }, { expectedStates: ["needs_review", "completed"] });
+    // T2-R4: the accepted state, review facts and the terminal task_closed
+    // event commit in one transaction — a crash between them can no longer
+    // leave an accepted task whose closure event was never written.
+    const accepted = this.store.acceptAttempt(taskId, task.attemptId, { state: "accepted", evidence: [...evidence, ...artifactEvidence], artifacts: [...new Set([...(task.artifacts ?? []), ...artifactPaths])], reviewNote: note, reviewedAt: new Date().toISOString() }, {
+      type: "task_closed",
+      occurredAt: new Date().toISOString(), actor: "codex",
+      payload: { closedAs: "accepted", attempt: task.attempt ?? null },
+      // T2-R3: the same logical-closure identity closeTerminalTask dedups
+      // on. Acceptance and post-acceptance syncs must share one closure
+      // event per attempt; a null sourceRef here would let the later sync
+      // write a second task_closed for the same logical close.
+      sourceRef: `${task.attemptId}:task_closed`,
+    }, { expectedStates: ["needs_review", "completed"] });
     if (!accepted.applied) throw new Error("Task changed during review; inspect the current attempt before acceptance");
     return accepted.task;
   }
@@ -231,4 +399,81 @@ export function parseReport(rawText: string): TaskReport {
 
 export function buildTaskPrompt(input: SendTaskInput & { taskId: string }, feedback?: string): string {
   return `[CODEX_TASK]\ntask_id: ${input.taskId}\n目标：\n${input.objective}\n工作目录：${input.workspace ?? "当前绑定桌面会话的目录"}\n约束（每轮继续有效）：\n${input.constraints?.map((item) => `- ${item}`).join("\n") || "按目标范围执行"}\n验收要求：\n${input.acceptanceCommands?.map((item) => `- ${item}`).join("\n") || "运行相关检查并报告真实结果"}\n超时（秒）：${input.timeoutSeconds ?? 1800}\n${feedback ? `Codex 本轮验收反馈（逐项修正，保留已有有效成果）：\n${feedback}\n` : ""}执行要求：使用 WorkBuddy 当前会话和自身工具完成任务。遇到输入、权限、素材或能力阻碍时如实报告。不要把计划或请求受理当成成品，也不要宣称别的 Agent 完成的文件是本轮成果。最终给出实际产物路径、用到的工具/技能、运行的命令和结果。\n最终格式：\nTASK_STATUS: completed | blocked | failed\nARTIFACTS:\nFILES_CHANGED:\nCOMMANDS_RUN:\nTEST_RESULT:\nREMAINING_PROBLEMS:\n[/CODEX_TASK]`;
+}
+
+/**
+ * Pure evidence-digest builder (T2-R1/R2): the digest covers every
+ * run-file fact the projection reads — stop proof, full report
+ * authentication object (not just its presence), report digest and status —
+ * and is bound to the attemptId so a previous round's evidence can never be
+ * mistaken for this round's. The projection reader recomputes it from the
+ * run file to detect "file facts ahead of the persisted revision".
+ *
+ * T2-R1 round 3: the digest also binds the report's ACTUAL content. A
+ * snapshot can carry an unchanged declared reportDigest while its text or
+ * artifacts were altered on disk; the recomputed content digest diverges and
+ * the evidence identity changes, so the reader refuses the stale revision
+ * and the next sync regenerates it.
+ */
+export function runEvidenceDigestOf(snapshot: RunSnapshot, cancellation?: { requestedAt?: string | null; reason?: string | null }): string {
+  const stopped = hasNativeStopEvidence(snapshot);
+  // The digest the snapshot's own bytes support right now (null when the
+  // snapshot lacks a report or a usable authentication status). Comparing
+  // this against the DECLARED digest is the adapter's authentication check;
+  // here it only has to be part of the identity so any content change moves
+  // the evidence.
+  let contentDigest: string | null = null;
+  try {
+    contentDigest = snapshotReportDigest(snapshot);
+  } catch {
+    contentDigest = null;
+  }
+  return JSON.stringify({
+    taskId: snapshot.taskId,
+    attemptId: snapshot.attemptId,
+    sessionId: snapshot.sessionId ?? null,
+    runtimeSource: snapshot.runtimeSource ?? null,
+    driver: snapshot.driver ?? null,
+    stopped, nativeStoppedAt: snapshot.nativeStoppedAt ?? null,
+    nativeStopSource: snapshot.nativeStopSource ?? null,
+    stopReason: snapshot.stopReason ?? null,
+    stopProofDigest: crypto.createHash("sha256").update(JSON.stringify([
+      snapshot.nativeFailure ?? null, snapshot.stopControl ?? null, snapshot.nativeStopCheck ?? null,
+    ])).digest("hex"),
+    rawContentDigest: crypto.createHash("sha256").update(JSON.stringify([
+      snapshot.text ?? null, snapshot.artifacts ?? null, snapshot.validationRecords ?? null,
+    ])).digest("hex"),
+    cancellation: cancellation ? { requestedAt: cancellation.requestedAt ?? null, reason: cancellation.reason ?? null } : null,
+    reportDigest: snapshot.reportDigest ?? null,
+    // Actual on-disk report content binding: changes whenever text,
+    // artifacts, validation records or the reported status change.
+    contentDigest,
+    auth: snapshot.reportAuthentication ?? null,
+    status: snapshot.status,
+  });
+}
+
+/**
+ * Whether a stored digest records confirmed stop proof FOR THIS ATTEMPT
+ * (T2-R2): digests without an attemptId (legacy rows) only count when the
+ * caller passes no attemptId to bind; per-attempt callers treat them as
+ * "not recorded for this round", so rework rounds are never suppressed.
+ */
+export function digestRecordsStopFor(digest: string | undefined, attemptId: string | undefined): boolean {
+  if (!digest) return false;
+  try {
+    const parsed = JSON.parse(digest) as { stopped?: unknown; attemptId?: unknown };
+    if (parsed.stopped !== true) return false;
+    // Legacy digest (no attemptId): treat as recorded only when we cannot
+    // bind — the replay-dedup sourceRef still guards against duplicates.
+    if (typeof parsed.attemptId !== "string") return !attemptId;
+    return !attemptId || parsed.attemptId === attemptId;
+  } catch {
+    return false;
+  }
+}
+
+/** Whether a stored run-evidence digest already recorded confirmed stop proof. */
+function hasNativeStopEvidenceFromDigest(digest: string | undefined): boolean {
+  return digestRecordsStopFor(digest, undefined);
 }

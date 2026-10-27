@@ -13,6 +13,7 @@
   },
   "include": [
     "test/backend-integration.test.ts",
+    "test/evidence-consistency.test.ts",
     "test/task-application-service.test.ts",
     "src/task-application-service.ts",
     "test/task-view.test.ts",
@@ -29,6 +30,9 @@
     "src/task-view-actions.ts",
     "src/task-view-adapter.ts",
     "src/task-view-reader.ts",
+    "src/task-view-stage.ts",
+    "src/workbench-http.ts",
+    "test/workbench-http.test.ts",
     "src/report-authentication.ts",
     "src/task-contract.ts"
   ]

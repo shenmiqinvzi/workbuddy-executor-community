@@ -9,7 +9,7 @@
  *   - A read-only view of what is already stored. It reports what it could not
  *     establish instead of filling the gaps.
  *   - A snapshot of files read one after another, not a transaction. The read
- *     re-checks the current attempt afterwards and refuses to assemble a result
+ *     re-checks the current attempt and revision afterwards and refuses to assemble a result
  *     if the attempt changed, because joining two rounds would describe neither.
  *
  * What this is not:
@@ -55,7 +55,7 @@ export interface TaskProjectionSources {
     runsDir: string;
 }
 /** Stable failure codes. A code never changes meaning once published. */
-export type TaskProjectionFailureCode = "task_not_found" | "invalid_attempt_id" | "read_conflict" | "store_unavailable" | "contract_integrity" | "state_unreadable" | "state_corrupt" | "cancel_unreadable" | "cancel_corrupt";
+export type TaskProjectionFailureCode = "task_not_found" | "invalid_attempt_id" | "read_conflict" | "evidence_stale" | "store_unavailable" | "contract_integrity" | "state_unreadable" | "state_corrupt" | "cancel_unreadable" | "cancel_corrupt";
 /** The task identity the query was able to establish. */
 export interface TaskProjectionIdentity {
     taskId: string;
@@ -69,6 +69,16 @@ export interface TaskProjectionSuccess {
     readOnly: true;
     snapshotOnly: true;
     task: TaskProjectionIdentity;
+    /**
+     * The task row this projection was actually built from: the first
+     * `store.get` read, whose attempt identity is re-checked against a second
+     * read before the facts are assembled. Callers that need row facts
+     * (workspace path, binding, createdAt, reviewedAt) must use this row
+     * instead of fetching the task again, because a second read can already
+     * describe newer row values (a concurrent acceptance with the same
+     * attemptId); using it would mix two snapshots into one answer.
+     */
+    row: StoredTask;
     /**
      * The immutable initial contract, or null for a task that predates one.
      * A stored contract proves the terms were persisted; it does not prove that a

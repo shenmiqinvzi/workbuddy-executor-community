@@ -88,9 +88,13 @@ function locked<T>(file: string, action: () => T): T {
   while (fd === undefined) {
     try { fd = fs.openSync(file, "wx", 0o600); }
     catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      const retiring = process.platform === "win32" && (error as NodeJS.ErrnoException).code === "EPERM";
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST" && !retiring) throw error;
       try {
-        const owner = readJson<{pid: number}>(file);
+        // Windows can report EPERM while another process's unlink is still
+        // retiring the file. Retry within the existing bound, without reading
+        // or stealing a lock whose ownership we cannot establish.
+        const owner = retiring ? undefined : readJson<{pid: number}>(file);
         if (owner && Number.isSafeInteger(owner.pid) && owner.pid > 0 && !alive(owner.pid)) {
           fs.unlinkSync(file);
           continue;
@@ -98,10 +102,14 @@ function locked<T>(file: string, action: () => T): T {
       } catch (readError) {
         // The creator may not have written its PID yet, or another process
         // released the file. A partial JSON write is not permission to steal it.
-        if (!(readError instanceof SyntaxError) && (readError as NodeJS.ErrnoException).code !== "ENOENT") throw readError;
+        if (!(readError instanceof SyntaxError) && (readError as NodeJS.ErrnoException).code !== "ENOENT" &&
+            !(process.platform === "win32" && (readError as NodeJS.ErrnoException).code === "EPERM")) throw readError;
       }
       const remaining = until - performance.now();
-      if (remaining <= 0) throw new Error("Queue record stayed busy for 2 seconds; retry this call without resending the task");
+      if (remaining <= 0) {
+        if (retiring) throw error; // Persistent access denial remains an error.
+        throw new Error("Queue record stayed busy for 2 seconds; retry this call without resending the task");
+      }
       Atomics.wait(sleeper, 0, 0, Math.min(20, remaining));
     }
   }

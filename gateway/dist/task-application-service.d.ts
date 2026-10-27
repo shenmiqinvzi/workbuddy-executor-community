@@ -1,5 +1,6 @@
 import type { TaskCoordinator, SendTaskInput } from "./coordinator.js";
-import type { StoredTask } from "./task-store.js";
+import type { StoredTask, StoredTaskEvent } from "./task-store.js";
+import { STAGE_TASK_VIEW_UNAVAILABLE, STAGE_TASK_VIEW_SCHEMA_VERSION, type StageTaskView } from "./task-view-stage.js";
 /** A conservative status projection for existing tasks. This is not the vNext TaskView. */
 export interface TaskStatusView {
     taskId: string;
@@ -11,6 +12,67 @@ export interface TaskStatusView {
     allowedActions: Array<"cancel" | "rework" | "accept">;
     lastObservedAt: string | null;
 }
+/**
+ * Stage-1 read query outcomes, shared by the list and detail entries.
+ *
+ * The failure variants keep the projection's own failure codes verbatim, so a
+ * permission error, a corrupt record or a mid-read attempt change is never
+ * reported as "no tasks" or as a task without data. `store_unavailable`
+ * additionally covers a list-level read failure of the store itself.
+ */
+export type StageReadResult = {
+    ok: true;
+    readOnly: true;
+    snapshotOnly: true;
+    schemaVersion: typeof STAGE_TASK_VIEW_SCHEMA_VERSION;
+    unavailable: typeof STAGE_TASK_VIEW_UNAVAILABLE;
+    view: StageTaskView;
+} | {
+    ok: false;
+    readOnly: true;
+    snapshotOnly: true;
+    code: "task_not_found" | "invalid_task_id" | string;
+    taskId: string;
+    field: string;
+    message: string;
+};
+/** One page of the stable created_at ASC + task_id ASC list. */
+export interface StageListResult {
+    ok: true;
+    readOnly: true;
+    snapshotOnly: true;
+    schemaVersion: typeof STAGE_TASK_VIEW_SCHEMA_VERSION;
+    unavailable: typeof STAGE_TASK_VIEW_UNAVAILABLE;
+    /**
+     * One entry per listed task, in stable order. A failed entry keeps the
+     * projection's failure code instead of an empty view; it never masks its
+     * neighbours.
+     */
+    tasks: StageListItem[];
+    /** The cursor to pass as afterTaskId, or null when no next page exists. */
+    nextAfterTaskId: string | null;
+}
+/** A request-level list failure. Store failures are never cursor errors. */
+export type StageListFailure = {
+    ok: false;
+    readOnly: true;
+    snapshotOnly: true;
+    code: "invalid_cursor" | "store_unavailable";
+    field: string;
+    message: string;
+};
+/** One list entry: either a stage view or the preserved projection failure. */
+export type StageListItem = {
+    ok: true;
+    taskId: string;
+    view: StageTaskView;
+} | {
+    ok: false;
+    taskId: string;
+    code: string;
+    field: string;
+    message: string;
+};
 /** The MCP entry point and future local HTTP adapter share this service. */
 export declare class TaskApplicationService {
     private readonly coordinator;
@@ -19,6 +81,71 @@ export declare class TaskApplicationService {
     constructor(coordinator: TaskCoordinator, maxAttempts: number, runsDir: string);
     /** Stored facts only: deliberately bypasses every synchronising coordinator method. */
     readProjection(taskId: string): import("./task-view-reader.js").TaskProjectionResult;
+    /**
+     * Stage-1 read-only detail query for one stored task.
+     *
+     * It reuses readProjection's store and run-file reads — the same snapshot
+     * semantics, the same failure codes, the same attempt re-check — and maps
+     * the result into the stage view. The view is built from the task row the
+     * projection itself verified (`projection.row`): a second store.get here
+     * could already describe a later attempt after a concurrent rework, which
+     * would mix two rounds into one answer, so no second read happens. Like
+     * readProjection this never calls sync, executionStatus, checkWorker or any
+     * dispatching entry point, creates no store and writes nothing.
+     */
+    readStageView(taskId: string): StageReadResult;
+    /**
+     * Stage-1 read-only list query with the stable pagination contract.
+     *
+     * Ordering is created_at ASC + task_id ASC (the contract's stable cursor
+     * order), read through TaskStore.listTasksByCreatedCursor. The existing MCP
+     * list (updated_at DESC + offset) is deliberately untouched and is not
+     * called from here.
+     *
+     * Failure policy (no silent swallow):
+     *   - A store failure while reading the page, while probing the next-page
+     *     cursor, or while reading any single task's row is a structured
+     *     STORE_UNAVAILABLE failure for the whole request, never an empty page
+     *     or a cursor error.
+     *   - A per-task projection failure (corrupt record, unreadable file,
+     *     contract integrity, mid-read attempt change, ...) is preserved
+     *     per item: the item keeps its taskId plus the projection's failure
+     *     code/field/message instead of a fabricated empty view, so a client can
+     *     tell environment damage apart from data it asked for. An item-level
+     *     failure never masks the rest of the page.
+     *   - Cursor problems stay invalid_cursor and map to HTTP 400.
+     *
+     * Each item's view is built from the row its own readProjection verified
+     * (projection.row), so a concurrent rework between the page read and the
+     * item read yields that task's consistent single-round snapshot — or an
+     * explicit read_conflict from the reader — never a mixture of two rounds.
+     */
+    listStageViews(options: {
+        limit: number;
+        afterTaskId?: string;
+    }): StageListResult | StageListFailure;
+    /**
+     * Read the persistent task event stream (T2).
+     *
+     * Pure read: afterEventId is exclusive (0 = from the beginning), limit is
+     * bounded 1-200 (default 100), events ascend by the monotonic per-task
+     * eventId, and nothing is written — a missing task is a task_not_found
+     * failure, never an implicit creation. nextEventId is null when the page
+     * already reached the end of the stream.
+     */
+    listTaskEvents(taskId: string, options?: {
+        afterEventId?: number;
+        limit?: number;
+    }): {
+        ok: true;
+        events: StoredTaskEvent[];
+        nextEventId: number;
+    } | {
+        ok: false;
+        code: "task_not_found" | "invalid_task_id" | "invalid_cursor" | "store_unavailable";
+        field: string;
+        message: string;
+    };
     send(input: SendTaskInput): Promise<{
         ok: boolean;
         created: boolean;
@@ -27,7 +154,7 @@ export declare class TaskApplicationService {
     } | {
         ok: boolean;
         created: boolean;
-        task: StoredTask | undefined;
+        task: StoredTask;
         next: string;
         error?: undefined;
     } | {
@@ -36,11 +163,11 @@ export declare class TaskApplicationService {
         error: string;
         created?: undefined;
         next?: undefined;
-    }>;
+    } | undefined>;
     continue(input: Parameters<TaskCoordinator["continue"]>[0]): Promise<{
         ok: boolean;
         created: boolean;
-        task: StoredTask | undefined;
+        task: StoredTask;
         next: string;
         error?: undefined;
     } | {
@@ -49,7 +176,7 @@ export declare class TaskApplicationService {
         error: string;
         created?: undefined;
         next?: undefined;
-    }>;
+    } | undefined>;
     accept(...args: Parameters<TaskCoordinator["accept"]>): Promise<StoredTask>;
     cancel(...args: Parameters<TaskCoordinator["cancel"]>): Promise<{
         message: string;
@@ -329,6 +456,13 @@ export declare class TaskApplicationService {
         } | undefined;
     };
     listTasks(limit: number): StoredTask[];
+    listTasksByCreatedCursor(options: {
+        limit: number;
+        afterTaskId?: string;
+    }): {
+        tasks: StoredTask[];
+        anchorFound: boolean;
+    };
     listMessages(taskId: string, limit: number, attemptId?: string): import("./workbuddy-client.js").LocalMessage[];
     listAttempts(taskId: string): import("./task-store.js").StoredAttempt[];
     statusView(task: StoredTask): TaskStatusView;

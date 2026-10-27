@@ -52,7 +52,8 @@ export class WorkBuddyProvider implements AgentProvider {
       if (!this.store.get(run.providerTaskId)) throw new HubError("DISPATCH_NOT_SENT", error instanceof Error ? error.message : String(error));
       throw error;
     }
-    if (!response.ok) throw new Error(("error" in response && response.error) || "WorkBuddy dispatch was blocked");
+    if (response && response.ok) return;
+    throw new Error((response && "error" in response && response.error) || "WorkBuddy dispatch was blocked");
   }
   async poll(run: HubRun): Promise<ProviderSnapshot | undefined> {
     if (!this.store.get(run.providerTaskId)) return undefined;
@@ -69,7 +70,8 @@ export class WorkBuddyProvider implements AgentProvider {
   }
   async rework(run: HubRun) {
     const response = await this.coordinator.continue({ taskId: run.providerTaskId, model:run.input.model, feedback: `${run.feedback}\n\n${this.instructions(run)}`, timeoutSeconds: Math.max(1, Math.ceil((Date.parse(run.deadline) - Date.now()) / 1000)) });
-    if (!response.ok) throw new Error(response.error ?? "WorkBuddy rework was blocked");
+    if (response && response.ok) return;
+    throw new Error((response && "error" in response && response.error) || "WorkBuddy rework was blocked");
   }
   async accept(run: HubRun, input: { note: string; evidence: string[] }) {
     await this.coordinator.accept(run.providerTaskId, input.note, input.evidence, [run.resultFile, ...(run.result?.artifacts.map(item => item.path) ?? [])]);

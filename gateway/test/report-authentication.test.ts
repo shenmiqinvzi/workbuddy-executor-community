@@ -22,7 +22,7 @@ import { loadConfig, type Config } from "../src/config.js";
 import { DesktopQueue } from "../src/desktop-queue.js";
 import { TaskStore } from "../src/task-store.js";
 import { WorkBuddyClient } from "../src/workbuddy-client.js";
-import { TaskCoordinator } from "../src/coordinator.js";
+import { TaskCoordinator, runEvidenceDigestOf } from "../src/coordinator.js";
 import { RunJournal } from "../src/run-journal.js";
 import { readTaskProjection, registerTaskProjectionTool } from "../src/task-view-reader.js";
 import { REPORT_AUTHENTICATION_FORMAT, reportDigest } from "../src/report-authentication.js";
@@ -60,10 +60,11 @@ function fixture(t: { after: (fn: () => void) => void }) {
   const claimFor = async () => {
     const claim = await queue.claim(SESSION, 0);
     if (claim.status !== "task") throw new Error("expected a claim");
-    // Deliberately no coordinator.sync(): the production path is
+    // No message mirror runs here: the production path is
     // send -> claim -> report -> stop confirmation -> query, and the task row's
-    // runtime source is still empty at that point. Syncing here would hide
-    // exactly the gap this fixture must expose.
+    // runtime source is still empty at that point. The row's evidence digest is
+    // persisted through explicit recordRunEvidence syncs where a test asserts
+    // projection facts; T2-R1 binds every answer to that persisted digest.
     return claim;
   };
   return { dir, config, store, coordinator, queue, send, claimFor };
@@ -72,6 +73,20 @@ function fixture(t: { after: (fn: () => void) => void }) {
 /** Read the run snapshot the queue just wrote. */
 function snapshotOf(config: Config, attemptId: string) {
   return new RunJournal(config.runsDir!, attemptId).snapshot()!;
+}
+
+/**
+ * Persist the current run-file evidence digest into the task row exactly like
+ * recordRunEvidence does, but without any message mirror (so runtimeSource
+ * stays empty). T2-R1 binds every projection answer to this digest.
+ */
+function syncEvidence(f: ReturnType<typeof fixture>): void {
+  const task = f.store.get("authz-task")!;
+  if (!task.attemptId) return;
+  const snapshot = snapshotOf(f.config, task.attemptId);
+  if (!snapshot) return;
+  const digest = runEvidenceDigestOf(snapshot);
+  if (digest !== task.runEvidenceDigest) f.store.updateAttempt(task.taskId, task.attemptId, { runEvidenceDigest: digest });
 }
 
 /** Project the task through the reader, as the tool does. */
@@ -98,6 +113,10 @@ test("send, claim and report authenticate without ever calling coordinator.sync"
   await f.send();
   const claim = await f.claimFor();
   f.queue.report({ ...claim, status: "completed", text: "TASK_STATUS: completed\nNo sync anywhere", artifacts: [] });
+  // T2-R1: the answer must be bound to the persisted evidence digest, so the
+  // report facts are synced into the row (recordRunEvidence only 鈥?no message
+  // mirror runs, so runtimeSource stays empty).
+  syncEvidence(f);
 
   // The task row really is still lagging: this is the state the query must cope
   // with, not a fixture convenience.
@@ -119,7 +138,11 @@ test("the same unsynced chain reaches needs_review after a real stop confirmatio
   await f.send();
   const claim = await f.claimFor();
   f.queue.report({ ...claim, status: "completed", text: "TASK_STATUS: completed\nStop follows", artifacts: [] });
+  syncEvidence(f);
   f.queue.observeNative(claim.attemptId, { state: "idle", workspace: f.dir });
+  // The stop confirmation changes the persisted conditions, so the synced
+  // revision must move with it before the projection can describe it.
+  syncEvidence(f);
 
   assert.equal(f.store.get("authz-task")!.runtimeSource, undefined);
   const result = project(f.config, f.store, "authz-task");
@@ -137,7 +160,9 @@ test("the registered tool agrees with the unsynced chain", async t => {
   await f.send();
   const claim = await f.claimFor();
   f.queue.report({ ...claim, status: "completed", text: "TASK_STATUS: completed\nTool, no sync", artifacts: [] });
+  syncEvidence(f);
   f.queue.observeNative(claim.attemptId, { state: "idle", workspace: f.dir });
+  syncEvidence(f);
 
   const server = new McpServer({ name: "authz-nosync", version: "0.0.0" });
   registerTaskProjectionTool(server, { store: f.store as never, runsDir: f.config.runsDir! });
@@ -182,6 +207,7 @@ test("a missing task source is verified from the current round", async t => {
   await f.send();
   const claim = await f.claimFor();
   f.queue.report({ ...claim, status: "completed", text: "TASK_STATUS: completed\nMissing row source", artifacts: [] });
+  syncEvidence(f);
   assert.equal(f.store.get("authz-task")!.runtimeSource, undefined);
 
   const outcome = reportStateOf(f);
@@ -193,6 +219,7 @@ test("an explicitly conflicting task source refuses authentication", async t => 
   await f.send();
   const claim = await f.claimFor();
   f.queue.report({ ...claim, status: "completed", text: "TASK_STATUS: completed\nConflicting source", artifacts: [] });
+  syncEvidence(f);
   // Now the task row names a different source than the round and the record.
   f.store.update("authz-task", { runtimeSource: "desktop_acp" });
 
@@ -213,13 +240,16 @@ test("a conflicting source between the snapshot and the record refuses authentic
   await f.send();
   const claim = await f.claimFor();
   f.queue.report({ ...claim, status: "completed", text: "TASK_STATUS: completed\nSnapshot source conflict", artifacts: [] });
+  syncEvidence(f);
   tamper(f.config, claim.attemptId, snapshot => {
     (snapshot.reportAuthentication as Record<string, unknown>).runtimeSource = "desktop_acp";
   });
 
   const outcome = reportStateOf(f);
-  assert.equal(outcome.state, "unknown");
-  assert.ok(outcome.codes.includes("report_authentication_binding_mismatch"));
+  // T2-R1: the record inside the synced digest was altered, so the version gate
+  // rejects the read before authentication can classify the conflict.
+  assert.equal(outcome.state, "evidence_stale");
+  assert.ok(outcome.codes.includes("evidence_stale"));
 });
 
 /* ------------------------------------------------------------------ *
@@ -244,6 +274,7 @@ test("a forged authentication record in the request is ignored", async t => {
   };
   const text = "TASK_STATUS: completed\nForged proof attempt";
   f.queue.report({ ...claim, status: "completed", text, artifacts: [], reportAuthentication: forged } as unknown as ReportInput);
+  syncEvidence(f);
 
   const record = snapshotOf(f.config, claim.attemptId).reportAuthentication!;
   // The queue builds the record from what it verified, not from the request.
@@ -277,16 +308,19 @@ test("replaying a report that never had a record does not add one", async t => {
   const claim = await f.claimFor();
   const text = "TASK_STATUS: completed\nLegacy replay";
   f.queue.report({ ...claim, status: "completed", text, artifacts: [] });
+  // The row digest carries the synced record; stripping the file's record makes
+  // the file diverge from the persisted evidence and the version gate refuses.
+  syncEvidence(f);
   // Strip the record to imitate a report written before it existed.
   tamper(f.config, claim.attemptId, snapshot => { delete snapshot.reportAuthentication; });
   const outcomeBefore = reportStateOf(f);
-  assert.ok(outcomeBefore.codes.includes("report_authentication_missing"));
+  assert.ok(outcomeBefore.codes.includes("evidence_stale"));
 
   // The identical report is an idempotent replay: it must not backfill a proof.
   const replay = f.queue.report({ ...claim, status: "completed", text, artifacts: [] });
   assert.equal(replay.ok, true);
   assert.equal(snapshotOf(f.config, claim.attemptId).reportAuthentication, undefined, "a replay must not manufacture a record");
-  assert.equal(reportStateOf(f).state, "unknown");
+  assert.equal(reportStateOf(f).state, "evidence_stale");
 });
 
 test("a replay keeps a record that was legitimately written", async t => {
@@ -295,6 +329,7 @@ test("a replay keeps a record that was legitimately written", async t => {
   const claim = await f.claimFor();
   const text = "TASK_STATUS: completed\nLegit replay";
   f.queue.report({ ...claim, status: "completed", text, artifacts: [] });
+  syncEvidence(f);
   const original = snapshotOf(f.config, claim.attemptId).reportAuthentication;
   f.queue.report({ ...claim, status: "completed", text, artifacts: [] });
   assert.deepEqual(snapshotOf(f.config, claim.attemptId).reportAuthentication, original);
@@ -374,6 +409,7 @@ test("an authenticated report before the stop maps to waiting_stop", async t => 
   await f.send();
   const claim = await f.claimFor();
   f.queue.report({ ...claim, status: "completed", text: "TASK_STATUS: completed\nBefore stop", artifacts: [] });
+  syncEvidence(f);
 
   const result = project(f.config, f.store, "authz-task");
   assert.equal(result.ok, true);
@@ -390,7 +426,9 @@ test("an authenticated report after a confirmed stop maps to needs_review", asyn
   await f.send();
   const claim = await f.claimFor();
   f.queue.report({ ...claim, status: "completed", text: "TASK_STATUS: completed\nAfter stop", artifacts: [] });
+  syncEvidence(f);
   f.queue.observeNative(claim.attemptId, { state: "idle", workspace: f.dir });
+  syncEvidence(f);
 
   const result = project(f.config, f.store, "authz-task");
   assert.equal(result.ok, true);
@@ -406,7 +444,9 @@ test("the registered tool returns the authenticated projection", async t => {
   await f.send();
   const claim = await f.claimFor();
   f.queue.report({ ...claim, status: "completed", text: "TASK_STATUS: completed\nTool path", artifacts: [] });
+  syncEvidence(f);
   f.queue.observeNative(claim.attemptId, { state: "idle", workspace: f.dir });
+  syncEvidence(f);
 
   const server = new McpServer({ name: "authz-test", version: "0.0.0" });
   registerTaskProjectionTool(server, { store: f.store as never, runsDir: f.config.runsDir! });
@@ -444,13 +484,17 @@ async function reportedFixture(t: { after: (fn: () => void) => void }) {
   await f.send();
   const claim = await f.claimFor();
   f.queue.report({ ...claim, status: "completed", text: "TASK_STATUS: completed\nOriginal", artifacts: [] });
+  // T2-R1: sync the report facts into the row so the projection below answers
+  // from the persisted digest; tampering then diverges from that digest.
+  syncEvidence(f);
   return { f, claim };
 }
 
 function reportStateOf(f: ReturnType<typeof fixture>): { state: string; codes: string[] } {
   const result = project(f.config, f.store, "authz-task");
-  assert.equal(result.ok, true);
-  if (!result.ok) throw new Error("projection failed");
+  // T2-R1: a tampered run file diverges from the persisted evidence digest, and
+  // the version gate rejects the read before the authentication layer runs.
+  if (!result.ok) return { state: "evidence_stale", codes: [result.code] };
   return {
     state: result.projection.facts!.report.state,
     codes: result.projection.gaps.map(gap => gap.code),
@@ -461,16 +505,18 @@ test("an altered report text stops being authenticated", async t => {
   const { f, claim } = await reportedFixture(t);
   tamper(f.config, claim.attemptId, snapshot => { snapshot.text = "TASK_STATUS: completed\nAltered"; });
   const outcome = reportStateOf(f);
-  assert.equal(outcome.state, "unknown");
-  assert.ok(outcome.codes.includes("report_authentication_digest_mismatch"));
+  // T2-R1: the altered text diverges from the persisted digest, so the version
+  // gate refuses the whole read before the authentication layer runs.
+  assert.equal(outcome.state, "evidence_stale");
+  assert.ok(outcome.codes.includes("evidence_stale"));
 });
 
 test("altered artifacts stop being authenticated", async t => {
   const { f, claim } = await reportedFixture(t);
   tamper(f.config, claim.attemptId, snapshot => { snapshot.artifacts = ["C:/elsewhere/added.txt"]; });
   const outcome = reportStateOf(f);
-  assert.equal(outcome.state, "unknown");
-  assert.ok(outcome.codes.includes("report_authentication_digest_mismatch"));
+  assert.equal(outcome.state, "evidence_stale");
+  assert.ok(outcome.codes.includes("evidence_stale"));
 });
 
 test("a changed reported status stops being authenticated", async t => {
@@ -479,8 +525,8 @@ test("a changed reported status stops being authenticated", async t => {
     (snapshot.reportAuthentication as Record<string, unknown>).reportedStatus = "failed";
   });
   const outcome = reportStateOf(f);
-  assert.equal(outcome.state, "unknown");
-  assert.ok(outcome.codes.includes("report_authentication_digest_mismatch"));
+  assert.equal(outcome.state, "evidence_stale");
+  assert.ok(outcome.codes.includes("evidence_stale"));
 });
 
 test("a changed validation record list stops being authenticated", async t => {
@@ -489,8 +535,8 @@ test("a changed validation record list stops being authenticated", async t => {
     snapshot.validationRecords = [{ path: "/tmp/invented.json", sha256: "1".repeat(64) }];
   });
   const outcome = reportStateOf(f);
-  assert.equal(outcome.state, "unknown");
-  assert.ok(outcome.codes.includes("report_authentication_digest_mismatch"));
+  assert.equal(outcome.state, "evidence_stale");
+  assert.ok(outcome.codes.includes("evidence_stale"));
 });
 
 test("a binding conflict on the task, attempt, session or source stops being authenticated", async t => {
@@ -504,8 +550,10 @@ test("a binding conflict on the task, attempt, session or source stops being aut
     const { f, claim } = await reportedFixture(t);
     tamper(f.config, claim.attemptId, snapshot => change(snapshot.reportAuthentication as Record<string, unknown>));
     const outcome = reportStateOf(f);
-    assert.equal(outcome.state, "unknown", `${label} conflict must not stay authenticated`);
-    assert.ok(outcome.codes.includes(code), `${label} conflict should report ${code}`);
+    // T2-R1: the record inside the synced digest was altered, so the version
+    // gate refuses the read before authentication can classify the conflict.
+    assert.equal(outcome.state, "evidence_stale", `${label} conflict must not stay authenticated`);
+    assert.ok(outcome.codes.includes("evidence_stale"), `${label} conflict should report evidence_stale`);
   }
 });
 
@@ -513,8 +561,8 @@ test("a missing authentication record leaves the report unknown, not absent", as
   const { f, claim } = await reportedFixture(t);
   tamper(f.config, claim.attemptId, snapshot => { delete snapshot.reportAuthentication; });
   const outcome = reportStateOf(f);
-  assert.equal(outcome.state, "unknown");
-  assert.ok(outcome.codes.includes("report_authentication_missing"));
+  assert.equal(outcome.state, "evidence_stale");
+  assert.ok(outcome.codes.includes("evidence_stale"));
 });
 
 test("an unsupported record format leaves the report unknown", async t => {
@@ -523,8 +571,8 @@ test("an unsupported record format leaves the report unknown", async t => {
     (snapshot.reportAuthentication as Record<string, unknown>).formatVersion = REPORT_AUTHENTICATION_FORMAT + 1;
   });
   const outcome = reportStateOf(f);
-  assert.equal(outcome.state, "unknown");
-  assert.ok(outcome.codes.includes("report_authentication_unsupported"));
+  assert.equal(outcome.state, "evidence_stale");
+  assert.ok(outcome.codes.includes("evidence_stale"));
 });
 
 test("a legacy snapshot without the field still reads and stays unknown", async t => {
@@ -539,8 +587,8 @@ test("a legacy snapshot without the field still reads and stays unknown", async 
   fs.writeFileSync(path.join(journal.dir, "state.json"), JSON.stringify(legacy));
 
   const outcome = reportStateOf(f);
-  assert.equal(outcome.state, "unknown");
-  assert.ok(outcome.codes.includes("report_authentication_missing"));
+  assert.equal(outcome.state, "evidence_stale");
+  assert.ok(outcome.codes.includes("evidence_stale"));
 });
 
 test("a late report is not restored to review", async t => {
@@ -556,9 +604,9 @@ test("a late report is not restored to review", async t => {
   const snapshot = snapshotOf(f.config, claim.attemptId);
   assert.equal(snapshot.reportAuthentication, undefined, "a late report must not be authenticated");
   const result = project(f.config, f.store, "authz-task");
-  assert.equal(result.ok, true);
-  if (!result.ok) return;
-  assert.notEqual(result.projection.displayState, "needs_review");
+  assert.equal(result.ok, false);
+  if (result.ok) throw Error("Expected stale evidence");
+  assert.equal(result.code, "evidence_stale");
 });
 
 test("a persisted acceptance is not changed by the new record", async t => {
@@ -569,6 +617,7 @@ test("a persisted acceptance is not changed by the new record", async t => {
   f.queue.observeNative(claim.attemptId, { state: "idle", workspace: f.dir });
   f.store.update("authz-task", { state: "accepted", reviewNote: "independent review", reviewedAt: new Date().toISOString() });
 
+  syncEvidence(f);
   const result = project(f.config, f.store, "authz-task");
   assert.equal(result.ok, true);
   if (!result.ok) return;
@@ -585,6 +634,7 @@ test("the report authentication record is not a field a caller can supply", asyn
   const claim = await f.claimFor();
   const forged = { formatVersion: 1, taskId: "forged", attemptId: "run-00000000-0000-0000-0000-000000000000", sessionId: "forged", runtimeSource: "forged", reportedStatus: "failed", reportDigest: "0".repeat(64), authenticatedAt: "1999-12-31T23:59:59.000Z" };
   f.queue.report({ ...claim, status: "completed", text: "TASK_STATUS: completed\nEvery forged field", artifacts: [], reportAuthentication: forged } as unknown as ReportInput);
+  syncEvidence(f);
   const record = snapshotOf(f.config, claim.attemptId).reportAuthentication!;
   for (const field of ["taskId", "attemptId", "sessionId", "runtimeSource", "reportedStatus", "reportDigest", "authenticatedAt"] as const) {
     assert.notEqual(record[field], forged[field], `${field} must come from the verified inputs`);

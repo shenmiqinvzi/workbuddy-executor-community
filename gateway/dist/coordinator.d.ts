@@ -1,6 +1,7 @@
 import type { Config } from "./config.js";
 import { TaskStore, type StoredTask, type TaskReport } from "./task-store.js";
 import { WorkBuddyClient } from "./workbuddy-client.js";
+import { type RunSnapshot } from "./run-journal.js";
 export interface SendTaskInput {
     taskId?: string;
     objective: string;
@@ -36,7 +37,7 @@ export declare class TaskCoordinator {
     } | {
         ok: boolean;
         created: boolean;
-        task: StoredTask | undefined;
+        task: StoredTask;
         next: string;
         error?: undefined;
     } | {
@@ -45,9 +46,27 @@ export declare class TaskCoordinator {
         error: string;
         created?: undefined;
         next?: undefined;
-    }>;
+    } | undefined>;
     private dispatch;
     sync(taskId: string, limit?: number): Promise<StoredTask>;
+    /**
+     * Close a cancelled/accepted task exactly once (T2-R3): once the business
+     * terminal decision AND the native stop proof are both on record, record
+     * the durable closure event. Dedup is by sourceRef (attempt+type), so
+     * repeated syncs never duplicate it; no business state changes here and no
+     * worker is re-dispatched. A terminal task without stop evidence stays
+     * open until that proof arrives.
+     */
+    private closeTerminalTask;
+    /**
+     * Fold the current run snapshot's stop/authentication evidence into the
+     * task row (T2-R1): the digest is part of the fact signature, so stop
+     * evidence appearing or changing regenerates the revision without any task
+     * business field changing. First-time confirmed stop proof also records the
+     * contract's native_stop_confirmed event, deduplicated by sourceRef.
+     * Plain reads without a snapshot write nothing.
+     */
+    private recordRunEvidence;
     continue(input: {
         taskId: string;
         feedback: string;
@@ -57,7 +76,7 @@ export declare class TaskCoordinator {
     }): Promise<{
         ok: boolean;
         created: boolean;
-        task: StoredTask | undefined;
+        task: StoredTask;
         next: string;
         error?: undefined;
     } | {
@@ -66,7 +85,7 @@ export declare class TaskCoordinator {
         error: string;
         created?: undefined;
         next?: undefined;
-    }>;
+    } | undefined>;
     accept(taskId: string, note: string, evidence: string[], artifactPaths?: string[]): Promise<StoredTask>;
     respond(taskId: string, decision: "allow_once" | "reject_once" | "cancel" | "submit", content?: Record<string, unknown>): {
         ok: boolean;
@@ -353,3 +372,28 @@ export declare function parseReport(rawText: string): TaskReport;
 export declare function buildTaskPrompt(input: SendTaskInput & {
     taskId: string;
 }, feedback?: string): string;
+/**
+ * Pure evidence-digest builder (T2-R1/R2): the digest covers every
+ * run-file fact the projection reads — stop proof, full report
+ * authentication object (not just its presence), report digest and status —
+ * and is bound to the attemptId so a previous round's evidence can never be
+ * mistaken for this round's. The projection reader recomputes it from the
+ * run file to detect "file facts ahead of the persisted revision".
+ *
+ * T2-R1 round 3: the digest also binds the report's ACTUAL content. A
+ * snapshot can carry an unchanged declared reportDigest while its text or
+ * artifacts were altered on disk; the recomputed content digest diverges and
+ * the evidence identity changes, so the reader refuses the stale revision
+ * and the next sync regenerates it.
+ */
+export declare function runEvidenceDigestOf(snapshot: RunSnapshot, cancellation?: {
+    requestedAt?: string | null;
+    reason?: string | null;
+}): string;
+/**
+ * Whether a stored digest records confirmed stop proof FOR THIS ATTEMPT
+ * (T2-R2): digests without an attemptId (legacy rows) only count when the
+ * caller passes no attemptId to bind; per-attempt callers treat them as
+ * "not recorded for this round", so rework rounds are never suppressed.
+ */
+export declare function digestRecordsStopFor(digest: string | undefined, attemptId: string | undefined): boolean;
