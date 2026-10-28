@@ -62,8 +62,8 @@ function finish(client: FakeClient, task: StoredTask, text = "TASK_STATUS: compl
   client.batches.push([event(task, 2, text, { type: "result", status: "needs_review", artifacts: ["output.mp4"] })]);
 }
 
-async function send(coordinator: TaskCoordinator, workspace: string, taskId = "video") {
-  return coordinator.send({ model: "synthetic-user-choice", taskId, objective: "make a video", workspace, sessionId: "fixed-session", constraints: ["keep the approved script", "use WorkBuddy tools"], acceptanceCommands: ["inspect the exported media"] });
+async function send(coordinator: TaskCoordinator, workspace: string, taskId = "video", scope?: { allowedChanges: string[]; permittedMetadata: string[] }) {
+  return coordinator.send({ model: "synthetic-user-choice", taskId, objective: "make a video", workspace, sessionId: "fixed-session", constraints: ["keep the approved script", "use WorkBuddy tools"], acceptanceCommands: ["inspect the exported media"], ...(scope ? { scope } : {}) });
 }
 
 test("idempotent parallel sends reserve one task and dispatch exactly one desktop prompt", async (t) => {
@@ -132,7 +132,7 @@ test("refuses overlapping rework while WorkBuddy is running or waiting for permi
 
 test("streams progress and final results separately and requires independent evidence for acceptance", async (t) => {
   const { dir, store, client, coordinator } = fixture(t);
-  await send(coordinator, dir);
+  await send(coordinator, dir, "video", { allowedChanges: ["output.mp4"], permittedMetadata: [] });
   const task = store.get("video")!;
   client.batches.push([event(task, 1, "WorkBuddy called the render tool", { type: "tool_call", status: "working" })]);
   assert.equal((await coordinator.sync("video")).state, "working");

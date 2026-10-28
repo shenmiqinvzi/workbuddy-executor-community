@@ -51,9 +51,12 @@ test("separate entry point services agree and never offer review actions before 
   const client = new SnapshotClient(config);
   const first = new TaskApplicationService(new TaskCoordinator(config, firstStore, client), 3, config.runsDir);
   const second = new TaskApplicationService(new TaskCoordinator(config, secondStore, client), 3, config.runsDir);
-  firstStore.createOrGet({ taskId: "one", messageId: "pending", objective: "fix it", state: "queued", sessionId: "session-one" });
+  firstStore.createOrGet({ taskId: "one", messageId: "pending", objective: "fix it", workspace: dir, state: "queued", sessionId: "session-one" });
+  firstStore.workspaceProtection.create("one", dir, "synthetic-scope", { allowedChanges: [], permittedMetadata: [] }, config.runsDir);
+  const scopeGuard = firstStore.workspaceProtection.guard("one");
   const attemptId = "run-00000000-0000-4000-8000-000000000001";
   firstStore.beginAttempt("one", { attemptId, messageId: attemptId, sessionId: "session-one" });
+  firstStore.workspaceProtection.bindAttempt("one", attemptId, scopeGuard);
 
   client.snapshot = { taskId: "one", attemptId, sessionId: "session-one", driver: "desktop-queue", status: "queued", updatedAt: new Date().toISOString() };
   assert.deepEqual(first.statusView(first.requireTask("one")), second.statusView(second.requireTask("one")));
@@ -82,6 +85,8 @@ test("separate entry point services agree and never offer review actions before 
   client.snapshot = withoutDigest;
   assert.deepEqual(first.statusView(first.requireTask("one")).allowedActions, ["rework"]);
   client.snapshot = { ...client.snapshot, reportDigest: "digest" };
+  assert.deepEqual(first.statusView(first.requireTask("one")).allowedActions, ["rework"], "a passing saved scope check is required before acceptance is offered");
+  firstStore.workspaceProtection.review("one", attemptId);
   const view = first.statusView(first.requireTask("one"));
   assert.equal(view.displayState, "needs_review");
   assert.deepEqual(view.allowedActions, ["rework", "accept"]);
@@ -630,7 +635,7 @@ function lifecycleFixture(t: { after: (fn: () => void) => void }) {
 
 test("the sync lifecycle records contract events in order, folds native stop proof into the revision and keeps cancelled tasks mirroring evidence (T2-R1/R2/R3)", async t => {
   const f = lifecycleFixture(t);
-  const sent = await f.coordinator.send({ model: "synthetic-user-choice", taskId: "lifecycle", objective: "drive the full lifecycle", workspace: f.dir, sessionId: "session-stage-1", constraints: ["keep scope"], acceptanceCommands: ["run check"] });
+  const sent = await f.coordinator.send({ model: "synthetic-user-choice", taskId: "lifecycle", objective: "drive the full lifecycle", workspace: f.dir, sessionId: "session-stage-1", constraints: ["keep scope"], acceptanceCommands: ["run check"], scope: { allowedChanges: ["out.mp4"], permittedMetadata: [] } });
   assert.ok(sent, "dispatch must return a result");
   assert.equal(sent.created, true);
   const taskId = "lifecycle";

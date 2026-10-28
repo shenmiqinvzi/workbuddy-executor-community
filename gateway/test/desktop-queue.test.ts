@@ -74,10 +74,13 @@ test("queue rejects wrong leases, sessions and overlapping claims", async (t) =>
   f.queue.report({...claim,status:"completed",text:"fixture stopped",artifacts:[]});
   f.queue.observeNative(claim.attemptId,{state:"idle",workspace:f.dir});
   await f.coordinator.accept("unit-task", "verified", ["Verified stopped original report"]);
-  f.queue.start({ ...r, model: "different" });
-  assert.equal(new RunJournal(f.config.runsDir!, r.attemptId).request().model, "different");
-  assert.throws(() => f.queue.start({ ...r, sessionMode: "new" }), { code: "OPERATION_CONFLICT" });
-  assert.throws(() => f.queue.start({ ...r, workspace: path.join(f.dir, "other") }), { code: "OPERATION_CONFLICT" });
+  assert.throws(() => f.queue.start({ ...r, model: "different" }), { code: "SCOPE_BASELINE_MISSING" });
+  assert.notEqual(f.store.operations.occupant()?.taskId, "unsupported");
+  const admitted = await f.coordinator.send({ taskId: "supported-next", model: "different", objective: "A new readonly scoped baseline", workspace: f.dir, sessionId: "unit-session", timeoutSeconds: 10 });
+  const request = new RunJournal(f.config.runsDir!, admitted.task.attemptId!).request();
+  assert.equal(request.model, "different");
+  assert.throws(() => f.queue.start({ ...request, sessionMode: "new" }), { code: "OPERATION_CONFLICT" });
+  assert.throws(() => f.queue.start({ ...request, workspace: path.join(f.dir, "other") }), { code: "OPERATION_CONFLICT" });
 });
 
 test("queue cancellation is observed by native report; deadline blocks without resending", async (t) => {

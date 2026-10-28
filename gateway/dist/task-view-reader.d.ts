@@ -30,6 +30,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { StoredAttempt, StoredTask, TaskContractRead } from "./task-store.js";
 import type { PersistedTaskContract } from "./task-contract.js";
 import { type TaskViewAdapterResult } from "./task-view-adapter.js";
+import type { WorkspaceScopeView } from "./workspace-protection.js";
 /**
  * The store surface the reader needs.
  *
@@ -38,6 +39,9 @@ import { type TaskViewAdapterResult } from "./task-view-adapter.js";
  * without opening a database. Only these two reads are ever performed.
  */
 export interface TaskProjectionStore {
+    workspaceProtection?: {
+        readView(taskId: string, attemptId?: string): WorkspaceScopeView;
+    };
     get(taskId: string): StoredTask | undefined;
     listAttempts(taskId: string): StoredAttempt[];
     /**
@@ -86,6 +90,7 @@ export interface TaskProjectionSuccess {
      * has happened.
      */
     contract: PersistedTaskContract | null;
+    workspaceScope?: WorkspaceScopeView;
     projection: TaskViewAdapterResult;
 }
 /**

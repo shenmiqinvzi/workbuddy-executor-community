@@ -14,15 +14,17 @@ import { NativeDesktopRpcTrigger } from "./native-desktop-trigger.js";
 import { verifyValidationEvidence } from "./worker-result.js";
 import { runEvidenceDigestOf } from "./run-evidence.js";
 export { runEvidenceDigestOf } from "./run-evidence.js";
-import { validateSupportedTaskContract, contractExecution } from "./task-contract.js";
+import { validateSupportedTaskContract, contractExecution, validateTaskScope, type TaskContractScope } from "./task-contract.js";
 import { AdmissionError, defaultModelPolicy, enforceModelPolicy, type ModelObservation } from "./collaboration.js";
 
 import type { OperationOptions, OperationRecord } from "./operation-admission.js";
+import type { WorkspaceDispatchGuard } from "./workspace-protection.js";
 
 export interface SendTaskInput extends OperationOptions {
   taskId?: string; objective: string; workspace?: string; constraints?: string[]; acceptanceCommands?: string[];
   timeoutSeconds?: number; sessionId?: string; model?: string; sessionMode?: "existing" | "new";
   contract?: unknown;
+  scope?: TaskContractScope;
 }
 
 async function observeSelectedModel(config: Config, sessionId: string, model: string): Promise<ModelObservation> {
@@ -54,25 +56,32 @@ export class TaskCoordinator {
     return this.store.operations.run("send", taskId, "workbuddy", parameters, { operationId, expectedRevision, expectedAttemptId },
       { backend: this.config.backend, sessionId: input.sessionId ?? null, contract: input.contract ?? null, model: input.model ?? null, maxAttempts: this.config.maxTaskAttempts ?? 3, timeoutSeconds: input.timeoutSeconds ?? this.config.taskTimeoutSeconds ?? 1800 }, operation => this.sendAdmitted({ ...input, taskId }, operation));
   }
-  private async prepareWorkspace(operation: OperationRecord | undefined, input: { workspace: string; sessionId?: string; title?: string; model: string; workerKey?: string }) {
+  private async prepareWorkspace(operation: OperationRecord | undefined, input: { workspace: string; sessionId?: string; title?: string; model: string; workerKey?: string }, scopeGuard: WorkspaceDispatchGuard) {
     if (!operation) throw new AdmissionError("OPERATION_REQUIRED", "Only the admitted send operation may prepare its native route.");
+    this.store.workspaceProtection.assertGuard(scopeGuard);
     // An existing session is already the route; a worker key only creates a new route.
     if (input.sessionId) input = { ...input, workerKey: undefined };
     this.store.operations.reservePreparation(operation.operationId, { taskId: operation.taskId, workspace: input.workspace, sessionId: input.sessionId ?? null, model: input.model, workerKey: input.workerKey ?? null, title: input.title ?? null });
     this.store.operations.nativeBoundary(operation.taskId);
     const result = await this.resolveWorkspace(this.config, { ...input, admissionTaskId: operation.taskId, admissionOperationId: operation.operationId });
     this.store.operations.preparationReturned(operation.operationId);
+    if (fs.realpathSync.native(result.workspace) !== scopeGuard.inventory.root) throw new AdmissionError("SCOPE_WORKSPACE_CHANGED", "Native preparation returned a different workspace.");
+    this.store.workspaceProtection.assertGuard(scopeGuard);
     return result;
   }
   private async sendAdmitted(input: SendTaskInput, operation?: OperationRecord) {
     this.requireDesktop();
     if (input.contract !== undefined) return this.sendWithContract(input, operation);
+    const checkedScope = input.scope === undefined ? null : validateTaskScope(input.scope);
+    if (checkedScope && !checkedScope.ok) throw new AdmissionError("INVALID_CONTRACT", `${checkedScope.rejection.code}: ${checkedScope.rejection.field}`);
+    const declaredScope = checkedScope?.ok ? checkedScope.scope : undefined;
     const taskId = input.taskId ?? `codex-${crypto.randomUUID()}`;
     // Hash the caller's initial contract before automatic workspace/session routing.
     const submissionHash = crypto.createHash("sha256").update(JSON.stringify({
       objective: input.objective, workspace: input.workspace ? path.resolve(input.workspace) : null,
       sessionId: input.sessionId ?? null, constraints: input.constraints ?? [], acceptanceCommands: input.acceptanceCommands ?? [],
       model: input.model ?? null, sessionMode: input.sessionMode ?? "existing", timeoutSeconds: input.timeoutSeconds ?? this.config.taskTimeoutSeconds ?? 1800,
+      ...(declaredScope ? { scope: declaredScope } : {}),
     })).digest("hex");
     const reuse = (previous: StoredTask) => {
       // Legacy rows have no original fingerprint: reject observable conflicts,
@@ -89,22 +98,30 @@ export class TaskCoordinator {
     if (previous) return reuse(previous);
     if (!input.model?.trim()) throw new AdmissionError("MODEL_SELECTION_REQUIRED", "Choose and authorize an exact model before a new task can prepare or dispatch.");
     if (input.workspace && (!path.isAbsolute(input.workspace) || !fs.statSync(input.workspace).isDirectory())) throw new Error("workspace must be an existing absolute directory");
+    let scopeGuard: WorkspaceDispatchGuard | undefined;
+    const protectLegacy = (workspace: string) => {
+      this.store.workspaceProtection.create(taskId, workspace, submissionHash, declaredScope ?? { allowedChanges: [], permittedMetadata: [] }, runsDirectory(this.config), declaredScope ? "scoped_submission" : "legacy_read_only");
+      scopeGuard ??= this.store.workspaceProtection.guard(taskId);
+    };
     if (this.config.backend === "desktop-queue"&&input.sessionMode!=='new') {
       const registration = readServiceRegistration(this.config.serviceConfigFile ?? path.join(path.dirname(this.config.dbFile), "persistent-service.json"));
       if (registration && path.resolve(registration.dbFile) === path.resolve(this.config.dbFile)) {
         if(!input.workspace&&!input.sessionId&&new Set(readWorkspaceWorkers(this.config,registration).filter(worker=>worker.selected).map(worker=>worker.workspace)).size>1)throw new Error("Several project workspaces are registered; provide workspace or sessionId instead of silently using the legacy default");
         const workspace=input.workspace??(input.sessionId?readDesktopSession(this.config.workbuddyConfigDir,input.sessionId).cwd:registration.workspace);
         if(!workspace)throw new Error("Cannot determine the chosen native session workspace");
-        const selected=await this.prepareWorkspace(operation,{workspace,sessionId:input.sessionId,model:input.model});
+        protectLegacy(workspace);
+        const selected=await this.prepareWorkspace(operation,{workspace,sessionId:input.sessionId,model:input.model},scopeGuard!);
         input={...input,workspace:selected.workspace,sessionId:selected.sessionId};
       } else if(input.workspace&&!input.sessionId) {
-        const selected=await this.prepareWorkspace(operation,{workspace:input.workspace,model:input.model});
+        protectLegacy(input.workspace);
+        const selected=await this.prepareWorkspace(operation,{workspace:input.workspace,model:input.model},scopeGuard!);
         input={...input,workspace:selected.workspace,sessionId:selected.sessionId};
       }
     }
+    if (!scopeGuard) protectLegacy(input.workspace ?? "");
     const initial = this.store.createOrGet({ taskId, submissionHash, messageId: `pending-${taskId}`, objective: input.objective, workspace: input.workspace, constraints: input.constraints, acceptanceCommands: input.acceptanceCommands, state: "queued", sessionId: input.sessionId });
     if (!initial.created) return reuse(initial.task);
-    return this.dispatch(initial.task, buildTaskPrompt({ ...input, taskId, timeoutSeconds: input.timeoutSeconds ?? this.config.taskTimeoutSeconds ?? 1800 }), input);
+    return this.dispatch(initial.task, `${buildTaskPrompt({ ...input, taskId, timeoutSeconds: input.timeoutSeconds ?? this.config.taskTimeoutSeconds ?? 1800 })}\n${declaredScope ? `Immutable file scope: ${JSON.stringify(declaredScope)}` : "No structured file scope was declared: this legacy submission is read-only. Do not create, modify or delete workspace files."}`, { ...input, scopeGuard });
   }
   private async sendWithContract(input: SendTaskInput, operation?: OperationRecord) {
     if (this.config.backend !== "desktop-queue") throw new AdmissionError("EXECUTOR_CAPABILITY_MISSING", "Contract dispatch requires the verified desktop-queue adapter.");
@@ -114,7 +131,7 @@ export class TaskCoordinator {
     const execution = contractExecution(contract);
     if ((input.taskId !== undefined && input.taskId !== contract.taskId) || input.objective !== contract.objective ||
         (input.model !== undefined && input.model !== execution.modelId) || (input.timeoutSeconds !== undefined && input.timeoutSeconds !== contract.timeoutSeconds) ||
-        input.constraints !== undefined || input.acceptanceCommands !== undefined || input.sessionMode === "new") throw new AdmissionError("TASK_CONFLICT", "Legacy overrides cannot change contract terms.");
+        input.constraints !== undefined || input.acceptanceCommands !== undefined || input.scope !== undefined || input.sessionMode === "new") throw new AdmissionError("TASK_CONFLICT", "Legacy overrides cannot change contract terms.");
     const previous = this.store.get(contract.taskId);
     if (previous) {
       const saved = this.store.getContract(contract.taskId);
@@ -126,6 +143,8 @@ export class TaskCoordinator {
     if (input.workspace !== undefined && fs.realpathSync.native(input.workspace) !== admission.workspace.realPath) throw new AdmissionError("WORKSPACE_CONFLICT", "The supplied directory differs from the registered project.");
     const commands = contract.requiredChecks.filter(check => check.kind === "command").map(check => check.definition);
     const constraints = [`Allowed changes: ${JSON.stringify(contract.scope.allowedChanges)}`, `Permitted metadata: ${JSON.stringify(contract.scope.permittedMetadata)}`];
+    this.store.workspaceProtection.create(contract.taskId, admission.workspace.realPath, contractHash, contract.scope, runsDirectory(this.config));
+    const scopeGuard = this.store.workspaceProtection.guard(contract.taskId);
     const initial = this.store.createTaskWithContract({ taskId: contract.taskId, messageId: `pending-${contract.taskId}`, objective: contract.objective,
       workspace: admission.workspace.realPath, constraints, acceptanceCommands: commands, sessionId: input.sessionId, state: "queued", submissionHash: contractHash },
     contract, { maxAttempts: policy.maxAttempts }, policy);
@@ -134,13 +153,13 @@ export class TaskCoordinator {
     // The winning creator persists its terms BEFORE model preparation. A crash
     // or unknown preparation result never permits a replay to prepare again.
     try {
-      const selected = await this.prepareWorkspace(operation, { workspace: admission.workspace.realPath, sessionId: input.sessionId, title: contract.title, model: execution.modelId, workerKey: contract.taskId });
+      const selected = await this.prepareWorkspace(operation, { workspace: admission.workspace.realPath, sessionId: input.sessionId, title: contract.title, model: execution.modelId, workerKey: contract.taskId }, scopeGuard);
       if (fs.realpathSync.native(selected.workspace) !== admission.workspace.realPath) throw new AdmissionError("WORKSPACE_CONFLICT", "Native routing returned a different project.");
       this.store.update(contract.taskId, { sessionId: selected.sessionId });
       const modelObservation = await this.observeModel(this.config, selected.sessionId, execution.modelId);
       const task = this.requireTask(contract.taskId);
       return await this.dispatch(task, buildTaskPrompt({ taskId: task.taskId, objective: task.objective, workspace: task.workspace, constraints, acceptanceCommands: commands, timeoutSeconds: contract.timeoutSeconds }),
-        { sessionId: selected.sessionId, model: execution.modelId, timeoutSeconds: contract.timeoutSeconds, acceptanceCommands: commands, modelObservation });
+        { sessionId: selected.sessionId, model: execution.modelId, timeoutSeconds: contract.timeoutSeconds, acceptanceCommands: commands, modelObservation, scopeGuard });
     } catch (error) {
       const task = this.requireTask(contract.taskId);
       if (!task.attemptId) this.store.update(task.taskId, { state: "blocked", blockingReason: "Contract preparation failed; inspect the original task before any recovery." });
@@ -148,15 +167,22 @@ export class TaskCoordinator {
     }
   }
 
-  private async dispatch(task: StoredTask, prompt: string, input: { timeoutSeconds?: number; sessionId?: string; model?: string; sessionMode?: "existing" | "new"; acceptanceCommands?: string[]; modelObservation?: ModelObservation }) {
+  private async dispatch(task: StoredTask, prompt: string, input: { timeoutSeconds?: number; sessionId?: string; model?: string; sessionMode?: "existing" | "new"; acceptanceCommands?: string[]; modelObservation?: ModelObservation; scopeGuard?: WorkspaceDispatchGuard }) {
+    const scopeGuard = input.scopeGuard ?? this.store.workspaceProtection.guard(task.taskId);
+    this.store.workspaceProtection.assertGuard(scopeGuard);
+    prompt = `${prompt}\n${this.store.workspaceProtection.instructions(task.taskId)}`;
     const attemptId = RunJournal.newId();
-    this.store.beginAttempt(task.taskId, { expectedRevision: task.revision ?? null, expectedAttemptId: task.attemptId ?? null, attemptId, messageId: attemptId, sessionId: input.sessionId, acceptanceCommands: input.acceptanceCommands, modelObservation: input.modelObservation });
+    this.store.atomic(() => {
+      this.store.beginAttempt(task.taskId, { expectedRevision: task.revision ?? null, expectedAttemptId: task.attemptId ?? null, attemptId, messageId: attemptId, sessionId: input.sessionId, acceptanceCommands: input.acceptanceCommands, modelObservation: input.modelObservation });
+      this.store.workspaceProtection.bindAttempt(task.taskId, attemptId, scopeGuard);
+    });
     const reserved = this.store.collaboration.getAttempt(attemptId);
     // A reservation is not execution provenance. The actual worker supplies it.
     this.store.updateAttempt(task.taskId, attemptId, { runtimeSource: null });
     try {
       if(this.config.backend==='desktop-queue'&&input.sessionMode==='new')throw new Error("Use workspace or ensure_workspace for native project routing; sessionMode:new is not supported by the queue");
       this.store.operations.nativeBoundary(task.taskId, attemptId);
+      this.store.workspaceProtection.assertGuard(scopeGuard);
       await this.client.sendMessage(prompt, task.workspace, input.timeoutSeconds, input.sessionId ?? task.sessionId, { taskId: task.taskId, attemptId, model: input.model, sessionMode: input.sessionMode, deadline: reserved?.deadlineAt });
       // T2-R1 round 3: the queue writes the attempt's state.json during
       // dispatch, so the row must not be persisted BEHIND its own run file —
@@ -401,6 +427,8 @@ export class TaskCoordinator {
       if (original?.timeoutSeconds && input.timeoutSeconds !== undefined && input.timeoutSeconds > original.timeoutSeconds) throw new AdmissionError("TASK_CONFLICT", "Rework cannot extend its original duration budget.");
       input = { ...input, model: original?.model ?? input.model, timeoutSeconds: input.timeoutSeconds ?? original?.timeoutSeconds };
     }
+    if (storedContract.state === "found" && !this.store.collaboration.getTaskAdmission(task.taskId)) throw new AdmissionError("MODEL_UNVERIFIED", "This historical storage-only contract cannot be promoted into native rework.");
+    const scopeGuard = this.store.workspaceProtection.guard(task.taskId);
     let modelObservation: ModelObservation | undefined;
     if (storedContract.state === "found") {
       const execution = contractExecution(storedContract.record.contract);
@@ -415,7 +443,7 @@ export class TaskCoordinator {
     }
     const current = { ...task, acceptanceCommands: [...new Set([...(task.acceptanceCommands ?? []), ...(input.acceptanceCommands ?? [])])] };
     const prompt = buildTaskPrompt({ taskId: current.taskId, objective: current.objective, workspace: current.workspace, constraints: current.constraints, acceptanceCommands: current.acceptanceCommands, timeoutSeconds: input.timeoutSeconds ?? this.config.taskTimeoutSeconds ?? 1800 }, input.feedback);
-    return this.dispatch(current, prompt, { ...input, modelObservation, sessionId: current.sessionId, sessionMode: "existing" });
+    return this.dispatch(current, prompt, { ...input, modelObservation, scopeGuard, sessionId: current.sessionId, sessionMode: "existing" });
   }
   async accept(taskId: string, note: string, evidence: string[], artifactPaths: string[] = []) {
     this.requireDesktop();
@@ -432,6 +460,7 @@ export class TaskCoordinator {
     }
     if (!task.sessionId || !["desktop_interactive", "desktop_queue"].includes(task.runtimeSource ?? "") || !task.report?.rawText.trim()) throw new Error("Acceptance requires a verified desktop session and a real WorkBuddy result");
     if (!evidence.length || evidence.some((value) => !value.trim())) throw new Error("Provide concrete evidence from independent verification, including the command/output or inspected source/artifact");
+    if (task.attemptId) for (const file of [...(task.artifacts ?? []), ...artifactPaths]) this.store.workspaceProtection.authorizePath(taskId, task.attemptId, file, "read");
     const artifactEvidence = artifactPaths.map((file) => {
       if (!path.isAbsolute(file)) throw new Error("Acceptance artifact paths must be absolute");
       const stat = fs.statSync(file);
@@ -439,6 +468,8 @@ export class TaskCoordinator {
       return `Inspected artifact: ${file} (${stat.size} bytes)`;
     });
     if (!task.attemptId) throw new Error("Legacy tasks cannot be accepted without a durable desktop execution attempt");
+    const scopeCheck = this.store.workspaceProtection.review(taskId, task.attemptId);
+    if (scopeCheck.status !== "passed") throw new AdmissionError(scopeCheck.status === "checker_error" ? "SCOPE_CHECKER_ERROR" : "SCOPE_VIOLATION", "Workspace scope or original user changes did not pass; inspect the saved scope check.");
     // T2-R4: the accepted state, review facts and the terminal task_closed
     // event commit in one transaction — a crash between them can no longer
     // leave an accepted task whose closure event was never written.

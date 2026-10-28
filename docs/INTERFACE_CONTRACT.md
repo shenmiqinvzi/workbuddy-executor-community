@@ -63,6 +63,8 @@ stage-2 已支持监听 `127.0.0.1:18493` 与 `WORKBUDDY_WORKBENCH_PORT` 配置�
 
 ## 3. TaskView 与按钮状态
 
+T5受控MCP/SDK的非契约WorkBuddy send可显式提供同一scope格式，它绑定原提交摘要与持久基线；未提供的新调用只读，不把自由文本解析为写授权。完整契约不得混用该覆盖项，DSH继续使用原vnext-2方案。scope不能在返工中扩大，历史无基线不回填。纯stage-2查询新增workspaceScope快照扩展，见[T5边界](T5_WORKSPACE_PROTECTION.md)，不表示下述完整vNext TaskView和T6 review已交付。
+
 ```json
 {
   "taskId": "example-fix-001",

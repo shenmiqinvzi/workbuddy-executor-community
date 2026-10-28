@@ -101,6 +101,14 @@ export type TaskContractValidation = {
     ok: false;
     rejection: TaskContractRejection;
 };
+/** Additive scope parsing for non-contract callers; historical contract digests are unchanged. */
+export declare function validateTaskScope(value: unknown): {
+    ok: true;
+    scope: TaskContractScope;
+} | {
+    ok: false;
+    rejection: TaskContractRejection;
+};
 /** The digest of a normalized contract. */
 export declare function taskContractHash(contract: SupportedTaskContract): string;
 /**

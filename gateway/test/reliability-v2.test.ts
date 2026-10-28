@@ -26,7 +26,7 @@ function fixture(t:{after:(fn:()=>void)=>void}) {
  const trigger:NativeDesktopTrigger={ async setModel(sessionId: string, model: string) { return { sessionId, model }; },inspect:async()=>({state,workspace:dir}),wakeIdle:async()=>{wakes++;state="busy";return {accepted:true};},cancelAttempt:async(sid,wid,workspace)=>{assert.equal(sid,"session");assert.match(wid,/^wake-run-/);assert.equal(workspace,dir);stops++;if(stopFailure)throw Error("stop API failed");state="idle";}};
  const registration={version:1 as const,sessionId:"session",workspace:dir,projectDir:dir,nodeBin:process.execPath,cdpPort:18491,dbFile:config.dbFile,runsDir:config.runsDir,workbuddyConfigDir:dir,cliElectronPath:config.cliElectronPath};
  const service=()=>new PersistentDesktopService(config,registration,trigger,store);
- const send=async()=>{await coordinator.send({ model: "synthetic-user-choice",taskId:"task",objective:"fixture",sessionId:"session",workspace:dir,timeoutSeconds:120});await service().pump();const claim=await queue.claim("session",0);if(claim.status!=="task")throw Error("no claim");return {...claim,journal:new RunJournal(config.runsDir,claim.attemptId)};};
+ const send=async(scope?:{allowedChanges:string[];permittedMetadata:string[]})=>{await coordinator.send({ model: "synthetic-user-choice",taskId:"task",objective:"fixture",sessionId:"session",workspace:dir,timeoutSeconds:120,...(scope?{scope}:{})});await service().pump();const claim=await queue.claim("session",0);if(claim.status!=="task")throw Error("no claim");return {...claim,journal:new RunJournal(config.runsDir,claim.attemptId)};};
  t.after(()=>{store.close();fs.rmSync(dir,{recursive:true,force:true});});
  return {dir,config,store,queue,coordinator,trigger,service,send,setState:(s:typeof state)=>state=s,setFailure:(f:boolean)=>stopFailure=f,stops:()=>stops,wakes:()=>wakes};
 }
@@ -87,7 +87,7 @@ test("same task rework retains session and history; overlapping and duplicate di
 });
 
 async function validatedReport(f: ReturnType<typeof fixture>) {
- const c=await f.send(),source=path.join(f.dir,"source.js");fs.writeFileSync(source,"verified source");
+ const c=await f.send({allowedChanges:["source.js"],permittedMetadata:[]}),source=path.join(f.dir,"source.js");fs.writeFileSync(source,"verified source");
  // Follow the actual claim's JSON example, as a native worker does, rather
  // than supplying a hand-built report that hides omissions in that example.
  const reportContract=c.prompt.split("[QUEUE_REPORT_CONTRACT]")[1];

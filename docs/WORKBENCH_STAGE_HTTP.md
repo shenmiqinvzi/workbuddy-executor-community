@@ -1,5 +1,7 @@
 # Workbench 只读 HTTP 阶段说明(stage-2,T2)
 
+T5增加可选workspaceScope扩展（内部version=workspace-scope/1）：返回原基线状态、冻结scope、保护数量、覆盖/排除项和当前attempt的已存程序检查。变更列表最多100项，changeCount与changesTruncated说明截断。GET不扫描文件、不执行Git、不写库；passed仅说明checkedAt时的观察，验收仍重新验证当前库存。原stage-2字段语义、checks/changes等未交付的完整vNext字段及HTTP只读边界不变。
+
 2026-10-25 修订：本文记录的任务 stage-2 响应保持不变，不能按 vnext-2 草案解码。DSH、完整协作面板和 HTTP 写操作仍为[后续目标](COLLABORATION_DESIGN.md)；独立额度资源的 T3c 实现另见下文。
 
 T3c 更新：任务 stage-2 DTO 保持原样，另新增独立 `quota-1` 的 GET `/workbench/v1/resources/quotas` 及显式配置后的后台采集，准确行为见[T3c 说明](T3C_QUOTA_OBSERVATION.md)。GET 只读缓存，不触发采集；没有新增 HTTP 写操作、模型探测或派工。

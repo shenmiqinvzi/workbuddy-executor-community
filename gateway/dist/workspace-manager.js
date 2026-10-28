@@ -25,6 +25,7 @@ export async function ensureWorkspace(config, input) {
         if (!input.admissionTaskId)
             throw new AdmissionError("OPERATION_REQUIRED", "Use a durable authorized task operation for native workspace preparation.");
         gate.operations.preparationBoundary(input.admissionOperationId, target, undefined, true);
+        gate.workspaceProtection.verifyPreparation(input.admissionTaskId, input.workspace);
     }
     finally {
         gate.close();

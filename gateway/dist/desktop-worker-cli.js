@@ -2,10 +2,9 @@ import { parseArgs } from "node:util";
 import { loadConfig } from "./config.js";
 import { DesktopQueue } from "./desktop-queue.js";
 import { loadDotEnv } from "./env.js";
-import { readWorkerResult, readWorkerContext } from "./worker-result.js";
+import { readWorkerResult, readWorkerContext, readWorkerObject } from "./worker-result.js";
 import { runBounded } from "./bounded-command.js";
 import { RunJournal } from "./run-journal.js";
-import fs from "node:fs";
 import path from "node:path";
 loadDotEnv();
 try {
@@ -29,17 +28,13 @@ try {
             result = queue.report(readWorkerResult(config, required("claim-file"), required("result-file")));
         else if (action === "update") {
             const context = readWorkerContext(config, required("claim-file"));
-            const file = required("progress-file");
-            if (fs.statSync(file).size > 8192)
-                throw Error("Progress JSON too large");
-            result = queue.progress({ ...context, text: fs.readFileSync(file, "utf8").replace(/^\uFEFF/, "") });
+            const progress = readWorkerObject(config, context.attemptId, required("progress-file"), "worker-progress.json", 8192);
+            result = queue.progress({ ...context, text: JSON.stringify(progress) });
         }
         else if (action === "exec") {
             const context = readWorkerContext(config, required("claim-file")), snapshot = queue.authorizeCommand(context);
-            const file = required("command-file");
-            if (fs.statSync(file).size > 65536)
-                throw Error("Command JSON too large");
-            const spec = JSON.parse(fs.readFileSync(file, "utf8").replace(/^\uFEFF/, ""));
+            const spec = readWorkerObject(config, context.attemptId, required("command-file"), "worker-command.json", 65536);
+            queue.authorizeCommandPaths(context, spec);
             const journal = new RunJournal(queue.root, context.attemptId);
             const outcome = await runBounded(spec, path.join(journal.dir, "commands"), { cancelFile: path.join(journal.dir, "cancel.json"), reportBy: snapshot.reportBy ?? snapshot.deadline });
             result = outcome;

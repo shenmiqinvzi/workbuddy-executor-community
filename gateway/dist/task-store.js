@@ -9,6 +9,7 @@ import { CreditBalanceStore } from "./credit-balance.js";
 import { OperationAdmission } from "./operation-admission.js";
 import { RecoveryStore } from "./operation-recovery.js";
 import { DshBindingStore } from "./dsh-bindings.js";
+import { WorkspaceProtection } from "./workspace-protection.js";
 export class TaskStore {
     file;
     db;
@@ -18,6 +19,7 @@ export class TaskStore {
     dshBindings;
     operations;
     recoveries;
+    workspaceProtection;
     constructor(file) {
         this.file = file;
         fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
@@ -141,6 +143,7 @@ export class TaskStore {
     `);
         this.recoveries = new RecoveryStore(this.db, this);
         this.operations = new OperationAdmission(this.db, this);
+        this.workspaceProtection = new WorkspaceProtection(this.db, file);
     }
     close() { this.db.close(); }
     /**
@@ -571,6 +574,7 @@ export class TaskStore {
                 return { task: current, applied: false };
             if (options.expectedStates && !options.expectedStates.includes(current.state))
                 return { task: current, applied: false };
+            this.workspaceProtection.assertAcceptance(taskId, attemptId);
             const task = this.writeUpdate(current, patch);
             this.appendTaskEventInTransaction({
                 taskId, attemptId, type: closedEvent.type,

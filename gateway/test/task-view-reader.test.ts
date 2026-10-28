@@ -349,7 +349,7 @@ test("the query never reaches for a synchronising or native entry point", () => 
     const base = storeOf(task(), [attemptRow()]);
     const guarded = new Proxy(base, {
       get(target, property, receiver) {
-        if (property === "get" || property === "listAttempts" || property === "getContract" || property === "calls") {
+        if (property === "get" || property === "listAttempts" || property === "getContract" || property === "calls" || property === "workspaceProtection") {
           return Reflect.get(target, property, receiver);
         }
         throw new Error(`unexpected store access: ${String(property)}`);

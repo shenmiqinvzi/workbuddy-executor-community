@@ -22,6 +22,7 @@ description: 将适合的本地开发、修复、测试及资料整理交给桌�
 - 新任务使用稳定 taskId，直接向 send_task 提交真实项目目录与已选模型；模型准备在持久操作和共享容量准入之后进行。独立 ensure_workspace/Hub bind 已拒绝原生准备。已有身份先 get_task/wait；OUTCOME_UNKNOWN 用原 operationId 查询 get_operation，不换键、复制项目或换会话重发。
 - 显式操作使用稳定 operationId；新 send 的 expectedRevision/expectedAttemptId 均为 null，返工带当前实际 revision/attemptId。旧参数调用仍经过持久兼容准入；重复相同反馈只重放，需要再执行同一反馈须提供新的操作身份和当前版本。needs_review 仍占用名额，直到真实关闭与停止证明齐备。
 - 约定目标、可改范围、可观察的验收、必要假设及期限，保留用户已有改动。关键歧义以 blocked 回报；常规修错由 WorkBuddy 完成。
+- 编辑任务须在新 send 的 scope 或完整契约中提供精确文件/directory/** 与最小 permittedMetadata；自由文本不授予写权限，未声明 scope 的新调用只读。原有 dirty/暂存/未跟踪文件仍受保护，不在返工后扩大范围或刷新原基线。
 
 首次编写派工约定或需要完整工具示例时读 [正常派工示例](references/dispatch.md)。执行、回报与验证格式见 [执行规范](references/execution.md)。
 

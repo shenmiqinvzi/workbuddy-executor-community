@@ -254,6 +254,13 @@ export function readTaskProjection(sources, taskId) {
     if (!task) {
         return failure("task_not_found", taskId, null, "taskId", "No stored task has this id.");
     }
+    let workspaceScope;
+    try {
+        workspaceScope = sources.store.workspaceProtection?.readView(taskId, task.attemptId);
+    }
+    catch {
+        return failure("store_unavailable", taskId, task.attemptId ?? null, "store.workspaceProtection", "Reading stored scope facts failed; no workspace scan was performed.");
+    }
     // The contract is read once, before any attempt work. Its absence is a
     // normal state for an older task; a read failure or a record that no longer
     // verifies is not.
@@ -294,8 +301,16 @@ export function readTaskProjection(sources, taskId) {
     // Without a current attempt there is no round to read files for. The adapter
     // records the gap, and no directory is touched.
     if (!attemptId || !runDir) {
+        try {
+            const after = sources.store.get(taskId);
+            if (!after || after.attemptId !== task.attemptId || after.revision !== task.revision)
+                return failure("read_conflict", taskId, attemptId, "task.revision", "The task changed while its stored facts were read.");
+        }
+        catch {
+            return failure("store_unavailable", taskId, attemptId, "store.get", "Re-reading stored task facts failed.");
+        }
         const projection = adaptTaskViewFacts({ task, attempt: null, snapshot: null, cancellation: null });
-        return { ok: true, readOnly: true, snapshotOnly: true, task: identity, row: task, contract, projection };
+        return { ok: true, readOnly: true, snapshotOnly: true, task: identity, row: task, contract, projection, ...(workspaceScope ? { workspaceScope } : {}) };
     }
     const state = readRunFile(path.join(runDir, "state.json"), "state", snapshotShapeProblem);
     if (!state.ok)
@@ -345,7 +360,7 @@ export function readTaskProjection(sources, taskId) {
     // concurrent acceptance can change state/reviewedAt between the two reads,
     // and returning `after` here would mix the projected (old) facts with the
     // newer row values into one contradictory answer.
-    return { ok: true, readOnly: true, snapshotOnly: true, task: identity, row: task, contract, projection };
+    return { ok: true, readOnly: true, snapshotOnly: true, task: identity, row: task, contract, projection, ...(workspaceScope ? { workspaceScope } : {}) };
 }
 function jsonResult(value) {
     return { content: [{ type: "text", text: JSON.stringify(value, null, 2) }] };

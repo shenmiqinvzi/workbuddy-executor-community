@@ -323,9 +323,13 @@ test("acceptance and task_closed commit atomically; a mid-transaction failure le
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "workbuddy-accept-"));
   const store = new TaskStore(path.join(dir, "tasks.sqlite"));
   try {
-    store.createOrGet({ taskId: "atomic", messageId: "pending", objective: "atomic acceptance", state: "queued", constraints: ["keep facts"] });
+    store.createOrGet({ taskId: "atomic", messageId: "pending", objective: "atomic acceptance", workspace: dir, state: "queued", constraints: ["keep facts"] });
+    store.workspaceProtection.create("atomic", dir, "synthetic-scope", { allowedChanges: [], permittedMetadata: [] }, path.join(dir, "runs"));
+    const scopeGuard = store.workspaceProtection.guard("atomic");
     store.beginAttempt("atomic", { attemptId: "attempt-1", messageId: "run-1", sessionId: "session-a" });
+    store.workspaceProtection.bindAttempt("atomic", "attempt-1", scopeGuard);
     store.updateAttempt("atomic", "attempt-1", { state: "needs_review", report: { status: "completed", filesChanged: [], commandsRun: [], rawText: "TASK_STATUS: completed" } });
+    store.workspaceProtection.review("atomic", "attempt-1");
 
     // Fault injection: the closure append fails (NOT NULL occurred_at) after
     // the accepted-state write has run inside the same transaction. The

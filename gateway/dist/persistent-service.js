@@ -498,6 +498,7 @@ export class PersistentDesktopService {
                     if (!this.trigger.setModel)
                         throw new Error("Native model preparation is unavailable; refusing an unverified wake");
                     this.store.operations.assertExecution(task.taskId, journal.attemptId, { sessionId: this.registration.sessionId, model: request.model, workspace: request.workspace });
+                    this.store.workspaceProtection.verifyDispatch(task.taskId, journal.attemptId);
                     const configured = await this.trigger.setModel(this.registration.sessionId, request.model);
                     if (configured.sessionId !== this.registration.sessionId || configured.model !== request.model)
                         throw new Error("Native model preparation returned a different session or model");
@@ -528,6 +529,7 @@ export class PersistentDesktopService {
                 }
             }
             this.store.operations.assertExecution(task.taskId, journal.attemptId, { sessionId: this.registration.sessionId, model: request.model, workspace: request.workspace });
+            this.store.workspaceProtection.verifyDispatch(task.taskId, journal.attemptId);
             const response = await this.trigger.wakeIdle(this.registration.sessionId, intent.wakeId, prompt, request.model);
             writeWakeIntent(intentFile, { ...intent, state: response.accepted ? "submitted" : "rejected", receipt: response.receipt, updatedAt: new Date().toISOString() });
             if (response.accepted)

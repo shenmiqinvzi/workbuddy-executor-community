@@ -206,7 +206,10 @@ test("MCP schemas expose optional brief and full still retrieves complete durabl
   const queue = new DesktopQueue({ ...loadConfig(), backend: "desktop-queue", dbFile: store.file, workbuddyConfigDir: directory, runsDir: path.join(directory, "runs") }, () => ({ desktopPid: process.pid }));
   const attemptId = RunJournal.newId();
   store.createOrGet({ taskId: "report-before-idle", messageId: attemptId, objective: "Fixture only", workspace: directory, sessionId: "native-session", state: "queued" });
+  store.workspaceProtection.create("report-before-idle", directory, "synthetic-scope", { allowedChanges: [], permittedMetadata: [] }, path.join(directory, "runs"));
+  const scopeGuard = store.workspaceProtection.guard("report-before-idle");
   store.beginAttempt("report-before-idle", { attemptId, messageId: attemptId, sessionId: "native-session" });
+  store.workspaceProtection.bindAttempt("report-before-idle", attemptId, scopeGuard);
   queue.start({ model: "synthetic-user-choice", taskId: "report-before-idle", attemptId, sessionId: "native-session", workspace: directory, prompt: "Fixture only", timeoutSeconds: 120 });
   writePrivateJson(path.join(directory, "runs", attemptId, "model-ready.json"), { attemptId, sessionId: "native-session", model: "synthetic-user-choice" });
   const claim = await queue.claim("native-session", 0);

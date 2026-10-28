@@ -14,7 +14,7 @@
 ## 新任务
 
 1. `workbuddy_list_models({"detail":"full"})`：展示实际可用模型、精确 ID 与已知费率，让用户选择本次模型。费用未知明确说明，用户了解后仍可确认；只有主动设置免费限定时才要求精确零费率。以下 `用户选定的精确模型ID` 均为占位符，须替换为实际选择，不能原样执行。
-2. 已选择并确认后，直接调用 `workbuddy_send_task`；原生会话准备在共享容量准入之后进行。有真实既有 sessionId 时可显式传入，不能编造。
+2. 已选择并确认后，向 `workbuddy_send_task` 提交实际文件 scope；先定位需改文件，不能让自然语言约束代替机器范围。原生会话准备在持久容量及文件基线准入后进行。有真实既有 sessionId 时可显式传入，不能编造。
 
 ```json
 {
@@ -24,6 +24,7 @@
   "taskId":"submit-guard-001",
   "workspace":"E:/example/project",
   "model":"用户选定的精确模型ID",
+  "scope":{"allowedChanges":["src/submit.ts","test/submit.test.ts"],"permittedMetadata":[]},
   "objective":"修复提交按钮的重复提交问题：请求期间连续点击只发一次请求，成功正常展示，失败后允许重试。自行定位提交逻辑并完成相关验证。",
   "constraints":["只修改提交逻辑与相关测试","保留用户已有改动，不调整接口契约","改变功能含义的歧义以 blocked 回报"],
   "acceptanceCommands":["验证请求期间连续点击只产生一次请求","验证成功结果展示及失败后可重试","报告实际检查类型、命令、退出码、证据和遗留问题"],
@@ -32,7 +33,7 @@
 }
 ```
 
-constraints 和 acceptanceCommands 会进入任务说明；后者不会由网关自动执行。给 worker 的常规修错、回报及停止约定见 [执行规范](execution.md)。
+scope中的示例路径也须替换为实际已定位的文件。只支持精确文件或directory/**；默认不允许额外隐藏文件，最小metadata须事先列明。未给scope的新非契约调用只读；完整契约任务使用契约内scope，不混用简化覆盖字段。原有用户修改不可因落在范围内就覆盖。constraints和acceptanceCommands只进入任务说明；后者不会自动执行。给worker的常规修错、回报及停止约定见[执行规范](execution.md)。
 
 ## 等待与验收
 

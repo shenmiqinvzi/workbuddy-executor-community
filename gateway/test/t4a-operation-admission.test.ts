@@ -289,7 +289,7 @@ for (const mode of ["before", "after"] as const) test(`crash ${mode} native boun
 
 test("legacy rework retains its original model, duration and saved attempt budget", async t => {
   const f = fixture(t);
-  await f.workbuddy.send({ taskId: "legacy-budget", objective: "Synthetic legacy admission", sessionId: "wb-session", model: "original-choice" });
+  await f.workbuddy.send({ taskId: "legacy-budget", objective: "Synthetic legacy admission", workspace: f.dir, sessionId: "wb-session", model: "original-choice" });
   const task = f.store.get("legacy-budget")!;
   const stopped: RunSnapshot = { ...f.snapshots.get(task.attemptId!)!, status: "needs_review", nativeStopSource: "native_idle", nativeStoppedAt: new Date().toISOString() };
   f.snapshots.set(task.attemptId!, stopped);

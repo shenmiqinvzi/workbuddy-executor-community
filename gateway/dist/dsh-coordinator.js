@@ -106,6 +106,8 @@ export class DshTaskCoordinator {
         if (input.workspace !== undefined && fs.realpathSync.native(input.workspace) !== admission.workspace.realPath)
             return fail("WORKSPACE_CONFLICT", "The supplied workspace differs from its immutable contract.");
         const hostId = this.client.resolveHostId(input.hostId ?? contract.execution.connectionId);
+        this.store.workspaceProtection.create(contract.taskId, admission.workspace.realPath, contractHash, contract.scope, this.runsDir);
+        const scopeGuard = this.store.workspaceProtection.guard(contract.taskId);
         if (contract.execution.connectionId !== hostId)
             return fail("MODEL_BINDING_CHANGED", "The selected connection is not this DSH host.");
         await this.checkedSession({ hostId, sessionId: input.sessionId }, admission.workspace.realPath);
@@ -127,14 +129,15 @@ export class DshTaskCoordinator {
         });
         if (!created)
             return { ok: true, created: false, task: this.task(contract.taskId) };
-        return this.dispatch(binding, undefined, true);
+        return this.dispatch(binding, undefined, true, scopeGuard);
     }
-    async dispatch(binding, feedback, prepare = false) {
+    async dispatch(binding, feedback, prepare = false, scopeGuard = this.store.workspaceProtection.guard(binding.taskId)) {
         const task = this.task(binding.taskId), expected = selection(binding.execution);
         let promptCalled = false;
         try {
             enforceModelPolicy(this.policy(), binding.execution);
             const before = await this.checkedSession(binding, task.workspace);
+            this.store.workspaceProtection.assertGuard(scopeGuard);
             this.store.operations.nativeBoundary(task.taskId, binding.attemptId, "prepare");
             const ready = prepare && !same(before.selectedModel, expected) ? await this.client.selectModel({ hostId: binding.hostId, sessionId: binding.sessionId, ...expected }) : before;
             if (ready.sessionId !== binding.sessionId || !same(ready.selectedModel, expected))
@@ -144,11 +147,13 @@ export class DshTaskCoordinator {
                 if (["reserved", "effect_started"].includes(op.state) && op.kind === "send")
                     this.store.operations.preparationReturned(op.operationId);
             const model = await this.observation(binding.execution, binding.sessionId, binding.taskId);
+            this.store.workspaceProtection.assertGuard(scopeGuard);
             this.store.atomic(() => {
                 const current = this.store.dshBindings.get(binding.attemptId);
                 if (!current.runOpen || current.dispatch !== "preparing")
                     return fail("READ_CONFLICT", "The preparation binding changed.");
                 this.store.beginAttempt(task.taskId, { expectedRevision: task.revision ?? null, expectedAttemptId: task.attemptId ?? null, attemptId: binding.attemptId, messageId: binding.requestId, sessionId: binding.sessionId, runtimeSource: "dsh", modelObservation: model });
+                this.store.workspaceProtection.bindAttempt(task.taskId, binding.attemptId, scopeGuard);
                 this.store.dshBindings.update({ ...current, dispatch: "reserved" });
                 const attempt = this.store.collaboration.getAttempt(binding.attemptId);
                 const terms = this.store.getContract(task.taskId);
@@ -164,12 +169,14 @@ export class DshTaskCoordinator {
                 return fail("MODEL_BINDING_CHANGED", "The selection changed before prompt admission.");
             enforceModelPolicy(this.policy(), binding.execution);
             const deadline = this.store.collaboration.getAttempt(binding.attemptId).deadlineAt;
+            const scopeInstructions = this.store.workspaceProtection.instructions(task.taskId);
             if (Date.parse(deadline) <= Date.now())
                 return fail("DEADLINE_EXCEEDED", "The reserved deadline elapsed before admission.");
+            this.store.workspaceProtection.assertGuard(scopeGuard);
             this.store.operations.nativeBoundary(task.taskId, binding.attemptId);
             promptCalled = true;
             const result = await this.client.prompt({ hostId: binding.hostId, sessionId: binding.sessionId, requestId: binding.requestId, expectedSelection: expected,
-                text: `Task ${task.taskId}; attempt ${binding.attemptId}.\n${task.objective}\n${(task.constraints ?? []).join("\n")}\nRequired checks: ${JSON.stringify(task.acceptanceCommands ?? [])}\nDeadline: ${deadline}. Do not extend or auto-retry. Use bounded foreground tools only; do not create background jobs, subagents or codex_workflow requests. Resolve permissions in the native UI; do not change permission policies. Return actual changes, checks and limitations; wait for independent review.${feedback ? `\nReview feedback: ${feedback}` : ""}` });
+                text: `Task ${task.taskId}; attempt ${binding.attemptId}.\n${task.objective}\n${(task.constraints ?? []).join("\n")}\n${scopeInstructions}\nRequired checks: ${JSON.stringify(task.acceptanceCommands ?? [])}\nDeadline: ${deadline}. Do not extend or auto-retry. Use bounded foreground tools only; do not create background jobs, subagents or codex_workflow requests. Resolve permissions in the native UI; do not change permission policies. Return actual changes, checks and limitations; wait for independent review.${feedback ? `\nReview feedback: ${feedback}` : ""}` });
             if (result.requestId !== binding.requestId || result.accepted !== true)
                 throw Error("unconfirmed");
             this.store.atomic(() => {
@@ -242,6 +249,7 @@ export class DshTaskCoordinator {
             for (const event of page.events) {
                 if (current.turnId && event.turnId && current.turnId !== event.turnId)
                     return fail("SOURCE_IDENTITY_MISMATCH", "The event belongs to a different native turn.");
+                this.store.workspaceProtection.observeToolCall(taskId, binding.attemptId, event.rawType, event.data, `${binding.attemptId}:dsh:${event.seq}`);
                 const data = event.data;
                 const config = event.rawType === "request/header" ? data?.header?.config : undefined;
                 const patch = {};
@@ -370,6 +378,7 @@ export class DshTaskCoordinator {
             return fail("ATTEMPT_LIMIT", "The immutable attempt budget is exhausted.");
         if (input.model !== undefined || input.timeoutSeconds !== undefined || input.acceptanceCommands !== undefined)
             return fail("TASK_CONFLICT", "Rework cannot change the immutable execution terms.");
+        const scopeGuard = this.store.workspaceProtection.guard(task.taskId);
         const current = await this.checkedSession(previous, task.workspace);
         if (!same(current.selectedModel, selection(previous.execution)))
             return fail("MODEL_BINDING_CHANGED", "The original session model changed; rework did not change it back.");
@@ -378,14 +387,19 @@ export class DshTaskCoordinator {
         binding.requestId = binding.attemptId;
         this.store.atomic(() => { if (this.task(task.taskId).revision !== task.revision)
             return fail("READ_CONFLICT", "The task changed during rework preparation."); this.store.dshBindings.reserve(binding); });
-        return this.dispatch(binding, input.feedback);
+        return this.dispatch(binding, input.feedback, false, scopeGuard);
     }
     async accept(taskId, note, evidence, artifactPaths = []) {
-        const task = await this.sync(taskId), binding = this.binding(taskId), state = this.executionStatus(taskId);
+        let task = await this.sync(taskId);
+        const binding = this.binding(taskId), state = this.executionStatus(taskId);
         if (task.state === "accepted")
             return task;
         if (!state.remoteStopped || task.state !== "needs_review" || !state.reportDigestPresent || !task.report?.rawText.trim() || !note.trim() || !evidence.length || evidence.some(item => !item.trim()) || artifactPaths.length)
             return fail("REVIEW_REQUIRED", "Independent evidence for the stopped, authenticated current DSH report is required; artifact binding is not enabled here.");
+        const scopeCheck = this.store.workspaceProtection.review(taskId, binding.attemptId);
+        if (scopeCheck.status !== "passed")
+            return fail(scopeCheck.status === "checker_error" ? "SCOPE_CHECKER_ERROR" : "SCOPE_VIOLATION", "The original workspace scope and protected user changes did not pass.");
+        task = this.task(taskId);
         const projection = readTaskProjection({ store: this.store, runsDir: this.runsDir }, taskId);
         if (!projection.ok || projection.row.revision !== task.revision || projection.projection.facts?.report.state !== "authenticated")
             return fail("CONTRACT_INTEGRITY", "The current DSH report and revision could not be independently bound.");

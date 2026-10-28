@@ -12,6 +12,7 @@
     "noEmit": true
   },
   "include": [
+    "test/workspace-protection.test.ts",
     "test/dsh-adapter.test.ts",
     "test/t4a-operation-admission.test.ts",
     "test/t4a-boundaries.test.ts",
