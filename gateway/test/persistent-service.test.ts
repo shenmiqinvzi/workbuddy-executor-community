@@ -817,7 +817,11 @@ test("unresolved execution leases suppress wake, including claimed timeouts", as
 
 test("a live native claim listener consumes newly queued work without an extra desktop prompt", async (t) => {
   const f = fixture(t);
-  const waiting = f.queue.claim(f.registration.sessionId, 0.5);
+  // Keep one native long poll open through real baseline/preparation I/O.
+  // A 500 ms fixture poll can expire normally on a busy Windows runner before
+  // pump finishes; retry then means an empty poll, not a failed task claim.
+  // Use the supported default long-poll window; task deadlines stay unchanged.
+  const waiting = f.queue.claim(f.registration.sessionId);
   await f.send();
   assert.equal((await f.service().pump()).status, "listener_ready");
   assert.equal(f.trigger.inspections, 0);

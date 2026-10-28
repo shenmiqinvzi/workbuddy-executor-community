@@ -2048,8 +2048,8 @@
     },
     {
       "path": "test/persistent-service.test.ts",
-      "sha256": "33cdb3d1b1051c3218ada9d6bda8490f1f9935908a797f6db95ca335ac493716",
-      "bytes": 60904
+      "sha256": "45a42efe384260dd4292c6b675162959bd395c7a20a7525a026b44d263fda17e",
+      "bytes": 61214
     },
     {
       "path": "test/platform.test.ts",
