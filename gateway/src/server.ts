@@ -135,9 +135,25 @@ server.tool("workbuddy_respond_task", "Respond to an active WorkBuddy permission
   taskId, decision: z.enum(["allow_once", "reject_once", "cancel", "submit"]), content: z.record(z.unknown()).optional(),
 }, ({ taskId, decision, content }) => guard(async () => tasks.respond(taskId, decision, content)));
 
-server.tool("workbuddy_accept_task", "Record acceptance only after independent verification of a real desktop WorkBuddy result. Supply concrete verification evidence and any actual artifact paths. This records an audit, it does not run checks for you.", {
-  taskId, note: z.string().min(1).max(2_000), evidence: z.array(z.string().min(1)).min(1).max(30), artifactPaths: z.array(z.string().min(1)).max(100).optional(), detail,
-}, ({ taskId, note, evidence, artifactPaths, detail }) => guard(async () => ({ ok: true, task: await tasks.accept(taskId, note, evidence, artifactPaths) }), detail));
+const reviewOperation = { operationId: z.string().min(1).max(512), expectedRevision: z.string().min(1), expectedAttemptId: z.string().min(1) };
+server.tool("workbuddy_check_task", "Explicitly verify current provenance, native stop, T5 scope and existing command evidence; persists server-owned program check IDs. Does not dispatch a model.", {
+  taskId, ...reviewOperation,
+}, input => guard(async () => ({ ok: true, ...tasks.reviewChecks(input) })));
+server.tool("workbuddy_run_review_command", "Run one exact JSON CommandSpec from the original agreement as independent bounded verification. No arbitrary command overrides, model requests or worker rounds.", {
+  taskId, ...reviewOperation, checkId: z.string().min(1).max(100),
+}, input => guard(() => tasks.runReviewCommand(input)));
+server.tool("workbuddy_record_inspection", "Record the trusted local coordinator's independent file inspection with current hashes. Worker reports cannot call this a program check.", {
+  taskId, ...reviewOperation, note: z.string().trim().min(1).max(4000), files: z.array(z.string().min(1)).min(1).max(100),
+}, input => guard(async () => ({ ok: true, ...tasks.recordInspection(input) })));
+server.tool("workbuddy_review_task", "Create an immutable reviewId from a server program batch and original semantic requirements. Status is not acceptance; failed and checker_error reviews remain in history.", {
+  taskId, ...reviewOperation, machineCheckIds: z.array(z.string().min(1)).length(1),
+  semanticChecks: z.array(z.object({ checkId: z.string().min(1).max(100), status: z.enum(["passed", "failed", "unknown", "not_applicable", "checker_error"]), note: z.string().trim().min(1).max(4000), evidenceRefs: z.array(z.string().min(1)).min(1).max(100) }).strict()).max(100),
+  note: z.string().trim().min(1).max(4000), supersedesReviewId: z.string().min(1).optional(),
+}, input => guard(async () => ({ ok: true, ...tasks.review(input) })));
+server.tool("workbuddy_get_reviews", "Read immutable stored reviews only; no file scan, sync, Git or model request.", { taskId }, ({ taskId }) => guard(async () => ({ ok: true, reviews: tasks.listReviews(taskId) })));
+server.tool("workbuddy_accept_task", "Accept the current immutable reviewId after rechecking current authenticated source, native stop, files and evidence. Legacy note/evidence acceptance is refused.", {
+  taskId, ...reviewOperation, reviewId: z.string().min(1), detail,
+}, ({ detail, ...input }) => guard(async () => ({ ok: true, ...tasks.acceptReview(input) }), detail));
 
 server.tool("workbuddy_cancel_task", "Request cancellation and preserve an audit record. A cancellation request alone does not prove WorkBuddy stopped; inspect the desktop if it continues.", {
   taskId, reason: z.string().max(500).optional(), detail,

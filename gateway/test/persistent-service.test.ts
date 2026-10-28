@@ -1,3 +1,4 @@
+import { reviewAccept } from "./support/review-accept.js";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -368,7 +369,7 @@ test('explicit model tasks wait for verified native wake; later models cannot be
   f.queue.report({...first,status:'completed',text:'fixture completed',artifacts:[]});
   f.queue.observeNative(first.attemptId, { state: "idle", workspace: f.dir });
   await assert.rejects(f.coordinator.send({taskId:'model-two',objective:'fixture',workspace:f.dir,sessionId:'worker-session',model:'deep'}), { code: "CAPACITY_OCCUPIED" });
-  await f.coordinator.accept("model-one", "Independent fixture verification", ["Inspected stopped report"]);
+  await reviewAccept(f.coordinator, "model-one", "Independent fixture verification", ["Inspected stopped report"]);
   await f.coordinator.send({taskId:'model-two',objective:'fixture',workspace:f.dir,sessionId:'worker-session',model:'deep'});
   assert.equal((await f.queue.claim('worker-session',0)).status,'retry');
   assert.equal((await f.service().pump()).status,'wake_submitted');assert.equal(f.trigger.wakes[1]?.model,'deep');
@@ -806,7 +807,7 @@ test("unresolved execution leases suppress wake, including claimed timeouts", as
   if (claim.status !== "task") throw new Error("Expected unit claim");
   f.queue.report({ ...claim, status: "completed", text: "TASK_STATUS: completed\nTEST_RESULT: transport fixture", artifacts: [] });
   f.queue.observeNative(claim.attemptId, { state: "idle", workspace: f.dir });
-  await f.coordinator.accept("first", "Independent fixture verification", ["Inspected stopped report"]);
+  await reviewAccept(f.coordinator, "first", "Independent fixture verification", ["Inspected stopped report"]);
   await f.send("second");
   const waiting = f.queue.claim(f.registration.sessionId, 0.1);
   // Second task is claimed immediately; it is now protected by its active lease.

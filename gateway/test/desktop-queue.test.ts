@@ -1,3 +1,4 @@
+import { reviewAccept } from "./support/review-accept.js";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -56,7 +57,7 @@ test("queue dispatch does not claim provenance; native claim/report survive reco
   assert.throws(() => f.queue.report({ ...claim, status: "completed", text: "late old report", artifacts: [] }), /no longer active/);
   f.queue.report({ ...second, status: "completed", text: "TASK_STATUS: completed\nTEST_RESULT: rework fixture report", artifacts: [] });
   f.queue.observeNative(second.attemptId, { state: "idle", workspace: f.dir });
-  assert.equal((await restarted.accept("unit-task", "Unit state-machine verification", ["Verified unit transport report and same session identity"])).state, "accepted");
+  assert.equal((await reviewAccept(restarted, "unit-task", "Unit state-machine verification", ["Verified unit transport report and same session identity"])).state, "accepted");
 });
 
 test("queue rejects wrong leases, sessions and overlapping claims", async (t) => {
@@ -73,7 +74,7 @@ test("queue rejects wrong leases, sessions and overlapping claims", async (t) =>
   assert.throws(()=>f.queue.start({ ...r, model: "different" }), { code: "CAPACITY_OCCUPIED" });
   f.queue.report({...claim,status:"completed",text:"fixture stopped",artifacts:[]});
   f.queue.observeNative(claim.attemptId,{state:"idle",workspace:f.dir});
-  await f.coordinator.accept("unit-task", "verified", ["Verified stopped original report"]);
+  await reviewAccept(f.coordinator, "unit-task", "verified", ["Verified stopped original report"]);
   assert.throws(() => f.queue.start({ ...r, model: "different" }), { code: "SCOPE_BASELINE_MISSING" });
   assert.notEqual(f.store.operations.occupant()?.taskId, "unsupported");
   const admitted = await f.coordinator.send({ taskId: "supported-next", model: "different", objective: "A new readonly scoped baseline", workspace: f.dir, sessionId: "unit-session", timeoutSeconds: 10 });
@@ -261,7 +262,7 @@ test("a worker report cannot confirm native stop, allow rework or acceptance, or
   f.queue.observeNative(claim.attemptId, { state: "idle", workspace: f.dir });
   assert.equal(f.coordinator.executionStatus("unit-task").remoteStopped, true);
   assert.equal(new RunJournal(f.queue.root, claim.attemptId).snapshot()?.text, text);
-  assert.equal((await f.coordinator.accept("unit-task", "verified", ["Inspected fixture"])).state, "accepted");
+  assert.equal((await reviewAccept(f.coordinator, "unit-task", "verified", ["Inspected fixture"])).state, "accepted");
   await f.send("next-task");
   assert.equal((await f.queue.claim("unit-session", 0)).status, "task");
 });

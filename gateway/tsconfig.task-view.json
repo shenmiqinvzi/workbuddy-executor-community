@@ -13,6 +13,8 @@
   },
   "include": [
     "test/workspace-protection.test.ts",
+    "test/task-reviews.test.ts",
+    "test/support/review-race-worker.ts",
     "test/dsh-adapter.test.ts",
     "test/t4a-operation-admission.test.ts",
     "test/t4a-boundaries.test.ts",

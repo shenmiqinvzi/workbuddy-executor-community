@@ -319,46 +319,19 @@ test("acceptance conditions and run evidence participate in the revision; non-in
   }
 });
 
-test("acceptance and task_closed commit atomically; a mid-transaction failure leaves neither behind (T2-R4)", () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "workbuddy-accept-"));
-  const store = new TaskStore(path.join(dir, "tasks.sqlite"));
-  try {
-    store.createOrGet({ taskId: "atomic", messageId: "pending", objective: "atomic acceptance", workspace: dir, state: "queued", constraints: ["keep facts"] });
-    store.workspaceProtection.create("atomic", dir, "synthetic-scope", { allowedChanges: [], permittedMetadata: [] }, path.join(dir, "runs"));
-    const scopeGuard = store.workspaceProtection.guard("atomic");
-    store.beginAttempt("atomic", { attemptId: "attempt-1", messageId: "run-1", sessionId: "session-a" });
-    store.workspaceProtection.bindAttempt("atomic", "attempt-1", scopeGuard);
-    store.updateAttempt("atomic", "attempt-1", { state: "needs_review", report: { status: "completed", filesChanged: [], commandsRun: [], rawText: "TASK_STATUS: completed" } });
-    store.workspaceProtection.review("atomic", "attempt-1");
-
-    // Fault injection: the closure append fails (NOT NULL occurred_at) after
-    // the accepted-state write has run inside the same transaction. The
-    // rollback must erase both — no accepted state, no closure, no review
-    // event, and the revision stays where it was.
-    const before = store.get("atomic")!;
-    const beforeRevision = before.revision!;
-    const beforeEvents = store.listTaskEvents("atomic", { limit: 200 }).events.length;
-    const broken = { type: "task_closed", occurredAt: null as unknown as string, actor: "codex", payload: {}, sourceRef: null };
-    assert.throws(() => store.acceptAttempt("atomic", "attempt-1", { state: "accepted", evidence: ["checked"], reviewNote: "n", reviewedAt: "2026-10-23T00:00:00.000Z" }, broken as never, { expectedStates: ["needs_review"] }), () => true, "a failing closure append rolls the acceptance back");
-    const afterFailure = store.get("atomic")!;
-    assert.equal(afterFailure.state, "needs_review", "the accepted state did not survive a failed closure append");
-    assert.equal(afterFailure.reviewNote, before.reviewNote ?? undefined);
-    assert.equal(afterFailure.revision, beforeRevision, "the revision is unchanged after the rollback");
-    assert.equal(store.listTaskEvents("atomic", { limit: 200 }).events.length, beforeEvents, "no closure or review event leaked");
-    assert.equal(store.listTaskEvents("atomic", { limit: 200 }).events.filter((event) => event.type === "task_closed").length, 0);
-
-    // Recovery: the same acceptance retried with a valid closure commits both
-    // facts together, exactly once.
-    const accepted = store.acceptAttempt("atomic", "attempt-1", { state: "accepted", evidence: ["checked"], reviewNote: "verified by reviewer", reviewedAt: "2026-10-23T00:00:00.000Z" }, { type: "task_closed", occurredAt: "2026-10-23T00:00:00.000Z", actor: "codex", payload: { closedAs: "accepted", attempt: 1 }, sourceRef: null }, { expectedStates: ["needs_review"] });
-    assert.equal(accepted.applied, true);
-    assert.equal(accepted.task.state, "accepted");
-    const closed = store.listTaskEvents("atomic", { limit: 200 }).events.filter((event) => event.type === "task_closed");
-    assert.equal(closed.length, 1, "exactly one task_closed after the successful retry");
-    const reviewEvents = store.listTaskEvents("atomic", { limit: 200 }).events.filter((event) => event.type === "review_recorded");
-    assert.equal(reviewEvents.length, 1, "the review fact event is written once");
-    assert.equal(store.listAttempts("atomic")[0]?.state, "accepted");
-  } finally {
-    store.close();
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
+test("acceptance and task_closed commit atomically; a mid-transaction failure leaves neither behind (T2-R4)", async t => {
+  const { reviewFixture } = await import("./support/review-fixture.js");
+  const f = await reviewFixture(t); await f.finish(); const review = f.review();
+  const store = f.store, before = f.current(), beforeEvents = store.listTaskEvents("task", { limit: 200 }).events.length;
+  const options = { expectedStates: ["needs_review"] as const, reviewId: review.reviewId, expectedRevision: f.current().revision };
+  const broken = { type: "task_closed" as const, occurredAt: null as unknown as string, actor: "codex", payload: {}, sourceRef: null };
+  assert.throws(() => store.acceptAttempt("task", before.attemptId!, { state: "accepted", reviewedAt: new Date().toISOString() }, broken, { ...options, expectedStates: [...options.expectedStates] }), /NOT NULL/);
+  assert.equal(f.current().state, "needs_review");
+  assert.equal(f.current().revision, before.revision);
+  assert.equal(store.listTaskEvents("task", { limit: 200 }).events.length, beforeEvents);
+  const accepted = store.reviews.accept({ ...f.op(), reviewId: review.reviewId });
+  assert.equal(accepted.task.state, "accepted");
+  assert.equal(store.listAttempts("task")[0]?.state, "accepted");
+  assert.equal(store.listTaskEvents("task", { limit: 200 }).events.filter(event => event.type === "task_closed").length, 1);
+  assert.equal(store.listTaskEvents("task", { limit: 200 }).events.filter(event => event.type === "review_recorded").length, 1);
 });

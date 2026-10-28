@@ -4,6 +4,7 @@ import { CollaborationRegistry, type ModelPolicy, type ModelObservation } from "
 import { QuotaStore } from "./quota-observation.js";
 import { CreditBalanceStore } from "./credit-balance.js";
 import { OperationAdmission } from "./operation-admission.js";
+import { TaskReviews } from "./task-reviews.js";
 import { RecoveryStore } from "./operation-recovery.js";
 import { DshBindingStore } from "./dsh-bindings.js";
 import { WorkspaceProtection } from "./workspace-protection.js";
@@ -165,6 +166,7 @@ export declare class TaskStore {
     readonly operations: OperationAdmission;
     readonly recoveries: RecoveryStore;
     readonly workspaceProtection: WorkspaceProtection;
+    readonly reviews: TaskReviews;
     constructor(file: string);
     close(): void;
     /**
@@ -320,6 +322,8 @@ export declare class TaskStore {
         sourceRef: string | null;
     }, options?: {
         expectedStates?: TaskState[];
+        reviewId?: string;
+        expectedRevision?: string | null;
     }): {
         task: StoredTask;
         applied: boolean;

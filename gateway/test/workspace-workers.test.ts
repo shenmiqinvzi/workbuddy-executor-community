@@ -1,3 +1,4 @@
+import { reviewAccept } from "./support/review-accept.js";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -135,7 +136,7 @@ test('one service routes two projects sequentially while preserving the legacy d
   const first=await queue.claim(a.worker.sessionId,0);if(first.status!=="task")throw Error("missing first claim");
   queue.report({...first,status:"completed",text:"project A actual report",artifacts:[]});queue.observeNative(first.attemptId,{state:"idle",workspace:f.a});
   await assert.rejects(coordinator.send({ model: "synthetic-user-choice",taskId:'task-b',objective:'project B',workspace:f.b}),{code:"CAPACITY_OCCUPIED"});
-  await coordinator.accept("task-a", "Independent fixture review", ["Verified original report and native stop"]);
+  await reviewAccept(coordinator, "task-a", "Independent fixture review", ["Verified original report and native stop"]);
   await coordinator.send({ model: "synthetic-user-choice",taskId:'task-b',objective:'project B',workspace:f.b});
   await pumpWorkspaceWorkers(f.config,registration,trigger,store);
 

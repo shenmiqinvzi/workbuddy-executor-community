@@ -1,3 +1,4 @@
+import { reviewAccept } from "./support/review-accept.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -99,7 +100,7 @@ test("DSH uses shared tasks, authenticated native report, revision and independe
   if (!projection.ok) throw Error(projection.code); assert.equal(projection.ok, true);
   assert.equal(projection.projection.facts?.report.state, "authenticated"); assert.equal(projection.projection.displayState, "needs_review");
   assert.deepEqual(fs.readFileSync(f.store.file), before); assert.equal(f.store.get(done.taskId)!.revision, revision);
-  assert.equal((await f.coordinator.accept(done.taskId, "Independent fixture verification", ["Inspected the native request model, report and stop identity"])).state, "accepted");
+  assert.equal((await reviewAccept(f.coordinator, done.taskId, "Independent fixture verification", ["Inspected the native request model, report and stop identity"])).state, "accepted");
   assert.equal(f.store.listTaskEvents(done.taskId).events.filter(e => e.type === "task_closed").length, 1);
 });
 
@@ -317,10 +318,10 @@ test("the shared application service routes DSH explicitly and never falls back 
   await assert.rejects(new TaskApplicationService(legacy, 3, f.runs).send(input), { code: "EXECUTOR_UNAVAILABLE" });
   const service = new TaskApplicationService(legacy, 3, f.runs, f.coordinator);
   assert.equal((await service.send(input)).ok, true); f.finish(); await service.sync("dsh-task");
-  assert.ok(service.statusView(f.store.get("dsh-task")!).allowedActions.includes("accept"));
+  assert.equal(service.statusView(f.store.get("dsh-task")!).allowedActions.includes("accept"), false, "Stopped reports still need an immutable independent review");
   assert.throws(() => service.respond("dsh-task", "allow_once"), { code: "EXECUTOR_CAPABILITY_MISSING" });
   await assert.rejects(service.send({ ...input, taskId: "different" }), { code: "CAPACITY_OCCUPIED" });
-  assert.equal((await service.accept("dsh-task", "Independent source and stop review", ["Verified original native request and current report"])).state, "accepted");
+  assert.equal((await reviewAccept(service, "dsh-task", "Independent source and stop review", ["Verified original native request and current report"])).state, "accepted");
 });
 
 test("optional configuration does not widen policy, dispatch or collect rates", t => {

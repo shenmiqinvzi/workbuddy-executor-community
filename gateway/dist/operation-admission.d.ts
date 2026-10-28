@@ -106,4 +106,8 @@ export declare class OperationAdmission {
     /** Internal queue persistence has its own stable receipt, while retaining its parent's workflow. */
     enqueue(taskId: string, attemptId: string, parameters: unknown, action: () => void, preflight?: () => void): void;
     metadata<T>(kind: string, taskId: string, parameters: unknown, options: Pick<OperationOptions, "operationId">, action: () => T, binding?: unknown): T;
+    /** Synchronous review writes and acceptance commit with their durable receipt. */
+    local<T>(kind: string, taskId: string, parameters: unknown, options: OperationOptions, action: () => T): T;
+    /** A bounded independent command is an external effect, never a worker dispatch. */
+    reviewCommandBoundary(operationId: string): void;
 }

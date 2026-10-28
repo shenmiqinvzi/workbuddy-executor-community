@@ -42,7 +42,7 @@ WorkBuddy 自己用 Write 在 reporting.resultFile 写 UTF-8 JSON，例如：
 
 status 按实际选 completed、blocked 或 failed。validationRecords 可选，仅引用本轮真实通过的验证；记录中的 inputs 应覆盖被验证源码。未运行的检查不能报通过。网关检查引用的退出码、清理状态与源码哈希；没有引用、inputs 为空或遗漏依赖时，不代表已验证这些源码，覆盖是否足够仍由 Codex 判断。
 
-新版在认证回报中保留引用与记录摘要，finish 和 accept 都复核；回报后修改源码、改写或删除引用记录会阻止验收。旧轮次没有保存引用时不能补称已获此保障，须由 Codex 查证当前源码及实际验证。
+新版在认证回报中保留引用与记录摘要，finish 和 accept 都复核；回报后修改源码、改写或删除引用记录会阻止验收。旧轮次没有保存引用时不能补称已获此保障。T6 必需命令没有可核验记录时为 unknown，不能凭文字证据补成通过；历史无认证或无基线任务不迁移成 T6 审查。
 
 写完后原样执行 reporting.command，凭据由 helper 读取，不自行拼接。领取后的 prompt 也带同一回报契约。提交失败仅原命令原样重试一次；仍失败保留文件并结束。成功回报或空队列后结束，不循环 claim。已认证迟到报告保留为 blocked，不能覆盖截止结论或作为成功验收。
 
@@ -56,3 +56,5 @@ status 按实际选 completed、blocked 或 failed。validationRecords 可选，
 ### 不确定操作恢复（T4B）
 
 先用 `workbuddy_get_operation_recovery({operationId})` 查看原证据与审计；需要收集原来源事件时显式调用 `workbuddy_observe_operation_recovery`。恢复查询不授权派工，找不到回执不能重发。人工处置通过本地 `node dist/recovery-cli.js show|observe|reconcile|close` 控制台，先展示原绑定与影响，再实际确认。reconcile 保留容量；close 需要可靠停止或无 attempt 的未派工证明，不接受报告、不虚构停止。历史缺证继续阻塞，不删除记录、不换身份或模型。部署与真实模型操作仍需原有授权。
+
+T6 的 check_task / record_inspection / review_task / accept_task 都是显式写操作，必须带稳定 operationId 与当前 expectedRevision/expectedAttemptId。每次成功后读取返回的新 revision。程序批次只由后端生成；worker 的自报不具备 independent_reviewer 身份。完整语义检查必须使用原约定中声明的 semantic 项；非契约 acceptanceCommands 只作命令要求，不推测自然语言属于语义检查。源码、报告、停止/执行绑定或证据变动后重新检查并新增 review；不改旧记录。GET 与 get_reviews 只读已有事实。

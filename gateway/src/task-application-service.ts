@@ -2,6 +2,7 @@ import type { TaskCoordinator, SendTaskInput } from "./coordinator.js";
 import type { DshTaskCoordinator } from "./dsh-coordinator.js";
 import type { OperationOptions } from "./operation-admission.js";
 import type { RecoveryInput } from "./operation-recovery.js";
+import type { ReviewOptions, ReviewInput } from "./task-reviews.js";
 import { AdmissionError, defaultModelPolicy } from "./collaboration.js";
 import type { StoredTask, StoredTaskEvent } from "./task-store.js";
 import { readTaskProjection } from "./task-view-reader.js";
@@ -110,6 +111,12 @@ export class TaskApplicationService {
   readCreditBalances(connectionId?: string) { return this.coordinator.store.creditBalances.read(connectionId); }
 
   getOperation(operationId: string) { return this.coordinator.store.operations.get(operationId); }
+  reviewChecks(input: ReviewOptions) { return this.coordinator.store.reviews.checks(input, this.runsDir); }
+  runReviewCommand(input: ReviewOptions & { checkId: string }) { return this.coordinator.store.reviews.runCommand(input, this.runsDir); }
+  recordInspection(input: ReviewOptions & { note: string; files: string[] }) { return this.coordinator.store.reviews.inspect(input, this.runsDir); }
+  review(input: ReviewInput) { return this.coordinator.store.reviews.review(input, this.runsDir); }
+  acceptReview(input: ReviewOptions & { reviewId: string }) { return this.coordinator.store.reviews.accept(input); }
+  listReviews(taskId: string) { return this.coordinator.store.reviews.list(taskId); }
   listUnfinishedOperations() { return this.coordinator.store.operations.listUnfinished(); }
   readOperationRecovery(targetOperationId: string) { return this.coordinator.store.recoveries.inspect(targetOperationId, this.runsDir); }
   getOperationRecoveryDecision(operationId: string) { return this.coordinator.store.recoveries.get(operationId); }
@@ -365,7 +372,7 @@ export class TaskApplicationService {
       const attemptLimit = contract.state === "found" ? contract.record.effectiveMaxAttempts : contract.state === "absent" ? this.maxAttempts : 0;
       if (scope.baseline === "present" && stopped && task.sessionId && (task.attempt ?? 0) < attemptLimit && (review || task.state === "blocked" || (task.state === "failed" && task.runtimeSource === "dsh"))) allowedActions.push("rework");
       const reportReady = !["desktop_queue", "dsh"].includes(task.runtimeSource ?? "") || ("reportDigestPresent" in execution && execution.reportDigestPresent === true);
-      if (scope.baseline === "present" && scope.check?.status === "passed" && stopped && review && task.sessionId && task.report?.rawText.trim() && reportReady && (["desktop_interactive", "desktop_queue"].includes(task.runtimeSource ?? "") || (task.runtimeSource === "dsh" && this.dsh))) allowedActions.push("accept");
+      if (scope.baseline === "present" && scope.check?.status === "passed" && stopped && review && task.sessionId && task.report?.rawText.trim() && reportReady && this.coordinator.store.reviews.storedAcceptanceReady(task) && (task.runtimeSource === "desktop_queue" || (task.runtimeSource === "dsh" && this.dsh))) allowedActions.push("accept");
     }
     return {
       taskId: task.taskId,
