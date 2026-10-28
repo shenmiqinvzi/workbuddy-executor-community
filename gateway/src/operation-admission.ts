@@ -322,4 +322,41 @@ export class OperationAdmission {
       return result;
     });
   }
+
+  /** Synchronous review writes and acceptance commit with their durable receipt. */
+  local<T>(kind: string, taskId: string, parameters: unknown, options: OperationOptions, action: () => T): T {
+    let failure: unknown;
+    const result = this.store.atomic(() => {
+      if (!options.operationId || options.expectedRevision === undefined || options.expectedAttemptId === undefined) throw new AdmissionError("OPERATION_PRECONDITION_REQUIRED", "Review operations require operationId, expectedRevision and expectedAttemptId.");
+      const { record, fresh } = this.admit(kind, taskId, "review", { parameters, expectedRevision: options.expectedRevision, expectedAttemptId: options.expectedAttemptId }, options, null, false);
+      if (!fresh) return this.replay<T>(record);
+      try {
+        const value = this.store.atomic(() => {
+          this.assertTaskVersion(record);
+          this.store.recoveries.assertOpen(taskId);
+          const active = this.forTask(taskId).find(op => op.operationId !== record.operationId && ["reserved", "effect_started", "outcome_unknown"].includes(op.state) && !this.store.recoveries.forOperation(op.operationId));
+          if (active) throw new OperationOutcomeError(active.operationId, active.state);
+          return JSON.parse(JSON.stringify(action())) as T;
+        });
+        this.save({ ...record, state: "succeeded", result: value, updatedAt: new Date().toISOString() });
+        return value;
+      } catch (error) {
+        failure = error;
+        this.save({ ...record, state: "rejected", error: { code: error instanceof AdmissionError ? error.code : "OPERATION_FAILED", message: "The original review operation was rejected; inspect its binding." }, updatedAt: new Date().toISOString() });
+        return undefined;
+      }
+    });
+    if (failure) throw failure;
+    return result as T;
+  }
+
+  /** A bounded independent command is an external effect, never a worker dispatch. */
+  reviewCommandBoundary(operationId: string): void {
+    this.store.atomic(() => {
+      const op = this.get(operationId);
+      if (!op || op.kind !== "review_command" || op.state !== "reserved") throw new AdmissionError("OPERATION_REQUIRED", "Use the original review command operation.");
+      this.assertTaskVersion(op);
+      this.save({ ...op, state: "effect_started", effectStartedAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    });
+  }
 }

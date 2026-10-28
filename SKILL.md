@@ -40,6 +40,6 @@ description: 将适合的本地开发、修复、测试及资料整理交给桌�
 
 检查本次实际增量与相关边界，区分源码检查、Mock、本地浏览器样本和真实环境。基线检查不替代改动后验证；核对命令退出码、证据与当前源码。修改后重跑受影响检查，可信且对应当前修改的验证无需整套重跑。网关能检查所引用记录的状态和哈希，验证覆盖是否足够、功能是否正确仍由 Codex 判断。
 
-通过后 accept_task 记录实际 evidence/artifactPaths。需要修正且确认原生停止后，沿原任务 continue_task，保留会话与失败历史；默认首次加两轮返工，不换键绕过限制。超时的认证迟到报告可供审查，任务仍是 blocked，不能直接验收。
+先用 check_task 保存服务端程序批次；需要语义检查时，以 record_inspection 记录实际文件检查，再用 review_task 引用原约定的 semantic 项和检查证据，取得不可变 reviewId。accept_task 只接受该 reviewId 和当前 operationId/revision/attempt；旧 note/evidence/artifactPaths 调用不能绕过。命令必需项须有可匹配的真实命令记录，原约定为精确 JSON CommandSpec 时可显式调用 run_review_command 复核，不调用模型。详情见 [派工与审查示例](references/dispatch.md)。需要修正且确认原生停止后，沿原任务 continue_task，保留会话与失败历史；默认首次加两轮返工，不换键绕过限制。超时的认证迟到报告可供审查，任务仍是 blocked，不能直接验收。
 
 最终报告真实交付状态、成果入口、实际验证及影响使用的遗留问题。评估效率时记录监督调用、回报字节数、耗时和人工干预；没有对照实测，不宣称节省 token 或时间。

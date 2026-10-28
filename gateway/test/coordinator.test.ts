@@ -149,11 +149,9 @@ test("streams progress and final results separately and requires independent evi
   assert.equal(store.get("video")?.state, "needs_review");
   const artifact = path.join(dir, "output.mp4");
   fs.writeFileSync(artifact, "fake test artifact, not a real video");
-  const accepted = await coordinator.accept("video", "Media inspected by the reviewer", ["Independent check: file exists and has expected test bytes"], [artifact]);
-  assert.equal(accepted.state, "accepted");
-  assert.equal(accepted.evidence?.length, 2);
-  assert.ok(accepted.evidence?.some((value) => value.includes(artifact)));
-  assert.equal(store.listAttempts("video")[0]?.state, "accepted");
+  await assert.rejects(coordinator.accept("video", "Media inspected by the reviewer", ["Independent check: file exists and has expected test bytes"], [artifact]), { code: "REVIEW_REQUIRED" });
+  assert.equal(store.get("video")!.state, "needs_review", "Legacy interactive text is not authenticated T6 provenance");
+  assert.deepEqual(store.reviews.list("video"), []);
 });
 
 test("keeps the verified desktop session, objective, original constraints and acceptance checks across rework", async (t) => {
@@ -225,7 +223,8 @@ test("a stale result cannot turn an accepted task back into review or replace it
   const paused = client.pauseNextRead();
   const polling = coordinator.sync("video");
   await paused.entered;
-  await coordinator.accept("video", "checked", ["Independent artifact inspection passed"]);
+  // Synthetic pre-T6 accepted history tests terminal preservation, not a new acceptance.
+  store.update("video", { state: "accepted", evidence: ["Independent artifact inspection passed"] });
   paused.resume([event(task, 3, "TASK_STATUS: completed\nRepeated old result", { type: "result", status: "needs_review" })]);
   assert.equal((await polling).state, "accepted");
   assert.deepEqual(store.get("video")?.evidence, ["Independent artifact inspection passed"]);

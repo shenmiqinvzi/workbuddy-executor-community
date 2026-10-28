@@ -43,6 +43,6 @@ MCP 重启后读取原记录，不自动重发。持久服务保存会话绑定�
 
 WorkBuddy 报完成只进入 needs_review。检查内容、文件、实际来源和相关测试后，给出具体反馈；continue 保留原目标、约束和会话，使用新的轮次。持久模式回报后只做一次 `claim --wait-seconds 0`，空队列就结束回复；原生会话空闲后服务可自动唤醒返工，本轮同会话 Edit/Read 和真实文件比较已通过。不能在活跃轮次中重复发送修改。
 
-检查通过才调用 accept，提供具体 evidence 和真实 artifactPaths。验收工具校验给定文件存在且非空，并保存证据；它不替 Codex 做内容检查，也不证明回报中的每句话正确。
+T6 源码入口要求先 check_task 保存程序批次，再按原约定的 semantic 项记录实际文件检查并 review_task，取得不可变 reviewId 后才能 accept_task。最终接受带当前 operationId/revision/attempt 和 reviewId；旧 note/evidence/artifactPaths 不再绕过独立审查。原生报告、停止、命令输入哈希/清理证明和 T5 文件保护仍须全部满足。实际参数见[审查子集](../../docs/T6_INDEPENDENT_REVIEW.md)，已安装旧网关不会因源码变更自动升级。
 
 用户自行验收时，报告“WorkBuddy 执行结束，等待你的验收”，保留 needs_review，不提前标 accepted。首次持久连接按 [小清单、返工与重启验收](USER_ACCEPTANCE.md) 核对原生执行与恢复行为。本轮桌面安装、运行中派工、普通重开、完全关闭自动启动、裸启动自动启用端口和回复结束后的返工均已通过，无 Computer Use；共四项小文件创建、一项返工和 98 项自动化测试。本轮未覆盖业务搜索或视频，登录恢复与系统重启未实测，升级后仍需核对兼容性。

@@ -7,6 +7,7 @@ import { AdmissionError, CollaborationRegistry, enforceModelPolicy, verifySelect
 import { QuotaStore } from "./quota-observation.js";
 import { CreditBalanceStore } from "./credit-balance.js";
 import { OperationAdmission } from "./operation-admission.js";
+import { TaskReviews } from "./task-reviews.js";
 import { RecoveryStore } from "./operation-recovery.js";
 import { DshBindingStore } from "./dsh-bindings.js";
 import { WorkspaceProtection } from "./workspace-protection.js";
@@ -20,6 +21,7 @@ export class TaskStore {
     operations;
     recoveries;
     workspaceProtection;
+    reviews;
     constructor(file) {
         this.file = file;
         fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
@@ -144,6 +146,7 @@ export class TaskStore {
         this.recoveries = new RecoveryStore(this.db, this);
         this.operations = new OperationAdmission(this.db, this);
         this.workspaceProtection = new WorkspaceProtection(this.db, file);
+        this.reviews = new TaskReviews(this.db, this);
     }
     close() { this.db.close(); }
     /**
@@ -575,6 +578,7 @@ export class TaskStore {
             if (options.expectedStates && !options.expectedStates.includes(current.state))
                 return { task: current, applied: false };
             this.workspaceProtection.assertAcceptance(taskId, attemptId);
+            this.reviews.assertAcceptance(current, options.reviewId, options.expectedRevision);
             const task = this.writeUpdate(current, patch);
             this.appendTaskEventInTransaction({
                 taskId, attemptId, type: closedEvent.type,

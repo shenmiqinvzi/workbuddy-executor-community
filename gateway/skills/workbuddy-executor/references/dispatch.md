@@ -22,39 +22,53 @@
   "expectedRevision":null,
   "expectedAttemptId":null,
   "taskId":"submit-guard-001",
-  "workspace":"E:/example/project",
-  "model":"用户选定的精确模型ID",
-  "scope":{"allowedChanges":["src/submit.ts","test/submit.test.ts"],"permittedMetadata":[]},
-  "objective":"修复提交按钮的重复提交问题：请求期间连续点击只发一次请求，成功正常展示，失败后允许重试。自行定位提交逻辑并完成相关验证。",
-  "constraints":["只修改提交逻辑与相关测试","保留用户已有改动，不调整接口契约","改变功能含义的歧义以 blocked 回报"],
-  "acceptanceCommands":["验证请求期间连续点击只产生一次请求","验证成功结果展示及失败后可重试","报告实际检查类型、命令、退出码、证据和遗留问题"],
-  "timeoutSeconds":1800,
+  "sessionId":"实际已核验的会话ID",
+  "objective":"修复提交按钮的重复提交问题；失败后允许重试。",
+  "contract":{
+    "schemaVersion":"workbuddy-executor/vnext-1",
+    "taskId":"submit-guard-001",
+    "workspaceId":"实际已注册的工作区ID",
+    "title":"提交防重复",
+    "objective":"修复提交按钮的重复提交问题；失败后允许重试。",
+    "model":"用户选定的精确模型ID",
+    "scope":{"allowedChanges":["src/submit.ts","test/submit.test.ts"],"permittedMetadata":[]},
+    "requiredChecks":[
+      {"id":"dedup","kind":"semantic","definition":"请求未结束时连续点击仅发一次请求"},
+      {"id":"success-retry","kind":"semantic","definition":"成功正常展示，失败后允许再次提交"}
+    ],
+    "timeoutSeconds":1800,
+    "maxAttempts":3
+  },
   "detail":"brief"
 }
 ```
 
-scope中的示例路径也须替换为实际已定位的文件。只支持精确文件或directory/**；默认不允许额外隐藏文件，最小metadata须事先列明。未给scope的新非契约调用只读；完整契约任务使用契约内scope，不混用简化覆盖字段。原有用户修改不可因落在范围内就覆盖。constraints和acceptanceCommands只进入任务说明；后者不会自动执行。给worker的常规修错、回报及停止约定见[执行规范](execution.md)。
+本例使用结构化原约定，以便 T6 的语义检查能对应派工前的检查项。workspaceId 必须由已有可信 SDK 初始化的工作区登记取得，不能编造；MCP 当前不开放工作区登记或计划授权写入口。没有登记时先通过受控 SDK 准备原约定。vnext-2 还须沿用实际授权的协作方案。示例没有命令检查要求，不代表可省略项目所需测试；需要程序命令检查时，应在原 requiredChecks 中声明实际命令及输入，精确 JSON CommandSpec 的格式见 [T6](https://github.com/shenmiqinvzi/workbuddy-executor-community/blob/main/docs/T6_INDEPENDENT_REVIEW.md)。
+
+路径、范围与检查定义必须替换为实际约定；只支持精确文件或 directory/**。非契约 send 的 scope 仍受支持，但 acceptanceCommands 属于命令要求，不能用自然语言的“测试通过”替代可匹配的机器记录。原有用户修改即便落在范围内也不能覆盖。给 worker 的回报及停止约定见[执行规范](execution.md)。
 
 ## 等待与验收
 
 用 `workbuddy_wait({"taskId":"submit-guard-001","timeoutSeconds":50,"detail":"brief"})` 监督；有新进展时会提前返回。断线后恢复同一 taskId，不重做 ensure_workspace 或 send_task；需要完整报告时 get_task 使用 detail=full。
 
-仅在 needs_review、身份与来源匹配、execution.remoteStopped=true 后检查实际 diff 和相关验证。核对本次改动、验证覆盖及当前源码，不能将此示例中的预期当作证据。检查通过才调用 `workbuddy_accept_task`：
+仅在 needs_review、认证报告及原生停止均明确后核对实际 diff。以下每一步使用独立稳定 operationId、相同当前 attempt 和最新 revision（示例为占位符）：
+
+1. `workbuddy_check_task({taskId,operationId,expectedRevision,expectedAttemptId})`：实际执行程序核验，返回 machineCheckIds 与新 revision。
+2. 独立读取实际文件、必要时运行原约定检查。`workbuddy_record_inspection({...版本参数,note,files:["实际绝对路径"]})` 保存明确人工检查记录与文件哈希，取得 evidenceId；它不把 worker 自报转换为独立判断。
+3. `workbuddy_review_task` 提交原 semantic 项；各项带 checkId、status、note、evidenceRefs:[evidenceId]，另带 machineCheckIds 和整体 note。取得不可变 reviewId 与落库后 revision。必需项缺失、failed/unknown/checker_error/not_applicable 均不能验收。
+4. `workbuddy_accept_task` 使用以下实际返回值：
 
 ```json
 {
-  "operationId":"submit-guard-001-send",
-  "expectedRevision":null,
-  "expectedAttemptId":null,
+  "operationId":"submit-guard-001-accept-1",
+  "expectedRevision":"review_task 返回的实际 revision",
+  "expectedAttemptId":"当前实际 attemptId",
   "taskId":"submit-guard-001",
-  "note":"实际检查后的验收结论",
-  "evidence":["填入实际检查、命令结果或被检查源码与预期的对应关系"],
-  "artifactPaths":[],
-  "detail":"brief"
+  "reviewId":"review_task 返回的实际 reviewId"
 }
 ```
 
-只有真实检查过的成果文件才加入 artifactPaths，路径必须为绝对路径。
+`workbuddy_get_reviews` 只读持久记录。更正通过新 review 的 supersedesReviewId 保留旧结果；不能人工豁免程序事实。审查后发生源码/证据/轮次变动，旧 review 拒绝最终验收。旧 note/evidence/artifactPaths 参数不再提供最终成功通道。
 
 需要返工时先确认原生停止，再调用 `workbuddy_continue_task`：
 

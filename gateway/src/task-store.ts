@@ -8,6 +8,7 @@ import { AdmissionError, CollaborationRegistry, enforceModelPolicy, verifySelect
 import { QuotaStore } from "./quota-observation.js";
 import { CreditBalanceStore } from "./credit-balance.js";
 import { OperationAdmission } from "./operation-admission.js";
+import { TaskReviews } from "./task-reviews.js";
 import { RecoveryStore } from "./operation-recovery.js";
 import { DshBindingStore } from "./dsh-bindings.js";
 import { WorkspaceProtection } from "./workspace-protection.js";
@@ -159,6 +160,7 @@ export class TaskStore {
   readonly operations: OperationAdmission;
   readonly recoveries: RecoveryStore;
   readonly workspaceProtection: WorkspaceProtection;
+  readonly reviews: TaskReviews;
 
   constructor(readonly file: string) {
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
@@ -281,6 +283,7 @@ export class TaskStore {
     this.recoveries = new RecoveryStore(this.db, this);
     this.operations = new OperationAdmission(this.db, this);
     this.workspaceProtection = new WorkspaceProtection(this.db, file);
+    this.reviews = new TaskReviews(this.db, this);
   }
 
   close(): void { this.db.close(); }
@@ -708,13 +711,14 @@ export class TaskStore {
    * event commit together or not at all, so a crash between them can never
    * leave an accepted task without its closure event.
    */
-  acceptAttempt(taskId: string, attemptId: string, patch: Omit<TaskUpdate, "attemptId" | "attempt">, closedEvent: { type: "task_closed"; occurredAt: string; actor: string; payload: Record<string, unknown>; sourceRef: string | null }, options: { expectedStates?: TaskState[] } = {}): { task: StoredTask; applied: boolean } {
+  acceptAttempt(taskId: string, attemptId: string, patch: Omit<TaskUpdate, "attemptId" | "attempt">, closedEvent: { type: "task_closed"; occurredAt: string; actor: string; payload: Record<string, unknown>; sourceRef: string | null }, options: { expectedStates?: TaskState[]; reviewId?: string; expectedRevision?: string | null } = {}): { task: StoredTask; applied: boolean } {
     return this.transaction(() => {
       const current = this.get(taskId);
       if (!current) throw new Error(`Unknown task: ${taskId}`);
       if (current.attemptId !== attemptId) return { task: current, applied: false };
       if (options.expectedStates && !options.expectedStates.includes(current.state)) return { task: current, applied: false };
       this.workspaceProtection.assertAcceptance(taskId, attemptId);
+      this.reviews.assertAcceptance(current, options.reviewId, options.expectedRevision);
       const task = this.writeUpdate(current, patch);
       this.appendTaskEventInTransaction({
         taskId, attemptId, type: closedEvent.type,

@@ -272,3 +272,14 @@ T3b 的受控 DSH SDK、原生请求停止证据与报告认证格式 2 见 [DSH
 可信应用的恢复请求含稳定 operationId、targetOperationId、action（reconcile/close）、reason、expectedOperationToken、expectedEvidenceToken、expectedRevision/expectedAttemptId。实际人工确认后生成短期、绑定完整参数且只能消费一次的授权；决定与关闭事件/容量释放同一 SQLite 事务。相同恢复键先重放，变参冲突；旧预览和变化后的证据拒绝。浏览器、MCP 不能传 approved/stopped 代替授权或证明。
 
 本地入口为 `node dist/recovery-cli.js`，详见[恢复指南](../gateway/docs/OPERATION_RECOVERY.md)与[阶段设计](T4B_OPERATION_RECOVERY.md)。关闭不等于 accepted；未处置的历史未知继续阻塞。原发送结果不重写，不确定原操作被处置后返回 OPERATION_RESOLVED/recoveryOperationId；HTTP 仍无新写路由，完整新版 cancel/respond/accept 契约及 Web 操作另行交付。
+
+
+## 10. T6 实际受控 SDK/MCP 审查子集
+
+完整 vNext HTTP POST 仍未开放；本节描述 [T6](T6_INDEPENDENT_REVIEW.md) 的实际入口，不修改 stage-2 的只读 DTO。共享 TaskApplicationService 提供 reviewChecks、runReviewCommand、recordInspection、review、acceptReview、listReviews；两执行器使用同一 TaskStore.reviews。MCP 为 workbuddy_check_task、workbuddy_run_review_command、workbuddy_record_inspection、workbuddy_review_task、workbuddy_accept_task、workbuddy_get_reviews；官方 workbuddy-call.mjs 直接传递这些参数。Agent Hub 的 /v1/runs 与旧 DeepSeek 独立工作流不是这个 TaskStore 协议。
+
+写操作必须提供 operationId、expectedRevision、expectedAttemptId，均为当前实际值。机器批次通过 check_task 产生：machineCheckIds 是包含全部程序检查的单个后端批次 ID 数组，长度为 1，调用方不能拼装 actor=program 或传 passed。run_review_command 只运行原 command 检查定义中的精确 JSON CommandSpec；自由文字命令定义保持 unknown，永不作为 shell 执行；worker 报告引用的命令 JSON 只保留为报告证据，不能冒充后端独立运行登记。record_inspection 使用 {note,files:absolutePaths[]}，保存服务端人工通道、文件哈希及当前绑定；review 的 semanticChecks 只能引用原约定 semantic 项与这些 inspection ID。
+
+review 返回 {reviewId,revision,review}。记录保存 basisRevision（审查时）与 committedRevision（审查写入后），当前 revision 必须仍等于后者才能 accept。accept 的参数为 {taskId,operationId,expectedRevision,expectedAttemptId,reviewId}，返回 {task,reviewId}；旧 note/evidence/artifactPaths 参数及无 reviewId 的 SDK accept 不提供兼容绕过。更正用 supersedesReviewId 新增记录并明确标记 reviewer_error，旧记录和已发生返工/预算不变。
+
+get_reviews 只读完整持久记录，包括 CheckResult 的状态、来源、文件/记录哈希和引用；不重扫文件或判定实时可验收。stage-2 HTTP 的 checks_unavailable 等完整 vNext 缺口仍保留，不将此 MCP 子集冒称完整 vNext TaskView。旧 accepted 记录不回填 review，历史无认证/基线仍拒绝新验收。

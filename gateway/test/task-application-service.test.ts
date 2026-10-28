@@ -89,7 +89,7 @@ test("separate entry point services agree and never offer review actions before 
   firstStore.workspaceProtection.review("one", attemptId);
   const view = first.statusView(first.requireTask("one"));
   assert.equal(view.displayState, "needs_review");
-  assert.deepEqual(view.allowedActions, ["rework", "accept"]);
+  assert.deepEqual(view.allowedActions, ["rework"], "A scope check and text digest do not replace a current immutable T6 review");
   assert.deepEqual(view, second.statusView(second.requireTask("one")));
 
   const reportedSnapshot = client.snapshot;
@@ -717,10 +717,14 @@ test("the sync lifecycle records contract events in order, folds native stop pro
   assert.equal(events().length, countBeforePoll, "unchanged evidence polls emit nothing");
   assert.equal(events().filter(event => event.type === "native_stop_confirmed").length, 1);
 
-  // Acceptance: atomic accept (T2-R4) through the coordinator.
+  // This synthetic message-only client has no authenticated T6 report.
   const artifact = path.join(f.dir, "out.mp4");
   fs.writeFileSync(artifact, "synthetic artifact bytes");
-  const accepted = await f.coordinator.accept(taskId, "verified independently", ["Independent check: fixture output inspected"], [artifact]);
+  await assert.rejects(f.coordinator.accept(taskId, "verified independently", ["Independent check: fixture output inspected"], [artifact]), { code: "REVIEW_REQUIRED" });
+  // Seed historical accepted facts solely to test subsequent terminal mirroring.
+  // Actual T6 atomic acceptance is covered with a real queue in task-reviews.test.ts.
+  const accepted = f.store.update(taskId, { state: "accepted" });
+  f.store.appendTaskEvent({ taskId, attemptId, type: "task_closed", actor: "synthetic-history", occurredAt: accepted.updatedAt, observedAt: accepted.updatedAt, payload: { closedAs: "accepted" }, sourceRef: `${attemptId}:task_closed` });
   assert.equal(accepted.state, "accepted");
   const closed = events().filter(event => event.type === "task_closed");
   assert.equal(closed.length, 1, "task_closed written with the acceptance");

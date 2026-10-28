@@ -2,6 +2,7 @@ import type { TaskCoordinator, SendTaskInput } from "./coordinator.js";
 import type { DshTaskCoordinator } from "./dsh-coordinator.js";
 import type { OperationOptions } from "./operation-admission.js";
 import type { RecoveryInput } from "./operation-recovery.js";
+import type { ReviewOptions, ReviewInput } from "./task-reviews.js";
 import type { StoredTask, StoredTaskEvent } from "./task-store.js";
 import { STAGE_TASK_VIEW_UNAVAILABLE, STAGE_TASK_VIEW_SCHEMA_VERSION, type StageTaskView } from "./task-view-stage.js";
 /** A conservative status projection for existing tasks. This is not the vNext TaskView. */
@@ -173,6 +174,41 @@ export declare class TaskApplicationService {
         attribution: "connection_only";
     };
     getOperation(operationId: string): import("./operation-admission.js").OperationRecord | null;
+    reviewChecks(input: ReviewOptions): {
+        machineCheckIds: string[];
+        checks: import("./task-reviews.js").ReviewCheck[];
+        revision: string;
+    };
+    runReviewCommand(input: ReviewOptions & {
+        checkId: string;
+    }): Promise<{
+        ok: boolean;
+        evidenceId: string;
+        status: "failed" | "passed" | "checker_error";
+        exitCode: number;
+        cleanupConfirmed: boolean;
+        reason: string;
+        revision: string;
+    } & import("./operation-admission.js").OperationReceipt>;
+    recordInspection(input: ReviewOptions & {
+        note: string;
+        files: string[];
+    }): {
+        evidenceId: string;
+        revision: string;
+    };
+    review(input: ReviewInput): {
+        reviewId: string;
+        revision: string;
+        review: import("./task-reviews.js").ReviewRecord;
+    };
+    acceptReview(input: ReviewOptions & {
+        reviewId: string;
+    }): {
+        task: StoredTask;
+        reviewId: string;
+    };
+    listReviews(taskId: string): import("./task-reviews.js").ReviewRecord[];
     listUnfinishedOperations(): import("./operation-admission.js").OperationRecord[];
     readOperationRecovery(targetOperationId: string): {
         schemaVersion: "operation-recovery-1";

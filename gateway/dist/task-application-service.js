@@ -38,6 +38,12 @@ export class TaskApplicationService {
     }
     readCreditBalances(connectionId) { return this.coordinator.store.creditBalances.read(connectionId); }
     getOperation(operationId) { return this.coordinator.store.operations.get(operationId); }
+    reviewChecks(input) { return this.coordinator.store.reviews.checks(input, this.runsDir); }
+    runReviewCommand(input) { return this.coordinator.store.reviews.runCommand(input, this.runsDir); }
+    recordInspection(input) { return this.coordinator.store.reviews.inspect(input, this.runsDir); }
+    review(input) { return this.coordinator.store.reviews.review(input, this.runsDir); }
+    acceptReview(input) { return this.coordinator.store.reviews.accept(input); }
+    listReviews(taskId) { return this.coordinator.store.reviews.list(taskId); }
     listUnfinishedOperations() { return this.coordinator.store.operations.listUnfinished(); }
     readOperationRecovery(targetOperationId) { return this.coordinator.store.recoveries.inspect(targetOperationId, this.runsDir); }
     getOperationRecoveryDecision(operationId) { return this.coordinator.store.recoveries.get(operationId); }
@@ -310,7 +316,7 @@ export class TaskApplicationService {
             if (scope.baseline === "present" && stopped && task.sessionId && (task.attempt ?? 0) < attemptLimit && (review || task.state === "blocked" || (task.state === "failed" && task.runtimeSource === "dsh")))
                 allowedActions.push("rework");
             const reportReady = !["desktop_queue", "dsh"].includes(task.runtimeSource ?? "") || ("reportDigestPresent" in execution && execution.reportDigestPresent === true);
-            if (scope.baseline === "present" && scope.check?.status === "passed" && stopped && review && task.sessionId && task.report?.rawText.trim() && reportReady && (["desktop_interactive", "desktop_queue"].includes(task.runtimeSource ?? "") || (task.runtimeSource === "dsh" && this.dsh)))
+            if (scope.baseline === "present" && scope.check?.status === "passed" && stopped && review && task.sessionId && task.report?.rawText.trim() && reportReady && this.coordinator.store.reviews.storedAcceptanceReady(task) && (task.runtimeSource === "desktop_queue" || (task.runtimeSource === "dsh" && this.dsh)))
                 allowedActions.push("accept");
         }
         return {

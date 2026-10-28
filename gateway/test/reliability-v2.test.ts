@@ -1,3 +1,4 @@
+import { reviewAccept } from "./support/review-accept.js";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -116,7 +117,7 @@ test("accept rechecks cited validation after report, native stop and coordinator
 
 test("accept preserves valid cited evidence without requiring a duplicate test run",async t=>{
  const f=fixture(t),c=await validatedReport(f);
- assert.equal((await f.coordinator.accept("task","reviewed",["inspected source and recorded check"],[c.source])).state,"accepted");
+ assert.equal((await reviewAccept(f.coordinator, "task","reviewed",["inspected source and recorded check"],[c.source])).state,"accepted");
 });
 
 test("accept rejects a rewritten command record even if its current source hashes still match",async t=>{

@@ -1,3 +1,4 @@
+import { reviewAccept } from "./support/review-accept.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -177,7 +178,7 @@ function dshFixture(t: { after(fn: () => void): void }, scope = { allowedChanges
 }
 
 test("T5 DSH persists scope before model selection and accepts an in-scope stopped authenticated result", async t => {
-  const f = dshFixture(t); assert.equal((await f.send()).ok, true); f.write("src/worker.js", "actual delta"); f.finish(); assert.equal((await f.coordinator.accept(f.taskId, "Independent synthetic file review", ["Actual temporary files inspected"])).state, "accepted"); assert.equal(f.store.workspaceProtection.readView(f.taskId, f.store.get(f.taskId)!.attemptId).check!.status, "passed");
+  const f = dshFixture(t); assert.equal((await f.send()).ok, true); f.write("src/worker.js", "actual delta"); f.finish(); assert.equal((await reviewAccept(f.coordinator, f.taskId, "Independent synthetic file review", ["Actual temporary files inspected"])).state, "accepted"); assert.equal(f.store.workspaceProtection.readView(f.taskId, f.store.get(f.taskId)!.attemptId).check!.status, "passed");
 });
 
 test("T5 DSH scope violation refuses acceptance and preserves shared occupancy and failure evidence", async t => {
