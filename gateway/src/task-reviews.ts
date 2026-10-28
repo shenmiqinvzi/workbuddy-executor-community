@@ -137,7 +137,7 @@ export class TaskReviews {
       let task = this.task(input.taskId);
       const scope = this.store.workspaceProtection.review(task.taskId, task.attemptId!);
       task = this.task(task.taskId);
-      const binding = this.binding(task, runsDir), snapshot = new RunJournal(runsDir, task.attemptId!).snapshot()!;
+      const binding = this.binding(task, runsDir);
       const checks = [this.check("$provenance", "provenance", task, "passed", ["authenticated_report", "native_stop"], { evidence: binding.evidenceDigest }, "Authenticated current report and explicit native stop verified"),
         this.check("$scope", "scope", task, scope.status, ["workspace_inventory"], { baseline: scope.baselineDigest, inventory: scope.inventoryDigest ?? "unknown" }, scope.error ?? "T5 inventory and original user changes")];
       for (const required of this.terms(task).checks.filter(check => check.kind === "command")) {
@@ -146,7 +146,9 @@ export class TaskReviews {
           const record = this.read<CommandRecord>(String(row.id), task.taskId, "command");
           if (record.attemptId === task.attemptId && record.checkId === required.id) records.push(record);
         }
-        records.push(...(snapshot.validationRecords ?? []));
+        // Authenticated worker citations are verified as report evidence in
+        // binding(), but are never promoted to independent program checks.
+        // Only commands actually run and registered by this service qualify.
         let result = this.check(required.id, "command", task, "unknown", [], {}, "No verified command record matches the original check definition");
         for (const record of records) {
           try {
@@ -174,7 +176,7 @@ export class TaskReviews {
   }
   private matches(definition: string, command: CommandSpec): boolean {
     try { const spec = JSON.parse(definition); return operationDigest(spec) === operationDigest({ executable: command.executable, args: command.args, cwd: command.cwd, timeoutSeconds: command.timeoutSeconds, ...(command.inputs ? { inputs: command.inputs } : {}) }); }
-    catch { return definition === [command.executable, ...command.args].join(" ") || definition === [path.basename(command.executable).replace(/\.exe$/i, ""), ...command.args].join(" "); }
+    catch { return false; } // Free text cannot prove executable/argument boundaries.
   }
   /** Explicit isolated verification; executes only the exact JSON CommandSpec in the original agreement. */
   async runCommand(input: ReviewOptions & { checkId: string }, runsDir: string) {

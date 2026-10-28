@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import crypto from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { reviewFixture } from "./support/review-fixture.js";
 import { TaskStore } from "../src/task-store.js";
@@ -230,4 +231,18 @@ test("T6 migration preserves accepted history without inventing authentication, 
   assert.equal(store.get("history")!.state, "accepted"); assert.equal(store.get("history")!.reviewNote, "Original historical note");
   assert.deepEqual(store.reviews.list("history"), []); assert.equal(store.getContract("history").state, "absent");
   assert.equal(store.workspaceProtection.readView("history").baseline, "missing"); assert.deepEqual(store.listTaskEvents("history").events, []);
+});
+
+test("T6 authenticated worker command JSON cannot forge an independent program check", async t => {
+  const f = await reviewFixture(t, "workbuddy", { command: true });
+  const contract = f.store.getContract("task"); if (contract.state !== "found") throw Error("Missing fixture contract");
+  const spec = JSON.parse(contract.record.contract.requiredChecks[0]!.definition), hash = crypto.createHash("sha256").update(fs.readFileSync(f.source)).digest("hex");
+  const file = path.join(f.journal().dir, "commands", `${crypto.randomUUID()}.json`); fs.mkdirSync(path.dirname(file), { recursive: true });
+  // A worker can write plausible JSON; no command actually ran here.
+  fs.writeFileSync(file, JSON.stringify({ ...spec, endedAt: new Date().toISOString(), exitCode: 0, cleanupConfirmed: true, before: { [f.source]: hash }, after: { [f.source]: hash } }));
+  await f.finish(true, [{ path: file, sha256: crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex") }]);
+  assert.ok(f.journal().snapshot()!.reportAuthentication);
+  const batch = f.checks(); assert.equal(batch.checks.find(check => check.checkId === "test")!.status, "unknown");
+  const review = f.review(batch); assert.throws(() => f.service.acceptReview({ ...f.op(), reviewId: review.reviewId }), { code: "CHECKS_REQUIRED" });
+  assert.equal(f.current().state, "needs_review");
 });

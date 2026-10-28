@@ -56,10 +56,10 @@ export async function reviewFixture(t: { after(fn: () => void): void }, executor
   t.after(() => { store.close(); fs.rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }); });
   const current = () => store.get("task")!;
   const op = () => ({ taskId: "task", operationId: crypto.randomUUID(), expectedRevision: current().revision!, expectedAttemptId: current().attemptId! });
-  async function finish(stopped = true) {
+  async function finish(stopped = true, validationRecords?: Array<{ path: string; sha256: string }>) {
     if (executor === "workbuddy") {
       const claim = await queue.claim("session", 0); if (claim.status !== "task") throw Error("Expected synthetic claim");
-      queue.report({ ...claim, status: "completed", text: "TASK_STATUS: completed\nTEST_RESULT: worker self-report only", artifacts: [] });
+      queue.report({ ...claim, status: "completed", text: "TASK_STATUS: completed\nTEST_RESULT: worker self-report only", artifacts: [], ...(validationRecords ? { validationRecords } : {}) });
       if (stopped) queue.observeNative(claim.attemptId, { state: "idle", workspace });
     } else {
       const binding = store.dshBindings.forTask("task")!;

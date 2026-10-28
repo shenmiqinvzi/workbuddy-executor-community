@@ -20,7 +20,7 @@ TaskStore.reviews 使用 SQLite 的追加记录保存程序批次、独立命令
 
 ## 命令证据
 
-已认证 WorkBuddy validationRecords 无论是否有命名 command 项，都保持已有验证：真实命令目录、记录摘要、exitCode=0、cleanupConfirmed、前后输入摘要与当前文件必须一致。有输出路径时同时绑定输出字节。匹配原 command 项后才产生该项的 program passed；自报 TEST_RESULT 或任意路径/“passed”字符串不算机器证据。
+已认证 WorkBuddy validationRecords 无论是否有命名 command 项，都保持已有验证：真实命令目录、记录摘要、exitCode=0、cleanupConfirmed、前后输入摘要与当前文件必须一致。有输出路径时同时绑定输出字节。这些引用保留为 worker 报告证据，不自动提升为独立 program 检查：即使 JSON 字段和哈希正确，也不能证明后端实际执行了命令。只有本服务实际运行并持久登记的命令记录，才可满足原 command 项。自报 TEST_RESULT 或任意路径/“passed”字符串不算机器证据。
 
 两执行器也可显式 runReviewCommand / workbuddy_run_review_command，在原 agreement 内查找 checkId 并执行精确 JSON CommandSpec。示例定义（须换成实际路径和参数）：
 
@@ -28,7 +28,7 @@ TaskStore.reviews 使用 SQLite 的追加记录保存程序批次、独立命令
 {"executable":"C:/Program Files/nodejs/node.exe","args":["--test","test/example.test.js"],"cwd":"E:/example/project","timeoutSeconds":60,"inputs":["src/example.js","test/example.test.js"]}
 ```
 
-此操作复用现有 runBounded、Windows Job 与 validation 验证；要求明确非空输入，服务端不接受命令覆盖或执行自由文字。已有记录也可按完全相同 JSON spec 或原可观察命令字符串匹配。退出非零且清理确认是独立检查 failed；helper/清理问题为 checker_error，均不修改 worker 内容失败或返工预算。命令本身是显式外部副作用，其运行与未知结果沿原持久 operation 观察，不自动重跑。
+此操作复用现有 runBounded、Windows Job 与 validation 验证；要求明确非空输入，服务端不接受命令覆盖或执行自由文字。已有后端独立记录只按完全相同的 JSON spec 匹配；自由文字定义无法证明可执行文件与参数边界，保持 unknown，不能事后修改原约定补成通过。退出非零且清理确认是独立检查 failed；helper/清理问题为 checker_error，均不修改 worker 内容失败或返工预算。命令本身是显式外部副作用，其运行与未知结果沿原持久 operation 观察，不自动重跑。
 
 ## Revision、并发与限制
 
