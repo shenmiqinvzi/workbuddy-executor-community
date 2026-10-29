@@ -188,8 +188,8 @@
     },
     {
       "path": "desktop/Program.cs",
-      "sha256": "ab44e56ca209b569a38e6f289ab6add779640818d923549f30b5620366652dae",
-      "bytes": 15392
+      "sha256": "269a03a51a7940473c31395677c151b0dd4d345ecc8b98dc8ae9bddc09255a76",
+      "bytes": 15512
     },
     {
       "path": "desktop/WEBVIEW2-LICENSE.txt",
@@ -1468,8 +1468,8 @@
     },
     {
       "path": "docs/WORKBENCH.md",
-      "sha256": "d1499b9bb1a450f54d5aa9a7753c539fbff8b1a8103f480591262f30b837431d",
-      "bytes": 4160
+      "sha256": "b266d3a5960f3cd877e44f2e49912feadffba2721936bab6a682cfc3ed7637cb",
+      "bytes": 5285
     },
     {
       "path": "docs/desktop-queue-reliability.md",
@@ -1613,8 +1613,8 @@
     },
     {
       "path": "scripts/workbench-read-store.mjs",
-      "sha256": "d08ad6217043f790b763e5c9d761d0c34c2003694614e855f572da2b54cdfb1d",
-      "bytes": 3921
+      "sha256": "7ffa0e99f4a73e9b1016f12bde510c40d04e4b6d95b4ab86834fa9d781cc1481",
+      "bytes": 4555
     },
     {
       "path": "scripts/workbench-smoke.mjs",
@@ -2448,8 +2448,8 @@
     },
     {
       "path": "workbench/test/read-store.test.mjs",
-      "sha256": "bff80432bb72f69e805f807a5018e88ce141f6f62dd9d6b06507d4c6681207ed",
-      "bytes": 6097
+      "sha256": "8bf9a4e6b23af300b50a76d8a2b84cbd9243bb114bb82dc77b5b5237427d4116",
+      "bytes": 7307
     }
   ]
 }

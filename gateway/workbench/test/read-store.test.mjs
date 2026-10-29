@@ -9,6 +9,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { TaskStore } from '../../dist/task-store.js';
 import { operationDigest } from '../../dist/operation-admission.js';
 import { openWorkbenchReadStore } from '../../scripts/workbench-read-store.mjs';
+import { readPanelTask } from '../../dist/workbench-panel.js';
 
 function fixture() {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(),'workbench-read-store-')),file=path.join(dir,'tasks.sqlite');
@@ -17,6 +18,27 @@ function fixture() {
     return {dir,file,writer};
 }
 const hash=file=>crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+
+test('pre-contract databases remain readable without migration; missing modern contract storage stays unavailable',()=>{
+    for(const legacy of [true,false]) {
+        const {dir,file,writer}=fixture();
+        writer.db.exec('DROP TABLE task_contracts');
+        if(legacy) writer.db.exec('ALTER TABLE tasks DROP COLUMN revision; ALTER TABLE tasks DROP COLUMN contract_dispatch');
+        writer.close();const before=hash(file),reader=openWorkbenchReadStore(file);
+        try {
+            const panel=readPanelTask(reader,path.join(dir,'runs'),'first');
+            if(legacy) {
+                assert.deepEqual(reader.getContract('first'),{state:'absent'});
+                assert.equal(panel.ok,true);assert.equal(panel.presentation.title,null);
+                assert.equal(reader.get('first').revision,undefined);
+            } else {
+                assert.throws(()=>reader.getContract('first'));
+                assert.equal(panel.ok,false);assert.equal(panel.code,'store_unavailable');
+            }
+            assert.equal(hash(file),before);
+        } finally {reader.close();fs.rmSync(dir,{recursive:true,force:true});}
+    }
+});
 test('read-only desktop queries preserve the existing cursor, contract, event and scope meanings',()=>{
     const {dir,file,writer}=fixture(),reader=openWorkbenchReadStore(file);
     try {

@@ -149,7 +149,7 @@ internal sealed class WorkbenchWindow : Form
         }
         catch (OperationCanceledException) when (closing) { }
         catch (WebView2RuntimeNotFoundException) { StopHost(); ShowFailure("需要 Microsoft Edge WebView2 Runtime。请安装微软官方运行组件后重试。"); }
-        catch (UnauthorizedAccessException) { failureCode = "UnauthorizedAccessException"; StopHost(); ShowFailure("工作台无法创建本地应用数据。请检查当前 Windows 用户的文件夹访问权限，然后重新连接。"); }
+        catch (UnauthorizedAccessException error) { failureCode = "UnauthorizedAccessException"; if (Environment.GetEnvironmentVariable("WORKBUDDY_WORKBENCH_DIAGNOSTICS") == "1") Console.Error.WriteLine(error); StopHost(); ShowFailure("工作台无法创建本地应用数据。请检查当前 Windows 用户的文件夹访问权限，然后重新连接。"); }
         catch (Exception error) { failureCode = error.GetType().Name; if (Environment.GetEnvironmentVariable("WORKBUDDY_WORKBENCH_DIAGNOSTICS") == "1") Console.Error.WriteLine(error); StopHost(); ShowFailure("工作台暂时无法连接。请检查 Node.js、数据目录、网关依赖及 WebView2 Runtime 后重试。"); }
         finally { starting = false; }
     }

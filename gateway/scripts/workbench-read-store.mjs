@@ -22,8 +22,17 @@ export function openWorkbenchReadStore(file) {
         },
     } };
     const store = { file, close: () => db.close() };
-    for (const name of ['get', 'getContract', 'listAttempts', 'listTasksByCreatedCursor', 'hasTaskAfterCursor', 'listTaskEvents'])
+    for (const name of ['get', 'listAttempts', 'listTasksByCreatedCursor', 'hasTaskAfterCursor', 'listTaskEvents'])
         store[name] = (...args) => TaskStore.prototype[name].apply(context, args);
+    store.getContract = taskId => {
+        if (has('task_contracts')) return TaskStore.prototype.getContract.call(context, taskId);
+        // Pre-contract deployments have neither contract dispatch nor view
+        // revision columns. Missing storage in a newer schema remains a read
+        // failure; it must never silently erase a persisted agreement.
+        const columns = new Set(db.prepare('PRAGMA table_info(tasks)').all().map(row => row.name));
+        if (columns.has('revision') || columns.has('contract_dispatch')) throw new Error('Contract storage is missing from a newer task schema.');
+        return { state: 'absent' };
+    };
     store.reviews = { list(taskId) {
         if (!has('task_review_records')) return [];
         return db.prepare("SELECT digest,body FROM task_review_records WHERE task_id=? AND kind='review' ORDER BY rowid").all(taskId).map(row => {

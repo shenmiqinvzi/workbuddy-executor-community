@@ -59,4 +59,4 @@ T4A 持久准入/共享容量与 T4B 原操作恢复/人工关闭已随前序依
 
 DSH 受控适配源码与 Windows 桥接的边界、启用和验证见 [T3b 说明](docs/T3B_DSH_ADAPTER.md)；真实模型执行与安装部署须单独验收。
 
-Windows 独立桌面工作台已提供源码与预览包构建入口：`npm run desktop:build` / `npm run desktop`，运行要求及技能自动打开方式见 [桌面工作台说明](gateway/docs/WORKBENCH.md)。本机原生窗口的交互验收尚未完成，不能视为已部署。
+Windows 独立桌面工作台已提供源码与预览包构建入口：`npm run desktop:build` / `npm run desktop`，运行要求及技能自动打开方式见 [桌面工作台说明](gateway/docs/WORKBENCH.md)。正常用户目录中的预览安装已通过原生窗口、同窗口任务定位与关闭清理检查；异机安装仍待验证。
