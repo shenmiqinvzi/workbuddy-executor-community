@@ -2,6 +2,22 @@
 
 此界面与上游 Agent Hub 的 `/v1/runs` 面板分开，读取执行器 TaskStore 已保存的任务、事件与独立审查，不建立另一套执行引擎。
 
+## 独立桌面窗口（Windows x64）
+
+桌面版使用系统 WebView2 Runtime 承载同一界面，有独立任务栏入口、窗口图标、标题栏及关闭按钮。无需打开浏览器。运行要求为 .NET Desktop Runtime 10、WebView2 Runtime，以及已有网关所需的 Node.js 与 npm 依赖；构建额外需要 .NET SDK 10。SDK 版本及内容哈希由 `desktop/packages.lock.json` 固定，微软许可随包保存。
+
+在此网关目录执行 `npm run desktop:build`，然后运行 `npm run desktop`。也可双击 `desktop/app/WorkBuddy.Workbench.exe`；程序通过同一网关的配置解析器读取数据位置。Node.js 默认从 PATH 找到，直接启动 EXE 时可用 `WORKBUDDY_NODE_EXE` 指定绝对路径。不要把 EXE 单独移走，应保留生成的 app 目录和旁边的网关。
+
+技能开始执行时调用 `node <网关目录>/scripts/open-workbench.mjs`。取得任务身份后调用同一入口并加 `--task-id <taskId>`，会激活同一窗口并定位任务。不同网关或任务库各自隔离。调用 `--status` 可读取窗口是否就绪；`launch_requested` 仅表示启动请求已发出。
+
+桌面入口以 SQLite `readOnly` 连接打开已有任务库，不初始化、迁移或创建任务库。它不构建执行器，不启动采集器或原生同步。原来的 HTTP/MCP 执行进程继续管理任务，关闭桌面窗口只关闭窗口拥有的查看服务；父进程异常退出时，该服务通过 stdin 关闭信号退出。读取新保存的状态可使用界面的刷新按钮。
+
+窗口内只允许访问自己动态分配端口上的 `/workbench/` 同源 GET/HEAD；外部网页、文件协议、弹出页面、下载和宿主权限桥均关闭。默认应用数据独立放在当前用户的 LocalAppData/WorkBuddyWorkbench，不读取现有浏览器、WorkBuddy 或 DSH profile。需要隔离验收时，可用绝对路径 `WORKBUDDY_WORKBENCH_PROFILE_ROOT` 指定本应用的数据根目录；不会修改目录权限或请求管理员身份。启动失败保留提示和重新连接入口，不改变任务状态。
+
+`npm run desktop:package` 生成预览 ZIP，仅收录网关发布白名单、固定桌面程序文件和许可；不包含用户配置、任务库、依赖缓存或 WebView2 数据。预览包未做代码签名，也不包含系统运行时与 Node.js 依赖安装，不能视为已完成异机安装验收。
+
+## 浏览器入口
+
 在网关目录安装依赖并构建后，运行：
 
 ```powershell

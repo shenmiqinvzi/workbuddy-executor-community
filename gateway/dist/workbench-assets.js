@@ -4,6 +4,7 @@ const assets = {
     "/workbench/": ["index.html", "text/html; charset=utf-8"],
     "/workbench/app.mjs": ["app.mjs", "text/javascript; charset=utf-8"],
     "/workbench/model.mjs": ["model.mjs", "text/javascript; charset=utf-8"],
+    "/workbench/task-link.mjs": ["task-link.mjs", "text/javascript; charset=utf-8"],
     "/workbench/http-source.mjs": ["http-source.mjs", "text/javascript; charset=utf-8"],
     "/workbench/demo-source.mjs": ["demo-source.mjs", "text/javascript; charset=utf-8"],
     "/workbench/style.css": ["style.css", "text/css; charset=utf-8"],

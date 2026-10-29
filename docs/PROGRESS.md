@@ -66,3 +66,7 @@ node verify-snapshot.mjs
 [前端 Issue #6](https://github.com/shenmiqinvzi/workbuddy-executor-community/issues/6)和[异机验收 Issue #3](https://github.com/shenmiqinvzi/workbuddy-executor-community/issues/3)独立跟踪。已有历史正常任务/同任务返工反馈不能替代当前版本完整安装、取消后停止、执行中重连、升级卸载和登录自启的证据。
 
 会话导航可见性、旧离线诊断及真实环境验证仍需按实际样本核对。本分支的合成 native actor、SQLite 和 HTTP 测试不代表真实桌面或异机验收。
+
+## T7A 桌面外壳补充
+
+已实现 Windows x64 独立窗口、技能启动入口、单实例任务定位及桌面专用 SQLite 只读服务。源码构建和基础测试通过；原生窗口渲染、普通启动与交互环境验收仍待完成，当前不升级已安装技能或网关。见 [桌面运行与边界](../gateway/docs/WORKBENCH.md)。

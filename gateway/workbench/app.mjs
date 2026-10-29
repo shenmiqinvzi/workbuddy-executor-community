@@ -1,5 +1,6 @@
 import { HttpSource } from './http-source.mjs';
 import { DemoSource, SCENARIOS } from './demo-source.mjs';
+import { taskIdFromHash } from './task-link.mjs';
 import { STATES, CHECKS, ACTORS, stateInfo, taskName, workspaceName, executorName, currentReview, proofs, filterRecords, formatTime, eventName } from './model.mjs';
 const $ = id => document.getElementById(id);
 function h(tag, props = {}, ...children) {
@@ -38,6 +39,7 @@ function icon(name, cls = '') { const el = document.createElementNS('http://www.
 } return el; }
 const state = { source: new HttpSource(), records: [], selected: null, detail: null, tab: 'overview', filters: { search: '', state: '', executor: '', workspace: '', group: 'all' }, cursor: null, fetchedAt: null, error: null, detailError: null, events: [], eventError: null, eventCursor: 0, eventsLoaded: false, eventsBusy: false, eventMore: false, busy: false, detailBusy: false, health: null, healthError: false, listSerial: 0, detailSerial: 0 };
 let listController, detailController, eventController, toastTimer;
+let linkedTask = taskIdFromHash(location.hash);
 const status = record => { const info = stateInfo(record); return h('span', { class: 'status ' + info.tone }, h('span', { class: 'dot' }), info.label); };
 function toast(text) { clearTimeout(toastTimer); document.querySelector('.toast')?.remove(); const el = h('div', { class: 'toast', role: 'status' }, text); document.body.append(el); toastTimer = setTimeout(() => el.remove(), 2600); }
 const copyButton = value => h('button', { class: 'copy', type: 'button', 'aria-label': '复制标识 ' + value, onclick: async () => { try {
@@ -222,7 +224,8 @@ async function refreshTasks(more = false) {
         state.fetchedAt = new Date().toISOString();
         updateWorkspaces();
         if (!more) {
-            const selected = state.records.some(r => r.taskId === state.selected) ? state.selected : state.records.find(r => r.ok && stateInfo(r).key === 'needs_review')?.taskId ?? state.records[0]?.taskId;
+            const selected = linkedTask ?? (state.records.some(r => r.taskId === state.selected) ? state.selected : state.records.find(r => r.ok && stateInfo(r).key === 'needs_review')?.taskId ?? state.records[0]?.taskId);
+            linkedTask = null;
             if (selected)
                 selectTask(selected, false);
             else {
@@ -350,12 +353,19 @@ async function switchSource(kind, scenario = 'normal') {
     await refreshTasks();
 }
 buildShell();
+window.addEventListener('hashchange', async () => {
+    const taskId = taskIdFromHash(location.hash);
+    if (!taskId) return;
+    linkedTask = taskId;
+    if (state.source.kind === 'demo') await switchSource('live');
+    else if (!state.busy) { linkedTask = null; await selectTask(taskId, false); }
+});
 document.addEventListener('keydown', e => { if (e.key === '/' && !e.ctrlKey && !e.metaKey && !['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName) && !document.activeElement.isContentEditable) {
     e.preventDefault();
     $('search').focus();
 } if (e.key === 'Escape')
     closeMenu(); });
-if (new URL(location.href).searchParams.get('demo') === '1')
+if (!linkedTask && new URL(location.href).searchParams.get('demo') === '1')
     switchSource('demo');
 else
     refreshTasks();

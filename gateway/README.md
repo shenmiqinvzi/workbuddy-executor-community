@@ -216,3 +216,5 @@ npm run package
 新任务先展示实际执行器、来源、模型、推理档位与已知费用，由用户选择并确认；发送显式 model 或已授权约定，不默认固定/免费模型。付费及未知价格可明确选择；主动免费限定与历史政策仍保留。返工沿用原绑定和预算，不更换模型/会话。
 
 T4A 已将独立 ensure_workspace / Hub bind 原生准备收口到持久派工准入，无授权时返回 OPERATION_REQUIRED。已派工任务先观察原身份，结果不明不能换键重派。T4B 的本地人工恢复控制台、证据与审计规则见 [原操作恢复](docs/OPERATION_RECOVERY.md)；HTTP 仍保持已有只读范围。源码更新不自动安装技能、修改运行配置或启动真实任务。
+
+Windows 独立窗口使用 `npm run desktop:build` 与 `npm run desktop`；双击入口为 `desktop/app/WorkBuddy.Workbench.exe`。技能可以调用 `scripts/open-workbench.mjs --task-id <taskId>` 激活同一窗口。详情见[只读工作台](docs/WORKBENCH.md)。

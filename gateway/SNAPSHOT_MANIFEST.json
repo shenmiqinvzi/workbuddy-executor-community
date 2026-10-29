@@ -43,8 +43,8 @@
     },
     {
       "path": "README.md",
-      "sha256": "ce3fb0698cace603da26dcd478a108d8ab58b8707c23c0455f3a26052cf07bf0",
-      "bytes": 20498
+      "sha256": "b02af8044444250a78493c7ff4ce4f2bc1915fde0d6bd2b154838f8780200347",
+      "bytes": 20767
     },
     {
       "path": "RELIABILITY_VERIFICATION.json",
@@ -175,6 +175,56 @@
       "path": "deepseek-plugin/transport.mjs",
       "sha256": "904ca51ad5c2e2354ac43bf796c97a54962ebd7e5d7efd8eb0f1cf9509673fcf",
       "bytes": 10091
+    },
+    {
+      "path": "desktop/.gitignore",
+      "sha256": "7316a27887c8b7eab9331daf59aa9b235c54599588c1442190c995ef33e0b337",
+      "bytes": 35
+    },
+    {
+      "path": "desktop/DesktopPolicy.cs",
+      "sha256": "372074be68db65eecd7a6f6da343a88b4040f4860d90d249c3481ab7f93a0c5d",
+      "bytes": 3854
+    },
+    {
+      "path": "desktop/Program.cs",
+      "sha256": "ab44e56ca209b569a38e6f289ab6add779640818d923549f30b5620366652dae",
+      "bytes": 15392
+    },
+    {
+      "path": "desktop/WEBVIEW2-LICENSE.txt",
+      "sha256": "2b39e78c5ea2ac66e1351236372b7d676ceca22b432fd9275f10b77f64abc3ef",
+      "bytes": 1486
+    },
+    {
+      "path": "desktop/WorkBuddy.Workbench.csproj",
+      "sha256": "e93ac74aa11033993cb6421871b9f07980528932f00df9ae297b9c74e4ef7948",
+      "bytes": 1203
+    },
+    {
+      "path": "desktop/app.manifest",
+      "sha256": "793ed925584c374e27db2e760589eecec4e150e08713fd2b13dea0b3a7d09d24",
+      "bytes": 760
+    },
+    {
+      "path": "desktop/packages.lock.json",
+      "sha256": "4370d753e44600cead062cd01cb87293f558b5d98a0b2832ab3b662bf0a35cc6",
+      "bytes": 346
+    },
+    {
+      "path": "desktop/test/PolicyTests.csproj",
+      "sha256": "ed53daaf8fdd54cbc6970cc1bf7c86241bcce498a39b501d58a3a8c33901bb0d",
+      "bytes": 314
+    },
+    {
+      "path": "desktop/test/Program.cs",
+      "sha256": "67c1538ff93ebc99c169b696044f2e449e94206efbf2cf72988c7e5396c3ade1",
+      "bytes": 3119
+    },
+    {
+      "path": "desktop/workbench.ico",
+      "sha256": "d1a35653934fc7aeabe3cbe00d301dbfc35c0d0957cfa8315e0620791b9533f0",
+      "bytes": 642
     },
     {
       "path": "dist/acp-live.d.ts",
@@ -1218,13 +1268,13 @@
     },
     {
       "path": "dist/workbench-assets.js",
-      "sha256": "8a391cfc77021de09f82759d44f093dc73215772195780ccc3440c379658060c",
-      "bytes": 2099
+      "sha256": "55cb17bc5d08d151540a51080ac56690c9950d2022a2512983aabc0aaf0dc75e",
+      "bytes": 2184
     },
     {
       "path": "dist/workbench-assets.js.map",
-      "sha256": "f44eeb8c154f0ec06370c4cd0b896264445aab32b2e3088452cdb9c64c9579a5",
-      "bytes": 1539
+      "sha256": "1e88f7ef8401b8f130ee774851cd41ae738633190c7ccfac15b728da58ed8a1b",
+      "bytes": 1584
     },
     {
       "path": "dist/workbench-entry.d.ts",
@@ -1418,8 +1468,8 @@
     },
     {
       "path": "docs/WORKBENCH.md",
-      "sha256": "ea8f28903d101fbbc73cae1dd00c563906082fbe7b5c8940fd722f54920a9a71",
-      "bytes": 1736
+      "sha256": "d1499b9bb1a450f54d5aa9a7753c539fbff8b1a8103f480591262f30b837431d",
+      "bytes": 4160
     },
     {
       "path": "docs/desktop-queue-reliability.md",
@@ -1468,8 +1518,8 @@
     },
     {
       "path": "package.json",
-      "sha256": "f7d1fe409c39d995cd9d4b0664df46a7aa6f4919bb6c3de71fdb000fcbc7f9c2",
-      "bytes": 1475
+      "sha256": "5a46399484cb928c47a8936d830db2e3c92ea3732d5a850027ebf7a1a72bc205",
+      "bytes": 1735
     },
     {
       "path": "scripts/agent-hub-call.mjs",
@@ -1480,6 +1530,11 @@
       "path": "scripts/bounded-job.ps1",
       "sha256": "abd20e3130bee239285657cf363daabb3f2a220542edb5b450177e2e5c888df6",
       "bytes": 6416
+    },
+    {
+      "path": "scripts/build-desktop.mjs",
+      "sha256": "cb6ffaf87bc60f87cbd21cbe6f80707d864565155faaead87ec05477dbf4b79b",
+      "bytes": 1516
     },
     {
       "path": "scripts/deepseek-call.mjs",
@@ -1522,9 +1577,19 @@
       "bytes": 2755
     },
     {
+      "path": "scripts/open-workbench.mjs",
+      "sha256": "d2c9ed288610ae9372fd2fdb5cdc04218d1fe66d3952930f826b9084beef80f3",
+      "bytes": 3780
+    },
+    {
+      "path": "scripts/package-desktop.mjs",
+      "sha256": "36404c69aa87ef75129e9454755ec1eeaca62d8ecbe582fc9e2fbb8b336c83de",
+      "bytes": 3485
+    },
+    {
       "path": "scripts/package.mjs",
-      "sha256": "25e668eb65c47649d3f1b76c39436673d29916efddaa14601778043ae0422abf",
-      "bytes": 13216
+      "sha256": "12736c89f4e3936cf14bc882537f4d144b8355145e62794d7e8d051b376f0780",
+      "bytes": 13911
     },
     {
       "path": "scripts/setup.mjs",
@@ -1540,6 +1605,16 @@
       "path": "scripts/verify-release.mjs",
       "sha256": "a3832cb62d4e9a44772a5cc86f9446d35458f120536bd96f3727362bfe931240",
       "bytes": 1316
+    },
+    {
+      "path": "scripts/workbench-desktop-host.mjs",
+      "sha256": "80531984f17f34232ea866c0361a50e29b80520f06df4a4b5f6c256e01fc0ca2",
+      "bytes": 1799
+    },
+    {
+      "path": "scripts/workbench-read-store.mjs",
+      "sha256": "d08ad6217043f790b763e5c9d761d0c34c2003694614e855f572da2b54cdfb1d",
+      "bytes": 3921
     },
     {
       "path": "scripts/workbench-smoke.mjs",
@@ -1573,8 +1648,8 @@
     },
     {
       "path": "skills/workbuddy-executor/SKILL.md",
-      "sha256": "34b08351a8247c308330d8b551a5c3b18ecf5d2dd2a6c55c51e1dbe0cb506eef",
-      "bytes": 6074
+      "sha256": "4fe19dd84be957e7ee03b823e8b2b6cb437866f4caebc02879bb3975de798dae",
+      "bytes": 6710
     },
     {
       "path": "skills/workbuddy-executor/agents/openai.yaml",
@@ -1948,8 +2023,8 @@
     },
     {
       "path": "src/workbench-assets.ts",
-      "sha256": "fb9626bfd209e6d59ed77ed387b6c6e82f86b63292c518afabfa89c46f564b9c",
-      "bytes": 2047
+      "sha256": "58a238936eabaa3e3c97731dd91aace1ffa588eb174a853dbadd4f84c65f08fa",
+      "bytes": 2130
     },
     {
       "path": "src/workbench-entry.ts",
@@ -2108,8 +2183,8 @@
     },
     {
       "path": "test/package.test.ts",
-      "sha256": "397294a686cfdbe7aa358bf49bf1a10bde1d44e48c744a905b8bc1b0906f8b44",
-      "bytes": 15480
+      "sha256": "4d624afe3a0266bfd667437278a482a0b6d005efb4e152766690cb56dcc519a2",
+      "bytes": 17933
     },
     {
       "path": "test/persistent-service.test.ts",
@@ -2308,8 +2383,8 @@
     },
     {
       "path": "workbench/app.mjs",
-      "sha256": "a4d53f893d121d0c87b03d4493a5eab7010d20383ba54ae99428a4a7fd15c81e",
-      "bytes": 31565
+      "sha256": "ab68d09695379d184cb5147bc33c3ce0b30d02b145bc9ed0160849c900a47612",
+      "bytes": 32029
     },
     {
       "path": "workbench/demo-source.mjs",
@@ -2357,9 +2432,24 @@
       "bytes": 23828
     },
     {
+      "path": "workbench/task-link.mjs",
+      "sha256": "827f3f932f45fbec90131e1fff7875647f86aa9cc7dad7d8035b97e2eae4b162",
+      "bytes": 330
+    },
+    {
+      "path": "workbench/test/desktop.test.mjs",
+      "sha256": "325060e6df2b14db59dd5e34b2906af1ac452d5fea6021dc928f697842d4a4bd",
+      "bytes": 1388
+    },
+    {
       "path": "workbench/test/model.test.mjs",
       "sha256": "40287ff6bfc5bd0748085a127435f5a167531c6ee9a77b1ad2bc1e71312992f2",
       "bytes": 4811
+    },
+    {
+      "path": "workbench/test/read-store.test.mjs",
+      "sha256": "bff80432bb72f69e805f807a5018e88ce141f6f62dd9d6b06507d4c6681207ed",
+      "bytes": 6097
     }
   ]
 }

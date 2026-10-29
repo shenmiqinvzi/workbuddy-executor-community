@@ -54,6 +54,15 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run deepseek:plugin:test
       - name: Read-only workbench frontend checks
-        run: node --test workbench/test/model.test.mjs
+        run: node --test workbench/test/*.test.mjs
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build lightweight desktop workbench
+        run: npm run desktop:build
+      - name: Desktop identity and navigation policy checks
+        run: npm run desktop:test
+      - name: Package desktop workbench
+        run: npm run desktop:package
       - name: Read-only workbench HTTP smoke
         run: node scripts/workbench-smoke.mjs
