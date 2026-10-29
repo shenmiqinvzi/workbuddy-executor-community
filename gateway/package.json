@@ -12,6 +12,8 @@
     "typecheck:task-view": "tsc -p tsconfig.task-view.json",
     "start": "node dist/server.js",
     "hub": "./bin/agent-hub serve",
+    "workbench": "node dist/workbench-entry.js",
+    "test:workbench": "node --test workbench/test/model.test.mjs",
     "hub:mcp": "./bin/agent-hub-mcp",
     "auth": "node dist/auth.js",
     "dev": "tsx src/server.ts",

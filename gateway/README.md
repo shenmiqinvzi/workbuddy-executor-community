@@ -1,5 +1,7 @@
 # Agent Hub：本机 Agent 执行工作台
 
+T7A 执行器只读任务面板使用 `npm run workbench`，访问 `http://127.0.0.1:18493/workbench/`；运行和数据边界见[只读工作台](docs/WORKBENCH.md)。该面板与下方上游 Hub 入口分开，不提供任务写操作或原生权限批准。
+
 社区版 Windows 安装请先读 [INSTALL_WINDOWS](docs/INSTALL_WINDOWS.md)，下面保留上游多入口说明。第二台物理机器验收仍待完成；来源与许可状态见 [社区仓库授权说明](https://github.com/shenmiqinvzi/workbuddy-executor-community/blob/main/AUTHORIZATION.md)。
 
 当前版本 **v0.7.0**。目标是让不同项目、程序和 Agent 通过统一接口使用已有执行器。首期接入 **WorkBuddy**；DeepSeek Harness 原桥接保留，尚未加入聚合接口；qodex 后续单独确认接入。

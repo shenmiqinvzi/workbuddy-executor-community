@@ -87,6 +87,9 @@ async function fixture() {
     ...["deployment-paths","deployment-safety","deployment-acceptance","setup","doctor","inspect-task"].flatMap(name=>[`src/${name}.ts`,`dist/${name}.js`])])files[name]="fixture\n";
   files["dist/platform/client.d.ts"] = "export {};\n";
   for (const name of ["index.mjs", "adapter.mjs", "events.mjs", "transport.mjs", "private-path.mjs", "private-path.d.mts", "package.json", "cordis.patch.yml", "README.md", "test/adapter.test.mjs", "test/events.test.mjs", "test/transport.test.mjs"]) files[`deepseek-plugin/${name}`] = "fixture\n";
+  for (const name of ["index.html", "style.css", "app.mjs", "model.mjs", "http-source.mjs", "demo-source.mjs", "fonts/plex-sans.woff2", "fonts/plex-mono.woff2", "fonts/ibmplexsans-OFL.txt", "fonts/ibmplexmono-OFL.txt"]) files[`workbench/${name}`] = "synthetic workbench asset\n";
+  for (const name of ["workbench-assets", "workbench-panel"]) for (const suffix of ["src/", "dist/"]) files[`${suffix}${name}.${suffix === "src/" ? "ts" : "js"}`] = "export {};\n";
+  files["workbench/private-notes.mjs"] = "private notes that must not ship\n";
   for (const [name, content] of Object.entries(files)) {
     const target = path.join(source, name);
     await fs.mkdir(path.dirname(target), { recursive: true });
@@ -112,6 +115,8 @@ test("release archive uses a file allowlist and hashes every included file", asy
     for (const name of ["bin/agent-hub", "bin/agent-hub-mcp", "docs/AGENT_HUB.md", "src/platform/engine.ts", "dist/platform/cli.js", "dist/platform/ui.js"]) assert.ok(selected.includes(name), name);
     assert.ok(!selected.some((name: string) => /^(?:data|outputs|node_modules)\//.test(name)));
     assert.ok(!selected.includes(".env"));
+    for (const file of ["workbench/index.html", "workbench/fonts/plex-sans.woff2", "workbench/fonts/ibmplexsans-OFL.txt", "dist/workbench-assets.js", "dist/workbench-panel.js"]) assert.ok(selected.includes(file), file);
+    assert.ok(!selected.includes("workbench/private-notes.mjs"));
     assert.ok(!selected.includes("docs/private-log.md"));
     assert.ok(!selected.includes("src/private.log"));
     assert.ok(selected.includes("skills/workbuddy-executor/SKILL.md"));
