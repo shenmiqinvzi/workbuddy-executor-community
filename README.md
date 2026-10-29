@@ -33,6 +33,9 @@
 | 版本行为验收标准 | [验收场景](docs/ACCEPTANCE.md) |
 | 已有修复与验证历史 | [更新记录](CHANGELOG.md) |
 | 前端只读模拟原型 | [设计任务书](docs/FRONTEND_TASK_PANEL_DESIGN.md) · [Issue #6](https://github.com/shenmiqinvzi/workbuddy-executor-community/issues/6) |
+| T7A 真实只读工作台 | [运行与接口说明](docs/T7A_READONLY_WORKBENCH.md) · [设计约定](DESIGN.md) |
+
+本分支新增 T7A 真实只读工作台。在 gateway 目录构建后执行 `npm run workbench`，浏览器打开 `http://127.0.0.1:18493/workbench/`；任务、报告、停止、审查与事件来自同源只读接口。演示模式需主动选择并明确标记，连接失败不自动替换真实记录。该面板不派工、取消、返工、验收或批准原生权限，不会自动升级已安装服务。
 
 本分支已完成 T1/T2：统一只读任务查询、本地 HTTP、持久事件与 revision；阶段响应为 `workbuddy-executor/stage-2`，完整 vNext 契约仍待实现。接口详情及未知字段见[阶段说明](docs/WORKBENCH_STAGE_HTTP.md)。HTTP 没有派工、取消或验收写入口；export/workspaces 仍为 501。MCP 现有执行与同步入口保持兼容，纯查询不触发派工或同步。
 
@@ -55,3 +58,5 @@ T4A 持久准入/共享容量与 T4B 原操作恢复/人工关闭已随前序依
 反馈和提交方式见 [CONTRIBUTING.md](CONTRIBUTING.md)。请勿提交凭据、私密聊天、真实会话数据库、业务日志或个人开发安排。
 
 DSH 受控适配源码与 Windows 桥接的边界、启用和验证见 [T3b 说明](docs/T3B_DSH_ADAPTER.md)；真实模型执行与安装部署须单独验收。
+
+Windows 独立桌面工作台已提供源码与预览包构建入口：`npm run desktop:build` / `npm run desktop`，运行要求及技能自动打开方式见 [桌面工作台说明](gateway/docs/WORKBENCH.md)。正常用户目录中的预览安装已通过原生窗口、同窗口任务定位与关闭清理检查；异机安装仍待验证。

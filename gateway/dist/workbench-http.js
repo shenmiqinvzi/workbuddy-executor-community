@@ -38,6 +38,7 @@
  * stored record content and no database text.
  */
 import http from "node:http";
+import { serveWorkbenchAsset } from "./workbench-assets.js";
 import { STAGE_TASK_VIEW_SCHEMA_VERSION, STAGE_TASK_VIEW_UNAVAILABLE } from "./task-view-stage.js";
 /** Default local port for the workbench HTTP surface (contract section 1). */
 export const WORKBENCH_DEFAULT_PORT = 18493;
@@ -164,6 +165,7 @@ function statusForStageFailure(code) {
         case "state_unreadable":
         case "cancel_unreadable":
         case "store_unavailable":
+        case "review_unavailable":
         case "contract_integrity":
         case "read_conflict":
             return 503;
@@ -234,6 +236,8 @@ export class WorkbenchHttpServer {
                 // would be legal; POST write entries (tasks submit, rework, cancel,
                 // reviews, accept) are not opened in this stage at all.
                 const isKnownPath = pathname === HEALTH_PATH
+                    || pathname.startsWith("/workbench/v1/panel/")
+                    || pathname === "/workbench" || pathname.startsWith("/workbench/") && !pathname.startsWith("/workbench/v1/")
                     || pathname === "/workbench/v1/resources/quotas"
                     || pathname === "/workbench/v1/resources/credit-balances"
                     || pathname === TASKS_PREFIX
@@ -244,6 +248,40 @@ export class WorkbenchHttpServer {
                     return;
                 }
                 this.refuse(response, 404, "NOT_FOUND", "No such endpoint.");
+                return;
+            }
+            if (serveWorkbenchAsset(pathname, response))
+                return;
+            if (pathname === "/workbench/v1/panel/tasks") {
+                const parsed = parseListQuery(url.search);
+                if (!parsed.ok) {
+                    this.refuse(response, 400, parsed.code, parsed.message);
+                    return;
+                }
+                const result = this.options.service.listPanelTasks({ limit: parsed.limit, afterTaskId: parsed.afterTaskId });
+                if (!result.ok) {
+                    this.refuse(response, statusForStageFailure(result.code), result.code.toUpperCase(), result.message);
+                    return;
+                }
+                this.send(response, 200, result);
+                return;
+            }
+            const panelDetail = /^\/workbench\/v1\/panel\/tasks\/([^/]+)$/.exec(pathname);
+            if (panelDetail) {
+                let taskId;
+                try {
+                    taskId = decodeURIComponent(panelDetail[1]);
+                }
+                catch {
+                    this.refuse(response, 400, "INVALID_TASK_ID", "The encoded task identifier is malformed.");
+                    return;
+                }
+                const result = this.options.service.readPanelTask(taskId);
+                if (!result.ok) {
+                    this.refuse(response, statusForStageFailure(result.code), result.code.toUpperCase(), result.message, result.taskId);
+                    return;
+                }
+                this.send(response, 200, result);
                 return;
             }
             if (pathname === HEALTH_PATH) {

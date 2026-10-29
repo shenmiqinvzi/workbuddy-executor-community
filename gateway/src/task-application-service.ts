@@ -6,6 +6,7 @@ import type { ReviewOptions, ReviewInput } from "./task-reviews.js";
 import { AdmissionError, defaultModelPolicy } from "./collaboration.js";
 import type { StoredTask, StoredTaskEvent } from "./task-store.js";
 import { readTaskProjection } from "./task-view-reader.js";
+import { PANEL_SCHEMA, readPanelTask } from "./workbench-panel.js";
 import { stageTaskViewFromProjection, STAGE_TASK_VIEW_UNAVAILABLE, STAGE_TASK_VIEW_SCHEMA_VERSION, type StageTaskView } from "./task-view-stage.js";
 
 /** A conservative status projection for existing tasks. This is not the vNext TaskView. */
@@ -117,6 +118,12 @@ export class TaskApplicationService {
   review(input: ReviewInput) { return this.coordinator.store.reviews.review(input, this.runsDir); }
   acceptReview(input: ReviewOptions & { reviewId: string }) { return this.coordinator.store.reviews.accept(input); }
   listReviews(taskId: string) { return this.coordinator.store.reviews.list(taskId); }
+  readPanelTask(taskId: string) { return readPanelTask(this.coordinator.store, this.runsDir, taskId); }
+  listPanelTasks(options: { limit: number; afterTaskId?: string }) {
+    const page = this.listStageViews(options);
+    if (!page.ok) return page;
+    return { ok: true as const, readOnly: true, snapshotOnly: true, schemaVersion: PANEL_SCHEMA, tasks: page.tasks.map(item => item.ok ? readPanelTask(this.coordinator.store, this.runsDir, item.taskId, false) : item), nextAfterTaskId: page.nextAfterTaskId };
+  }
   listUnfinishedOperations() { return this.coordinator.store.operations.listUnfinished(); }
   readOperationRecovery(targetOperationId: string) { return this.coordinator.store.recoveries.inspect(targetOperationId, this.runsDir); }
   getOperationRecoveryDecision(operationId: string) { return this.coordinator.store.recoveries.get(operationId); }

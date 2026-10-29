@@ -47,11 +47,22 @@ jobs:
             if ($source -cne $bundled) { throw "Executor skill copy differs: $file" }
           }
       - name: Deployment, packaging and execution regressions
-        run: node --import ./test/support/typescript-loader.mjs --test test/deployment.test.ts test/package.test.ts test/desktop-queue.test.ts test/persistent-service.test.ts test/native-desktop-trigger.test.ts test/native-renderer-url.test.ts test/windows-startup.test.ts test/native-turn-failure.test.ts test/native-failure-diagnostic.test.ts test/brief-result.test.ts test/task-application-service.test.ts test/backend-integration.test.ts test/workbench-http.test.ts test/evidence-consistency.test.ts test/workspace-workers.test.ts test/inspect-task.test.ts test/task-store.test.ts test/coordinator.test.ts test/queue-reliability.test.ts test/reliability-v2.test.ts test/bounded-command.test.ts test/command-cleanup.test.ts test/native-process.test.ts
+        run: node --import ./test/support/typescript-loader.mjs --test test/deployment.test.ts test/package.test.ts test/desktop-queue.test.ts test/persistent-service.test.ts test/native-desktop-trigger.test.ts test/native-renderer-url.test.ts test/windows-startup.test.ts test/native-turn-failure.test.ts test/native-failure-diagnostic.test.ts test/brief-result.test.ts test/task-application-service.test.ts test/backend-integration.test.ts test/workbench-http.test.ts test/workbench-panel.test.ts test/evidence-consistency.test.ts test/workspace-workers.test.ts test/inspect-task.test.ts test/task-store.test.ts test/coordinator.test.ts test/queue-reliability.test.ts test/reliability-v2.test.ts test/bounded-command.test.ts test/command-cleanup.test.ts test/native-process.test.ts
       - name: DSH local transport and native bridge regressions
         run: |
           node --import ./test/support/typescript-loader.mjs --test test/dsh-transport.test.ts
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run deepseek:plugin:test
+      - name: Read-only workbench frontend checks
+        run: node --test workbench/test/*.test.mjs
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build lightweight desktop workbench
+        run: npm run desktop:build
+      - name: Desktop identity and navigation policy checks
+        run: npm run desktop:test
+      - name: Package desktop workbench
+        run: npm run desktop:package
       - name: Read-only workbench HTTP smoke
         run: node scripts/workbench-smoke.mjs

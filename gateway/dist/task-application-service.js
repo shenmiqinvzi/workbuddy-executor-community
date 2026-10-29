@@ -1,5 +1,6 @@
 import { AdmissionError, defaultModelPolicy } from "./collaboration.js";
 import { readTaskProjection } from "./task-view-reader.js";
+import { PANEL_SCHEMA, readPanelTask } from "./workbench-panel.js";
 import { stageTaskViewFromProjection, STAGE_TASK_VIEW_UNAVAILABLE, STAGE_TASK_VIEW_SCHEMA_VERSION } from "./task-view-stage.js";
 /** The MCP entry point and future local HTTP adapter share this service. */
 export class TaskApplicationService {
@@ -44,6 +45,13 @@ export class TaskApplicationService {
     review(input) { return this.coordinator.store.reviews.review(input, this.runsDir); }
     acceptReview(input) { return this.coordinator.store.reviews.accept(input); }
     listReviews(taskId) { return this.coordinator.store.reviews.list(taskId); }
+    readPanelTask(taskId) { return readPanelTask(this.coordinator.store, this.runsDir, taskId); }
+    listPanelTasks(options) {
+        const page = this.listStageViews(options);
+        if (!page.ok)
+            return page;
+        return { ok: true, readOnly: true, snapshotOnly: true, schemaVersion: PANEL_SCHEMA, tasks: page.tasks.map(item => item.ok ? readPanelTask(this.coordinator.store, this.runsDir, item.taskId, false) : item), nextAfterTaskId: page.nextAfterTaskId };
+    }
     listUnfinishedOperations() { return this.coordinator.store.operations.listUnfinished(); }
     readOperationRecovery(targetOperationId) { return this.coordinator.store.recoveries.inspect(targetOperationId, this.runsDir); }
     getOperationRecoveryDecision(operationId) { return this.coordinator.store.recoveries.get(operationId); }

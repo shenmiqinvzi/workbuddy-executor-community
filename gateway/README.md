@@ -1,5 +1,7 @@
 # Agent Hub：本机 Agent 执行工作台
 
+T7A 执行器只读任务面板使用 `npm run workbench`，访问 `http://127.0.0.1:18493/workbench/`；运行和数据边界见[只读工作台](docs/WORKBENCH.md)。该面板与下方上游 Hub 入口分开，不提供任务写操作或原生权限批准。
+
 社区版 Windows 安装请先读 [INSTALL_WINDOWS](docs/INSTALL_WINDOWS.md)，下面保留上游多入口说明。第二台物理机器验收仍待完成；来源与许可状态见 [社区仓库授权说明](https://github.com/shenmiqinvzi/workbuddy-executor-community/blob/main/AUTHORIZATION.md)。
 
 当前版本 **v0.7.0**。目标是让不同项目、程序和 Agent 通过统一接口使用已有执行器。首期接入 **WorkBuddy**；DeepSeek Harness 原桥接保留，尚未加入聚合接口；qodex 后续单独确认接入。
@@ -214,3 +216,5 @@ npm run package
 新任务先展示实际执行器、来源、模型、推理档位与已知费用，由用户选择并确认；发送显式 model 或已授权约定，不默认固定/免费模型。付费及未知价格可明确选择；主动免费限定与历史政策仍保留。返工沿用原绑定和预算，不更换模型/会话。
 
 T4A 已将独立 ensure_workspace / Hub bind 原生准备收口到持久派工准入，无授权时返回 OPERATION_REQUIRED。已派工任务先观察原身份，结果不明不能换键重派。T4B 的本地人工恢复控制台、证据与审计规则见 [原操作恢复](docs/OPERATION_RECOVERY.md)；HTTP 仍保持已有只读范围。源码更新不自动安装技能、修改运行配置或启动真实任务。
+
+Windows 独立窗口使用 `npm run desktop:build` 与 `npm run desktop`；双击入口为 `desktop/app/WorkBuddy.Workbench.exe`。技能可以调用 `scripts/open-workbench.mjs --task-id <taskId>` 激活同一窗口。详情见[只读工作台](docs/WORKBENCH.md)。
