@@ -1,6 +1,6 @@
 # 公开路线图
 
-修订日期：2026-10-28。方向：Codex 主导的本地开发协作工作台，可靠执行、可验证交付、可解释调度与可复现安装。首期仅面向 Windows、本地单用户；新增多 Agent 能力仍保持一次一个执行任务，不扩大并发。
+修订日期：2026-10-29。方向：Codex 主导的本地开发协作工作台，可靠执行、可验证交付、可解释调度与可复现安装。首期仅面向 Windows、本地单用户；新增多 Agent 能力仍保持一次一个执行任务，不扩大并发。
 
 当前实现和证据以[开发进度](docs/PROGRESS.md)为准。T1/T2、T3 协作基础及 T4A/T4B 已合入主干；WorkBuddy/DSH 的本机关键真实案例与[完成边界](docs/T4_COMPLETION_2026-10-27.md)分别登记。真实 token 统计、完整自动策略和面板仍待交付；文档和源码更新不自动部署或改变已安装技能的模型政策。
 
@@ -14,7 +14,7 @@
 | T3c：基础源码及积分联调已完成 | token 估算 quota-1、积分缓存 credit-balance-1 的后台采集与只读接口 | [积分链路](docs/T3C_CREDIT_BALANCE.md)已有本机真实只读证据；[token 统计](docs/T3C_QUOTA_OBSERVATION.md)、完整路由和前端仍待验收，不冒充 DSH 独占余额 |
 | T4A/T4B：源码验收完成并合入主干 | operationId、旧 revision/attempt 拒绝、方案消费、模型准备、持久意图/回执、共享容量与人工恢复/关闭 | [阶段交付记录](docs/T4_COMPLETION_2026-10-27.md)；受控入口共同遵守容量 1，崩溃与结果不明不重派；HTTP 保持只读 |
 | T5：源码与本机真实补验完成 | 派工前文件基线、范围增量、原有改动保护 | [实现与验证边界](docs/T5_WORKSPACE_PROTECTION.md)；Windows 路径/链接/重命名专项验证，[两端本机真实补验](docs/T5_LIVE_ACCEPTANCE_2026-10-27.md)已 accepted；仓库集成见[T5 交付记录](docs/T5_COMPLETION_2026-10-28.md)，正式部署另验，不宣称完整 OS 沙箱 |
-| T6 | 独立检查、不可变 reviewId 与最终验收 | 绑定当前约定/执行器/轮次/源码；停止明确、必需检查通过；检查器错误单列 |
+| T6：源码合并与两端本机关键补验完成 | 独立检查、不可变 reviewId 与最终验收 | [交付记录](docs/T6_COMPLETION_2026-10-29.md)及[真实补验](docs/T6_LIVE_ACCEPTANCE_2026-10-28.md)；两端 accepted/关闭，代理失败与检查器错误保留，正式部署及异机另验 |
 | T7 | 手动/推荐/自动模式、真实面板、可复算指标、单任务归因与发布 | 对应约束验收后逐项开放写操作；费用未知如实保留；真实原生与异机记录分开 |
 
 完整依据为[总体设计](docs/DEVELOPMENT_DESIGN.md)、[协作设计](docs/COLLABORATION_DESIGN.md)、[接口](docs/INTERFACE_CONTRACT.md)和[验收](docs/ACCEPTANCE.md)。T3a–T3c 按独立结果逐项集成，内部受控派工验证不等于 HTTP 写入口可以上线；新增写入口须经过关口 B 的停止、费用、预算、排他、范围与验收审查。
