@@ -34,8 +34,11 @@
 | 已有修复与验证历史 | [更新记录](CHANGELOG.md) |
 | 前端只读模拟原型 | [设计任务书](docs/FRONTEND_TASK_PANEL_DESIGN.md) · [Issue #6](https://github.com/shenmiqinvzi/workbuddy-executor-community/issues/6) |
 | T7A 真实只读工作台 | [运行与接口说明](docs/T7A_READONLY_WORKBENCH.md) · [设计约定](DESIGN.md) |
+| T7B 桌面任务准备与手动派工 | [流程与部署边界](docs/T7B_DESKTOP_DISPATCH.md) |
 
 本分支新增 T7A 真实只读工作台。在 gateway 目录构建后执行 `npm run workbench`，浏览器打开 `http://127.0.0.1:18493/workbench/`；任务、报告、停止、审查与事件来自同源只读接口。演示模式需主动选择并明确标记，连接失败不自动替换真实记录。该面板不派工、取消、返工、验收或批准原生权限，不会自动升级已安装服务。
+
+T7B 在独立桌面外壳中增加任务约定、明确模型选择、原生确认与唯一派工回执。普通浏览器继续只读；派工默认关闭，需核验现代网关部署后显式启用。源码与合成实窗验证不代表个人安装已升级，也不替代真实模型补验。
 
 本分支已完成 T1/T2：统一只读任务查询、本地 HTTP、持久事件与 revision；阶段响应为 `workbuddy-executor/stage-2`，完整 vNext 契约仍待实现。接口详情及未知字段见[阶段说明](docs/WORKBENCH_STAGE_HTTP.md)。HTTP 没有派工、取消或验收写入口；export/workspaces 仍为 501。MCP 现有执行与同步入口保持兼容，纯查询不触发派工或同步。
 

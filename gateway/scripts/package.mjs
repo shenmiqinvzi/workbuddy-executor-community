@@ -12,8 +12,8 @@ const SKILLS = new Map([
   ["deepseek-executor", ["skills/deepseek-executor/SKILL.md", "skills/deepseek-executor/references/setup.md"]],
 ]);
 const SKILL_FILES = [...SKILLS.values()].flat();
-const WORKBENCH_FILES = ["index.html", "style.css", "app.mjs", "model.mjs", "task-link.mjs", "http-source.mjs", "demo-source.mjs", "fonts/plex-sans.woff2", "fonts/plex-mono.woff2", "fonts/ibmplexsans-OFL.txt", "fonts/ibmplexmono-OFL.txt"].map(name => `workbench/${name}`);
-const DESKTOP_FILES = ["WorkBuddy.Workbench.csproj","Program.cs","DesktopPolicy.cs","app.manifest","workbench.ico","packages.lock.json","WEBVIEW2-LICENSE.txt","test/PolicyTests.csproj","test/Program.cs"].map(name => `desktop/${name}`);
+const WORKBENCH_FILES = ["index.html", "style.css", "app.mjs", "model.mjs", "task-link.mjs", "dispatch.mjs", "dispatch.css", "http-source.mjs", "demo-source.mjs", "fonts/plex-sans.woff2", "fonts/plex-mono.woff2", "fonts/ibmplexsans-OFL.txt", "fonts/ibmplexmono-OFL.txt"].map(name => `workbench/${name}`);
+const DESKTOP_FILES = ["WorkBuddy.Workbench.csproj","Program.cs","DesktopPolicy.cs","DesktopCommands.cs","DesktopControlPolicy.cs","app.manifest","workbench.ico","packages.lock.json","WEBVIEW2-LICENSE.txt","test/PolicyTests.csproj","test/Program.cs"].map(name => `desktop/${name}`);
 const PLUGIN_FILES = ["index.mjs", "adapter.mjs", "events.mjs", "transport.mjs", "private-path.mjs", "private-path.d.mts", "package.json", "cordis.patch.yml", "README.md", "test/adapter.test.mjs", "test/events.test.mjs", "test/transport.test.mjs"].map(name => `deepseek-plugin/${name}`);
 const REQUIRED_FILES = ["README.md", ".env.example", "package.json", "package-lock.json", "tsconfig.json", "src/server.ts", "dist/server.js", "bin/workbuddy-gateway", "bin/workbuddy-worker", "dist/desktop-worker-cli.js", "bin/workbuddy-service", "src/persistent-service.ts", "src/service-cli.ts", "src/native-desktop-trigger.ts", "dist/persistent-service.js", "dist/service-cli.js", "dist/native-desktop-trigger.js", "docs/QUEUE_WORKER.md", "scripts/install-skill.mjs", "bin/deepseek-gateway", "src/deepseek-server.ts", "dist/deepseek-server.js", "src/deepseek-client.ts", "src/deepseek-store.ts", "src/deepseek-coordinator.ts", "src/deepseek-evidence.ts", "dist/deepseek-client.js", "dist/deepseek-store.js", "dist/deepseek-coordinator.js", "dist/deepseek-evidence.js", "scripts/install-deepseek-skill.mjs", "scripts/install-deepseek-plugin.mjs", "scripts/deepseek-call.mjs", "docs/DEEPSEEK.md", ...SKILL_FILES, ...PLUGIN_FILES];
 REQUIRED_FILES.push("scripts/bounded-job.ps1", "bin/agent-hub", "bin/agent-hub-mcp", "scripts/agent-hub-call.mjs", "docs/AGENT_HUB.md", "docs/AGENT_HUB_DESIGN.md",
@@ -26,6 +26,8 @@ const DEPLOYMENT_FILES = ["WINDOWS_ENV.example","RESTORE.md","scripts/zip.mjs","
 REQUIRED_FILES.push(...DEPLOYMENT_FILES);
 REQUIRED_FILES.push(...WORKBENCH_FILES, ...DESKTOP_FILES, "scripts/build-desktop.mjs", "scripts/open-workbench.mjs", "scripts/workbench-desktop-host.mjs", "scripts/package-desktop.mjs");
 REQUIRED_FILES.push("scripts/workbench-read-store.mjs");
+REQUIRED_FILES.push("scripts/workbench-desktop-commands.mjs", "scripts/workbench-dispatch-worker.mjs");
+REQUIRED_FILES.push(...["desktop-dispatch", "desktop-dispatch-journal", "desktop-dispatch-runtime"].flatMap(name => [`src/${name}.ts`, `dist/${name}.js`, `dist/${name}.d.ts`]));
 REQUIRED_FILES.push(...["workbench-assets", "workbench-panel"].flatMap(name => [`src/${name}.ts`, `dist/${name}.js`]));
 const DIRECTORY_RULES = new Map([
   ["workbench", /./],
@@ -45,7 +47,7 @@ function allowed(relative) {
   const segments = relative.split("/");
   if (segments.some((segment) => PRIVATE_DIRS.has(segment))) return false;
   if (relative === "docs/native-stop-verification.json") return true;
-  if (relative === "scripts/workbench-read-store.mjs") return true;
+  if (["scripts/workbench-read-store.mjs", "scripts/workbench-desktop-commands.mjs", "scripts/workbench-dispatch-worker.mjs"].includes(relative)) return true;
   if (relative === "test/support/typescript-loader.mjs" || relative === "test/support/read-zip.mjs" || relative === "test/support/selected-model-client.ts") return true;
   if (segments.length === 1) return ROOT_FILES.has(relative);
   if (segments[0] === "skills") return SKILL_FILES.includes(relative);

@@ -65,7 +65,7 @@ internal static class Program
         var node = !string.IsNullOrWhiteSpace(configured) && Path.IsPathFullyQualified(configured) && File.Exists(configured) ? configured
             : (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator).Select(folder => Path.Combine(folder.Trim('"'), "node.exe")).FirstOrDefault(File.Exists)
               ?? throw new InvalidOperationException("Node.js was not found.");
-        var start = new ProcessStartInfo(node) { WorkingDirectory = gateway, UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+        var start = new ProcessStartInfo(node) { WorkingDirectory = gateway, UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true, StandardOutputEncoding = new UTF8Encoding(false), StandardErrorEncoding = new UTF8Encoding(false) };
         start.ArgumentList.Add(Path.Combine(gateway, "scripts", "open-workbench.mjs")); start.ArgumentList.Add("--resolve-options");
         using var process = Process.Start(start) ?? throw new InvalidOperationException("Cannot resolve gateway configuration.");
         var stdout = process.StandardOutput.ReadToEndAsync(); var stderr = process.StandardError.ReadToEndAsync();
@@ -85,6 +85,8 @@ internal sealed class WorkbenchWindow : Form
     private readonly Label message = new() { Dock = DockStyle.Fill, Text = "正在连接本地任务记录…", TextAlign = ContentAlignment.MiddleCenter, Font = new Font("Microsoft YaHei UI", 11), ForeColor = Color.FromArgb(65, 82, 95) };
     private readonly Button retry = new() { Text = "重新连接", AutoSize = true, Visible = false, Anchor = AnchorStyles.None };
     private Process? host;
+    private DesktopCommandChannel? commands;
+    private bool confirming;
     private Uri? origin;
     private string? currentTask;
     private bool ready, closing, starting;
@@ -119,7 +121,7 @@ internal sealed class WorkbenchWindow : Form
             // Detect the runtime without installing it or touching another app's profile.
             _ = CoreWebView2Environment.GetAvailableBrowserVersionString();
             startupStage = "host";
-            var start = new ProcessStartInfo(options.NodeExecutable) { WorkingDirectory = options.GatewayDirectory, UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true, RedirectStandardInput = true };
+            var start = DesktopCommandChannel.StartInfo(options.NodeExecutable, options.GatewayDirectory);
             start.ArgumentList.Add(Path.Combine(options.GatewayDirectory, "scripts", "workbench-desktop-host.mjs"));
             start.Environment["WORKBUDDY_DB_FILE"] = options.Database;
             start.Environment["WORKBUDDY_RUNS_DIR"] = options.RunsDirectory;
@@ -134,7 +136,7 @@ internal sealed class WorkbenchWindow : Form
             if (reply.RootElement.GetProperty("event").GetString() != "desktop_host_ready" || !reply.RootElement.GetProperty("port").TryGetInt32(out var port) || port is < 1 or > 65535) throw new InvalidOperationException("本地记录服务的启动回报无效。");
             origin = new Uri("http://127.0.0.1:" + port);
             startupStage = "webview";
-            _ = Task.Run(async () => { while (await ownHost.StandardOutput.ReadLineAsync() is not null) { } });
+            commands = new DesktopCommandChannel(ownHost);
             ownHost.EnableRaisingEvents = true;
             ownHost.Exited += (_, _) => { try { if (!closing && host == ownHost && IsHandleCreated) BeginInvoke(() => ShowFailure("本地记录连接已结束。任务执行仍由原执行器管理，可以重新连接查看。")); } catch (InvalidOperationException) { } };
             if (web.CoreWebView2 is null)
@@ -170,6 +172,13 @@ internal sealed class WorkbenchWindow : Form
         core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
         core.WebResourceRequested += (_, e) =>
         {
+            if (origin is not null && (DesktopControlPolicy.IsRoute(origin, e.Request.Uri, "/workbench/desktop/capabilities", e.Request.Method, "GET")
+                || DesktopControlPolicy.IsRoute(origin, e.Request.Uri, "/workbench/desktop/command", e.Request.Method, "POST")))
+            {
+                var deferral = e.GetDeferral();
+                _ = HandleDesktopResourceAsync(e, deferral);
+                return;
+            }
             if (origin is null || !DesktopOptions.AllowedRequest(origin, e.Request.Uri, e.Request.Method))
                 e.Response = core.Environment.CreateWebResourceResponse(new MemoryStream(), 403, "Forbidden", "Content-Type: text/plain");
         };
@@ -180,6 +189,64 @@ internal sealed class WorkbenchWindow : Form
             ready = true; message.Visible = false; retry.Visible = false; web.BringToFront();
             Console.WriteLine(JsonSerializer.Serialize(Snapshot("ready")));
         };
+    }
+
+    private async Task HandleDesktopResourceAsync(CoreWebView2WebResourceRequestedEventArgs e, CoreWebView2Deferral deferral)
+    {
+        object reply;
+        var status = 200;
+        try
+        {
+            if (origin is null || !DesktopControlPolicy.IsTrustedPage(origin, web.CoreWebView2.Source)) throw new DesktopCommandError("UNTRUSTED_PAGE", "此页面不能调用桌面操作。");
+            if (e.Request.Method == "GET") reply = new { ok = true, value = new { available = true, confirmation = "native" } };
+            else
+            {
+                if (!ready || commands is null) throw new DesktopCommandError("DESKTOP_NOT_READY", "本地连接尚未就绪，请稍后重试。");
+                if (!e.Request.Headers.Contains("Content-Type") || !e.Request.Headers.GetHeader("Content-Type").Split(';')[0].Trim().Equals("application/json", StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("JSON content required.");
+                using var body = new MemoryStream();
+                var buffer = new byte[8192];
+                var input = e.Request.Content;
+                while (input is not null)
+                {
+                    var count = await input.ReadAsync(buffer);
+                    if (count == 0) break;
+                    if (body.Length + count > DesktopControlPolicy.MaximumBodyBytes) throw new ArgumentException("Desktop request exceeded its bound.");
+                    body.Write(buffer, 0, count);
+                }
+                var request = DesktopControlPolicy.Decode(Encoding.UTF8.GetString(body.ToArray()));
+                JsonElement result;
+                if (request.Action == "choose_workspace")
+                {
+                    if (confirming) throw new DesktopCommandError("CONFIRMATION_BUSY", "请先完成当前确认窗口。");
+                    using var picker = new FolderBrowserDialog { Description = "选择已有项目文件夹", UseDescriptionForTitle = true, ShowNewFolderButton = false };
+                    confirming = true;
+                    try { result = JsonSerializer.SerializeToElement(new { directory = picker.ShowDialog(this) == DialogResult.OK ? picker.SelectedPath : null }); }
+                    finally { confirming = false; }
+                }
+                else if (request.Action == "dispatch")
+                {
+                    if (confirming) throw new DesktopCommandError("CONFIRMATION_BUSY", "请先完成当前确认窗口。");
+                    confirming = true;
+                    try
+                    {
+                        var draft = await commands.CallAsync("review", request.Parameters);
+                        if (!DesktopDispatchConfirmation.Show(this, draft)) throw new DesktopCommandError("CONFIRMATION_CANCELLED", "尚未派工，可返回继续核对约定。");
+                        result = await commands.CallAsync("commit", request.Parameters);
+                    }
+                    finally { confirming = false; }
+                }
+                else result = await commands.CallAsync(request.Action, request.Parameters);
+                reply = new { ok = true, value = result };
+            }
+        }
+        catch (DesktopCommandError error) { reply = new { ok = false, error = new { code = error.Code, message = error.Message } }; }
+        catch (Exception) { status = 400; reply = new { ok = false, error = new { code = "INVALID_DESKTOP_REQUEST", message = "本次请求未完成。请保留原任务编号，核对约定或重新连接后查询，勿重复派工。" } }; }
+        try
+        {
+            if (!closing && web.CoreWebView2 is { } core)
+                e.Response = core.Environment.CreateWebResourceResponse(new MemoryStream(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(reply))), status, status == 200 ? "OK" : "Bad Request", "Content-Type: application/json; charset=utf-8\r\nCache-Control: no-store");
+        }
+        finally { deferral.Complete(); }
     }
 
     private void ShowFailure(string text)
@@ -224,6 +291,7 @@ internal sealed class WorkbenchWindow : Form
 
     private void StopHost()
     {
+        commands?.Dispose(); commands = null;
         var own = host; host = null;
         if (own is null) return;
         try { if (!own.HasExited) { try { own.StandardInput.Close(); } catch (IOException) { } if (!own.WaitForExit(2500)) own.Kill(); } }

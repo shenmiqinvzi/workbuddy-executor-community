@@ -300,6 +300,9 @@ export class WorkbenchHttpServer {
         this.refuse(response, 404, "NOT_FOUND", "No such endpoint.");
         return;
       }
+      if (pathname === "/workbench/desktop/capabilities") {
+        this.send(response, 200, { ok: true, value: { available: false, confirmation: "native_required" } }); return;
+      }
       if (serveWorkbenchAsset(pathname, response)) return;
       if (pathname === "/workbench/v1/panel/tasks") {
         const parsed = parseListQuery(url.search);
