@@ -80,7 +80,7 @@ function render() {
     else
         el.removeAttribute('aria-current'); });
     $('attention-count').textContent = String(filterRecords(scoped, { group: 'attention' }).length);
-    $('page-title').textContent = ({ all: '任务工作台', attention: '待处理任务', accepted: '验收记录' })[state.filters.group];
+    if (!document.querySelector('.sheet.composing')) $('page-title').textContent = ({ all: '任务工作台', attention: '待处理任务', accepted: '验收记录' })[state.filters.group];
     $('refresh').disabled = state.busy;
     $('source-badge').className = 'source-badge' + (state.source.kind === 'demo' ? ' demo' : '');
     $('source-badge').textContent = state.source.kind === 'demo' ? '演示数据' : '已保存任务';

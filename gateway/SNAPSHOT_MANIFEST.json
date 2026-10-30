@@ -2473,8 +2473,8 @@
     },
     {
       "path": "workbench/app.mjs",
-      "sha256": "d13350a06d92edb61c384ac9fe1f38c5a2bc80e2a54939ab7c21f45ef67d1413",
-      "bytes": 32392
+      "sha256": "8142461769fdf2f5d88c6cb8ea60630de9218c9ff84c4509fa55560b6da555db",
+      "bytes": 32441
     },
     {
       "path": "workbench/demo-source.mjs",
@@ -2483,13 +2483,13 @@
     },
     {
       "path": "workbench/dispatch.css",
-      "sha256": "9ea4bbb74f78144b14f9a253125dfbcbd7bbf69e6d9f8d111536df88a16a43f7",
-      "bytes": 4317
+      "sha256": "071158a5415fda151f99f8cff20d5d857f827f60a0eb6d348766d399bf760b8e",
+      "bytes": 4564
     },
     {
       "path": "workbench/dispatch.mjs",
-      "sha256": "a4c29a8c95e970d1d053ff13f863e281d734ddaf2476646f6e5f63a4206aea7e",
-      "bytes": 23740
+      "sha256": "4019a176047d4d174702ce637cf32430fe27ba74b2403dbcf1cf97d22b4bc12b",
+      "bytes": 23856
     },
     {
       "path": "workbench/fonts/ibmplexmono-OFL.txt",

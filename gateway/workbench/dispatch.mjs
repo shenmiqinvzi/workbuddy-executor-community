@@ -59,6 +59,7 @@ export async function mountDesktopDispatch({ onTask }) {
         panel.querySelector('.dispatch-back').disabled=busy;
         const preview=document.getElementById('preview-task'),confirm=document.getElementById('confirm-task');
         if(isDemo()&&!panel.hidden&&stage!=='receipt')showNotice('演示模式不支持派工，请切换回已保存任务。');
+        else if(notice.textContent==='演示模式不支持派工，请切换回已保存任务。')showNotice('');
         if(preview)updateChoice();
         if(confirm)confirm.disabled=busy||isDemo()||!catalog?.dispatchEnabled;
     }
