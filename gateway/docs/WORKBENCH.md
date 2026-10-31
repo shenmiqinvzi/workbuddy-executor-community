@@ -34,6 +34,14 @@
 
 当前源码与隔离合成实窗验证不表示已升级用户安装或调用真实模型。预览包未签名，可能出现 SmartScreen 提示；不要求关闭系统保护。
 
+## 技能入口与多个任务库
+
+单库继续使用 `scripts/open-workbench.mjs`。本机明确配置多库后可用 `node scripts/open-workbench-router.mjs --routes-file <绝对配置路径> [--task-id ID] [--status]`。该入口不查询模型、不同步原生任务、不派工；仅从声明的既有库只读寻找任务并调用现有启动器。任务在多个库重复出现、库不可读、配置含未支持字段或参数无效时返回错误，不自动换库或创建新库。
+
+私有 JSON 配置结构为 `{"version":1,"defaultRoute":"modern","unknownTaskRoute":"legacy","routes":[{"id":"modern","database":"<绝对库路径>","runs":"<绝对 runs 目录>","dispatchEnabled":true},{"id":"legacy","database":"<绝对库路径>","runs":"<绝对 runs 目录>","dispatchEnabled":false}]}`。没有 taskId 时打开 defaultRoute；未找到编号时定位到 unknownTaskRoute 展示缺失状态，绝不创建任务。库内复用原窗口，跨库拥有各自窗口身份。旧库只能只读查看，禁止由入口迁移。
+
+路由文件、备份及回滚脚本属于本机私有配置，不随源码包共享。安装切换前备份原技能文件和被替换的发布文件，核对新文件及发布清单哈希；仅更新桌面入口段，保留已有模型与执行政策。自动打开/定位仅查看，桌面手动派工仍需要完整选择与原生确认。
+
 ## 浏览器只读入口
 
 在网关目录安装依赖并构建后，运行：

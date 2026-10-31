@@ -185,7 +185,7 @@ export async function mountDesktopDispatch({ onTask }) {
         open.textContent='派工回执';
         const signature=JSON.stringify(receipt),unchanged=receiptSignature===signature;receiptSignature=signature;
         const labels={launch_requested:'派工请求已登记',dispatching:'正在处理原派工请求',submitted:'派工已受理',failed:'派工未完成',outcome_unknown:'派工结果尚未明确'};
-        if(!unchanged)content.replaceChildren(el('div',{class:'dispatch-receipt'},el('h2',{tabIndex:-1,role:'status'},labels[receipt.state]||'请查询原派工请求'),el('p',{},receipt.message||(receipt.state==='submitted'?'任务尚未验收。执行进度、原生停止与独立验收将分别展示。':'请求登记不代表原生接单，请保留以下编号。')),
+        if(!unchanged)content.replaceChildren(el('div',{class:'dispatch-receipt'},el('h2',{tabIndex:-1,role:'status'},labels[receipt.state]||'请查询原派工请求'),el('p',{},receipt.message||(receipt.state==='submitted'?'受理回执不代表验收结果，请查看任务详情。':'请求登记不代表原生接单，请保留以下编号。')),
             el('dl',{class:'dispatch-facts'},el('dt',{},'任务编号'),el('dd',{class:'technical'},receipt.taskId),el('dt',{},'操作编号'),el('dd',{class:'technical'},receipt.operationId)),
             el('div',{class:'dispatch-actions'},el('button',{type:'button',class:'button',onclick:()=>queryReceipt(receipt.requestId)},'查询原请求'),
                 ...(receipt.state==='submitted'?[el('button',{type:'button',class:'button',onclick:async event=>{event.currentTarget.disabled=true;showNotice('正在观察原执行状态，不会派工或改变模型…');try{await desktopRequest('observe',{requestId:receipt.requestId});close();await onTask(receipt.taskId);}catch(error){showNotice(error.message,true);}finally{event.target.disabled=false;}}},'更新执行状态')]:[]),

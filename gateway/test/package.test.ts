@@ -92,7 +92,7 @@ async function fixture() {
   for (const name of ["index.html", "style.css", "app.mjs", "model.mjs", "task-link.mjs", "dispatch.mjs", "dispatch.css", "http-source.mjs", "demo-source.mjs", "fonts/plex-sans.woff2", "fonts/plex-mono.woff2", "fonts/ibmplexsans-OFL.txt", "fonts/ibmplexmono-OFL.txt"]) files[`workbench/${name}`] = "synthetic workbench asset\n";
   for (const name of ["workbench-assets", "workbench-panel"]) for (const suffix of ["src/", "dist/"]) files[`${suffix}${name}.${suffix === "src/" ? "ts" : "js"}`] = "export {};\n";
   for (const name of ["WorkBuddy.Workbench.csproj","Program.cs","DesktopPolicy.cs","DesktopCommands.cs","DesktopControlPolicy.cs","app.manifest","workbench.ico","packages.lock.json","WEBVIEW2-LICENSE.txt","test/PolicyTests.csproj","test/Program.cs"]) files[`desktop/${name}`] = "synthetic desktop source fixture\n";
-  for (const name of ["build-desktop", "open-workbench", "workbench-desktop-host", "workbench-desktop-commands", "workbench-dispatch-worker", "workbench-read-store", "package-desktop"]) files[`scripts/${name}.mjs`] = "export {};\n";
+  for (const name of ["build-desktop", "open-workbench", "open-workbench-router", "workbench-desktop-host", "workbench-desktop-commands", "workbench-dispatch-worker", "workbench-read-store", "package-desktop"]) files[`scripts/${name}.mjs`] = "export {};\n";
   files["desktop/app/private.dll"] = "must not enter the source gateway archive";
   files["workbench/private-notes.mjs"] = "private notes that must not ship\n";
   for (const [name, content] of Object.entries(files)) {

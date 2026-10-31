@@ -25,7 +25,7 @@ const DEPLOYMENT_FILES = ["WINDOWS_ENV.example","RESTORE.md","scripts/zip.mjs","
   ...["deployment-paths","deployment-safety","deployment-acceptance","setup","doctor","inspect-task"].flatMap(name=>[`src/${name}.ts`,`dist/${name}.js`])];
 REQUIRED_FILES.push(...DEPLOYMENT_FILES);
 REQUIRED_FILES.push(...WORKBENCH_FILES, ...DESKTOP_FILES, "scripts/build-desktop.mjs", "scripts/open-workbench.mjs", "scripts/workbench-desktop-host.mjs", "scripts/package-desktop.mjs");
-REQUIRED_FILES.push("scripts/workbench-read-store.mjs");
+REQUIRED_FILES.push("scripts/workbench-read-store.mjs", "scripts/open-workbench-router.mjs");
 REQUIRED_FILES.push("scripts/workbench-desktop-commands.mjs", "scripts/workbench-dispatch-worker.mjs");
 REQUIRED_FILES.push(...["desktop-dispatch", "desktop-dispatch-journal", "desktop-dispatch-runtime"].flatMap(name => [`src/${name}.ts`, `dist/${name}.js`, `dist/${name}.d.ts`]));
 REQUIRED_FILES.push(...["workbench-assets", "workbench-panel"].flatMap(name => [`src/${name}.ts`, `dist/${name}.js`]));
@@ -47,7 +47,7 @@ function allowed(relative) {
   const segments = relative.split("/");
   if (segments.some((segment) => PRIVATE_DIRS.has(segment))) return false;
   if (relative === "docs/native-stop-verification.json") return true;
-  if (["scripts/workbench-read-store.mjs", "scripts/workbench-desktop-commands.mjs", "scripts/workbench-dispatch-worker.mjs"].includes(relative)) return true;
+  if (["scripts/workbench-read-store.mjs", "scripts/open-workbench-router.mjs", "scripts/workbench-desktop-commands.mjs", "scripts/workbench-dispatch-worker.mjs"].includes(relative)) return true;
   if (relative === "test/support/typescript-loader.mjs" || relative === "test/support/read-zip.mjs" || relative === "test/support/selected-model-client.ts") return true;
   if (segments.length === 1) return ROOT_FILES.has(relative);
   if (segments[0] === "skills") return SKILL_FILES.includes(relative);

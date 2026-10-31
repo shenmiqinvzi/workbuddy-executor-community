@@ -1523,8 +1523,8 @@
     },
     {
       "path": "docs/WORKBENCH.md",
-      "sha256": "e4c385d5b9d3c1f1f5ce39a8966ed6f99c05cd325d40333fd90c679b0e5c964a",
-      "bytes": 7219
+      "sha256": "14db4f4912551a1e4683fb369a3a4e93acb96e72de6bd9bf00d3fe6dd89a75e3",
+      "bytes": 8605
     },
     {
       "path": "docs/desktop-queue-reliability.md",
@@ -1632,6 +1632,11 @@
       "bytes": 2755
     },
     {
+      "path": "scripts/open-workbench-router.mjs",
+      "sha256": "dde53e3ea327311cebc1f39b0ae38177d3ebbb30e0289b163214a70cfe066f54",
+      "bytes": 3976
+    },
+    {
       "path": "scripts/open-workbench.mjs",
       "sha256": "d2c9ed288610ae9372fd2fdb5cdc04218d1fe66d3952930f826b9084beef80f3",
       "bytes": 3780
@@ -1643,8 +1648,8 @@
     },
     {
       "path": "scripts/package.mjs",
-      "sha256": "4742e18c7369a45145bff28545e2a6a16c1fea22d04bb4dc9a8c1318b21dd7f4",
-      "bytes": 14366
+      "sha256": "eac9c4fbae133f5443d29d36b3aad6908f7a18430d79d47c5c3d5ba3b7892776",
+      "bytes": 14440
     },
     {
       "path": "scripts/setup.mjs",
@@ -1713,8 +1718,8 @@
     },
     {
       "path": "skills/workbuddy-executor/SKILL.md",
-      "sha256": "4fe19dd84be957e7ee03b823e8b2b6cb437866f4caebc02879bb3975de798dae",
-      "bytes": 6710
+      "sha256": "108ba73b32a177581c309584883906447650862acf6c3be2bb39467c5343ca4e",
+      "bytes": 7197
     },
     {
       "path": "skills/workbuddy-executor/agents/openai.yaml",
@@ -2268,8 +2273,8 @@
     },
     {
       "path": "test/package.test.ts",
-      "sha256": "040fccebd6c3e25e7f9ffb99b1002a3e6192085d3f718df58df510e2253bce4e",
-      "bytes": 18306
+      "sha256": "f2910bd75a82a6cf63e5210d6ebfb03623f0952712d02f6c61ed992a8d1d3177",
+      "bytes": 18331
     },
     {
       "path": "test/persistent-service.test.ts",
@@ -2488,8 +2493,8 @@
     },
     {
       "path": "workbench/dispatch.mjs",
-      "sha256": "4019a176047d4d174702ce637cf32430fe27ba74b2403dbcf1cf97d22b4bc12b",
-      "bytes": 23856
+      "sha256": "a294d7b52c3e3795c1e6f2a563779dedcf5f858be95b263becb4aad77a671501",
+      "bytes": 23835
     },
     {
       "path": "workbench/fonts/ibmplexmono-OFL.txt",
@@ -2535,6 +2540,11 @@
       "path": "workbench/task-link.mjs",
       "sha256": "827f3f932f45fbec90131e1fff7875647f86aa9cc7dad7d8035b97e2eae4b162",
       "bytes": 330
+    },
+    {
+      "path": "workbench/test/desktop-routing.test.mjs",
+      "sha256": "1dbfed86829cc5263fd9a1f80ed2fdede17c3b8caa2d659406b61ffa068f5c69",
+      "bytes": 2345
     },
     {
       "path": "workbench/test/desktop.test.mjs",
