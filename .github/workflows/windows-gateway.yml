@@ -57,6 +57,8 @@ jobs:
           npm run deepseek:plugin:test
       - name: Desktop dispatch agreement and recovery checks
         run: node --import ./test/support/typescript-loader.mjs --test test/desktop-dispatch.test.ts
+      - name: Desktop control agreement, receipts and lifecycle
+        run: node --import ./test/support/typescript-loader.mjs --test test/desktop-control.test.ts test/desktop-control-journal.test.ts test/desktop-control-runtime.test.ts
       - name: Workbench frontend and private command checks
         run: node --test workbench/test/*.test.mjs
       - uses: actions/setup-dotnet@v4

@@ -93,3 +93,37 @@ internal static class DesktopDispatchConfirmation
         return dialog.ShowDialog(owner) == DialogResult.OK;
     }
 }
+
+internal static class DesktopControlConfirmation
+{
+    public static bool Show(IWin32Window owner, JsonElement preview)
+    {
+        var draft=preview.GetProperty("draft"); var snapshot=preview.GetProperty("snapshot");
+        var parameters=draft.GetProperty("parameters"); var kind=draft.GetProperty("kind").GetString();
+        string S(JsonElement element,string name) => element.TryGetProperty(name,out var field) && field.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined) ? field.ToString() : "未提供";
+        string Status(string status)=>status switch {"passed"=>"通过","failed"=>"未通过","unknown"=>"无法判断",_=>"未知"};
+        string Kind(string value)=>value switch {"command"=>"原约定命令","semantic"=>"语义要求",_=>"未知要求"};
+        var title=kind switch { "cancel"=>"确认停止任务", "rework"=>"确认提交返工", "review"=>"确认独立审查", "accept"=>"确认最终验收", _=>throw new ArgumentException("Unsupported control.") };
+        var details=kind switch
+        {
+            "cancel"=>"此操作会请求停止当前轮次。取消是终态；请求已提交不代表原生执行已停止。",
+            "rework"=>$"修改要求\r\n{S(parameters,"feedback")}\r\n\r\n执行器 / 来源\r\n{S(snapshot,"executorId")} / {S(snapshot,"connectionId")} / {S(snapshot,"providerId")}\r\n模型 / 推理档位\r\n{S(snapshot,"model")} / {S(snapshot,"reasoningEffort")}\r\n观察费率：{(snapshot.GetProperty("rate").ValueKind == JsonValueKind.Null ? "未知，可能计费" : S(snapshot,"rate"))}\r\n当前第 {S(snapshot,"attempt")} 轮，最多 {S(snapshot,"attemptLimit")} 轮。",
+            "review"=>$"实际检查说明\r\n{S(parameters,"feedback")}\r\n\r\n已检查的项目文件\r\n{string.Join("\r\n",parameters.GetProperty("inspectionFiles").EnumerateArray().Select(file=>"  "+file.ToString()))}\r\n\r\n原始验收要求（含将执行的原约定命令）\r\n{string.Join("\r\n",snapshot.GetProperty("requirements").EnumerateArray().Select(check=>$"  [{Kind(S(check,"kind"))}] {S(check,"id")}: {S(check,"definition")}"))}\r\n\r\n你的逐项判断\r\n{string.Join("\r\n",parameters.GetProperty("semanticChecks").EnumerateArray().Select(check=>$"  {S(check,"checkId")}: {Status(S(check,"status"))}"))}\r\n\r\n请确认已独立检查所列文件；执行器的自报不代替独立审查。",
+            "accept"=>$"将验收当前已保存的独立审查记录。\r\n审查编号：{S(parameters,"reviewId")}\r\n系统会再次核对原生停止、检查与当前文件证据。",
+            _=>throw new ArgumentException("Unsupported control.")
+        };
+        var summary=$"{S(snapshot,"title")}\r\n\r\n项目\r\n{S(snapshot,"workspace")}\r\n\r\n{details}\r\n\r\n任务编号：{S(draft,"taskId")}\r\n当前轮次：{S(draft,"attemptId")}";
+        using var dialog=new Form {Text=title,Width=720,Height=610,MinimumSize=new Size(560,440),StartPosition=FormStartPosition.CenterParent,MinimizeBox=false,MaximizeBox=false,BackColor=Color.FromArgb(243,246,248),Font=new Font("Microsoft YaHei UI",10)};
+        var text=new TextBox {Text=summary,Multiline=true,ReadOnly=true,ScrollBars=ScrollBars.Vertical,Dock=DockStyle.Fill,BorderStyle=BorderStyle.None,BackColor=Color.White};
+        var consent=new CheckBox {Text=kind switch {"cancel"=>"我了解取消将结束此任务","rework"=>"我已核对来源、模型与费率信息","review"=>"我已独立检查所列文件并确认逐项判断",_=>"我已核对当前独立审查结果"},AutoSize=true,Margin=new Padding(8)};
+        var confirm=new Button {Text=kind switch {"cancel"=>"请求停止","rework"=>"确认返工","review"=>"执行独立审查",_=>"确认验收"},AutoSize=true,Enabled=false,DialogResult=DialogResult.OK,Padding=new Padding(8)};
+        var cancel=new Button {Text="返回",AutoSize=true,DialogResult=DialogResult.Cancel,Padding=new Padding(8)};
+        consent.CheckedChanged+=(_,_)=>confirm.Enabled=consent.Checked;
+        var footer=new FlowLayoutPanel {Dock=DockStyle.Bottom,AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,FlowDirection=FlowDirection.LeftToRight,Padding=new Padding(12),WrapContents=true};
+        footer.Controls.Add(consent);footer.SetFlowBreak(consent,true);footer.Controls.Add(confirm);footer.Controls.Add(cancel);
+        var content=new Panel {Dock=DockStyle.Fill,Padding=new Padding(20)};content.Controls.Add(text);
+        dialog.Controls.Add(content);dialog.Controls.Add(footer);dialog.CancelButton=cancel;
+        dialog.Shown+=(_,_)=>{text.SelectionStart=0;text.SelectionLength=0;consent.Focus();};
+        return dialog.ShowDialog(owner)==DialogResult.OK;
+    }
+}

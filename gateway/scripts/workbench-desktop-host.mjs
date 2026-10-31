@@ -10,6 +10,7 @@ import { runtimeVersion } from '../dist/runtime-version.js';
 import { runsDirectory } from '../dist/run-journal.js';
 import { loadDotEnv } from '../dist/env.js';
 import { createDesktopDispatchSession } from '../dist/desktop-dispatch-runtime.js';
+import { createDesktopControlSession } from '../dist/desktop-control-runtime.js';
 import { installDesktopCommands } from './workbench-desktop-commands.mjs';
 
 loadDotEnv();
@@ -25,7 +26,7 @@ try {
     console.log(JSON.stringify({ event: 'desktop_host_ready', port, readOnly: true, desktopCommands: true }));
 } catch (error) { store.close(); throw error; }
 let closing;
-installDesktopCommands(createDesktopDispatchSession(config));
+installDesktopCommands(createDesktopDispatchSession(config),process.stdin,process.stdout,createDesktopControlSession(config));
 const close = () => closing ??= server.close().finally(() => store.close()).then(() => process.exit(0));
 // The desktop process owns stdin. A closed window or dead parent closes this
 // pipe, including when no OS signal was delivered to the child process.

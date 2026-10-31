@@ -337,20 +337,39 @@ export class DshTaskCoordinator {
         const remoteStopped = !binding.runOpen && snapshot?.dsh?.hostId === binding.hostId && snapshot.dsh.requestId === binding.requestId && hasNativeStopEvidence(snapshot);
         return { state: remoteStopped ? "stopped" : binding.cancelRequested ? "stop_unconfirmed" : snapshot?.waitingInput ? "waiting_input" : snapshot?.status ?? "unknown", remoteStopped, cancellationRequested: binding.cancelRequested, reportDigestPresent: !!snapshot?.reportDigest, observedAt: snapshot?.updatedAt, deadline: snapshot?.deadline, stopProofScope: "original_native_request" };
     }
-    async cancel(taskId, reason) {
+    requestCancellation(taskId, reason) {
         const task = this.task(taskId), binding = this.binding(taskId);
         if (!binding.runOpen || task.state === "accepted")
-            return { ok: true, task, ...this.executionStatus(taskId) };
-        this.store.atomic(() => {
-            const current = this.binding(taskId);
-            this.store.dshBindings.update({ ...current, cancelRequested: true });
-            this.store.update(taskId, { cancelNote: reason ?? "Cancellation requested", state: "cancelled" });
-            if (task.attemptId) {
-                const journal = new RunJournal(this.runsDir, task.attemptId);
-                journal.cancel("operator");
-                this.fold(taskId, journal);
-            }
+            return { task, binding, send: false };
+        this.store.dshBindings.update({ ...binding, cancelRequested: true });
+        this.store.update(taskId, { cancelNote: reason ?? "Cancellation requested", state: "cancelled" });
+        if (task.attemptId) {
+            const journal = new RunJournal(this.runsDir, task.attemptId);
+            journal.cancel("operator");
+            this.fold(taskId, journal);
+        }
+        return { task, binding, send: true };
+    }
+    cancelCurrent(input) {
+        if (!input.expectedRevision || !input.expectedAttemptId || (input.reason !== undefined && (typeof input.reason !== "string" || input.reason.length > 500)))
+            return fail("INVALID_OPERATION", "A current revision, attempt and bounded reason are required.");
+        const request = this.store.atomic(() => {
+            const task = this.task(input.taskId);
+            if (task.attemptId !== input.expectedAttemptId)
+                return fail("STALE_ATTEMPT", "The task has moved to another attempt.");
+            if (task.revision !== input.expectedRevision)
+                return fail("STALE_REVISION", "The task changed; refresh before requesting cancellation.");
+            return this.requestCancellation(input.taskId, input.reason);
         });
+        return this.finishCancellation(request);
+    }
+    async cancel(taskId, reason) {
+        return this.finishCancellation(this.store.atomic(() => this.requestCancellation(taskId, reason)));
+    }
+    async finishCancellation(request) {
+        const { task, binding } = request, taskId = task.taskId;
+        if (!request.send)
+            return { ok: true, task, ...this.executionStatus(taskId) };
         try {
             await this.client.cancel({ hostId: binding.hostId, sessionId: binding.sessionId, requestId: binding.requestId });
         }

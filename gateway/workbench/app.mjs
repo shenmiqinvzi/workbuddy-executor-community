@@ -2,6 +2,7 @@ import { HttpSource } from './http-source.mjs';
 import { DemoSource, SCENARIOS } from './demo-source.mjs';
 import { taskIdFromHash } from './task-link.mjs';
 import { mountDesktopDispatch } from './dispatch.mjs';
+import { renderDesktopControls } from './controls.mjs';
 import { STATES, CHECKS, ACTORS, stateInfo, taskName, workspaceName, executorName, currentReview, proofs, filterRecords, formatTime, eventName } from './model.mjs';
 const $ = id => document.getElementById(id);
 function h(tag, props = {}, ...children) {
@@ -41,6 +42,7 @@ function icon(name, cls = '') { const el = document.createElementNS('http://www.
 const state = { source: new HttpSource(), records: [], selected: null, detail: null, tab: 'overview', filters: { search: '', state: '', executor: '', workspace: '', group: 'all' }, cursor: null, fetchedAt: null, error: null, detailError: null, events: [], eventError: null, eventCursor: 0, eventsLoaded: false, eventsBusy: false, eventMore: false, busy: false, detailBusy: false, health: null, healthError: false, listSerial: 0, detailSerial: 0 };
 let listController, detailController, eventController, toastTimer;
 let linkedTask = taskIdFromHash(location.hash);
+let desktopControlsAvailable = false;
 const status = record => { const info = stateInfo(record); return h('span', { class: 'status ' + info.tone }, h('span', { class: 'dot' }), info.label); };
 function toast(text) { clearTimeout(toastTimer); document.querySelector('.toast')?.remove(); const el = h('div', { class: 'toast', role: 'status' }, text); document.body.append(el); toastTimer = setTimeout(() => el.remove(), 2600); }
 const copyButton = value => h('button', { class: 'copy', type: 'button', 'aria-label': '复制标识 ' + value, onclick: async () => { try {
@@ -55,7 +57,7 @@ function backToList() { document.body.classList.remove('mobile-detail'); request
 function navItem(group, label, glyph, count = false) { return h('button', { class: 'nav-button', type: 'button', 'data-group': group, onclick: () => { state.filters.group = group; state.filters.state = ''; $('state-filter').value = ''; document.body.classList.remove('mobile-detail'); closeMenu(); render(); } }, icon(glyph), label, count ? h('span', { class: 'count', id: 'attention-count' }, '0') : null); }
 function buildShell() {
     const source = h('select', { class: 'source-select', id: 'data-source', 'aria-label': '数据来源', onchange: e => switchSource(e.target.value) }, option('live', '已保存任务 · 本地网关'), option('demo', '演示数据 · 合成样本'));
-    const sidebar = h('aside', { class: 'sidebar', id: 'sidebar', 'aria-label': '工作台导航' }, h('div', { class: 'brand' }, icon('mark', 'brand-mark'), h('div', {}, h('div', { class: 'brand-name' }, 'WorkBuddy'), h('div', { class: 'brand-sub' }, 'Executor workbench'))), h('div', { class: 'scope-label' }, icon('folder'), '本地协作工作区'), h('div', {}, h('div', { class: 'nav-heading' }, '工作台'), h('nav', { class: 'nav' }, navItem('all', '全部任务', 'grid'), navItem('attention', '待处理', 'inbox', true), navItem('accepted', '验收记录', 'circle'))), h('div', { class: 'sidebar-foot' }, h('label', { class: 'source-label', for: 'data-source' }, '数据来源', source), h('div', { class: 'foot-line' }, icon('lock'), '只读连接'), h('div', { class: 'foot-line', id: 'runtime-label' }, '正在读取网关版本…')));
+    const sidebar = h('aside', { class: 'sidebar', id: 'sidebar', 'aria-label': '工作台导航' }, h('div', { class: 'brand' }, icon('mark', 'brand-mark'), h('div', {}, h('div', { class: 'brand-name' }, 'WorkBuddy'), h('div', { class: 'brand-sub' }, 'Executor workbench'))), h('div', { class: 'scope-label' }, icon('folder'), '本地协作工作区'), h('div', {}, h('div', { class: 'nav-heading' }, '工作台'), h('nav', { class: 'nav' }, navItem('all', '全部任务', 'grid'), navItem('attention', '待处理', 'inbox', true), navItem('accepted', '验收记录', 'circle'))), h('div', { class: 'sidebar-foot' }, h('label', { class: 'source-label', for: 'data-source' }, '数据来源', source), h('div', { class: 'foot-line', id: 'connection-mode' }, icon('lock'), '只读连接'), h('div', { class: 'foot-line', id: 'runtime-label' }, '正在读取网关版本…')));
     const refresh = h('button', { class: 'button', type: 'button', id: 'refresh', onclick: () => refreshTasks(), 'aria-label': '刷新已存快照' }, icon('refresh'), h('span', {}, '刷新快照'));
     const metricLabels = [['', '已加载任务'], ['running', '执行中'], ['needs_review', '待独立验收'], ['accepted', '已验收']];
     const metrics = h('div', { class: 'metrics', 'aria-label': '已加载任务中的状态数量' }, metricLabels.map(([key, label], i) => h('button', { class: 'metric', type: 'button', 'data-state': key, onclick: () => { state.filters.state = key; $('state-filter').value = key; state.filters.group = 'all'; render(); } }, h('span', { class: 'metric-label' }, label), h('span', { class: 'metric-number', id: 'metric-' + i }, '—'))));
@@ -63,7 +65,7 @@ function buildShell() {
     const stateFilter = h('select', { class: 'filter', id: 'state-filter', 'aria-label': '筛选任务状态', onchange: e => { state.filters.state = e.target.value; render(); } }, option('', '全部状态'), ...Object.entries(STATES).map(([key, values]) => option(key, values[0])));
     const workspaceFilter = h('select', { class: 'filter', id: 'workspace-filter', 'aria-label': '筛选工作区', onchange: e => { state.filters.workspace = e.target.value; render(); } }, option('', '全部工作区'));
     const sheet = h('main', { class: 'sheet', id: 'main', tabindex: '-1' }, h('header', { class: 'page-heading' }, h('div', {}, h('h1', { id: 'page-title' }, '任务工作台'), h('p', { class: 'page-intro' }, '执行有记录，交付有依据。')), h('div', { class: 'heading-tools' }, h('span', { class: 'source-badge', id: 'source-badge' }, '已保存任务'), refresh)), h('div', { class: 'demo-controls', id: 'demo-controls', hidden: true }, h('span', {}, '合成样本，不代表真实执行'), h('select', { class: 'filter', id: 'demo-scenario', 'aria-label': '演示场景', onchange: e => switchSource('demo', e.target.value) })), metrics, h('div', { class: 'toolbar' }, search, stateFilter, workspaceFilter, h('span', { class: 'filter-label' }, '筛选已加载的记录')), h('div', { id: 'source-notice', 'aria-live': 'polite' }), h('div', { class: 'workspace' }, h('section', { class: 'list-pane', 'aria-label': '任务列表' }, h('div', { class: 'list-heading' }, h('span', { id: 'list-count' }, '任务'), h('span', {}, '创建时间顺序')), h('div', { class: 'task-list', id: 'task-list' }), h('div', { class: 'list-foot', id: 'list-foot' })), h('section', { class: 'detail', id: 'detail', 'aria-label': '任务详情' })), h('footer', { class: 'page-foot' }, h('span', { id: 'freshness' }, '尚未获取快照'), h('span', {}, '报告收到、停止确认与独立验收，分别记录。')));
-    $('app').append(h('div', { class: 'shell' }, sidebar, h('header', { class: 'topbar' }, h('div', { class: 'breadcrumbs' }, h('button', { class: 'menu-button', id: 'menu', type: 'button', 'aria-label': '打开工作台导航', 'aria-controls': 'sidebar', 'aria-expanded': 'false', onclick: toggleMenu }, icon('menu')), h('span', {}, '工作台'), icon('chevron'), h('span', {}, '本地协作')), h('div', { class: 'topbar-meta' }, h('span', { id: 'connection', role: 'status' }, '连接中'), h('span', { class: 'readonly-top' }, icon('lock'), '只读模式'))), sheet), h('button', { class: 'nav-overlay', type: 'button', 'aria-label': '关闭导航', onclick: closeMenu }));
+    $('app').append(h('div', { class: 'shell' }, sidebar, h('header', { class: 'topbar' }, h('div', { class: 'breadcrumbs' }, h('button', { class: 'menu-button', id: 'menu', type: 'button', 'aria-label': '打开工作台导航', 'aria-controls': 'sidebar', 'aria-expanded': 'false', onclick: toggleMenu }, icon('menu')), h('span', {}, '工作台'), icon('chevron'), h('span', {}, '本地协作')), h('div', { class: 'topbar-meta' }, h('span', { id: 'connection', role: 'status' }, '连接中'), h('span', { class: 'readonly-top', id: 'snapshot-mode' }, icon('lock'), '只读模式'))), sheet), h('button', { class: 'nav-overlay', type: 'button', 'aria-label': '关闭导航', onclick: closeMenu }));
 }
 function toggleMenu() { const open = document.body.classList.toggle('nav-open'); $('menu').setAttribute('aria-expanded', String(open)); if (open)
     document.querySelector('.nav-button')?.focus(); }
@@ -85,6 +87,8 @@ function render() {
     $('source-badge').className = 'source-badge' + (state.source.kind === 'demo' ? ' demo' : '');
     $('source-badge').textContent = state.source.kind === 'demo' ? '演示数据' : '已保存任务';
     $('connection').replaceChildren(h('span', { class: 'dot' }), state.error ? state.fetchedAt ? '连接中断' : '无法读取' : state.busy ? '读取中' : state.source.kind === 'demo' ? '演示模式' : '网关可读');
+    $('connection-mode').replaceChildren(icon('lock'), desktopControlsAvailable && state.source.kind === 'live' ? '快照只读 · 操作需确认' : '只读连接');
+    $('snapshot-mode').replaceChildren(icon('lock'), desktopControlsAvailable && state.source.kind === 'live' ? '快照只读 · 操作需确认' : '只读模式');
     $('runtime-label').textContent = state.source.kind === 'demo' ? '合成样本 · 不调用执行器' : state.health?.runtime?.packageVersion ? '网关 v' + state.health.runtime.packageVersion : '网关版本未提供';
     $('freshness').textContent = state.fetchedAt ? '上次获取 ' + formatTime(state.fetchedAt) + (state.error ? ' · 旧快照' : ' · 手动刷新') : '尚未获取快照';
     const notice = $('source-notice');
@@ -132,6 +136,7 @@ function renderDetail() {
     el.append(h('div', { class: 'detail-context' }, icon('folder'), workspaceName(record), ' / ', executorName(record), ` / 第 ${number} 轮`), h('div', { class: 'detail-heading' }, h('h2', { id: 'detail-title', tabindex: '-1' }, taskName(record))), h('div', { class: 'detail-status' }, status(record)), h('p', { class: 'detail-description' }, info.description));
     if (record.presentation.blockingReason) el.append(h('p', { class: 'notice' }, '已存提示：', record.presentation.blockingReason));
     el.append(h('div', { class: 'proofs', 'aria-label': '交付凭证，三个事实分别记录' }, proofs(record).map((proof, i) => h('div', { class: 'proof' }, h('div', { class: 'proof-label' }, icon(['file', 'circle', 'check'][i]), proof.label), h('div', { class: 'proof-value' + (proof.confirmed ? ' confirmed' : '') }, proof.value), h('div', { class: 'proof-detail' }, proof.detail)))));
+    if (desktopControlsAvailable && state.source.kind === 'live' && record.view.revision && record.view.attempt?.id) el.append(renderDesktopControls(record,{refresh:async id=>{linkedTask=id;await refreshTasks();}}));
     const tabs = [['overview', '概况'], ['checks', '检查与审查'], ['files', '文件变化'], ['events', '事件历史']];
     el.append(h('div', { class: 'tabs', role: 'tablist', 'aria-label': '任务详情分区' }, tabs.map(([key, label], i) => h('button', { class: 'tab', role: 'tab', id: 'tab-' + key, 'aria-controls': 'detail-panel', 'aria-selected': String(state.tab === key), tabindex: state.tab === key ? '0' : '-1', type: 'button', onclick: () => activateTab(key), onkeydown: event => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
             event.preventDefault();
@@ -355,6 +360,7 @@ async function switchSource(kind, scenario = 'normal') {
     await refreshTasks();
 }
 buildShell();
+void fetch('/workbench/desktop/capabilities',{method:'GET',signal:AbortSignal.timeout(5000)}).then(response=>response.json()).then(result=>{desktopControlsAvailable=result?.ok===true&&result.value?.controls===true;if(state.detail)render();}).catch(()=>{});
 void mountDesktopDispatch({ onTask: async taskId => { if (state.source.kind === 'demo') await switchSource('live'); linkedTask = taskId; location.hash = 'taskId=' + encodeURIComponent(taskId); await refreshTasks(); } });
 window.addEventListener('hashchange', async () => {
     const taskId = taskIdFromHash(location.hash);

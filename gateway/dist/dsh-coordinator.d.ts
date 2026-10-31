@@ -58,6 +58,23 @@ export declare class DshTaskCoordinator {
         deadline: string | undefined;
         stopProofScope: string;
     };
+    private requestCancellation;
+    cancelCurrent(input: {
+        taskId: string;
+        expectedRevision: string;
+        expectedAttemptId: string;
+        reason?: string;
+    }): Promise<{
+        state: string;
+        remoteStopped: boolean;
+        cancellationRequested: boolean;
+        reportDigestPresent: boolean;
+        observedAt: string | undefined;
+        deadline: string | undefined;
+        stopProofScope: string;
+        ok: boolean;
+        task: StoredTask;
+    }>;
     cancel(taskId: string, reason?: string): Promise<{
         state: string;
         remoteStopped: boolean;
@@ -69,6 +86,7 @@ export declare class DshTaskCoordinator {
         ok: boolean;
         task: StoredTask;
     }>;
+    private finishCancellation;
     continue(input: {
         taskId: string;
         feedback: string;

@@ -160,6 +160,17 @@ test("T4B: explicit DSH recovery observation never sends a cancellation on model
   assert.equal(f.store.operations.occupant()!.taskId, "dsh-task"); assert.deepEqual(f.counts(), { prompts: 1, selections: 1 });
 });
 
+test("DSH desktop cancellation rejects stale identity before contacting the original request",async t=>{
+  const f=fixture(t);await f.send();let calls=0;
+  f.client.cancel=async()=>{calls++;return {requested:true,stopped:false};};
+  const task=f.store.get("dsh-task")!;
+  assert.throws(()=>f.coordinator.cancelCurrent({taskId:task.taskId,expectedRevision:"stale",expectedAttemptId:task.attemptId!}),{code:"STALE_REVISION"});
+  assert.throws(()=>f.coordinator.cancelCurrent({taskId:task.taskId,expectedRevision:task.revision!,expectedAttemptId:"old-attempt"}),{code:"STALE_ATTEMPT"});
+  assert.equal(calls,0);assert.equal(f.store.dshBindings.forTask(task.taskId)!.cancelRequested,false);
+  const result=await f.coordinator.cancelCurrent({taskId:task.taskId,expectedRevision:task.revision!,expectedAttemptId:task.attemptId!});
+  assert.equal(calls,1);assert.equal(result.remoteStopped,false);assert.equal(result.cancellationRequested,true);
+});
+
 test("cancel acknowledgements and idle never prove the original request stopped", async t => {
   const f = fixture(t); await f.send(); const result = await f.coordinator.cancel("dsh-task");
   assert.equal(result.remoteStopped, false); assert.equal(result.cancellationRequested, true);
