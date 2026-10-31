@@ -247,6 +247,154 @@ export declare class TaskCoordinator {
         alreadyReconciled: boolean;
         taskCompleted: boolean;
     }>;
+    /** Guard a desktop stop against a stale task snapshot. The transaction is
+     * held through the synchronous cancellation request and state update, so a
+     * concurrent rework cannot cause this request to target a later attempt.
+     * This guard alone is not a durable desktop receipt or a stop proof. */
+    cancelCurrent(input: {
+        taskId: string;
+        expectedRevision: string;
+        expectedAttemptId: string;
+        reason?: string;
+    }): Promise<{
+        message: string;
+        state: string;
+        remoteStopped: boolean;
+        cancellationRequested?: undefined;
+        reportDigestPresent?: undefined;
+        stopReason?: undefined;
+        observedAt?: undefined;
+        deadline?: undefined;
+        claimDeadline?: undefined;
+        reportBy?: undefined;
+        progress?: undefined;
+        stopControl?: undefined;
+        nativeHealth?: undefined;
+        nativeRateLimit?: undefined;
+        postReportFailure?: undefined;
+        nativeStopCheck?: undefined;
+        ok: boolean;
+        task: StoredTask;
+        executionState?: undefined;
+        execution?: undefined;
+    } | {
+        message: string;
+        state: string;
+        remoteStopped: boolean;
+        cancellationRequested: boolean;
+        reportDigestPresent: boolean;
+        stopReason: string | undefined;
+        observedAt: string;
+        deadline: string | undefined;
+        claimDeadline: string | undefined;
+        reportBy: string | undefined;
+        progress: {
+            stage: string;
+            completed: string;
+            running: string;
+            blocker: string;
+            lastMeaningfulAt: string;
+            reportedAt: string;
+        } | undefined;
+        stopControl: {
+            requestedAt: string;
+            issuedAt?: string;
+            acknowledgedAt?: string;
+            checkedAt?: string;
+            error?: string;
+            state: "requested" | "stop_unconfirmed" | "stopped";
+        } | undefined;
+        nativeHealth: {
+            state: string;
+            observedAt: string;
+            reason?: string;
+        } | undefined;
+        nativeRateLimit: import("./native-turn-failure.js").NativeRateLimit | undefined;
+        postReportFailure: {
+            error: string;
+            observedAt: string;
+            reportReceivedAt: string;
+            phase?: "session:sendMessage" | "native_history";
+        } | undefined;
+        nativeStopCheck: {
+            since: string;
+            checkedAt: string;
+            observations: number;
+            activityAt?: number;
+        } | undefined;
+        ok: boolean;
+        task: StoredTask;
+        executionState?: undefined;
+        execution?: undefined;
+    } | {
+        ok: boolean;
+        cancellationRequested: boolean;
+        remoteStopped: boolean;
+        executionState: string;
+        execution: {
+            state: string;
+            remoteStopped: boolean;
+            cancellationRequested?: undefined;
+            reportDigestPresent?: undefined;
+            stopReason?: undefined;
+            observedAt?: undefined;
+            deadline?: undefined;
+            claimDeadline?: undefined;
+            reportBy?: undefined;
+            progress?: undefined;
+            stopControl?: undefined;
+            nativeHealth?: undefined;
+            nativeRateLimit?: undefined;
+            postReportFailure?: undefined;
+            nativeStopCheck?: undefined;
+        } | {
+            state: string;
+            remoteStopped: boolean;
+            cancellationRequested: boolean;
+            reportDigestPresent: boolean;
+            stopReason: string | undefined;
+            observedAt: string;
+            deadline: string | undefined;
+            claimDeadline: string | undefined;
+            reportBy: string | undefined;
+            progress: {
+                stage: string;
+                completed: string;
+                running: string;
+                blocker: string;
+                lastMeaningfulAt: string;
+                reportedAt: string;
+            } | undefined;
+            stopControl: {
+                requestedAt: string;
+                issuedAt?: string;
+                acknowledgedAt?: string;
+                checkedAt?: string;
+                error?: string;
+                state: "requested" | "stop_unconfirmed" | "stopped";
+            } | undefined;
+            nativeHealth: {
+                state: string;
+                observedAt: string;
+                reason?: string;
+            } | undefined;
+            nativeRateLimit: import("./native-turn-failure.js").NativeRateLimit | undefined;
+            postReportFailure: {
+                error: string;
+                observedAt: string;
+                reportReceivedAt: string;
+                phase?: "session:sendMessage" | "native_history";
+            } | undefined;
+            nativeStopCheck: {
+                since: string;
+                checkedAt: string;
+                observations: number;
+                activityAt?: number;
+            } | undefined;
+        };
+        task: StoredTask;
+    }>;
+    private requestCancellation;
     cancel(taskId: string, reason?: string): Promise<{
         message: string;
         state: string;
@@ -385,6 +533,7 @@ export declare class TaskCoordinator {
         };
         task: StoredTask;
     }>;
+    private finishCancellation;
     requireTask(taskId: string): StoredTask;
 }
 export declare function parseReport(rawText: string): TaskReport;

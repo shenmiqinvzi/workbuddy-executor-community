@@ -4,6 +4,7 @@ import type { OperationOptions } from "./operation-admission.js";
 import type { RecoveryInput } from "./operation-recovery.js";
 import type { ReviewOptions, ReviewInput } from "./task-reviews.js";
 import { AdmissionError, defaultModelPolicy } from "./collaboration.js";
+import { contractExecution } from "./task-contract.js";
 import type { StoredTask, StoredTaskEvent } from "./task-store.js";
 import { readTaskProjection } from "./task-view-reader.js";
 import { PANEL_SCHEMA, readPanelTask } from "./workbench-panel.js";
@@ -335,6 +336,13 @@ export class TaskApplicationService {
   }
   accept(...args: Parameters<TaskCoordinator["accept"]>) { return this.dshFor(args[0])?.accept(...args) ?? this.coordinator.accept(...args); }
   cancel(...args: Parameters<TaskCoordinator["cancel"]>) { return this.dshFor(args[0])?.cancel(...args) ?? this.coordinator.cancel(...args); }
+  cancelCurrent(input: Parameters<TaskCoordinator["cancelCurrent"]>[0]) {
+    const contract=this.coordinator.store.getContract(input.taskId), binding=this.coordinator.store.dshBindings.forTask(input.taskId);
+    if(contract.state!=="found")throw new AdmissionError("CONTRACT_INTEGRITY","The original task contract cannot be verified.");
+    const execution=contractExecution(contract.record.contract);
+    if((execution.executorId==="dsh")!==Boolean(binding))throw new AdmissionError("CONTRACT_INTEGRITY","The original executor binding is missing or inconsistent.");
+    return this.dshFor(input.taskId)?.cancelCurrent(input) ?? this.coordinator.cancelCurrent(input);
+  }
   respond(...args: Parameters<TaskCoordinator["respond"]>) { if (this.dshFor(args[0])) throw new AdmissionError("EXECUTOR_CAPABILITY_MISSING", "Resolve DSH input in its native UI; this adapter cannot approve permissions"); return this.coordinator.respond(...args); }
   reconcileReport(input: Parameters<TaskCoordinator["reconcileReport"]>[0]) { if (this.dshFor(input.taskId)) throw new AdmissionError("EXECUTOR_CAPABILITY_MISSING", "DSH reports require their original durable request events"); return this.coordinator.reconcileReport(input); }
   async sync(taskId: string, limit?: number) {

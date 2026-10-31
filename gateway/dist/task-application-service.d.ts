@@ -632,6 +632,154 @@ export declare class TaskApplicationService {
         };
         task: StoredTask;
     }>;
+    cancelCurrent(input: Parameters<TaskCoordinator["cancelCurrent"]>[0]): Promise<{
+        state: string;
+        remoteStopped: boolean;
+        cancellationRequested: boolean;
+        reportDigestPresent: boolean;
+        observedAt: string | undefined;
+        deadline: string | undefined;
+        stopProofScope: string;
+        ok: boolean;
+        task: StoredTask;
+    }> | Promise<{
+        message: string;
+        state: string;
+        remoteStopped: boolean;
+        cancellationRequested?: undefined;
+        reportDigestPresent?: undefined;
+        stopReason?: undefined;
+        observedAt?: undefined;
+        deadline?: undefined;
+        claimDeadline?: undefined;
+        reportBy?: undefined;
+        progress?: undefined;
+        stopControl?: undefined;
+        nativeHealth?: undefined;
+        nativeRateLimit?: undefined;
+        postReportFailure?: undefined;
+        nativeStopCheck?: undefined;
+        ok: boolean;
+        task: StoredTask;
+        executionState?: undefined;
+        execution?: undefined;
+    } | {
+        message: string;
+        state: string;
+        remoteStopped: boolean;
+        cancellationRequested: boolean;
+        reportDigestPresent: boolean;
+        stopReason: string | undefined;
+        observedAt: string;
+        deadline: string | undefined;
+        claimDeadline: string | undefined;
+        reportBy: string | undefined;
+        progress: {
+            stage: string;
+            completed: string;
+            running: string;
+            blocker: string;
+            lastMeaningfulAt: string;
+            reportedAt: string;
+        } | undefined;
+        stopControl: {
+            requestedAt: string;
+            issuedAt?: string;
+            acknowledgedAt?: string;
+            checkedAt?: string;
+            error?: string;
+            state: "requested" | "stop_unconfirmed" | "stopped";
+        } | undefined;
+        nativeHealth: {
+            state: string;
+            observedAt: string;
+            reason?: string;
+        } | undefined;
+        nativeRateLimit: import("./native-turn-failure.js").NativeRateLimit | undefined;
+        postReportFailure: {
+            error: string;
+            observedAt: string;
+            reportReceivedAt: string;
+            phase?: "session:sendMessage" | "native_history";
+        } | undefined;
+        nativeStopCheck: {
+            since: string;
+            checkedAt: string;
+            observations: number;
+            activityAt?: number;
+        } | undefined;
+        ok: boolean;
+        task: StoredTask;
+        executionState?: undefined;
+        execution?: undefined;
+    } | {
+        ok: boolean;
+        cancellationRequested: boolean;
+        remoteStopped: boolean;
+        executionState: string;
+        execution: {
+            state: string;
+            remoteStopped: boolean;
+            cancellationRequested?: undefined;
+            reportDigestPresent?: undefined;
+            stopReason?: undefined;
+            observedAt?: undefined;
+            deadline?: undefined;
+            claimDeadline?: undefined;
+            reportBy?: undefined;
+            progress?: undefined;
+            stopControl?: undefined;
+            nativeHealth?: undefined;
+            nativeRateLimit?: undefined;
+            postReportFailure?: undefined;
+            nativeStopCheck?: undefined;
+        } | {
+            state: string;
+            remoteStopped: boolean;
+            cancellationRequested: boolean;
+            reportDigestPresent: boolean;
+            stopReason: string | undefined;
+            observedAt: string;
+            deadline: string | undefined;
+            claimDeadline: string | undefined;
+            reportBy: string | undefined;
+            progress: {
+                stage: string;
+                completed: string;
+                running: string;
+                blocker: string;
+                lastMeaningfulAt: string;
+                reportedAt: string;
+            } | undefined;
+            stopControl: {
+                requestedAt: string;
+                issuedAt?: string;
+                acknowledgedAt?: string;
+                checkedAt?: string;
+                error?: string;
+                state: "requested" | "stop_unconfirmed" | "stopped";
+            } | undefined;
+            nativeHealth: {
+                state: string;
+                observedAt: string;
+                reason?: string;
+            } | undefined;
+            nativeRateLimit: import("./native-turn-failure.js").NativeRateLimit | undefined;
+            postReportFailure: {
+                error: string;
+                observedAt: string;
+                reportReceivedAt: string;
+                phase?: "session:sendMessage" | "native_history";
+            } | undefined;
+            nativeStopCheck: {
+                since: string;
+                checkedAt: string;
+                observations: number;
+                activityAt?: number;
+            } | undefined;
+        };
+        task: StoredTask;
+    }>;
     respond(...args: Parameters<TaskCoordinator["respond"]>): {
         ok: boolean;
         taskId: string;

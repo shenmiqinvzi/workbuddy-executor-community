@@ -1,4 +1,5 @@
 import { AdmissionError, defaultModelPolicy } from "./collaboration.js";
+import { contractExecution } from "./task-contract.js";
 import { readTaskProjection } from "./task-view-reader.js";
 import { PANEL_SCHEMA, readPanelTask } from "./workbench-panel.js";
 import { stageTaskViewFromProjection, STAGE_TASK_VIEW_UNAVAILABLE, STAGE_TASK_VIEW_SCHEMA_VERSION } from "./task-view-stage.js";
@@ -268,6 +269,15 @@ export class TaskApplicationService {
     }
     accept(...args) { return this.dshFor(args[0])?.accept(...args) ?? this.coordinator.accept(...args); }
     cancel(...args) { return this.dshFor(args[0])?.cancel(...args) ?? this.coordinator.cancel(...args); }
+    cancelCurrent(input) {
+        const contract = this.coordinator.store.getContract(input.taskId), binding = this.coordinator.store.dshBindings.forTask(input.taskId);
+        if (contract.state !== "found")
+            throw new AdmissionError("CONTRACT_INTEGRITY", "The original task contract cannot be verified.");
+        const execution = contractExecution(contract.record.contract);
+        if ((execution.executorId === "dsh") !== Boolean(binding))
+            throw new AdmissionError("CONTRACT_INTEGRITY", "The original executor binding is missing or inconsistent.");
+        return this.dshFor(input.taskId)?.cancelCurrent(input) ?? this.coordinator.cancelCurrent(input);
+    }
     respond(...args) { if (this.dshFor(args[0]))
         throw new AdmissionError("EXECUTOR_CAPABILITY_MISSING", "Resolve DSH input in its native UI; this adapter cannot approve permissions"); return this.coordinator.respond(...args); }
     reconcileReport(input) { if (this.dshFor(input.taskId))

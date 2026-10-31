@@ -607,14 +607,41 @@ export class TaskCoordinator {
             trigger.close();
         }
     }
-    async cancel(taskId, reason) {
+    /** Guard a desktop stop against a stale task snapshot. The transaction is
+     * held through the synchronous cancellation request and state update, so a
+     * concurrent rework cannot cause this request to target a later attempt.
+     * This guard alone is not a durable desktop receipt or a stop proof. */
+    cancelCurrent(input) {
+        if (!input.expectedRevision || !input.expectedAttemptId || (input.reason !== undefined && (typeof input.reason !== "string" || input.reason.length > 500))) {
+            throw new AdmissionError("INVALID_OPERATION", "A current revision, attempt and bounded reason are required.");
+        }
+        const request = this.store.atomic(() => {
+            const current = this.requireTask(input.taskId);
+            if (current.attemptId !== input.expectedAttemptId)
+                throw new AdmissionError("STALE_ATTEMPT", "The task has moved to another attempt.");
+            if (current.revision !== input.expectedRevision)
+                throw new AdmissionError("STALE_REVISION", "The task changed; refresh before requesting cancellation.");
+            return this.requestCancellation(input.taskId, input.reason);
+        });
+        return this.finishCancellation(request);
+    }
+    requestCancellation(taskId, reason) {
         const task = this.requireTask(taskId);
         if (task.state === "accepted")
-            return { ok: true, task, ...this.executionStatus(taskId), message: "Already accepted; no cancellation dispatched" };
+            return { accepted: true, task };
         const requested = this.client.cancel(task.messageId);
         // Preserve uncertainty: cancellation requested does not prove remote execution stopped.
         const snapshot = task.attemptId ? this.client.runSnapshot(task.attemptId) : undefined;
         const updated = this.store.update(taskId, { state: snapshot?.error ? "blocked" : "cancelled", cancelNote: task.cancelNote ?? reason ?? "Cancellation requested by Codex." });
+        return { accepted: false, task, updated, requested };
+    }
+    async cancel(taskId, reason) {
+        return this.finishCancellation(this.requestCancellation(taskId, reason));
+    }
+    async finishCancellation(request) {
+        const { task } = request, taskId = task.taskId;
+        if (request.accepted)
+            return { ok: true, task, ...this.executionStatus(taskId), message: "Already accepted; no cancellation dispatched" };
         if (this.config.backend === "desktop-queue" && task.sessionId && task.workspace) {
             const registration = readServiceRegistration(this.config.serviceConfigFile ?? path.join(path.dirname(this.config.dbFile), "persistent-service.json"));
             if (registration && path.resolve(registration.dbFile) === path.resolve(this.config.dbFile)) {
@@ -628,7 +655,7 @@ export class TaskCoordinator {
             }
         }
         const execution = this.executionStatus(taskId);
-        return { ok: true, cancellationRequested: execution.cancellationRequested || requested, remoteStopped: execution.remoteStopped, executionState: execution.remoteStopped ? "stopped" : "stop_unconfirmed", execution, task: updated };
+        return { ok: true, cancellationRequested: execution.cancellationRequested || request.requested, remoteStopped: execution.remoteStopped, executionState: execution.remoteStopped ? "stopped" : "stop_unconfirmed", execution, task: request.updated };
     }
     requireTask(taskId) {
         const task = this.store.get(taskId);

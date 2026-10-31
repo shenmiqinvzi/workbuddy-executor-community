@@ -183,13 +183,13 @@
     },
     {
       "path": "desktop/DesktopCommands.cs",
-      "sha256": "4ec7e391400ea892692634a94dcdedcd63fdb807895824fecaef268938d6c6ea",
-      "bytes": 8042
+      "sha256": "b58ab07fb622d7d5480e8c537b5664d18915b06e46b1c09668053313ae2de03a",
+      "bytes": 12723
     },
     {
       "path": "desktop/DesktopControlPolicy.cs",
-      "sha256": "2424673d42ce3e0ae5203e713d8490ca6c718b2319111e2128d63d401de8725b",
-      "bytes": 2899
+      "sha256": "3d6f9c238990dadb4e7d3fb0e98fd3c7ca98b7a9c49ac6d6626a220d910b965b",
+      "bytes": 4712
     },
     {
       "path": "desktop/DesktopPolicy.cs",
@@ -198,8 +198,8 @@
     },
     {
       "path": "desktop/Program.cs",
-      "sha256": "4821841f85eab6ad5b3277bc1446cb84b3846ddc01676c0e2cdf7c1b0ae3e78e",
-      "bytes": 19939
+      "sha256": "bbce5663525f365c977971f6c64a4c7a92bce75a87545b1e781bd3bb213f142d",
+      "bytes": 20783
     },
     {
       "path": "desktop/WEBVIEW2-LICENSE.txt",
@@ -228,8 +228,8 @@
     },
     {
       "path": "desktop/test/Program.cs",
-      "sha256": "4c0dc89ada96315550e4d986875954371c2f2b2b3e267417aad457029bf13ac6",
-      "bytes": 6126
+      "sha256": "d073515067484ea8525fbc67f41f2cd06de651a3f0805e964ea3bcf257019830",
+      "bytes": 7246
     },
     {
       "path": "desktop/workbench.ico",
@@ -343,18 +343,18 @@
     },
     {
       "path": "dist/coordinator.d.ts",
-      "sha256": "a005205c11d26f78001a7d269eedc7782c98f8845c092cbb5211a623638e82aa",
-      "bytes": 14026
+      "sha256": "9348d6a7194984ffed92dcca36b7e2b516e992745026f89caf5e84366867fc20",
+      "bytes": 19181
     },
     {
       "path": "dist/coordinator.js",
-      "sha256": "c3834c8c6a3365fb389ad174eb11fb7a0c1eb7554627fb1b3f442edb93524912",
-      "bytes": 52134
+      "sha256": "04d14780e4746dc8ee6d4822a862d7bd93e5e23d721b8c0239ae041eb3a397db",
+      "bytes": 53755
     },
     {
       "path": "dist/coordinator.js.map",
-      "sha256": "798fe4d577616db8f2cf87d9a4960bf518aa930d9cb56ac320ea89b73cf4a768",
-      "bytes": 41654
+      "sha256": "9a9fa03015cf50ee98d36c938e0ab8f2db3a6f59d022213366ec7cd8a79285cb",
+      "bytes": 42848
     },
     {
       "path": "dist/credit-balance.d.ts",
@@ -490,6 +490,51 @@
       "path": "dist/deployment-safety.js.map",
       "sha256": "6ad8ec207108b3ad6ce280bac23bcf05ffc8e6cb3bf95f3fce53cff3621d0b94",
       "bytes": 1311
+    },
+    {
+      "path": "dist/desktop-control-journal.d.ts",
+      "sha256": "64ef3122052f11d7c8029142487c098c9e063a7e26255dcf4166d8057b2d21e4",
+      "bytes": 1320
+    },
+    {
+      "path": "dist/desktop-control-journal.js",
+      "sha256": "3de56fe1d96e906d8092ef292c50d6c51c5e07908ee170abe65c512506d72838",
+      "bytes": 6645
+    },
+    {
+      "path": "dist/desktop-control-journal.js.map",
+      "sha256": "fce1cb7d8f681e767bd2f934422ac7d6ec730ef99eebcf1bb720d4bb357091dd",
+      "bytes": 6014
+    },
+    {
+      "path": "dist/desktop-control-runtime.d.ts",
+      "sha256": "45d8be234c816bfbb606f65016f7e6f973cd70504910769ade35e8e595676c50",
+      "bytes": 1328
+    },
+    {
+      "path": "dist/desktop-control-runtime.js",
+      "sha256": "1a27b83a7866b54899f7f252ac6ae9da981ce91fe459ef416a436b4d248c1a67",
+      "bytes": 13960
+    },
+    {
+      "path": "dist/desktop-control-runtime.js.map",
+      "sha256": "a411183f5d611b9c5b809e564be01b1510e4f55e0f82f0ec44349324b41d541f",
+      "bytes": 13453
+    },
+    {
+      "path": "dist/desktop-control.d.ts",
+      "sha256": "fb0607167297a6d5d538cad49de253bffb980b2b6df1d738fc4be56c4a000d16",
+      "bytes": 2317
+    },
+    {
+      "path": "dist/desktop-control.js",
+      "sha256": "8841f8f06717c4fbb6624de1c4b9ebdeff02991e20054eec1ab68f3371eb55af",
+      "bytes": 8242
+    },
+    {
+      "path": "dist/desktop-control.js.map",
+      "sha256": "d909fb3e92ce17e0c050905c8d2e3f9ac7eaf056a62ebc7278d24d0d7938feef",
+      "bytes": 8182
     },
     {
       "path": "dist/desktop-dispatch-journal.d.ts",
@@ -628,18 +673,18 @@
     },
     {
       "path": "dist/dsh-coordinator.d.ts",
-      "sha256": "6c7a0bbd6906f8280e7cbe9751428ea4c6ef5b67778da7c3803c506274398d73",
-      "bytes": 3429
+      "sha256": "fcd268a2ce632c714c8df4b9fb15e699b6b38ea46679c9669f2145ec5c7e3827",
+      "bytes": 3955
     },
     {
       "path": "dist/dsh-coordinator.js",
-      "sha256": "933f074c5ee529bf56a175f4ba1d997abc99014950bbe15ee66835220eb7c5da",
-      "bytes": 34390
+      "sha256": "bd4707ae5b59b87fdc61759aa6f2ce2b7ab8a676660a75654548a7505c205f69",
+      "bytes": 35511
     },
     {
       "path": "dist/dsh-coordinator.js.map",
-      "sha256": "a38b93ce8d6c3ae2e934707dc48c752d179a771511ca2cdb444e8638375f8c00",
-      "bytes": 33312
+      "sha256": "5197e52c9cb33a3f5e4392b4adfb4a46c04f72376445b896b05d3f5614b285c1",
+      "bytes": 34376
     },
     {
       "path": "dist/dsh-inspect.d.ts",
@@ -1153,18 +1198,18 @@
     },
     {
       "path": "dist/task-application-service.d.ts",
-      "sha256": "ff2e765049ee0639d1a4f2c6de07b3a88b22e5e099f73ebe728411c5d5783064",
-      "bytes": 29089
+      "sha256": "3df66ab762badfaad309542061b16b494c70ceab30dbc2d6ed24b002ae5ce790",
+      "bytes": 34096
     },
     {
       "path": "dist/task-application-service.js",
-      "sha256": "da61c0dc08a91a57ac815b4355387578fd252215cd1fc57fefab3d76d2c119aa",
-      "bytes": 22118
+      "sha256": "8261036182883e793054edae4f3bff4130f2570b1518fe8db3372c97c8e29c35",
+      "bytes": 22864
     },
     {
       "path": "dist/task-application-service.js.map",
-      "sha256": "72507f8038deca519b3d85c68eea3487e7d6c844d8153925fde5fb2bf8fe5e87",
-      "bytes": 18264
+      "sha256": "c5e8b54a9cbb21bfe896cb73bb97a6b3714b157d73740c084575752ed7bc39e0",
+      "bytes": 18921
     },
     {
       "path": "dist/task-contract.d.ts",
@@ -1323,13 +1368,13 @@
     },
     {
       "path": "dist/workbench-assets.js",
-      "sha256": "2cba26a36eb16aedec10fcfbdff27132276b26019fdc71cd72801b3e042ffbc9",
-      "bytes": 2343
+      "sha256": "2614d6053820d0da13eaf5324a9a1e2996b68cfcc2576db32397533a3f06d0b3",
+      "bytes": 2502
     },
     {
       "path": "dist/workbench-assets.js.map",
-      "sha256": "aa770c394c42f8a4235c79ea6bc881d68e68926023f537025cf2b05f8a0ee777",
-      "bytes": 1674
+      "sha256": "8089d6b22235280449740ae21d88913419edfccf791d24fce3c75812beee0a72",
+      "bytes": 1764
     },
     {
       "path": "dist/workbench-entry.d.ts",
@@ -1643,13 +1688,13 @@
     },
     {
       "path": "scripts/package-desktop.mjs",
-      "sha256": "4c78c745a7867e83b1b2b921eb9ad7a56a589b0be4132fb30a4a5d5eb90749f4",
+      "sha256": "fbc988e048cd62a993da6f2af2d84fc664d3bfd68b8c7199600db8126c26593d",
       "bytes": 3485
     },
     {
       "path": "scripts/package.mjs",
-      "sha256": "eac9c4fbae133f5443d29d36b3aad6908f7a18430d79d47c5c3d5ba3b7892776",
-      "bytes": 14440
+      "sha256": "1b61f2996137bbf75f849ab58cc67fe9488fca6491fb9d266395c230d7ac83f1",
+      "bytes": 14625
     },
     {
       "path": "scripts/setup.mjs",
@@ -1667,14 +1712,19 @@
       "bytes": 1316
     },
     {
+      "path": "scripts/workbench-control-worker.mjs",
+      "sha256": "48eafaeec80764f853cd09847d6fc4f8891da009ee72a29dfccd33010284d967",
+      "bytes": 420
+    },
+    {
       "path": "scripts/workbench-desktop-commands.mjs",
-      "sha256": "0872b7dc3c1ac4a8b454eb476c202b5bcbe154b330baebed145e76c183c53419",
-      "bytes": 3162
+      "sha256": "87bbb89bb29d770bca16a153dc10d49bbde9f753983adf4cf5c0a1743c6f5f06",
+      "bytes": 4540
     },
     {
       "path": "scripts/workbench-desktop-host.mjs",
-      "sha256": "03b9c8a3ecb5f51ef9d331221c867222d8d0d431b7cd11e403641383a928e1b5",
-      "bytes": 2043
+      "sha256": "3f5b01d466f86c9a22c5af6a876052a1f9154f763b107e6c7d46c687122dfd7d",
+      "bytes": 2190
     },
     {
       "path": "scripts/workbench-dispatch-worker.mjs",
@@ -1783,8 +1833,8 @@
     },
     {
       "path": "src/coordinator.ts",
-      "sha256": "1d074ecc4e839fedeb21195ce2c8cc265f6607c1d91875e55210770ce0e7faa3",
-      "bytes": 51511
+      "sha256": "5d1d83f394060e0d8089fef63c2d3eec144b967cbb34baf8c2c49d68025b3e97",
+      "bytes": 53213
     },
     {
       "path": "src/credit-balance.ts",
@@ -1830,6 +1880,21 @@
       "path": "src/deployment-safety.ts",
       "sha256": "29512956b1f3cb2a277d331d8abd15500c2dc35c4517838625feaf1aa595a7dc",
       "bytes": 1238
+    },
+    {
+      "path": "src/desktop-control-journal.ts",
+      "sha256": "d310a9163ad02577fee0fcf593cb1475b9503166fd989514345737512ed66b45",
+      "bytes": 6802
+    },
+    {
+      "path": "src/desktop-control-runtime.ts",
+      "sha256": "99d64790432fd221eba36288bbfb6725c26ba061edd777e935e7dbd2c93bc6a6",
+      "bytes": 12626
+    },
+    {
+      "path": "src/desktop-control.ts",
+      "sha256": "82a357334d92de570c19fd29ec6e94454a9e30d3902c0acc5eec0ea464384702",
+      "bytes": 9039
     },
     {
       "path": "src/desktop-dispatch-journal.ts",
@@ -1878,8 +1943,8 @@
     },
     {
       "path": "src/dsh-coordinator.ts",
-      "sha256": "76fc1d1e56834fb92c5e59ace257436ea2e76e5f924f45072d57ec3726281c64",
-      "bytes": 33275
+      "sha256": "a0668cad9daf67fe1af99d2074878b1dc2dd405b7eaa725535f0954acb21fc97",
+      "bytes": 34411
     },
     {
       "path": "src/dsh-inspect.ts",
@@ -2053,8 +2118,8 @@
     },
     {
       "path": "src/task-application-service.ts",
-      "sha256": "e73057d89fc96593d35dec3ebca4f82a74238950aa3f4e366f3a1e217d471efb",
-      "bytes": 25021
+      "sha256": "7a137c0754dad1217c39db09b4cae8c6bca6dce1be398d37e4fd11d4bd97ec3e",
+      "bytes": 25750
     },
     {
       "path": "src/task-contract.ts",
@@ -2108,8 +2173,8 @@
     },
     {
       "path": "src/workbench-assets.ts",
-      "sha256": "00538fbcae14eb0b6ee3e3e02dfd4154e90b9cea481b89b78a0cf72f13983e37",
-      "bytes": 2285
+      "sha256": "4c79b5e8be4041b3a946b21947da7eaa0a69a11846e975cd0e4dbc253f979c32",
+      "bytes": 2440
     },
     {
       "path": "src/workbench-entry.ts",
@@ -2207,6 +2272,21 @@
       "bytes": 16104
     },
     {
+      "path": "test/desktop-control-journal.test.ts",
+      "sha256": "82966727c05b32804ee2b711bc1b998e6a9854193751e7a3edf6c1b04ec7dfcd",
+      "bytes": 3808
+    },
+    {
+      "path": "test/desktop-control-runtime.test.ts",
+      "sha256": "3866a760abc55bf28a8188f2c535fae41318019771deb457dbac4155188463dc",
+      "bytes": 11393
+    },
+    {
+      "path": "test/desktop-control.test.ts",
+      "sha256": "908775f664055bfc1fa84590caf289c386c6e6be13285cc068f1262f9c6c4f60",
+      "bytes": 4076
+    },
+    {
       "path": "test/desktop-dispatch.test.ts",
       "sha256": "8fd5cf3a12fa33c0b9a8623a6b8c700add50c1c15d014902bd47a1faac2c70d9",
       "bytes": 11383
@@ -2218,8 +2298,8 @@
     },
     {
       "path": "test/dsh-adapter.test.ts",
-      "sha256": "bf42cf33fd69b234976fecaabb50ec6d770589006f7c71b7be653210f11ce110",
-      "bytes": 34757
+      "sha256": "3fcfa6b24d4a0701a49c052967070d8a8159dd97c639deaa481fd64389668fc7",
+      "bytes": 35701
     },
     {
       "path": "test/dsh-transport.test.ts",
@@ -2278,8 +2358,8 @@
     },
     {
       "path": "test/package.test.ts",
-      "sha256": "f2910bd75a82a6cf63e5210d6ebfb03623f0952712d02f6c61ed992a8d1d3177",
-      "bytes": 18331
+      "sha256": "cd07ce7f58a7566f68229c660cede0fe07de758cc0af039eef8fe319cb78063a",
+      "bytes": 18659
     },
     {
       "path": "test/persistent-service.test.ts",
@@ -2393,8 +2473,8 @@
     },
     {
       "path": "test/task-application-service.test.ts",
-      "sha256": "6a5867fcb1476bbc1a09ff0873051bb037f2ab15ff21d1c2d831bcb5920c4448",
-      "bytes": 47710
+      "sha256": "79eb8fc6caf7c4d02ceb7756cea01f17a4a2db84ba2a87eb93dd708da2c41fec",
+      "bytes": 49047
     },
     {
       "path": "test/task-contract.test.ts",
@@ -2483,8 +2563,18 @@
     },
     {
       "path": "workbench/app.mjs",
-      "sha256": "8142461769fdf2f5d88c6cb8ea60630de9218c9ff84c4509fa55560b6da555db",
-      "bytes": 32441
+      "sha256": "bae588f8dd555e17c4612cd09b1830be1609f0a2f4161bb4831ca99a670293dc",
+      "bytes": 33385
+    },
+    {
+      "path": "workbench/controls.css",
+      "sha256": "2866c784a59531e8ee35bdcabd228818cef0a5b87aab7570a6b39e7156372504",
+      "bytes": 2166
+    },
+    {
+      "path": "workbench/controls.mjs",
+      "sha256": "7da7de017ba24e9352730490409641a7363d18f8990d409e450ce7f2046c0dec",
+      "bytes": 10593
     },
     {
       "path": "workbench/demo-source.mjs",
@@ -2528,8 +2618,8 @@
     },
     {
       "path": "workbench/index.html",
-      "sha256": "7c44550c4be5026aa9573ebfb6d47a6fe61f31b3c297a17f78e82cf35b6e1b33",
-      "bytes": 768
+      "sha256": "6dac44b9a81eb7c280d593ccb83108ec00be099b599da36bd3a484bfcb990d95",
+      "bytes": 825
     },
     {
       "path": "workbench/model.mjs",
@@ -2545,6 +2635,11 @@
       "path": "workbench/task-link.mjs",
       "sha256": "827f3f932f45fbec90131e1fff7875647f86aa9cc7dad7d8035b97e2eae4b162",
       "bytes": 330
+    },
+    {
+      "path": "workbench/test/controls.test.mjs",
+      "sha256": "c10ec911174083972eaccfbdb0c02e69b3a0004f9058ae53a9a258773e7bc7ad",
+      "bytes": 1277
     },
     {
       "path": "workbench/test/desktop-routing.test.mjs",

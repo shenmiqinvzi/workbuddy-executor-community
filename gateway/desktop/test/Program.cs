@@ -33,6 +33,11 @@ Check(!DesktopControlPolicy.IsRoute(origin,"http://127.0.0.1:49152/workbench/des
 Check(DesktopControlPolicy.IsTrustedPage(origin,"http://127.0.0.1:49152/workbench/#taskId=test"), "only the main document is a trusted control surface");
 Check(!DesktopControlPolicy.IsTrustedPage(origin,"http://127.0.0.1:49152/workbench/app.mjs"), "asset documents cannot call native control");
 Reject(()=>DesktopControlPolicy.Decode("{\"action\":\"commit\",\"parameters\":{}}"), "page cannot directly commit backend drafts");
+Reject(()=>DesktopControlPolicy.Decode("{\"action\":\"control_commit\",\"parameters\":{}}"), "page cannot directly commit a control draft");
+Reject(()=>DesktopControlPolicy.Decode("{\"action\":\"control\",\"parameters\":{\"requestId\":\"11111111-1111-1111-1111-111111111111\",\"digest\":\""+new string('a',64)+"\",\"feedback\":\"replacement\"}}"), "control confirmation cannot replace frozen terms");
+Check(DesktopControlPolicy.Decode("{\"action\":\"control\",\"parameters\":{\"requestId\":\"11111111-1111-1111-1111-111111111111\",\"digest\":\""+new string('a',64)+"\"}}").Action=="control", "control uses native confirmation with frozen identity");
+Reject(()=>DesktopControlPolicy.Decode("{\"action\":\"control_requirements\",\"parameters\":{\"taskId\":\"task\",\"attemptId\":\"run\",\"revision\":\"r\",\"command\":\"unexpected\"}}"), "requirements query refuses arbitrary fields");
+Check(DesktopControlPolicy.Decode("{\"action\":\"control_requirements\",\"parameters\":{\"taskId\":\"task\",\"attemptId\":\"run\",\"revision\":\"r\"}}").Action=="control_requirements", "requirements query binds current task identity");
 Reject(()=>DesktopControlPolicy.Decode("{\"action\":\"cancel\",\"parameters\":{}}"), "page cannot cancel or accept tasks");
 Reject(()=>DesktopControlPolicy.Decode("{\"action\":\"catalog\",\"parameters\":{},\"command\":\"bad\"}"), "unknown native fields rejected");
 Reject(()=>DesktopControlPolicy.Decode("{\"action\":\"dispatch\",\"parameters\":{\"model\":\"different\"}}"), "dispatch body cannot replace reviewed terms");

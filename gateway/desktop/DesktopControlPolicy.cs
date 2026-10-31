@@ -21,7 +21,7 @@ internal static class DesktopControlPolicy
         var root = document.RootElement;
         if (root.ValueKind != JsonValueKind.Object || root.EnumerateObject().Count() != 2 || root.EnumerateObject().Any(p => p.Name is not ("action" or "parameters"))) throw new ArgumentException("Unexpected desktop request fields.");
         var action = root.GetProperty("action").GetString();
-        if (action is not ("catalog" or "preview" or "dispatch" or "status" or "observe" or "choose_workspace" or "latest")) throw new ArgumentException("Unsupported desktop action.");
+        if (action is not ("catalog" or "preview" or "dispatch" or "status" or "observe" or "choose_workspace" or "latest" or "control_preview" or "control" or "control_status" or "control_list" or "control_observe" or "control_requirements")) throw new ArgumentException("Unsupported desktop action.");
         var parameters = root.GetProperty("parameters");
         if (parameters.ValueKind != JsonValueKind.Object) throw new ArgumentException("Object parameters are required.");
         if (action is "catalog" or "choose_workspace" or "latest" && parameters.EnumerateObject().Any()) throw new ArgumentException("Action has no parameters.");
@@ -32,6 +32,15 @@ internal static class DesktopControlPolicy
                 || parameters.GetProperty("digest").GetString() is not { Length: 64 } digest || digest.Any(c => !Uri.IsHexDigit(c))) throw new ArgumentException("A verified draft identity is required.");
         }
         if (action is "status" or "observe" && (parameters.EnumerateObject().Count() != 1 || !Guid.TryParseExact(parameters.GetProperty("requestId").GetString(), "D", out _))) throw new ArgumentException("An original request identity is required.");
+        if (action == "control")
+        {
+            if (parameters.EnumerateObject().Count() != 2 || parameters.EnumerateObject().Any(p => p.Name is not ("requestId" or "digest"))
+                || !Guid.TryParseExact(parameters.GetProperty("requestId").GetString(), "D", out _)
+                || parameters.GetProperty("digest").GetString() is not { Length: 64 } digest || digest.Any(c => !Uri.IsHexDigit(c))) throw new ArgumentException("A verified control identity is required.");
+        }
+        if (action == "control_status" && (parameters.EnumerateObject().Count() != 1 || !Guid.TryParseExact(parameters.GetProperty("requestId").GetString(), "D", out _))) throw new ArgumentException("An original control identity is required.");
+        if (action is "control_list" or "control_observe" && (parameters.EnumerateObject().Count() != 2 || parameters.EnumerateObject().Any(p => p.Name is not ("taskId" or "attemptId")) || parameters.GetProperty("taskId").GetString() is not { Length: > 0 and <= 200 } || parameters.GetProperty("attemptId").GetString() is not { Length: > 0 and <= 200 })) throw new ArgumentException("A task and attempt identity are required.");
+        if (action == "control_requirements" && (parameters.EnumerateObject().Count() != 3 || parameters.EnumerateObject().Any(p => p.Name is not ("taskId" or "attemptId" or "revision")) || parameters.GetProperty("taskId").GetString() is not { Length: > 0 and <= 200 } || parameters.GetProperty("attemptId").GetString() is not { Length: > 0 and <= 200 } || parameters.GetProperty("revision").GetString() is not { Length: > 0 and <= 200 })) throw new ArgumentException("Current task, attempt and revision are required.");
         return new DesktopWebCommand(action!, parameters.Clone());
     }
 }

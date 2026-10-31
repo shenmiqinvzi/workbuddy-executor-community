@@ -77,7 +77,7 @@ async function fixture() {
   files["src/workspace-protection.ts"] = "export {};\n"; files["dist/workspace-protection.js"] = "export {};\n"; files["dist/workspace-protection.d.ts"] = "export {};\n";
   files["scripts/dsh-host-check.mjs"] = "// isolated host verification fixture\n";
   for (const name of ["dsh-bindings", "dsh-client", "dsh-coordinator", "dsh-runtime", "dsh-rate-verifier", "dsh-inspect"]) { files[`src/${name}.ts`] = "export {};\n"; files[`dist/${name}.js`] = "export {};\n"; files[`dist/${name}.d.ts`] = "export {};\n"; }
-  for (const name of ["desktop-dispatch", "desktop-dispatch-journal", "desktop-dispatch-runtime"]) { files[`src/${name}.ts`] = "export {};\n"; files[`dist/${name}.js`] = "export {};\n"; files[`dist/${name}.d.ts`] = "export {};\n"; }
+  for (const name of ["desktop-dispatch", "desktop-dispatch-journal", "desktop-dispatch-runtime", "desktop-control", "desktop-control-journal", "desktop-control-runtime"]) { files[`src/${name}.ts`] = "export {};\n"; files[`dist/${name}.js`] = "export {};\n"; files[`dist/${name}.d.ts`] = "export {};\n"; }
   for (const name of ["contracts", "store", "workbuddy", "engine", "http", "client", "ui", "cli", "mcp"]) {
     files[`src/platform/${name}.ts`] = "export {};\n";
     files[`dist/platform/${name}.js`] = "export {};\n";
@@ -89,10 +89,10 @@ async function fixture() {
     ...["deployment-paths","deployment-safety","deployment-acceptance","setup","doctor","inspect-task"].flatMap(name=>[`src/${name}.ts`,`dist/${name}.js`])])files[name]="fixture\n";
   files["dist/platform/client.d.ts"] = "export {};\n";
   for (const name of ["index.mjs", "adapter.mjs", "events.mjs", "transport.mjs", "private-path.mjs", "private-path.d.mts", "package.json", "cordis.patch.yml", "README.md", "test/adapter.test.mjs", "test/events.test.mjs", "test/transport.test.mjs"]) files[`deepseek-plugin/${name}`] = "fixture\n";
-  for (const name of ["index.html", "style.css", "app.mjs", "model.mjs", "task-link.mjs", "dispatch.mjs", "dispatch.css", "http-source.mjs", "demo-source.mjs", "fonts/plex-sans.woff2", "fonts/plex-mono.woff2", "fonts/ibmplexsans-OFL.txt", "fonts/ibmplexmono-OFL.txt"]) files[`workbench/${name}`] = "synthetic workbench asset\n";
+  for (const name of ["index.html", "style.css", "app.mjs", "model.mjs", "task-link.mjs", "dispatch.mjs", "dispatch.css", "controls.mjs", "controls.css", "http-source.mjs", "demo-source.mjs", "fonts/plex-sans.woff2", "fonts/plex-mono.woff2", "fonts/ibmplexsans-OFL.txt", "fonts/ibmplexmono-OFL.txt"]) files[`workbench/${name}`] = "synthetic workbench asset\n";
   for (const name of ["workbench-assets", "workbench-panel"]) for (const suffix of ["src/", "dist/"]) files[`${suffix}${name}.${suffix === "src/" ? "ts" : "js"}`] = "export {};\n";
   for (const name of ["WorkBuddy.Workbench.csproj","Program.cs","DesktopPolicy.cs","DesktopCommands.cs","DesktopControlPolicy.cs","app.manifest","workbench.ico","packages.lock.json","WEBVIEW2-LICENSE.txt","test/PolicyTests.csproj","test/Program.cs"]) files[`desktop/${name}`] = "synthetic desktop source fixture\n";
-  for (const name of ["build-desktop", "open-workbench", "open-workbench-router", "workbench-desktop-host", "workbench-desktop-commands", "workbench-dispatch-worker", "workbench-read-store", "package-desktop"]) files[`scripts/${name}.mjs`] = "export {};\n";
+  for (const name of ["build-desktop", "open-workbench", "open-workbench-router", "workbench-desktop-host", "workbench-desktop-commands", "workbench-dispatch-worker", "workbench-control-worker", "workbench-read-store", "package-desktop"]) files[`scripts/${name}.mjs`] = "export {};\n";
   files["desktop/app/private.dll"] = "must not enter the source gateway archive";
   files["workbench/private-notes.mjs"] = "private notes that must not ship\n";
   for (const [name, content] of Object.entries(files)) {
@@ -121,6 +121,7 @@ test("release archive uses a file allowlist and hashes every included file", asy
     assert.ok(!selected.some((name: string) => /^(?:data|outputs|node_modules)\//.test(name)));
     assert.ok(!selected.includes(".env"));
     for (const file of ["workbench/index.html", "workbench/fonts/plex-sans.woff2", "workbench/fonts/ibmplexsans-OFL.txt", "dist/workbench-assets.js", "dist/workbench-panel.js"]) assert.ok(selected.includes(file), file);
+    for (const file of ["workbench/controls.mjs", "workbench/controls.css", "scripts/workbench-control-worker.mjs", "dist/desktop-control-runtime.js"]) assert.ok(selected.includes(file), file);
     assert.ok(!selected.includes("workbench/private-notes.mjs"));
     assert.ok(!selected.includes("desktop/app/private.dll"));
     assert.ok(selected.includes("scripts/workbench-read-store.mjs"));

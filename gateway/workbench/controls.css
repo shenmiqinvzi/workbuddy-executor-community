@@ -1,0 +1,23 @@
+.task-controls {margin:24px 0 26px;padding:18px 0 20px;border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+.task-controls h3 {font-size:15px;line-height:1.4;margin:0 0 7px;font-weight:600}
+.task-controls-note,.task-controls-status {font-size:13px;line-height:1.65;color:var(--muted);margin:0;overflow-wrap:anywhere}
+.task-control-actions {display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:14px}
+.task-control-button {min-height:38px;padding:7px 13px}
+.task-control-button:disabled {opacity:.55;cursor:not-allowed}
+.task-control-observe {margin-left:auto}
+.task-control-feedback {margin-top:16px;max-width:62ch}
+.task-control-feedback[hidden] {display:none}
+.task-control-feedback label {display:block;font-size:13px;font-weight:600;margin-bottom:7px}
+.task-control-feedback textarea {display:block;width:100%;min-height:76px;padding:9px 12px;border:1px solid var(--control);border-radius:var(--radius);background:var(--surface);color:var(--text);font:inherit;line-height:1.55;resize:vertical;caret-color:var(--accent)}
+.task-control-feedback textarea:focus-visible {outline:2px solid var(--accent);outline-offset:3px}
+.task-control-submit {margin-top:14px;min-height:40px}
+.task-controls-status:not(:empty) {margin-top:12px}
+.task-control-review {margin-top:18px;max-width:68ch}
+.task-control-review[hidden] {display:none}
+.task-control-review label {display:block;font-size:13px;font-weight:600;margin:14px 0 7px}
+.task-control-review textarea,.task-control-review select {display:block;width:100%;min-height:40px;padding:9px 12px;border:1px solid var(--control);border-radius:var(--radius);background:var(--surface);color:var(--text);font:inherit;line-height:1.55}
+.task-control-review textarea {min-height:72px;resize:vertical;caret-color:var(--accent)}
+.task-control-review :is(textarea,select):focus-visible {outline:2px solid var(--accent);outline-offset:3px}
+.task-control-requirement {padding:12px 0;border-bottom:1px solid var(--border)}
+.task-control-requirement p {margin:0 0 8px;line-height:1.6;overflow-wrap:anywhere}
+@media (max-width:760px) {.task-control-observe {margin-left:0}.task-control-actions {gap:8px}}
