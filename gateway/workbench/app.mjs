@@ -1,6 +1,7 @@
 import { HttpSource } from './http-source.mjs';
 import { DemoSource, SCENARIOS } from './demo-source.mjs';
 import { taskIdFromHash } from './task-link.mjs';
+import { mountDesktopDispatch } from './dispatch.mjs';
 import { STATES, CHECKS, ACTORS, stateInfo, taskName, workspaceName, executorName, currentReview, proofs, filterRecords, formatTime, eventName } from './model.mjs';
 const $ = id => document.getElementById(id);
 function h(tag, props = {}, ...children) {
@@ -79,7 +80,7 @@ function render() {
     else
         el.removeAttribute('aria-current'); });
     $('attention-count').textContent = String(filterRecords(scoped, { group: 'attention' }).length);
-    $('page-title').textContent = ({ all: '任务工作台', attention: '待处理任务', accepted: '验收记录' })[state.filters.group];
+    if (!document.querySelector('.sheet.composing')) $('page-title').textContent = ({ all: '任务工作台', attention: '待处理任务', accepted: '验收记录' })[state.filters.group];
     $('refresh').disabled = state.busy;
     $('source-badge').className = 'source-badge' + (state.source.kind === 'demo' ? ' demo' : '');
     $('source-badge').textContent = state.source.kind === 'demo' ? '演示数据' : '已保存任务';
@@ -348,11 +349,13 @@ async function switchSource(kind, scenario = 'normal') {
     else
         state.source = new HttpSource();
     $('data-source').value = kind;
+    window.dispatchEvent(new CustomEvent('workbench-sourcechange', { detail: kind }));
     $('demo-controls').hidden = kind !== 'demo';
     updateWorkspaces();
     await refreshTasks();
 }
 buildShell();
+void mountDesktopDispatch({ onTask: async taskId => { if (state.source.kind === 'demo') await switchSource('live'); linkedTask = taskId; location.hash = 'taskId=' + encodeURIComponent(taskId); await refreshTasks(); } });
 window.addEventListener('hashchange', async () => {
     const taskId = taskIdFromHash(location.hash);
     if (!taskId) return;

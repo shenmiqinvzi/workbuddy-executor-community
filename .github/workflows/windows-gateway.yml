@@ -53,7 +53,9 @@ jobs:
           node --import ./test/support/typescript-loader.mjs --test test/dsh-transport.test.ts
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run deepseek:plugin:test
-      - name: Read-only workbench frontend checks
+      - name: Desktop dispatch agreement and recovery checks
+        run: node --import ./test/support/typescript-loader.mjs --test test/desktop-dispatch.test.ts
+      - name: Workbench frontend and private command checks
         run: node --test workbench/test/*.test.mjs
       - uses: actions/setup-dotnet@v4
         with:

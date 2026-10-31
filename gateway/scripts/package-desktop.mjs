@@ -41,5 +41,5 @@ export async function createDesktopPackage(gateway, output, version) {
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
     const gateway = path.resolve(import.meta.dirname, '..');
-    console.log(JSON.stringify(await createDesktopPackage(gateway, process.argv[2] || path.join(gateway, 'outputs/desktop-release'), '0.7.1-t7a-desktop-preview')));
+    console.log(JSON.stringify(await createDesktopPackage(gateway, process.argv[2] || path.join(gateway, 'outputs/desktop-release'), '0.7.1-t7b-desktop-preview')));
 }

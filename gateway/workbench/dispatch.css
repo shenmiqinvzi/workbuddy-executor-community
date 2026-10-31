@@ -1,0 +1,57 @@
+.dispatch-workflow[hidden] {display:none}
+.sheet.composing > :not(.page-heading):not(.dispatch-workflow) {display:none}
+.dispatch-workflow {padding-top:20px;border-top:1px solid var(--border)}
+.dispatch-back {margin-bottom:20px}
+.dispatch-steps {display:flex;gap:24px;padding-bottom:20px;margin-bottom:28px;border-bottom:1px solid var(--border);color:var(--muted)}
+.dispatch-steps [aria-current] {color:var(--text);font-weight:600}
+.dispatch-grid {display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:28px 36px;align-items:start}
+.dispatch-fields,.dispatch-review {min-width:0}
+.dispatch-workflow fieldset {padding:0;margin:0 0 32px;border:0;min-width:0}
+.dispatch-workflow legend {font-size:16px;font-weight:600;padding:0;margin-bottom:18px}
+.dispatch-field {min-width:0;margin-bottom:18px}
+.dispatch-field label {display:block;font-weight:500;margin-bottom:8px}
+.dispatch-field input,.dispatch-field select,.dispatch-field textarea {display:block;width:100%;max-width:100%;min-height:40px;padding:9px 12px;border:1px solid var(--control);border-radius:var(--radius);background:var(--surface);color:var(--text);font:inherit;line-height:1.5;caret-color:var(--accent)}
+.dispatch-field textarea {resize:vertical;min-height:80px}
+.dispatch-field textarea:focus-visible {outline:2px solid var(--accent);outline-offset:3px}
+.dispatch-field input::placeholder,.dispatch-field textarea::placeholder {color:var(--muted);opacity:1}
+.dispatch-field select:disabled {color:var(--muted);background:var(--raised)}
+.dispatch-inline {display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.dispatch-hint {font-size:12px;line-height:1.65;color:var(--muted);margin:8px 0 0;overflow-wrap:anywhere}
+.dispatch-rate {font-size:16px;line-height:1.5;font-weight:500;margin:8px 0 16px;color:var(--warning);overflow-wrap:anywhere}
+.dispatch-summary {border-left:1px solid var(--border);padding-left:24px;min-width:0}
+.dispatch-summary h2,.dispatch-review h2,.dispatch-receipt h2 {font-size:18px;line-height:1.4;margin:0 0 16px;font-weight:600}
+.dispatch-summary .dispatch-field {margin-top:24px}
+.dispatch-actions {grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:20px 0;border-top:1px solid var(--border)}
+.dispatch-primary.button {background:var(--accent);border-color:var(--accent);color:var(--surface)}
+.heading-tools .dispatch-primary.button {width:auto;flex-shrink:0;padding:6px 12px;white-space:nowrap}
+.dispatch-primary.button:disabled {background:var(--raised);border-color:var(--control);color:var(--muted)}
+.dispatch-primary.button:not(:disabled):hover {background:#155768;border-color:#155768}
+.dispatch-notice {padding:12px 16px;margin-bottom:24px;border:1px solid var(--control);border-radius:var(--radius);color:var(--muted);overflow-wrap:anywhere}
+.dispatch-notice.is-error {color:var(--negative);border-color:var(--negative)}
+.dispatch-advanced {padding:14px 0;border-top:1px solid var(--border)}
+.dispatch-advanced summary {cursor:pointer;font-weight:500}
+.dispatch-advanced[open] summary {margin-bottom:18px}
+.dispatch-objective {white-space:pre-wrap;max-width:72ch;line-height:1.75;margin-bottom:24px}
+.dispatch-facts {display:grid;grid-template-columns:100px minmax(0,1fr);gap:12px 18px;line-height:1.65;margin:24px 0}
+.dispatch-facts dt {color:var(--muted)}
+.dispatch-facts dd {margin:0;overflow-wrap:anywhere}
+.dispatch-review-section {padding:22px 0;border-top:1px solid var(--border)}
+.dispatch-review-section h3 {font-size:14px;font-weight:600;margin:0 0 12px}
+.dispatch-review-section ul {padding-left:20px;margin:0;line-height:1.75;overflow-wrap:anywhere}
+.dispatch-receipt {max-width:800px;padding:12px 0 32px}
+.dispatch-receipt .technical,.dispatch-review .technical {font-family:'IBM Plex Mono',monospace;font-size:12px;overflow-wrap:anywhere}
+.dispatch-workflow :focus-visible {outline-offset:3px}
+@media(max-width:1020px) {
+ .dispatch-grid {grid-template-columns:minmax(0,1fr);gap:20px}
+ .dispatch-summary {border-left:0;border-top:1px solid var(--border);padding:24px 0 0}
+ .dispatch-inline {grid-template-columns:minmax(0,1fr)}
+}
+@media(max-width:640px) {
+ .sheet.composing .page-heading {flex-direction:column;align-items:stretch}
+ .sheet.composing .heading-tools {justify-content:flex-end;gap:8px}
+ .dispatch-steps {gap:16px;font-size:12px}
+ .dispatch-actions {align-items:stretch;flex-direction:column}
+ .dispatch-facts {grid-template-columns:minmax(0,1fr);gap:4px}
+ .dispatch-facts dd {margin-bottom:12px}
+ .dispatch-field input,.dispatch-field select,.dispatch-workflow .button {min-height:44px}
+}
