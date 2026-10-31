@@ -75,6 +75,15 @@ test("failed independent semantic review is preserved and cannot be accepted",as
   const current=f.current();await assert.rejects(()=>f.session.preview({kind:"accept",taskId:current.taskId,attemptId:current.attemptId,revision:current.revision,feedback:null,reviewId:review.reviewId,inspectionFiles:null,semanticChecks:null}),{code:"ACTION_UNAVAILABLE"});
   assert.equal(f.current().state,"needs_review");
 });
+test("a rejected inspection permits an explicit corrected review without hiding saved checks",async t=>{
+  const f=await setup(t,false,true);await f.finish();const task=f.current();
+  const preview=await f.session.preview({kind:"review",taskId:task.taskId,attemptId:task.attemptId,revision:task.revision,feedback:"Inspect the selected file.",reviewId:null,inspectionFiles:[path.join(f.root,"outside-scope.js")],semanticChecks:[{checkId:"behavior",status:"passed"}]});
+  const receipt=await f.session.commit(preview.draft.requestId,preview.digest);await runDesktopControlWorker(f.config,receipt.requestId,f.env);
+  assert.equal(f.controlJournal.receipt(receipt.requestId)?.state,"rejected");assert.equal(f.service.listReviews(task.taskId).length,0);
+  const current=f.current(),retry=await f.session.preview({kind:"review",taskId:current.taskId,attemptId:current.attemptId,revision:current.revision,feedback:"Inspected the source.",reviewId:null,inspectionFiles:[f.source],semanticChecks:[{checkId:"behavior",status:"passed"}]});
+  const corrected=await f.session.commit(retry.draft.requestId,retry.digest);await runDesktopControlWorker(f.config,corrected.requestId,f.env);
+  assert.equal(f.controlJournal.receipt(corrected.requestId)?.state,"succeeded");assert.equal(f.service.listReviews(task.taskId).length,1);
+});
 test("desktop review executes only the original command and binds it to the current review",async t=>{
   const f=await setup(t,false,true,true);await f.finish();const task=f.current();
   const preview=await f.session.preview({kind:"review",taskId:task.taskId,attemptId:task.attemptId,revision:task.revision,feedback:"Read the source and checked the original behavior.",reviewId:null,inspectionFiles:[f.source],semanticChecks:[{checkId:"behavior",status:"passed"}]});

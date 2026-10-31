@@ -128,7 +128,9 @@ export async function runDesktopControlWorker(config:Config,requestId:string,env
   } catch(error) {
     const operation=store?.operations.get(draft.operationId);
     const code=error instanceof AdmissionError?error.code:"CONTROL_FAILED";
-    const safeRejection=!entered||["STALE_ATTEMPT","STALE_REVISION"].includes(code)||operation?.state==="rejected";
-    journal.finish(requestId,safeRejection?"rejected":"outcome_unknown",safeRejection?code:"OUTCOME_UNKNOWN",safeRejection?"操作未通过当前状态核验，请刷新后重新核对。":"原操作结果尚未明确，请查看原任务与回执，不要重复操作。");
+    const children=draft.kind==="review"?store?.operations.forTask(draft.taskId).filter(item=>item.operationId.startsWith(draft.operationId+":"))??[]:[];
+    const rejectedReview=children.some(item=>item.state==="rejected")&&children.every(item=>item.state==="rejected"||item.state==="succeeded");
+    const safeRejection=!entered||["STALE_ATTEMPT","STALE_REVISION"].includes(code)||operation?.state==="rejected"||rejectedReview;
+    journal.finish(requestId,safeRejection?"rejected":"outcome_unknown",safeRejection?code:"OUTCOME_UNKNOWN",safeRejection?(rejectedReview?"审查未完成，已记录的检查会保留；请刷新后重新核对。":"操作未通过当前状态核验，请刷新后重新核对。 "):"原操作结果尚未明确，请查看原任务与回执，不要重复操作。");
   } finally {store?.close();}
 }

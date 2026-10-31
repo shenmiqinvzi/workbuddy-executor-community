@@ -513,13 +513,13 @@
     },
     {
       "path": "dist/desktop-control-runtime.js",
-      "sha256": "11da0477c6ecb49f1abef3d6205030fa764748b469023a8cfdf58ed3c36972c6",
-      "bytes": 13506
+      "sha256": "1a27b83a7866b54899f7f252ac6ae9da981ce91fe459ef416a436b4d248c1a67",
+      "bytes": 13960
     },
     {
       "path": "dist/desktop-control-runtime.js.map",
-      "sha256": "33d27ed4a7ada2424db80ce813bd6417efdf121ceb2b40b8b2af59bab536b126",
-      "bytes": 12944
+      "sha256": "a411183f5d611b9c5b809e564be01b1510e4f55e0f82f0ec44349324b41d541f",
+      "bytes": 13453
     },
     {
       "path": "dist/desktop-control.d.ts",
@@ -1888,8 +1888,8 @@
     },
     {
       "path": "src/desktop-control-runtime.ts",
-      "sha256": "1ea839232de9c865bee09cd2658e8ed8012188961b98c3673f8acac22abebcde",
-      "bytes": 12216
+      "sha256": "99d64790432fd221eba36288bbfb6725c26ba061edd777e935e7dbd2c93bc6a6",
+      "bytes": 12626
     },
     {
       "path": "src/desktop-control.ts",
@@ -2278,8 +2278,8 @@
     },
     {
       "path": "test/desktop-control-runtime.test.ts",
-      "sha256": "e3344bf9dbfe869a5f258300a585339440d7be7da4eed72045dcaf1ad3fa8586",
-      "bytes": 10076
+      "sha256": "3866a760abc55bf28a8188f2c535fae41318019771deb457dbac4155188463dc",
+      "bytes": 11393
     },
     {
       "path": "test/desktop-control.test.ts",
