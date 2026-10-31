@@ -29,7 +29,7 @@ T7B 已由 PR #20 合入 main `144a520`。T7C 使用该已验证运行代码，�
 | 选择 | 用户明确确认 WorkBuddy / local-workbuddy / workbuddy-native，精确模型 `deepseek-v4.1-flash`，原生未提供推理档位 |
 | 费率 | 新只读观察为 `x0.00`；实际总费用和模型 API 请求数未知 |
 | 原约定 | 独立项目，仅允许改 `src/range.mjs`，只读测试；最多 1 轮、600 秒，不自动续轮 |
-| 原始错误 | 闭区间判断错误使用 `value >= min || value <= max`，派工前测试真实失败 |
+| 原始错误 | 在 `value >= min` 与 `value <= max` 之间错误使用逻辑或，派工前测试真实失败 |
 | 实际交付 | 唯一源码文件改为同时比较上下界；原测试字节哈希不变 |
 | 执行来源 | 真实 `desktop_queue` 报告认证、原生 idle 停止证据；1 个 attempt |
 | 独立验证 | 原约定精确 JSON CommandSpec，退出码 0，cleanupConfirmed=true；8 项含区间内外、两端点、负区间和单点区间 |
