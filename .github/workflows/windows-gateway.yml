@@ -29,6 +29,8 @@ jobs:
         run: npm ci
       - name: Build gateway
         run: npm run build
+      - name: Verify fresh MCP entry and persisted task identity
+        run: node --import ./test/support/typescript-loader.mjs --test test/mcp-entry.test.ts
       - name: Verify committed compiler output
         run: |
           git diff --exit-code -- dist

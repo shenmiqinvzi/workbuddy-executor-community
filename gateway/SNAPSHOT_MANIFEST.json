@@ -2247,6 +2247,11 @@
       "bytes": 2416
     },
     {
+      "path": "test/mcp-entry.test.ts",
+      "sha256": "f5f1b4f0223567c21e990054d930e67346f8dfe68828bd6b94f0c076824a2765",
+      "bytes": 4357
+    },
+    {
       "path": "test/native-desktop-trigger.test.ts",
       "sha256": "95f7235c8b8c25b65d6bcf51c6d7e8e61f8c647aec13023ca8f98022f770c3ad",
       "bytes": 39705
