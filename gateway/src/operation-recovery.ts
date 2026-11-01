@@ -94,6 +94,15 @@ export class RecoveryStore {
       const history = this.history(operation.taskId);
       return { schemaVersion: "operation-recovery-1" as const, operation, operationToken: operationDigest(operation),
         revision: task?.revision ?? null, attemptId: task?.attemptId ?? null, evidenceToken: operationDigest({ proof: proof.token, history }),
+        preparation: {
+          phaseRecorded: operation.phaseVersion === 1,
+          enteredAt: operation.preparationEnteredAt ?? null,
+          completedAt: operation.preparationCompletedAt ?? null,
+          dispatchEnteredAt: operation.dispatchEnteredAt ?? null,
+          reservedSessionId: operation.preparationSessionId ?? null,
+          incomplete: !!operation.preparationEnteredAt && !operation.preparationCompletedAt,
+          note: "Recorded gateway phases only; missing markers or an incomplete preparation do not prove native requests stopped or had no effects."
+        },
         runEvidenceDigest: proof.runEvidenceDigest ?? null,
         available: this.closure(operation.taskId) ? [] : [ ...(proof.reconcile && unknownStates.includes(operation.state) && !this.forOperation(targetOperationId) ? ["reconcile"] : []), ...(proof.close && task?.state !== "accepted" ? ["close"] : []) ],
         proof: { reconcile: proof.reconcile, close: proof.close }, capacity: this.store.operations.occupant(), history,

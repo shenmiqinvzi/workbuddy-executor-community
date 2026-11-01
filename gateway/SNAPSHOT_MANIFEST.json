@@ -853,18 +853,18 @@
     },
     {
       "path": "dist/operation-recovery.d.ts",
-      "sha256": "187c3b8ecaa2051ca057ca22fcb3dbb8a8fe100c0d9d09267a6ee27615ec7de9",
-      "bytes": 2451
+      "sha256": "a266de39bab5660ce6fb7c7e8163182565e7efecbec7ee5baa83261bac4e143d",
+      "bytes": 2750
     },
     {
       "path": "dist/operation-recovery.js",
-      "sha256": "1215f084ff8c8b7b10c7e9c7cb27dc34d0e64a3957230122393b1f9a5ef325eb",
-      "bytes": 13779
+      "sha256": "a6bf811380357c5a3e004a8b1ae5ec1f591a37c12cada6f8a053a7765051845d",
+      "bytes": 14457
     },
     {
       "path": "dist/operation-recovery.js.map",
-      "sha256": "180f7bda279dd85af6666a8f1ea29cc3451f9f6505d4aca1d941045e9b91a4b9",
-      "bytes": 12353
+      "sha256": "9dba8644b634419d432a68a2ed0ccd76cee8398d12e8a7def4d9045494c6aec7",
+      "bytes": 12692
     },
     {
       "path": "dist/persistent-service.d.ts",
@@ -1063,8 +1063,8 @@
     },
     {
       "path": "dist/recovery-console.d.ts",
-      "sha256": "2a5e3738d436401f84286d338588e9724aa12e4560bef49eee5468912870a1ee",
-      "bytes": 1112
+      "sha256": "a99bcbca6e5b91b7eec2929d1e483ba0f05f040261631b0742c4ffa1e8533b99",
+      "bytes": 1375
     },
     {
       "path": "dist/recovery-console.js",
@@ -1198,8 +1198,8 @@
     },
     {
       "path": "dist/task-application-service.d.ts",
-      "sha256": "3df66ab762badfaad309542061b16b494c70ceab30dbc2d6ed24b002ae5ce790",
-      "bytes": 34096
+      "sha256": "1788373ef2b34953642f3ba10c4aab3d6e63cd663c59218c008e701da424e9ae",
+      "bytes": 34694
     },
     {
       "path": "dist/task-application-service.js",
@@ -1533,8 +1533,8 @@
     },
     {
       "path": "docs/OPERATION_RECOVERY.md",
-      "sha256": "181cad0858476b9ca48eaf8cf801f2f6061d50b0c29ed00c3cad8974844ca107",
-      "bytes": 3231
+      "sha256": "430cec442d86bd4993cdd945608de65d9574784a6f0bac31e0c091218d92469f",
+      "bytes": 3634
     },
     {
       "path": "docs/PORTABILITY_VERIFICATION_2026-10-18.md",
@@ -2003,8 +2003,8 @@
     },
     {
       "path": "src/operation-recovery.ts",
-      "sha256": "6021ccd35a5782c7c2dc7b24b9ac0115cb1e3e679a48a860aebdfaa0c231902a",
-      "bytes": 13982
+      "sha256": "e696062b1237d4409c133a704b8b4054041628291550c15283896e2acecb9b5e",
+      "bytes": 14574
     },
     {
       "path": "src/persistent-service.ts",
@@ -2468,8 +2468,8 @@
     },
     {
       "path": "test/t4b-operation-recovery.test.ts",
-      "sha256": "8bfbe56ff04a794a65397bb0c051b44c9c17a0ce1af02458bfd317133e0905ed",
-      "bytes": 23701
+      "sha256": "42c320e39278ffe58b0bc66c53a97775a2b0885809d48ebfe3ca054d034b5cd8",
+      "bytes": 24733
     },
     {
       "path": "test/task-application-service.test.ts",

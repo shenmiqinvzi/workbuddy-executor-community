@@ -44,6 +44,15 @@ export declare class RecoveryStore {
         revision: string | null;
         attemptId: string | null;
         evidenceToken: string;
+        preparation: {
+            phaseRecorded: boolean;
+            enteredAt: string | null;
+            completedAt: string | null;
+            dispatchEnteredAt: string | null;
+            reservedSessionId: string | null;
+            incomplete: boolean;
+            note: string;
+        };
         runEvidenceDigest: string | null;
         available: string[];
         proof: {
