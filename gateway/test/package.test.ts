@@ -5,7 +5,7 @@ import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
 import { readZip } from "./support/read-zip.mjs";
-import { collectReleaseFiles, createPackage, createSkillPackage } from "../scripts/package.mjs";
+import { assertSafeContent, collectReleaseFiles, createPackage, createSkillPackage } from "../scripts/package.mjs";
 import { createDesktopPackage } from "../scripts/package-desktop.mjs";
 
 
@@ -77,7 +77,7 @@ async function fixture() {
   files["src/workspace-protection.ts"] = "export {};\n"; files["dist/workspace-protection.js"] = "export {};\n"; files["dist/workspace-protection.d.ts"] = "export {};\n";
   files["scripts/dsh-host-check.mjs"] = "// isolated host verification fixture\n";
   for (const name of ["dsh-bindings", "dsh-client", "dsh-coordinator", "dsh-runtime", "dsh-rate-verifier", "dsh-inspect"]) { files[`src/${name}.ts`] = "export {};\n"; files[`dist/${name}.js`] = "export {};\n"; files[`dist/${name}.d.ts`] = "export {};\n"; }
-  for (const name of ["desktop-dispatch", "desktop-dispatch-journal", "desktop-dispatch-runtime"]) { files[`src/${name}.ts`] = "export {};\n"; files[`dist/${name}.js`] = "export {};\n"; files[`dist/${name}.d.ts`] = "export {};\n"; }
+  for (const name of ["desktop-dispatch", "desktop-dispatch-journal", "desktop-dispatch-runtime", "desktop-control", "desktop-control-journal", "desktop-control-runtime"]) { files[`src/${name}.ts`] = "export {};\n"; files[`dist/${name}.js`] = "export {};\n"; files[`dist/${name}.d.ts`] = "export {};\n"; }
   for (const name of ["contracts", "store", "workbuddy", "engine", "http", "client", "ui", "cli", "mcp"]) {
     files[`src/platform/${name}.ts`] = "export {};\n";
     files[`dist/platform/${name}.js`] = "export {};\n";
@@ -89,10 +89,10 @@ async function fixture() {
     ...["deployment-paths","deployment-safety","deployment-acceptance","setup","doctor","inspect-task"].flatMap(name=>[`src/${name}.ts`,`dist/${name}.js`])])files[name]="fixture\n";
   files["dist/platform/client.d.ts"] = "export {};\n";
   for (const name of ["index.mjs", "adapter.mjs", "events.mjs", "transport.mjs", "private-path.mjs", "private-path.d.mts", "package.json", "cordis.patch.yml", "README.md", "test/adapter.test.mjs", "test/events.test.mjs", "test/transport.test.mjs"]) files[`deepseek-plugin/${name}`] = "fixture\n";
-  for (const name of ["index.html", "style.css", "app.mjs", "model.mjs", "task-link.mjs", "dispatch.mjs", "dispatch.css", "http-source.mjs", "demo-source.mjs", "fonts/plex-sans.woff2", "fonts/plex-mono.woff2", "fonts/ibmplexsans-OFL.txt", "fonts/ibmplexmono-OFL.txt"]) files[`workbench/${name}`] = "synthetic workbench asset\n";
+  for (const name of ["index.html", "style.css", "app.mjs", "model.mjs", "task-link.mjs", "dispatch.mjs", "dispatch.css", "attention.mjs", "controls.mjs", "controls.css", "http-source.mjs", "demo-source.mjs", "fonts/plex-sans.woff2", "fonts/plex-mono.woff2", "fonts/ibmplexsans-OFL.txt", "fonts/ibmplexmono-OFL.txt"]) files[`workbench/${name}`] = "synthetic workbench asset\n";
   for (const name of ["workbench-assets", "workbench-panel"]) for (const suffix of ["src/", "dist/"]) files[`${suffix}${name}.${suffix === "src/" ? "ts" : "js"}`] = "export {};\n";
   for (const name of ["WorkBuddy.Workbench.csproj","Program.cs","DesktopPolicy.cs","DesktopCommands.cs","DesktopControlPolicy.cs","app.manifest","workbench.ico","packages.lock.json","WEBVIEW2-LICENSE.txt","test/PolicyTests.csproj","test/Program.cs"]) files[`desktop/${name}`] = "synthetic desktop source fixture\n";
-  for (const name of ["build-desktop", "open-workbench", "open-workbench-router", "workbench-desktop-host", "workbench-desktop-commands", "workbench-dispatch-worker", "workbench-read-store", "package-desktop"]) files[`scripts/${name}.mjs`] = "export {};\n";
+  for (const name of ["build-desktop", "open-workbench", "open-workbench-router", "workbench-desktop-host", "workbench-desktop-commands", "workbench-dispatch-worker", "workbench-control-worker", "workbench-read-store", "package-desktop"]) files[`scripts/${name}.mjs`] = "export {};\n";
   files["desktop/app/private.dll"] = "must not enter the source gateway archive";
   files["workbench/private-notes.mjs"] = "private notes that must not ship\n";
   for (const [name, content] of Object.entries(files)) {
@@ -121,6 +121,7 @@ test("release archive uses a file allowlist and hashes every included file", asy
     assert.ok(!selected.some((name: string) => /^(?:data|outputs|node_modules)\//.test(name)));
     assert.ok(!selected.includes(".env"));
     for (const file of ["workbench/index.html", "workbench/fonts/plex-sans.woff2", "workbench/fonts/ibmplexsans-OFL.txt", "dist/workbench-assets.js", "dist/workbench-panel.js"]) assert.ok(selected.includes(file), file);
+    for (const file of ["workbench/controls.mjs", "workbench/controls.css", "workbench/attention.mjs", "scripts/workbench-control-worker.mjs", "dist/desktop-control-runtime.js"]) assert.ok(selected.includes(file), file);
     assert.ok(!selected.includes("workbench/private-notes.mjs"));
     assert.ok(!selected.includes("desktop/app/private.dll"));
     assert.ok(selected.includes("scripts/workbench-read-store.mjs"));
@@ -214,6 +215,28 @@ test("release refuses a populated example secret and removes partial output", as
     await assert.rejects(createPackage(value.source, value.output, "0.2.0"), /Nonempty secret/);
     assert.deepEqual(await fs.readdir(value.output), []);
   } finally { await fs.rm(value.root, { recursive: true, force: true }); }
+});
+
+test("example configuration checks cover every template, not just .env.example", () => {
+  assert.throws(() => assertSafeContent("WINDOWS_ENV.example", "WORKBUDDY_CLIENT_SECRET=real-value\n"), /Nonempty secret in example configuration: WORKBUDDY_CLIENT_SECRET/);
+  assert.throws(() => assertSafeContent("config/.env.production", "API_KEY=real-value\n"), /Nonempty secret/);
+  assert.doesNotThrow(() => assertSafeContent("WINDOWS_ENV.example", "WORKBUDDY_CLIENT_SECRET=\nWORKBUDDY_ACCESS_TOKEN=\"\"\n"));
+  // Commented documentation lines and placeholder values never carry a secret.
+  assert.doesNotThrow(() => assertSafeContent("WINDOWS_ENV.example", "# WORKBUDDY_QUOTA_API_KEY=YOUR_PRIVATE_API_KEY\nWORKBUDDY_DSH_RATE_API_KEY=<existing-private-key>\n"));
+  // A path to credentials is not the credential itself.
+  assert.doesNotThrow(() => assertSafeContent(".env.example", "WORKBUDDY_TOKEN_FILE=./data/credentials.json\n"));
+  assert.doesNotThrow(() => assertSafeContent("docs/PROGRESS.md", "WORKBUDDY_CLIENT_SECRET=<user-set>\n"));
+});
+
+test("private machine paths are rejected on POSIX and Windows, placeholders still pass", () => {
+  const join = (...parts: string[]) => parts.join("/");
+  const win = (...parts: string[]) => parts.join("\\");
+  for (const content of [join("", "home", "alice", "private", "run.log"), win("C:", "Users", "alice", "private", "run.log"), join("", "Users", "alice", "private", "run.log"), join("", "private", "var", "folders", "xy", "run.log")]) {
+    assert.throws(() => assertSafeContent("docs/note.md", content), /Private machine path/, content);
+  }
+  for (const content of [win("C:", "Users", "<user>", "private", "run.log"), win("C:", "Users", "Public", "run.log"), win("C:", "Users", "example", "run.log"), join("", "Users", "example", "run.log"), join("", "home", "YOUR_USER", "run.log")]) {
+    assert.doesNotThrow(() => assertSafeContent("docs/note.md", content), content);
+  }
 });
 
 test("release refuses token-like content in an allowed source file", async () => {

@@ -109,6 +109,8 @@ test("R05: closing requires the original stop identity and never accepts the rep
 });
 test("R06: confirmed preparation without dispatch can close without inventing an attempt or native stop", async t => {
   const f = fixture(t); await f.preparation(true);
+  const before = f.service.readOperationRecovery("send");
+  assert.equal(before.preparation.incomplete, false); assert.ok(before.preparation.completedAt);
   const decision = f.resolve("close"); assert.equal(decision.proof, "not_dispatched");
   assert.equal(f.store.get("task")!.attemptId, undefined); assert.equal(f.store.get("task")!.state, "cancelled"); assert.equal(f.store.operations.occupant(), null);
   assert.equal(fs.existsSync(f.config.runsDir!), false); assert.equal(f.store.get("task")!.runEvidenceDigest, undefined);
@@ -118,6 +120,20 @@ test("R07: incomplete and historical preparation fields never prove no dispatch"
   const record = f.store.operations.get("send")!; delete record.phaseVersion; delete record.effectStartedAt;
   f.sql.prepare("UPDATE task_operations SET body_json=? WHERE operation_id='send'").run(JSON.stringify(record));
   assert.throws(() => f.resolve("close"), { code: "RECOVERY_UNPROVEN" }); assert.equal(f.store.operations.occupant()!.taskId, "task");
+});
+test("incomplete native preparation is visible but never grants recovery", async t => {
+  const f = fixture(t);
+  await f.preparation(false);
+  const op = f.store.operations.get("send")!;
+  // Simulate the persisted native adapter boundary without inventing a return receipt.
+  f.sql.prepare("UPDATE task_operations SET body_json=? WHERE operation_id='send'").run(JSON.stringify({ ...op, preparationEnteredAt: "2026-10-31T17:03:11.319Z", preparationSessionId: "reserved-session" }));
+  const view = f.service.readOperationRecovery("send");
+  assert.equal(view.preparation.incomplete, true);
+  assert.equal(view.preparation.reservedSessionId, "reserved-session");
+  assert.equal(view.preparation.completedAt, null);
+  assert.match(view.preparation.note, /do not prove/);
+  assert.deepEqual(view.available, []);
+  assert.equal(f.store.operations.occupant()!.taskId, "task");
 });
 test("R08: a suspended original call cannot revive a workflow closed before preparation", async t => {
   const f = fixture(t); let release!: () => void;

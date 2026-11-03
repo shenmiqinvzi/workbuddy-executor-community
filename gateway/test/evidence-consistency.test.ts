@@ -177,3 +177,14 @@ test('run task and session identity changes invalidate the persisted evidence', 
     }
   } finally { f.store.close(); }
 });
+
+test("evidence identity ignores poll timestamps but tracks stop transitions", () => {
+  const base = { taskId: "fixture-task", attemptId: "run-00000000-0000-0000-0000-000000000000", sessionId: "fixture-session", driver: "desktop-queue", runtimeSource: "desktop_queue", status: "needs_review", text: "TASK_STATUS: completed", updatedAt: "2026-11-02T08:00:00.000Z" };
+  const control = { state: "stop_unconfirmed", requestedAt: "2026-11-02T07:49:31.336Z", checkedAt: "2026-11-02T08:00:00.000Z", error: "stop_unconfirmed: owned command cleanup lacks evidence" };
+  type Snap = Parameters<typeof runEvidenceDigestOf>[0];
+  const digest = (patch: Record<string, unknown>) => runEvidenceDigestOf({ ...base, ...patch } as unknown as Snap);
+  const first = digest({ stopControl: control });
+  assert.equal(digest({ stopControl: { ...control, checkedAt: "2026-11-02T08:05:00.000Z" } }), first, "a poll timestamp must not move the evidence identity");
+  assert.notEqual(digest({ stopControl: { ...control, state: "stopped" } }), first, "a stop transition must move the evidence identity");
+  assert.notEqual(digest({ stopControl: { ...control, acknowledgedAt: "2026-11-02T08:01:00.000Z" } }), first, "an acknowledgement must move the evidence identity");
+});

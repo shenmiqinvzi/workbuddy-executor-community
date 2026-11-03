@@ -8,6 +8,8 @@ T3c 更新：任务 stage-2 DTO 保持原样，另新增独立 `quota-1` 的 GET
 
 积分资源使用另一条只读 GET `/workbench/v1/resources/credit-balances` 和 `credit-balance-1`，见[积分说明](T3C_CREDIT_BALANCE.md)。它读取源服务缓存汇总，不混合 token 与 credit，也不以最新成员时间代表全池实时状态。
 
+执行容量使用第三条只读 GET `/workbench/v1/resources/capacity` 和 `capacity-1`,返回 `{schemaVersion:"workbuddy-executor/capacity-1", readOnly:true, snapshotOnly:true, limit:1, occupied:{taskId,executor,operationId}|null, observedAt}`。它只读 `workflow_capacity` 的唯一一行,不占用、不释放、不写任何任务事实;读存储失败返回 503 `RESOURCE_STORE_UNAVAILABLE`,不把"没读到"说成"容量空闲"。stage-2 的 `health.capacity.occupiedByTaskId` 仍恒为 `null`——该字段属于 stage-2,本资源不改动它,面板也不拿它当容量来源。见[T7D 不确定性围栏](T7D_P0_2_UNCERTAINTY_FENCE.md)。
+
 更新日期:2026-10-25。对应实现:`gateway/src/workbench-http.ts`、`gateway/src/task-view-stage.ts`、`gateway/src/task-application-service.ts` 的只读查询、`gateway/src/task-store.ts` 的持久任务事件/revision(T2)。契约依据:[INTERFACE_CONTRACT.md](INTERFACE_CONTRACT.md)。本文描述**本阶段**实际交付的能力与限制;完整 `workbuddy-executor/vnext-1` 契约的其余部分仍待后续阶段实现,不得把本阶段响应当作完整 TaskView。
 
 ## 1. 阶段响应与完整目标 TaskView 的区别
@@ -79,6 +81,7 @@ T3c 更新：任务 stage-2 DTO 保持原样，另新增独立 `quota-1` 的 GET
 | 方法与路径 | 状态 | 说明 |
 |---|---|---|
 | GET `/workbench/v1/health` | 200 | `{schemaVersion, ready, runtime, capacity, modelPolicy, capabilities, unavailable}`。`ready` 仅表示本进程共享服务已打开存储;`capabilities.nativePermissionResponse/nativeSessionNavigation` 恒 `false`(未独立验证);`modelPolicy.nativeModelBound` 恒 `false`(无已验证模型绑定);`capacity.occupiedByTaskId` 为 `null`(排他租约属 T4,不猜测占用者)。健康检查不派工 |
+| GET `/workbench/v1/resources/capacity` | 200 | **T7D 新增**:`capacity-1` 容量快照,见上文。不接受查询参数(带参数→400 `INVALID_RESOURCE_QUERY`);读存储失败→503 `RESOURCE_STORE_UNAVAILABLE`;GET 不占用、不释放容量 |
 | GET `/workbench/v1/tasks?limit=&afterTaskId=` | 200 | `{schemaVersion, unavailable, tasks: StageListItem[], nextAfterTaskId}`。每个条目是二选一:成功 `{ok:true, taskId, view: StageTaskView}`;该任务投影失败时保留原样 `{ok:false, taskId, code, field, message}`(如 `state_corrupt`),绝不抹成空视图。页级失败(存储不可读、非法游标)仍走错误 envelope,`store_unavailable`→503、`invalid_cursor`→400,HTTP 错误码大写(`STORE_UNAVAILABLE`),服务层错误码小写(`store_unavailable`) |
 | GET `/workbench/v1/tasks/:taskId` | 200 | 单个 `StageTaskView` 快照 |
 | GET `/workbench/v1/tasks/:taskId/events?afterEventId=&limit=` | 200 | **T2 已交付**:`{events: Event[], nextEventId: number}`。Event 含 `eventId/attemptId/type/occurredAt/observedAt/actor/payload/sourceRef`(payload 原样 JSON;sourceRef 仅在事件来自可去重来源时非 null)。游标语义见 §2"事件流分页";`afterEventId` 非法→400 `INVALID_CURSOR`;任务不存在→404 `TASK_NOT_FOUND`。GET 不写库、不镜像、不初始化 |

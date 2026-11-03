@@ -10,6 +10,7 @@ import { CreditBalanceStore } from "./credit-balance.js";
 import { OperationAdmission } from "./operation-admission.js";
 import { TaskReviews } from "./task-reviews.js";
 import { RecoveryStore } from "./operation-recovery.js";
+import { NativeStopDeclarations } from "./native-stop-declaration.js";
 import { DshBindingStore } from "./dsh-bindings.js";
 import { WorkspaceProtection } from "./workspace-protection.js";
 
@@ -161,6 +162,7 @@ export class TaskStore {
   readonly recoveries: RecoveryStore;
   readonly workspaceProtection: WorkspaceProtection;
   readonly reviews: TaskReviews;
+  readonly stopDeclarations: NativeStopDeclarations;
 
   constructor(readonly file: string) {
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
@@ -281,6 +283,7 @@ export class TaskStore {
       CREATE UNIQUE INDEX IF NOT EXISTS task_events_source_ref ON task_events(task_id, source_ref) WHERE source_ref IS NOT NULL;
     `);
     this.recoveries = new RecoveryStore(this.db, this);
+    this.stopDeclarations = new NativeStopDeclarations(this.db, this);
     this.operations = new OperationAdmission(this.db, this);
     this.workspaceProtection = new WorkspaceProtection(this.db, file);
     this.reviews = new TaskReviews(this.db, this);

@@ -198,7 +198,7 @@ internal sealed class WorkbenchWindow : Form
         try
         {
             if (origin is null || !DesktopControlPolicy.IsTrustedPage(origin, web.CoreWebView2.Source)) throw new DesktopCommandError("UNTRUSTED_PAGE", "此页面不能调用桌面操作。");
-            if (e.Request.Method == "GET") reply = new { ok = true, value = new { available = true, confirmation = "native" } };
+            if (e.Request.Method == "GET") reply = new { ok = true, value = new { available = true, confirmation = "native", controls = Environment.GetEnvironmentVariable("WORKBUDDY_DESKTOP_DISPATCH_ENABLED") == "1" } };
             else
             {
                 if (!ready || commands is null) throw new DesktopCommandError("DESKTOP_NOT_READY", "本地连接尚未就绪，请稍后重试。");
@@ -232,6 +232,18 @@ internal sealed class WorkbenchWindow : Form
                         var draft = await commands.CallAsync("review", request.Parameters);
                         if (!DesktopDispatchConfirmation.Show(this, draft)) throw new DesktopCommandError("CONFIRMATION_CANCELLED", "尚未派工，可返回继续核对约定。");
                         result = await commands.CallAsync("commit", request.Parameters);
+                    }
+                    finally { confirming = false; }
+                }
+                else if (request.Action == "control")
+                {
+                    if (confirming) throw new DesktopCommandError("CONFIRMATION_BUSY", "请先完成当前确认窗口。");
+                    confirming = true;
+                    try
+                    {
+                        var draft = await commands.CallAsync("control_review", request.Parameters);
+                        if (!DesktopControlConfirmation.Show(this, draft)) throw new DesktopCommandError("CONFIRMATION_CANCELLED", "尚未执行操作，可返回继续核对。");
+                        result = await commands.CallAsync("control_commit", request.Parameters);
                     }
                     finally { confirming = false; }
                 }

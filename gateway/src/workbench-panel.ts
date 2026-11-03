@@ -1,11 +1,30 @@
 import type { TaskStore } from "./task-store.js";
 import { readTaskProjection } from "./task-view-reader.js";
-import { stageTaskViewFromProjection } from "./task-view-stage.js";
+import { stageTaskViewFromProjection, type StageTaskView } from "./task-view-stage.js";
+import { settleDispatch, type DispatchLease } from "./dispatch-settlement.js";
 
 export const PANEL_SCHEMA = "workbuddy-executor/panel-1" as const;
 
+/** process.kill(pid,0) probe: true = alive, false = exited (ESRCH), null = the
+ * process table could not be inspected. A null never proves anything. */
+function processAlive(pid: number): boolean | null {
+  try { process.kill(pid, 0); return true; } catch (error) { return (error as NodeJS.ErrnoException)?.code === "ESRCH" ? false : null; }
+}
+
+/** Attach R12 dispatch-lease evidence to the view. A read failure or a missing
+ * row leaves the fields absent — absence is "not read here", never "healthy". */
+function withDispatchLease(view: StageTaskView, taskId: string, leaseReader?: (taskId: string) => DispatchLease | null): StageTaskView {
+  if (!leaseReader) return view;
+  try {
+    const lease = leaseReader(taskId);
+    if (!lease) return view;
+    const settlement = settleDispatch(lease, { now: Date.now(), alive: processAlive });
+    return { ...view, dispatchLease: { ...lease, ...settlement }, runOrphaned: settlement.settlement === "abandoned" };
+  } catch { return view; }
+}
+
 /** A separate, additive read DTO. Stage-2 retains its existing meaning. */
-export function readPanelTask(store: TaskStore, runsDir: string, taskId: string, detail = true) {
+export function readPanelTask(store: TaskStore, runsDir: string, taskId: string, detail = true, leaseReader?: (taskId: string) => DispatchLease | null) {
   if (!taskId || taskId.length > 200) return { ok: false as const, taskId, code: "invalid_task_id", field: "taskId", message: "Use a task identifier from the task list." };
   const projection = readTaskProjection({ store, runsDir }, taskId);
   if (!projection.ok) return projection;
@@ -31,7 +50,7 @@ export function readPanelTask(store: TaskStore, runsDir: string, taskId: string,
     }
     return {
       ok: true as const, taskId, schemaVersion: PANEL_SCHEMA, readOnly: true, snapshotOnly: true,
-      view: stageTaskViewFromProjection({ task, projection, contract: projection.contract }),
+      view: withDispatchLease(stageTaskViewFromProjection({ task, projection, contract: projection.contract }), taskId, leaseReader),
       presentation: {
         // A verified agreement supplies a title. A worker objective is never
         // silently promoted into the stage title or a fabricated registration.

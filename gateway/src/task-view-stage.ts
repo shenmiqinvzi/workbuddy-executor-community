@@ -50,6 +50,7 @@ import type { StoredTask } from "./task-store.js";
 import type { PersistedTaskContract } from "./task-contract.js";
 import type { TaskViewDisplayState } from "./task-view.js";
 import type { WorkspaceScopeView } from "./workspace-protection.js";
+import type { DispatchLease, DispatchSettlementView } from "./dispatch-settlement.js";
 
 /** Stage schema marker. Distinct from the full `workbuddy-executor/vnext-1`. */
 export const STAGE_TASK_VIEW_SCHEMA_VERSION = "workbuddy-executor/stage-2";
@@ -79,6 +80,12 @@ export type StageTaskViewUnavailable = (typeof STAGE_TASK_VIEW_UNAVAILABLE)[numb
 export interface StageTaskView {
   /** T5 persisted scope extension. Absent on older structural adapters. Never a live scan. */
   workspaceScope?: WorkspaceScopeView;
+  /** R12 dispatch-lease evidence, attached by the panel reader when a desktop
+   * dispatch journal is wired. Absent means "not read here", never "healthy". */
+  dispatchLease?: DispatchSettlementView & DispatchLease;
+  /** Derived from dispatchLease: true only when the dispatch owner process
+   * exited with no receipt. Never asserted without the lease evidence. */
+  runOrphaned?: boolean;
   schemaVersion: typeof STAGE_TASK_VIEW_SCHEMA_VERSION;
   taskId: string;
   /** Stored persisted view revision; null when the row has none yet. */

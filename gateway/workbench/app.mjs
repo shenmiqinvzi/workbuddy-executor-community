@@ -2,7 +2,9 @@ import { HttpSource } from './http-source.mjs';
 import { DemoSource, SCENARIOS } from './demo-source.mjs';
 import { taskIdFromHash } from './task-link.mjs';
 import { mountDesktopDispatch } from './dispatch.mjs';
-import { STATES, CHECKS, ACTORS, stateInfo, taskName, workspaceName, executorName, currentReview, proofs, filterRecords, formatTime, eventName } from './model.mjs';
+import { renderControlUnavailable, renderDesktopControls } from './controls.mjs';
+import { renderAttention } from './attention.mjs';
+import { STATES, CHECKS, ACTORS, stateInfo, taskName, workspaceName, executorName, currentReview, proofs, filterRecords, formatTime, eventName, taskListNavigation, RETRY_MAX_ATTEMPTS, nextRetryDelayMs } from './model.mjs';
 const $ = id => document.getElementById(id);
 function h(tag, props = {}, ...children) {
     const el = document.createElement(tag);
@@ -38,9 +40,10 @@ function icon(name, cls = '') { const el = document.createElementNS('http://www.
     p.setAttribute('d', d);
     el.append(p);
 } return el; }
-const state = { source: new HttpSource(), records: [], selected: null, detail: null, tab: 'overview', filters: { search: '', state: '', executor: '', workspace: '', group: 'all' }, cursor: null, fetchedAt: null, error: null, detailError: null, events: [], eventError: null, eventCursor: 0, eventsLoaded: false, eventsBusy: false, eventMore: false, busy: false, detailBusy: false, health: null, healthError: false, listSerial: 0, detailSerial: 0 };
+const state = { source: new HttpSource(), records: [], selected: null, detail: null, capacity: null, tab: 'overview', filters: { search: '', state: '', executor: '', workspace: '', group: 'all' }, cursor: null, fetchedAt: null, error: null, detailError: null, events: [], eventError: null, eventCursor: 0, eventsLoaded: false, eventsBusy: false, eventMore: false, busy: false, detailBusy: false, health: null, healthError: false, listSerial: 0, detailSerial: 0, retryTimer: null, retryAttempt: 0 };
 let listController, detailController, eventController, toastTimer;
 let linkedTask = taskIdFromHash(location.hash);
+let desktopControlsAvailable = false;
 const status = record => { const info = stateInfo(record); return h('span', { class: 'status ' + info.tone }, h('span', { class: 'dot' }), info.label); };
 function toast(text) { clearTimeout(toastTimer); document.querySelector('.toast')?.remove(); const el = h('div', { class: 'toast', role: 'status' }, text); document.body.append(el); toastTimer = setTimeout(() => el.remove(), 2600); }
 const copyButton = value => h('button', { class: 'copy', type: 'button', 'aria-label': '复制标识 ' + value, onclick: async () => { try {
@@ -55,7 +58,7 @@ function backToList() { document.body.classList.remove('mobile-detail'); request
 function navItem(group, label, glyph, count = false) { return h('button', { class: 'nav-button', type: 'button', 'data-group': group, onclick: () => { state.filters.group = group; state.filters.state = ''; $('state-filter').value = ''; document.body.classList.remove('mobile-detail'); closeMenu(); render(); } }, icon(glyph), label, count ? h('span', { class: 'count', id: 'attention-count' }, '0') : null); }
 function buildShell() {
     const source = h('select', { class: 'source-select', id: 'data-source', 'aria-label': '数据来源', onchange: e => switchSource(e.target.value) }, option('live', '已保存任务 · 本地网关'), option('demo', '演示数据 · 合成样本'));
-    const sidebar = h('aside', { class: 'sidebar', id: 'sidebar', 'aria-label': '工作台导航' }, h('div', { class: 'brand' }, icon('mark', 'brand-mark'), h('div', {}, h('div', { class: 'brand-name' }, 'WorkBuddy'), h('div', { class: 'brand-sub' }, 'Executor workbench'))), h('div', { class: 'scope-label' }, icon('folder'), '本地协作工作区'), h('div', {}, h('div', { class: 'nav-heading' }, '工作台'), h('nav', { class: 'nav' }, navItem('all', '全部任务', 'grid'), navItem('attention', '待处理', 'inbox', true), navItem('accepted', '验收记录', 'circle'))), h('div', { class: 'sidebar-foot' }, h('label', { class: 'source-label', for: 'data-source' }, '数据来源', source), h('div', { class: 'foot-line' }, icon('lock'), '只读连接'), h('div', { class: 'foot-line', id: 'runtime-label' }, '正在读取网关版本…')));
+    const sidebar = h('aside', { class: 'sidebar', id: 'sidebar', 'aria-label': '工作台导航' }, h('div', { class: 'brand' }, icon('mark', 'brand-mark'), h('div', {}, h('div', { class: 'brand-name' }, 'WorkBuddy'), h('div', { class: 'brand-sub' }, 'Executor workbench'))), h('div', { class: 'scope-label' }, icon('folder'), '本地协作工作区'), h('div', {}, h('div', { class: 'nav-heading' }, '工作台'), h('nav', { class: 'nav' }, navItem('all', '全部任务', 'grid'), navItem('attention', '待处理', 'inbox', true), navItem('accepted', '验收记录', 'circle'))), h('div', { class: 'sidebar-foot' }, h('label', { class: 'source-label', for: 'data-source' }, '数据来源', source), h('div', { class: 'foot-line', id: 'connection-mode' }, icon('lock'), '只读连接'), h('div', { class: 'foot-line', id: 'runtime-label' }, '正在读取网关版本…')));
     const refresh = h('button', { class: 'button', type: 'button', id: 'refresh', onclick: () => refreshTasks(), 'aria-label': '刷新已存快照' }, icon('refresh'), h('span', {}, '刷新快照'));
     const metricLabels = [['', '已加载任务'], ['running', '执行中'], ['needs_review', '待独立验收'], ['accepted', '已验收']];
     const metrics = h('div', { class: 'metrics', 'aria-label': '已加载任务中的状态数量' }, metricLabels.map(([key, label], i) => h('button', { class: 'metric', type: 'button', 'data-state': key, onclick: () => { state.filters.state = key; $('state-filter').value = key; state.filters.group = 'all'; render(); } }, h('span', { class: 'metric-label' }, label), h('span', { class: 'metric-number', id: 'metric-' + i }, '—'))));
@@ -63,7 +66,7 @@ function buildShell() {
     const stateFilter = h('select', { class: 'filter', id: 'state-filter', 'aria-label': '筛选任务状态', onchange: e => { state.filters.state = e.target.value; render(); } }, option('', '全部状态'), ...Object.entries(STATES).map(([key, values]) => option(key, values[0])));
     const workspaceFilter = h('select', { class: 'filter', id: 'workspace-filter', 'aria-label': '筛选工作区', onchange: e => { state.filters.workspace = e.target.value; render(); } }, option('', '全部工作区'));
     const sheet = h('main', { class: 'sheet', id: 'main', tabindex: '-1' }, h('header', { class: 'page-heading' }, h('div', {}, h('h1', { id: 'page-title' }, '任务工作台'), h('p', { class: 'page-intro' }, '执行有记录，交付有依据。')), h('div', { class: 'heading-tools' }, h('span', { class: 'source-badge', id: 'source-badge' }, '已保存任务'), refresh)), h('div', { class: 'demo-controls', id: 'demo-controls', hidden: true }, h('span', {}, '合成样本，不代表真实执行'), h('select', { class: 'filter', id: 'demo-scenario', 'aria-label': '演示场景', onchange: e => switchSource('demo', e.target.value) })), metrics, h('div', { class: 'toolbar' }, search, stateFilter, workspaceFilter, h('span', { class: 'filter-label' }, '筛选已加载的记录')), h('div', { id: 'source-notice', 'aria-live': 'polite' }), h('div', { class: 'workspace' }, h('section', { class: 'list-pane', 'aria-label': '任务列表' }, h('div', { class: 'list-heading' }, h('span', { id: 'list-count' }, '任务'), h('span', {}, '创建时间顺序')), h('div', { class: 'task-list', id: 'task-list' }), h('div', { class: 'list-foot', id: 'list-foot' })), h('section', { class: 'detail', id: 'detail', 'aria-label': '任务详情' })), h('footer', { class: 'page-foot' }, h('span', { id: 'freshness' }, '尚未获取快照'), h('span', {}, '报告收到、停止确认与独立验收，分别记录。')));
-    $('app').append(h('div', { class: 'shell' }, sidebar, h('header', { class: 'topbar' }, h('div', { class: 'breadcrumbs' }, h('button', { class: 'menu-button', id: 'menu', type: 'button', 'aria-label': '打开工作台导航', 'aria-controls': 'sidebar', 'aria-expanded': 'false', onclick: toggleMenu }, icon('menu')), h('span', {}, '工作台'), icon('chevron'), h('span', {}, '本地协作')), h('div', { class: 'topbar-meta' }, h('span', { id: 'connection', role: 'status' }, '连接中'), h('span', { class: 'readonly-top' }, icon('lock'), '只读模式'))), sheet), h('button', { class: 'nav-overlay', type: 'button', 'aria-label': '关闭导航', onclick: closeMenu }));
+    $('app').append(h('div', { class: 'shell' }, sidebar, h('header', { class: 'topbar' }, h('div', { class: 'breadcrumbs' }, h('button', { class: 'menu-button', id: 'menu', type: 'button', 'aria-label': '打开工作台导航', 'aria-controls': 'sidebar', 'aria-expanded': 'false', onclick: toggleMenu }, icon('menu')), h('span', {}, '工作台'), icon('chevron'), h('span', {}, '本地协作')), h('div', { class: 'topbar-meta' }, h('span', { id: 'connection', role: 'status' }, '连接中'), h('span', { class: 'readonly-top', id: 'snapshot-mode' }, icon('lock'), '只读模式'))), sheet), h('button', { class: 'nav-overlay', type: 'button', 'aria-label': '关闭导航', onclick: closeMenu }));
 }
 function toggleMenu() { const open = document.body.classList.toggle('nav-open'); $('menu').setAttribute('aria-expanded', String(open)); if (open)
     document.querySelector('.nav-button')?.focus(); }
@@ -85,12 +88,14 @@ function render() {
     $('source-badge').className = 'source-badge' + (state.source.kind === 'demo' ? ' demo' : '');
     $('source-badge').textContent = state.source.kind === 'demo' ? '演示数据' : '已保存任务';
     $('connection').replaceChildren(h('span', { class: 'dot' }), state.error ? state.fetchedAt ? '连接中断' : '无法读取' : state.busy ? '读取中' : state.source.kind === 'demo' ? '演示模式' : '网关可读');
+    $('connection-mode').replaceChildren(icon('lock'), desktopControlsAvailable && state.source.kind === 'live' ? '快照只读 · 操作需确认' : '只读连接');
+    $('snapshot-mode').replaceChildren(icon('lock'), desktopControlsAvailable && state.source.kind === 'live' ? '快照只读 · 操作需确认' : '只读模式');
     $('runtime-label').textContent = state.source.kind === 'demo' ? '合成样本 · 不调用执行器' : state.health?.runtime?.packageVersion ? '网关 v' + state.health.runtime.packageVersion : '网关版本未提供';
     $('freshness').textContent = state.fetchedAt ? '上次获取 ' + formatTime(state.fetchedAt) + (state.error ? ' · 旧快照' : ' · 手动刷新') : '尚未获取快照';
     const notice = $('source-notice');
     notice.replaceChildren();
     if (state.error)
-        notice.append(h('div', { class: 'notice error', role: 'status' }, state.fetchedAt ? '无法读取新的快照，以下保留上次记录，业务状态未被改变。' : '无法读取任务。请确认运行的是支持 panel-1 的本地网关。', h('div', { class: 'small' }, state.error), h('button', { class: 'text-button', type: 'button', onclick: () => refreshTasks() }, '重试读取')));
+        notice.append(h('div', { class: 'notice error', role: 'status' }, state.fetchedAt ? '无法读取新的快照，以下保留上次记录，业务状态未被改变。' : '无法读取任务。请确认运行的是支持 panel-1 的本地网关。', h('div', { class: 'small' }, state.error), state.source.kind === 'live' && state.retryAttempt > 0 ? h('div', { class: 'small' }, `将自动重试（第 ${state.retryAttempt} / ${RETRY_MAX_ATTEMPTS} 次尝试已安排）。网络恢复后会立即重新读取。`) : null, h('button', { class: 'text-button', type: 'button', onclick: () => refreshTasks() }, '重试读取')));
     else if (state.healthError)
         notice.append(h('div', { class: 'notice' }, '任务可以读取，网关健康信息暂不可用。原生执行器连接状态未被确认。'));
     $('list-count').textContent = state.fetchedAt ? `${visible.length} 项任务` : '任务记录尚未读取';
@@ -102,7 +107,7 @@ function render() {
     else if (!visible.length)
         list.append(empty(state.error ? '读取暂不可用' : state.records.length ? '没有匹配的任务' : '还没有任务记录', state.records.length ? '尝试清空搜索或调整筛选条件。' : '现有任务会在这里显示；此面板只读取记录。'));
     else
-        visible.forEach(record => list.append(h('button', { class: 'task-row', type: 'button', 'aria-current': String(record.taskId === state.selected), onclick: () => selectTask(record.taskId), 'aria-label': taskName(record) + '，' + stateInfo(record).label }, h('div', { class: 'task-row-top' }, h('span', { class: 'task-name' }, taskName(record)), icon('chevron', 'row-arrow')), h('div', { class: 'task-meta' }, h('span', {}, workspaceName(record)), h('span', {}, record.view?.attempt?.number ? `第 ${record.view.attempt.number} 轮` : '轮次未提供')), h('div', { class: 'task-bottom' }, status(record), h('span', { class: 'task-source' }, executorName(record))))));
+        visible.forEach(record => list.append(h('button', { class: 'task-row', type: 'button', 'data-task-id': record.taskId, 'aria-current': String(record.taskId === state.selected), onclick: () => selectTask(record.taskId), 'aria-label': taskName(record) + '，' + stateInfo(record).label }, h('div', { class: 'task-row-top' }, h('span', { class: 'task-name' }, taskName(record)), icon('chevron', 'row-arrow')), h('div', { class: 'task-meta' }, h('span', {}, workspaceName(record)), h('span', {}, record.view?.attempt?.number ? `第 ${record.view.attempt.number} 轮` : '轮次未提供')), h('div', { class: 'task-bottom' }, status(record), h('span', { class: 'task-source' }, executorName(record))))));
     $('list-foot').replaceChildren(h('span', {}, state.fetchedAt ? '已加载 ' + state.records.length + ' 项' + (state.cursor ? ' · 还有更多' : '') : '尚未读取记录'), state.cursor ? h('button', { class: 'text-button', type: 'button', disabled: state.busy, onclick: () => refreshTasks(true) }, '加载更多') : h('span', {}, '只读记录'));
     renderDetail();
 }
@@ -132,6 +137,16 @@ function renderDetail() {
     el.append(h('div', { class: 'detail-context' }, icon('folder'), workspaceName(record), ' / ', executorName(record), ` / 第 ${number} 轮`), h('div', { class: 'detail-heading' }, h('h2', { id: 'detail-title', tabindex: '-1' }, taskName(record))), h('div', { class: 'detail-status' }, status(record)), h('p', { class: 'detail-description' }, info.description));
     if (record.presentation.blockingReason) el.append(h('p', { class: 'notice' }, '已存提示：', record.presentation.blockingReason));
     el.append(h('div', { class: 'proofs', 'aria-label': '交付凭证，三个事实分别记录' }, proofs(record).map((proof, i) => h('div', { class: 'proof' }, h('div', { class: 'proof-label' }, icon(['file', 'circle', 'check'][i]), proof.label), h('div', { class: 'proof-value' + (proof.confirmed ? ' confirmed' : '') }, proof.value), h('div', { class: 'proof-detail' }, proof.detail)))));
+    if (state.source.kind === 'live') {
+        const refresh = async id => { linkedTask = id; await refreshTasks(); };
+        const attention = renderAttention(record, { refresh });
+        if (attention) el.append(attention);
+        if (desktopControlsAvailable && record.view.revision && record.view.attempt?.id) el.append(renderDesktopControls(record, { refresh }));
+        else {
+            const unavailable = renderControlUnavailable(record, { desktopAvailable: desktopControlsAvailable, live: true, capacity: state.capacity });
+            if (unavailable) el.append(unavailable);
+        }
+    }
     const tabs = [['overview', '概况'], ['checks', '检查与审查'], ['files', '文件变化'], ['events', '事件历史']];
     el.append(h('div', { class: 'tabs', role: 'tablist', 'aria-label': '任务详情分区' }, tabs.map(([key, label], i) => h('button', { class: 'tab', role: 'tab', id: 'tab-' + key, 'aria-controls': 'detail-panel', 'aria-selected': String(state.tab === key), tabindex: state.tab === key ? '0' : '-1', type: 'button', onclick: () => activateTab(key), onkeydown: event => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
             event.preventDefault();
@@ -223,6 +238,12 @@ async function refreshTasks(more = false) {
         state.health = health;
         state.healthError = !health;
         state.fetchedAt = new Date().toISOString();
+        // A successful read proves the connection again; stop any pending retry.
+        if (state.retryTimer) {
+            clearTimeout(state.retryTimer);
+            state.retryTimer = null;
+        }
+        state.retryAttempt = 0;
         updateWorkspaces();
         if (!more) {
             const selected = linkedTask ?? (state.records.some(r => r.taskId === state.selected) ? state.selected : state.records.find(r => r.ok && stateInfo(r).key === 'needs_review')?.taskId ?? state.records[0]?.taskId);
@@ -236,8 +257,10 @@ async function refreshTasks(more = false) {
         }
     }
     catch (error) {
-        if (serial === state.listSerial && error.name !== 'AbortError')
+        if (serial === state.listSerial && error.name !== 'AbortError') {
             state.error = error.message || '连接失败。';
+            scheduleAutoRetry();
+        }
     }
     finally {
         if (serial === state.listSerial) {
@@ -246,6 +269,18 @@ async function refreshTasks(more = false) {
         }
     }
 }
+// P0-4 reconnect: after a failed live list read, retry a bounded number of
+// times with a deterministic backoff. Any successful read or a manual
+// refresh resets the sequence; demo sources never auto-retry.
+function scheduleAutoRetry() {
+    if (state.source.kind !== 'live' || state.retryAttempt >= RETRY_MAX_ATTEMPTS)
+        return;
+    clearTimeout(state.retryTimer);
+    const delay = nextRetryDelayMs(state.retryAttempt);
+    state.retryAttempt += 1;
+    state.retryTimer = setTimeout(() => { state.retryTimer = null; if (state.source.kind === 'live' && state.error)
+        void refreshTasks(); }, delay);
+}
 async function selectTask(id, mobile = true) {
     detailController?.abort();
     eventController?.abort();
@@ -253,6 +288,9 @@ async function selectTask(id, mobile = true) {
     const serial = ++state.detailSerial, source = state.source;
     if (state.selected !== id)
         state.detail = null;
+    // A stale capacity reading describes another task, so it is dropped with the
+    // detail and re-read from the same snapshot as this task.
+    state.capacity = null;
     state.selected = id;
     state.detailBusy = true;
     state.detailError = null;
@@ -272,6 +310,16 @@ async function selectTask(id, mobile = true) {
         if (serial !== state.detailSerial || source !== state.source)
             return;
         state.detail = record;
+        try {
+            state.capacity = await source.capacity(detailController.signal);
+        }
+        catch (error) {
+            if (error.name === 'AbortError')
+                throw error;
+            // No reading is its own fact: the panel says it cannot tell rather
+            // than implying the slot is free.
+            state.capacity = 'unreadable';
+        }
         if (state.tab === 'events')
             loadEvents();
     }
@@ -323,6 +371,9 @@ async function switchSource(kind, scenario = 'normal') {
     listController?.abort();
     detailController?.abort();
     eventController?.abort();
+    clearTimeout(state.retryTimer);
+    state.retryTimer = null;
+    state.retryAttempt = 0;
     state.listSerial++;
     state.detailSerial++;
     state.records = [];
@@ -355,6 +406,7 @@ async function switchSource(kind, scenario = 'normal') {
     await refreshTasks();
 }
 buildShell();
+void fetch('/workbench/desktop/capabilities',{method:'GET',signal:AbortSignal.timeout(5000)}).then(response=>response.json()).then(result=>{desktopControlsAvailable=result?.ok===true&&result.value?.controls===true;if(state.detail)render();}).catch(()=>{});
 void mountDesktopDispatch({ onTask: async taskId => { if (state.source.kind === 'demo') await switchSource('live'); linkedTask = taskId; location.hash = 'taskId=' + encodeURIComponent(taskId); await refreshTasks(); } });
 window.addEventListener('hashchange', async () => {
     const taskId = taskIdFromHash(location.hash);
@@ -363,11 +415,48 @@ window.addEventListener('hashchange', async () => {
     if (state.source.kind === 'demo') await switchSource('live');
     else if (!state.busy) { linkedTask = null; await selectTask(taskId, false); }
 });
+// P0-4 reconnect UX: when the OS reports connectivity returning, read again
+// right away instead of waiting out the backoff timer.
+window.addEventListener('online', () => {
+    if (state.source.kind !== 'live' || !state.error || state.busy)
+        return;
+    clearTimeout(state.retryTimer);
+    state.retryTimer = null;
+    void refreshTasks();
+});
 document.addEventListener('keydown', e => { if (e.key === '/' && !e.ctrlKey && !e.metaKey && !['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName) && !document.activeElement.isContentEditable) {
     e.preventDefault();
     $('search').focus();
 } if (e.key === 'Escape')
     closeMenu(); });
+// P0-4 keyboard navigation over the visible task list, and Escape to leave
+// the mobile detail back to the list. Plain keys only when no text field and
+// no modifier is involved, so typing and shortcuts keep their meaning.
+document.addEventListener('keydown', e => {
+    if (e.ctrlKey || e.metaKey || e.altKey)
+        return;
+    const active = document.activeElement;
+    if (['INPUT', 'SELECT', 'TEXTAREA'].includes(active?.tagName) || active?.isContentEditable)
+        return;
+    if (e.key === 'Escape' && document.body.classList.contains('mobile-detail') && matchMedia('(max-width:760px)').matches) {
+        e.preventDefault();
+        backToList();
+        return;
+    }
+    const steps = { ArrowDown: 1, ArrowUp: -1 };
+    if (!(e.key in steps) && e.key !== 'Home' && e.key !== 'End')
+        return;
+    const target = e.target instanceof Element ? e.target.closest('.task-list') : null;
+    if (!target)
+        return;
+    e.preventDefault();
+    const visible = filterRecords(state.records, state.filters);
+    const nextId = e.key === 'Home' ? visible[0]?.taskId ?? null : e.key === 'End' ? visible.at(-1)?.taskId ?? null : taskListNavigation(visible, state.selected, steps[e.key]);
+    if (!nextId)
+        return;
+    selectTask(nextId, false);
+    requestAnimationFrame(() => { const row = document.querySelector(`.task-row[data-task-id="${CSS.escape(nextId)}"]`); row?.focus({ preventScroll: false }); row?.scrollIntoView({ block: 'nearest' }); });
+});
 if (!linkedTask && new URL(location.href).searchParams.get('demo') === '1')
     switchSource('demo');
 else

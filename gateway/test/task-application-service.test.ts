@@ -743,6 +743,23 @@ test("the sync lifecycle records contract events in order, folds native stop pro
   void stateAfterAccept;
 });
 
+test("a stale desktop cancellation cannot stop the current attempt", async t => {
+  const f = lifecycleFixture(t);
+  await f.coordinator.send({ model: "synthetic-user-choice", taskId: "guarded-cancel", objective: "guard the current attempt", workspace: f.dir, sessionId: "session-stage-1" });
+  const before = f.store.get("guarded-cancel")!;
+  let requests = 0;
+  const originalCancel = f.client.cancel.bind(f.client);
+  f.client.cancel = messageId => { requests++; return originalCancel(messageId); };
+  assert.throws(() => f.coordinator.cancelCurrent({ taskId: before.taskId, expectedRevision: before.revision!, expectedAttemptId: "run-00000000-0000-4000-8000-000000000000" }), { code: "STALE_ATTEMPT" });
+  assert.throws(() => f.coordinator.cancelCurrent({ taskId: before.taskId, expectedRevision: "outdated", expectedAttemptId: before.attemptId! }), { code: "STALE_REVISION" });
+  assert.equal(requests, 0);
+  assert.equal(f.store.get(before.taskId)!.state, before.state);
+  const result = await f.coordinator.cancelCurrent({ taskId: before.taskId, expectedRevision: before.revision!, expectedAttemptId: before.attemptId!, reason: "operator stop" });
+  assert.equal(requests, 1);
+  assert.equal(result.task.state, "cancelled");
+  assert.equal(result.remoteStopped, false, "requesting cancellation is not proof of native stop");
+});
+
 test("a cancelled task keeps mirroring same-attempt evidence and stop proof without re-dispatch (T2-R3)", async t => {
   const f = lifecycleFixture(t);
   const sent = await f.coordinator.send({ model: "synthetic-user-choice", taskId: "cancelled-flow", objective: "cancel then prove evidence", workspace: f.dir, sessionId: "session-stage-1" });

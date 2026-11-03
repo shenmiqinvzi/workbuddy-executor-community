@@ -42,7 +42,7 @@ export async function runBounded(spec:CommandSpec, directory:string, options:{ca
   if(options.cancelFile&&fs.existsSync(options.cancelFile))throw Error("Cancellation requested; command was not started");
   if(remaining<=0||Number.isNaN(remaining))throw Error("Report reserve reached; submit real partial/blocked result now");
   fs.mkdirSync(directory,{recursive:true});
-  const id=crypto.randomUUID(),base=path.join(directory,id),stdout=base+".stdout.log",stderr=base+".stderr.log",record=base+".json";
+  const id=crypto.randomUUID(),base=path.join(directory,id),stdout=base+".stdout.log",stderr=base+".stderr.log",record=base+".json",startedMarker=base+".started.json";
   const timeoutMs=Math.max(1,Math.min(spec.timeoutSeconds*1000,remaining)),startedAt=new Date().toISOString(),before=fingerprints(spec);
   writePrivateJson(record,{...spec,startedAt,before,state:"running",stdout,stderr});
   let outcome: {exitCode:number;reason:string;cleanupConfirmed:boolean;pid?:number;ownership?:string;failure?:CommandFailureEvidence};
@@ -51,7 +51,10 @@ export async function runBounded(spec:CommandSpec, directory:string, options:{ca
     writePrivateJson(specFile,{...spec,stdout,stderr,timeoutMs:Math.ceil(timeoutMs),cancelFile:options.cancelFile});
     outcome=await new Promise<typeof outcome>((resolve)=>{
       const helper=fileURLToPath(new URL("../scripts/bounded-job.ps1",import.meta.url));
-      const child=spawn(windowsPowerShellPath(),["-NoProfile","-NonInteractive","-File",helper,"-SpecFile",specFile],{windowsHide:true,stdio:["ignore","pipe","pipe"]});
+      // This is the gateway's own bundled helper, not user content: the machine's execution policy
+      // (a machine with CurrentUser=RemoteSigned refuses every unsigned local script) must not be able
+      // to turn every bounded validation into "supervisor exited 1". Bypass applies to this child only.
+      const child=spawn(windowsPowerShellPath(),["-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",helper,"-SpecFile",specFile,"-StartedFile",startedMarker],{windowsHide:true,stdio:["ignore","pipe","pipe"]});
       writePrivateJson(record,{...spec,startedAt,before,state:"running",stdout,stderr,supervisorPid:child.pid,supervisorSpec:specFile,ownership:"windows_job_object"});
       let out="",err="",watchdogFired=false,helperExitCode:number|null=null;
       const spawnedAt=Date.now();
@@ -73,6 +76,7 @@ export async function runBounded(spec:CommandSpec, directory:string, options:{ca
     const out=fs.openSync(stdout,"w"),err=fs.openSync(stderr,"w");
     outcome=await new Promise((resolve)=>{
       const child=spawn(spec.executable,spec.args,{cwd:spec.cwd,detached:true,stdio:["ignore",out,err]});
+      if(child.pid)writePrivateJson(startedMarker,{pid:child.pid,startedAt:new Date().toISOString()});
       let reason="exit";const start=Date.now();
       const kill=()=>{try{process.kill(-child.pid!,"SIGKILL");}catch{}};
       const timer=setInterval(()=>{if(options.cancelFile&&fs.existsSync(options.cancelFile)){reason="cancelled";kill();}else if(Date.now()-start>=timeoutMs){reason="timeout";kill();}},100);
@@ -81,6 +85,9 @@ export async function runBounded(spec:CommandSpec, directory:string, options:{ca
     });
     fs.closeSync(out);fs.closeSync(err);
   }
-  const result={...spec,startedAt,endedAt:new Date().toISOString(),durationMs:Date.now()-Date.parse(startedAt),before,after:fingerprints(spec),...outcome,stdout,stderr,record};
+  // The marker is written only after the target process exists. Its absence is the one fact that
+  // separates "a supervisor which never ran" from "a command that may still own a process tree".
+  const processStarted=fs.existsSync(startedMarker);
+  const result={...spec,startedAt,endedAt:new Date().toISOString(),durationMs:Date.now()-Date.parse(startedAt),before,after:fingerprints(spec),...outcome,processStarted,startedMarker,stdout,stderr,record};
   writePrivateJson(record,result);return result;
 }

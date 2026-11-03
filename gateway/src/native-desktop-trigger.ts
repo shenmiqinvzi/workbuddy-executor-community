@@ -16,14 +16,15 @@ const WINDOWS = process.platform === "win32";
 // No UI controls, account tokens, CLI host or model are created by this code.
 export const RENDERER_BRIDGE = String.raw`(async function(){
   const requestedFreeModel="";
+  let requestedZeroRate=true;
   const previous=globalThis.__codexNativeQueueBridgeV2;
-  if(previous?.revision===7&&previous.policyRevision===1&&previous.stopRevision===2&&previous.failureRevision===1&&previous.historyRevision===2){
-    previous.configurePolicy(requestedFreeModel);
+  if(previous?.revision===7&&previous.policyRevision===2&&previous.stopRevision===2&&previous.failureRevision===1&&previous.historyRevision===2){
+    previous.configurePolicy(requestedFreeModel,requestedZeroRate);
     return true;
   }
   if(globalThis.__codexNativeQueueBridgeInstall){
     await globalThis.__codexNativeQueueBridgeInstall;
-    globalThis.__codexNativeQueueBridgeV2.configurePolicy(requestedFreeModel);
+    globalThis.__codexNativeQueueBridgeV2.configurePolicy(requestedFreeModel,requestedZeroRate);
     return true;
   }
   const installation=(async()=>{
@@ -33,9 +34,13 @@ export const RENDERER_BRIDGE = String.raw`(async function(){
   if(previous&&!legacy)throw Error('Incompatible native bridge; inspect its active sessions before upgrade');
   if(legacy&&!requestedFreeModel)throw Error('Legacy bridge policy is unknown; an explicit free-only model policy is required for upgrade');
   let freeModel=requestedFreeModel;
-  const configurePolicy=model=>{
+  const configurePolicy=(model,zeroRate)=>{
     if(typeof model!=='string')throw Error('Invalid native model policy');
     if(freeModel&&!model)throw Error('An unrestricted client cannot relax the active free-only model policy');
+    // Once the zero-rate rule is on, a later configurePolicy call may keep or tighten it,
+    // never switch it off: otherwise a paid run could be admitted after the fact.
+    if(requestedZeroRate===true&&zeroRate===false)throw Error('An unrestricted client cannot relax the active zero-rate policy');
+    if(typeof zeroRate==='boolean')requestedZeroRate=zeroRate;
     freeModel=model;
   };
   const mc=new MessageChannel(), pending=new Map(), markers=new Map(), outgoing=new Map(), failures=new Map(), lastUser=new Map();
@@ -133,7 +138,7 @@ export const RENDERER_BRIDGE = String.raw`(async function(){
     const available=await listModels(sid);
     const selected=available.models.find(m=>m.id===model);
     if(!selected)throw Error('Model is not available in WorkBuddy: '+model);
-    if(freeModel&&(model!==freeModel||!/^x0(?:\.0+)?(?: credits)?$/i.test(String(selected.credits||'').trim())))throw Error('Free-only policy blocked this model; no paid fallback is allowed: '+model);
+    if(freeModel&&(model!==freeModel||(requestedZeroRate&&!/^x0(?:\.0+)?(?: credits)?$/i.test(String(selected.credits||'').trim()))))throw Error((requestedZeroRate?'Free-only policy blocked this model; no paid fallback is allowed: ':'Pinned-model policy blocked this model: ')+model);
     if(available.currentModel!==model){
       const result=await rpc('session:updateConfig',[sid,{model}],45000);
       if(result?.error||result?.errorCode||result?.success===false)throw Error('Native model configuration was rejected');
@@ -201,15 +206,36 @@ export const RENDERER_BRIDGE = String.raw`(async function(){
     if(result?.error||result?.success===false)throw Error('Native cancellation rejected');
     return {requested:true,sessionId:sid,wakeId};
   };
-  globalThis.__codexNativeQueueBridgeV2={revision:7,policyRevision:1,stopRevision:2,failureRevision:1,historyRevision:2,get freeModel(){return freeModel;},configurePolicy,inspect,findWake,wakeIdle,createWorker,listModels,setModel,cancelAttempt,close:()=>{mc.port1.close();legacy?.close?.();}};
+  globalThis.__codexNativeQueueBridgeV2={revision:7,policyRevision:2,stopRevision:2,failureRevision:1,historyRevision:2,get freeModel(){return freeModel;},configurePolicy,inspect,findWake,wakeIdle,createWorker,listModels,setModel,cancelAttempt,close:()=>{mc.port1.close();legacy?.close?.();}};
   return true;
   })();
   globalThis.__codexNativeQueueBridgeInstall=installation;
   try{return await installation;}finally{if(globalThis.__codexNativeQueueBridgeInstall===installation)delete globalThis.__codexNativeQueueBridgeInstall;}
 })()`;
 
+/** One place that decides which native model policy the gateway asks for.
+ * WORKBUDDY_PINNED_MODEL pins an exact model without demanding a zero rate;
+ * WORKBUDDY_REQUIRED_FREE_MODEL is the legacy pin that also demands x0.
+ * A legacy free-only pin stays binding: pinning a model may change which model
+ * runs, never whether the zero-rate rule applies. */
+export function nativeModelPolicy(env: NodeJS.ProcessEnv = process.env): { model: string; requireZeroRate: boolean } {
+  const pinned = (env.WORKBUDDY_PINNED_MODEL ?? "").trim();
+  const free = (env.WORKBUDDY_REQUIRED_FREE_MODEL ?? "").trim();
+  if (pinned) return { model: pinned, requireZeroRate: free.length > 0 || env.WORKBUDDY_PINNED_MODEL_ZERO_RATE === "1" };
+  return { model: free, requireZeroRate: !!free };
+}
+
 export function rendererBridgeForFreeModel(model: string): string {
-  return RENDERER_BRIDGE.replace('const requestedFreeModel="";', `const requestedFreeModel=${JSON.stringify(model)};`);
+  return rendererBridgeForPolicy({ model, requireZeroRate: true });
+}
+
+/** Injects the exact model the native app is pinned to, plus whether that pin
+ * also demands a verified zero rate. A pinned paid model is allowed only when
+ * the caller says the pin does not carry the free-only rule. */
+export function rendererBridgeForPolicy(policy: { model: string; requireZeroRate: boolean }): string {
+  return RENDERER_BRIDGE
+    .replace('const requestedFreeModel="";', `const requestedFreeModel=${JSON.stringify(policy.model)};`)
+    .replace('let requestedZeroRate=true;', `let requestedZeroRate=${policy.requireZeroRate ? "true" : "false"};`);
 }
 
 export function matchesNativeRendererFileUrl(url: string | undefined, archivePath: string): boolean {
@@ -282,10 +308,23 @@ export class NativeDesktopRpcTrigger implements NativeDesktopTrigger {
       if (match && Number(match[1]) === this.cdpPort && Number(match[2]) > 0) pids.push(Number(match[2]));
     }
     if (pids.length === 0) return "absent";
+    if (pids.length !== 1) return "foreign";
+    const pid = pids[0] as number;
+    let table: Array<{ pid: number; exe?: string }> = [];
+    try { table = windowsProcessTable(); } catch { table = []; }
+    const row = table.find((entry) => entry.pid === pid);
+    // WMI enumeration can be filtered in restricted desktop sessions: a missing row is not proof that the
+    // listener belongs to somebody else, so ask the process itself when the table cannot see it.
+    const executable = row?.exe ?? this.executablePathOf(pid);
+    return executable && sameExecutable(executable, this.config.cliElectronPath) ? "native" : "foreign";
+  }
+
+  /** Get-Process reports the image path without WMI, so it still answers in filtered sessions. */
+  private executablePathOf(pid: number): string | null {
     try {
-      const table = windowsProcessTable();
-      return pids.length === 1 && table.some((row) => row.pid === pids[0] && sameExecutable(row.exe, this.config.cliElectronPath)) ? "native" : "foreign";
-    } catch { return "unavailable"; }
+      const output = String(this.processControl.run("powershell", ["-NoProfile", "-NonInteractive", "-Command", `(Get-Process -Id ${Math.trunc(pid)} -ErrorAction Stop).Path`], 15_000)).trim();
+      return output && !/\bCannot find\b|\b找不到\b/i.test(output) ? output : null;
+    } catch { return null; }
   }
 
   private ownerIsNative(): boolean {
@@ -367,17 +406,50 @@ export class NativeDesktopRpcTrigger implements NativeDesktopTrigger {
     }
     const response = await fetch(`http://127.0.0.1:${this.cdpPort}/json/list`, {signal:AbortSignal.timeout(4000)});
     const targets = await response.json() as Array<{type?:string;url?:string;webSocketDebuggerUrl?:string}>;
-    const executableRoot = path.resolve(this.config.cliElectronPath,"../../Resources/app.asar");
-    const target = targets.find(item => item.type === "page" && item.url?.startsWith(`file://${executableRoot}/`) && !item.url.includes("splash") && item.webSocketDebuggerUrl);
+    const target = targets.find(item => item.type === "page" && this.isAppUrl(item.url ?? "") && !(item.url ?? "").includes("splash") && item.webSocketDebuggerUrl);
     if (!target?.webSocketDebuggerUrl) throw new Error("WorkBuddy main renderer is not ready");
     const url = new URL(target.webSocketDebuggerUrl);
     if (!['127.0.0.1','localhost'].includes(url.hostname) || Number(url.port) !== this.cdpPort || url.protocol !== 'ws:') throw new Error("Native debugger target is not the registered loopback endpoint");
     return target.webSocketDebuggerUrl;
   }
 
+  /** A renderer belongs to this app when its decoded file URL lives under the asar bundle beside the configured executable. */
+  private isAppUrl(url: string): boolean {
+    try {
+      const decoded = decodeURI(url.split("?")[0] ?? "").replace(/^file:\/{2,3}/i, "").replace(/\//g, "\\");
+      const root = path.resolve(path.dirname(this.config.cliElectronPath), "resources", "app.asar");
+      return path.resolve(decoded).toLowerCase().startsWith(root.toLowerCase() + "\\");
+    } catch { return false; }
+  }
+
+  /** Ownership proof that does not depend on the OS process table: the renderer must belong to the configured app. */
+  private async identifiesAsNative(): Promise<boolean> {
+    try {
+      const response = await fetch(`http://127.0.0.1:${this.cdpPort}/json/list`, { signal: AbortSignal.timeout(4000) });
+      const targets = await response.json() as Array<{ type?: string; url?: string }>;
+      return targets.some((item) => item.type === "page" && this.isAppUrl(item.url ?? "") && !(item.url ?? "").includes("splash"));
+    } catch { return false; }
+  }
+
   private async discoverWindows(): Promise<string> {
-    const portState = this.portStateWindows();
-    if (portState === "foreign" || portState === "unavailable") throw new Error("Registered local port is occupied by another process or its owner cannot be verified; WorkBuddy was left running");
+    let portState = this.portStateWindows();
+    // A filtered process table cannot attribute the listener; the renderer identity proves the same fact.
+    if ((portState === "foreign" || portState === "unavailable") && await this.identifiesAsNative()) portState = "native";
+    if (portState === "foreign" || portState === "unavailable") {
+      if (process.env.WORKBUDDY_WORKBENCH_DIAGNOSTICS === "1") {
+        let detail: unknown;
+        try {
+          const output = this.processControl.run("netstat", ["-ano", "-p", "tcp"], 10_000);
+          const pids = output.split(/\r?\n/).flatMap((line) => { const match = line.trim().match(/^TCP\s+\S+:(\d+)\s+\S+\s+LISTENING\s+(\d+)$/i); return match && Number(match[1]) === this.cdpPort ? [Number(match[2])] : []; });
+          const table = windowsProcessTable();
+          let rawCount = "unread";
+          try { rawCount = String(this.processControl.run("powershell", ["-NoProfile", "-NonInteractive", "-Command", "(Get-CimInstance Win32_Process | Measure-Object).Count"], 30_000)).trim(); } catch (error) { rawCount = "failed:" + String((error as Error)?.message ?? error); }
+          detail = { pids, rows: pids.map((pid) => table.find((row) => row.pid === pid) ?? null), tableRows: table.length, rawCount, samplePids: table.slice(0, 5).map((row) => row.pid), executable: pids.length === 1 ? this.executablePathOf(pids[0] as number) : null };
+        } catch (error) { detail = { failed: String((error as Error)?.message ?? error) }; }
+        console.error("[port] " + JSON.stringify({ state: portState, port: this.cdpPort, cli: this.config.cliElectronPath, detail }));
+      }
+      throw new Error("Registered local port is occupied by another process or its owner cannot be verified; WorkBuddy was left running");
+    }
     if (portState !== "native") {
       if (!this.autoLaunch) throw new Error("Native desktop is offline");
       const running = this.nativePidsWindows();
@@ -420,7 +492,7 @@ export class NativeDesktopRpcTrigger implements NativeDesktopTrigger {
       });
       socket.addEventListener("close", () => {if(this.socket===socket)this.socket=undefined;for(const request of this.pending.values()){clearTimeout(request.timer);request.reject(new Error("Native desktop disconnected; submission outcome may be uncertain"));}this.pending.clear();});
       await new Promise<void>((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error("Native CDP connection timed out")),5000);socket.addEventListener("open",()=>{clearTimeout(timer);resolve();},{once:true});socket.addEventListener("error",()=>{clearTimeout(timer);reject(new Error("Native CDP connection failed"));},{once:true});});
-      if (!observeOnly) await this.evaluateConnected(rendererBridgeForFreeModel(process.env.WORKBUDDY_REQUIRED_FREE_MODEL ?? ""));
+      if (!observeOnly) await this.evaluateConnected(rendererBridgeForPolicy(nativeModelPolicy(process.env)));
     })();
     this.connection=connecting;
     try { await connecting; } finally { if(this.connection===connecting)this.connection=undefined; }

@@ -21,6 +21,13 @@ export async function desktopRequest(action, parameters = {}) {
 }
 export function sourceKey(execution) { return JSON.stringify([execution.executorId, execution.connectionId, execution.providerId]); }
 export function rateText(quote) { return quote.pricingVerified && quote.credits !== null ? '观察费率 ' + quote.credits : '费用未知，可能计费'; }
+const receiptLabels = { launch_requested: '派工请求已登记', dispatching: '派工请求已发出，等待回执', submitted: '派工已受理', failed: '派工未完成', outcome_unknown: '派工结果尚未明确' };
+export function receiptStatusText(state) { return receiptLabels[state] || '请查询原派工请求'; }
+export function receiptStillPending(state) { return state === 'launch_requested' || state === 'dispatching'; }
+export function operationStateLabel(state) { return { reserved: '已预留', effect_started: '已开始生效', succeeded: '已成功', rejected: '已拒绝', outcome_unknown: '结果不明' }[state] || '未知状态'; }
+const leaseLabels = { live: '所有者仍在运行，心跳正常', stuck: '所有者进程仍在，但心跳已停止', abandoned: '所有者进程已退出，未见回执', lease_unavailable: '无租约记录' };
+export function leaseLabel(dispatch) { return !dispatch ? '无记录' : (leaseLabels[dispatch.settlement] || '无租约记录'); }
+export function recoveryConclusionText(conclusion) { return { outcome_unsettled: '效果不可排除：保留原请求与执行容量，由后端按证据判断。', succeeded: '原操作已成功完成。', rejected: '原操作被拒绝，未产生效果。', active: '原操作仍在进行，等待回执。', dispatch_only: '只有派工请求记录，没有原操作记录。' }[conclusion] || '证据不足，请保留原编号。'; }
 const option = (value, text, disabled = false) => el('option', { value, disabled }, text);
 const lineValues = value => value.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
 
@@ -184,15 +191,36 @@ export async function mountDesktopDispatch({ onTask }) {
         document.getElementById('page-title').textContent='派工回执';document.querySelector('.page-intro').textContent='按原任务编号查询，连接恢复后继续核对。';
         open.textContent='派工回执';
         const signature=JSON.stringify(receipt),unchanged=receiptSignature===signature;receiptSignature=signature;
-        const labels={launch_requested:'派工请求已登记',dispatching:'正在处理原派工请求',submitted:'派工已受理',failed:'派工未完成',outcome_unknown:'派工结果尚未明确'};
-        if(!unchanged)content.replaceChildren(el('div',{class:'dispatch-receipt'},el('h2',{tabIndex:-1,role:'status'},labels[receipt.state]||'请查询原派工请求'),el('p',{},receipt.message||(receipt.state==='submitted'?'受理回执不代表验收结果，请查看任务详情。':'请求登记不代表原生接单，请保留以下编号。')),
+        if(!unchanged)content.replaceChildren(el('div',{class:'dispatch-receipt'},el('h2',{tabIndex:-1,role:'status'},receiptStatusText(receipt.state)),el('p',{},receipt.message||(receipt.state==='submitted'?'受理回执不代表验收结果，请查看任务详情。':'请求登记不代表原生接单，请保留以下编号。')),
             el('dl',{class:'dispatch-facts'},el('dt',{},'任务编号'),el('dd',{class:'technical'},receipt.taskId),el('dt',{},'操作编号'),el('dd',{class:'technical'},receipt.operationId)),
             el('div',{class:'dispatch-actions'},el('button',{type:'button',class:'button',onclick:()=>queryReceipt(receipt.requestId)},'查询原请求'),
                 ...(receipt.state==='submitted'?[el('button',{type:'button',class:'button',onclick:async event=>{event.currentTarget.disabled=true;showNotice('正在观察原执行状态，不会派工或改变模型…');try{await desktopRequest('observe',{requestId:receipt.requestId});close();await onTask(receipt.taskId);}catch(error){showNotice(error.message,true);}finally{event.target.disabled=false;}}},'更新执行状态')]:[]),
                 el('button',{type:'button',class:'button dispatch-primary',onclick:async()=>{close();await onTask(receipt.taskId);}},'查看已保存任务')),
+            ...(receipt.state==='outcome_unknown'?[el('section',{'aria-label':'结果不明时的处理'},
+                el('h3',{},'保留原请求，先核对证据'),
+                el('p',{},'目前无法确认原生准备或执行是否结束。没有轮次记录、没有回执或等待较长时间，都不能证明没有副作用。'),
+                el('p',{},'原任务可能仍占用执行容量。请使用原操作编号查看恢复证据；能否恢复或关闭由后端根据证据判断。不要更换任务或会话重复派工。'),
+                el('div',{class:'dispatch-actions'},...(typeof receipt.operationId==='string'&&receipt.operationId?[el('button',{type:'button',class:'button',onclick:event=>void showRecovery(receipt.operationId,event.currentTarget)},'查看恢复证据')]:[])))]:[]),
             el('p',{class:'dispatch-hint'},'连接中断不会自动重派。报告收到不代表原生停止或独立验收通过。'),
             ...(['submitted','failed'].includes(receipt.state)?[el('button',{class:'text-button',type:'button',onclick:async()=>{try{localStorage.removeItem(receiptKey);}catch{}document.getElementById('page-title').textContent='新建任务';document.querySelector('.page-intro').textContent='先明确约定，再启动执行。';open.textContent='新建任务';receiptSignature='';polls=0;renderEditor();showNotice('新派工仍须满足原任务的共享容量与停止规则。');await loadCatalog();}},'准备另一项任务')]:[])));
-        if((receipt.state==='launch_requested'||receipt.state==='dispatching')&&polls++<45)timer=setTimeout(()=>queryReceipt(receipt.requestId),2000);
+        if(receiptStillPending(receipt.state)){if(polls++<45)timer=setTimeout(()=>queryReceipt(receipt.requestId),2000);else showNotice('已停止自动刷新，结果仍未知。没有回执不等于没有副作用：请按操作编号核对恢复证据，不要重复派工。',true);}
+    }
+    async function showRecovery(identity,button) {
+        button.disabled=true;
+        try {const evidence=await desktopRequest('recovery_show',{identity});button.replaceWith(recoveryFacts(evidence));}
+        catch(error){button.disabled=false;showNotice(error.message,true);}
+    }
+    function recoveryFacts(evidence) {
+        const rows=[['原操作状态',evidence?.state?operationStateLabel(evidence.state):'无操作记录'],
+            ['是否进入准备',evidence?.preparationEnteredAt?'已进入':'无记录'],
+            ['是否进入派工',evidence?.dispatchEnteredAt?'已进入':'无记录'],
+            ['派工请求状态',evidence?.dispatch?receiptStatusText(evidence.dispatch.state):'无记录'],
+            ['派工租约',leaseLabel(evidence?.dispatch)],
+            ['执行容量',evidence?.capacityHoldsOperation?'仍由原任务占用':'未占用'],
+            ['结论',recoveryConclusionText(evidence?.conclusion)]];
+        const list=el('dl',{class:'dispatch-facts'});
+        for(const [term,value] of rows)list.append(el('dt',{},term),el('dd',{},value));
+        return list;
     }
     async function queryReceipt(requestId) {
         if(panel.hidden)return;

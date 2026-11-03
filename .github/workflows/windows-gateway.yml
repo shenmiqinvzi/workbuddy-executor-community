@@ -31,9 +31,9 @@ jobs:
         run: npm run build
       - name: Verify fresh MCP entry and persisted task identity
         run: node --import ./test/support/typescript-loader.mjs --test test/mcp-entry.test.ts
-      - name: Verify committed compiler output
+      - name: Package the release from the fresh build
         run: |
-          git diff --exit-code -- dist
+          node scripts/package.mjs "$env:RUNNER_TEMP\release"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Type check the TaskView contract sources and tests
         run: npm run typecheck:task-view
@@ -56,7 +56,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run deepseek:plugin:test
       - name: Desktop dispatch agreement and recovery checks
-        run: node --import ./test/support/typescript-loader.mjs --test test/desktop-dispatch.test.ts
+        run: node --import ./test/support/typescript-loader.mjs --test test/desktop-dispatch.test.ts test/dispatch-settlement.test.ts test/preparation-protocol.test.ts test/verification-plan.test.ts test/desktop-worker-env.test.ts
+      - name: Desktop control agreement, receipts and lifecycle
+        run: node --import ./test/support/typescript-loader.mjs --test test/desktop-control.test.ts test/desktop-control-journal.test.ts test/desktop-control-runtime.test.ts
       - name: Workbench frontend and private command checks
         run: node --test workbench/test/*.test.mjs
       - uses: actions/setup-dotnet@v4

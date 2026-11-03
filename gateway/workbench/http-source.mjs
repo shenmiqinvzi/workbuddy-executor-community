@@ -19,6 +19,13 @@ export class HttpSource {
     }
     async health(signal) { const body = await this.read('/workbench/v1/health', signal); if (body.schemaVersion !== 'workbuddy-executor/stage-2' || typeof body.ready !== 'boolean')
         throw new SourceError('UNSUPPORTED_SCHEMA', '健康信息版本不受支持。'); return body; }
+    async capacity(signal) {
+        const body = await this.read('/workbench/v1/resources/capacity', signal);
+        const occupant = body.occupied;
+        if (body.schemaVersion !== 'workbuddy-executor/capacity-1' || body.limit !== 1 || !(occupant === null || !!occupant && typeof occupant.taskId === 'string' && typeof occupant.executor === 'string' && typeof occupant.operationId === 'string'))
+            throw new SourceError('UNSUPPORTED_SCHEMA', '此网关尚未提供 capacity-1 容量资源。');
+        return body;
+    }
     async list(cursor, signal) {
         const body = await this.read('/workbench/v1/panel/tasks?limit=50' + (cursor ? '&afterTaskId=' + encodeURIComponent(cursor) : ''), signal);
         if (body.schemaVersion !== 'workbuddy-executor/panel-1' || !Array.isArray(body.tasks) || !(body.nextAfterTaskId === null || typeof body.nextAfterTaskId === 'string'))

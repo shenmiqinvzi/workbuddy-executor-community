@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$SpecFile)
+param([Parameter(Mandatory=$true)][string]$SpecFile,[string]$StartedFile)
 $ErrorActionPreference = 'Stop'
 $spec = Get-Content -LiteralPath $SpecFile -Raw -Encoding UTF8 | ConvertFrom-Json
 Add-Type -TypeDefinition @'
@@ -30,7 +30,7 @@ public static class BoundedJob {
   static void Check(bool ok) { if(!ok) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error()); }
   static string Quote(string value) { return "\"" + System.Text.RegularExpressions.Regex.Replace(value, "(\\\\*)\"", "$1$1\\\"") + new string('\\', Trailing(value)) + "\""; }
   static int Trailing(string s) { int n=0; for(int i=s.Length-1;i>=0&&s[i]=='\\';i--)n++; return n; }
-  public static string Run(string exe,string[] args,string cwd,string stdout,string stderr,int timeout,string cancel) {
+  public static string Run(string exe,string[] args,string cwd,string stdout,string stderr,int timeout,string cancel,string startedFile) {
     IntPtr job=IntPtr.Zero,output=IntPtr.Zero,error=IntPtr.Zero,input=IntPtr.Zero; PI pi=new PI(); bool assigned=false;
     string reason="exit"; uint exit=1; int active=0;
     try {
@@ -44,6 +44,9 @@ public static class BoundedJob {
       SI si=new SI();si.cb=Marshal.SizeOf(si);si.flags=0x100;si.input=input;si.output=output;si.error=error;
       StringBuilder command=new StringBuilder(Quote(exe));foreach(string arg in args)command.Append(" ").Append(Quote(arg));
       Check(CreateProcess(exe,command,IntPtr.Zero,IntPtr.Zero,true,0x08000004,IntPtr.Zero,cwd,ref si,out pi));
+      // Durable proof that this command really started: a supervisor that never ran leaves no marker,
+      // so a blocked script cannot be mistaken for a process tree that still needs cleaning.
+      if(!String.IsNullOrEmpty(startedFile))File.WriteAllText(startedFile,"{\"pid\":"+pi.pid+"}",new UTF8Encoding(false));
       // Suspended creation prevents a child escaping before ownership is established.
       Check(AssignProcessToJobObject(job,pi.process));assigned=true;Check(ResumeThread(pi.thread)!=0xffffffff);
       var watch=System.Diagnostics.Stopwatch.StartNew();
@@ -66,4 +69,4 @@ public static class BoundedJob {
   }
 }
 '@
-[BoundedJob]::Run([string]$spec.executable,[string[]]$spec.args,[string]$spec.cwd,[string]$spec.stdout,[string]$spec.stderr,[int]$spec.timeoutMs,[string]$spec.cancelFile)
+[BoundedJob]::Run([string]$spec.executable,[string[]]$spec.args,[string]$spec.cwd,[string]$spec.stdout,[string]$spec.stderr,[int]$spec.timeoutMs,[string]$spec.cancelFile,[string]$StartedFile)
