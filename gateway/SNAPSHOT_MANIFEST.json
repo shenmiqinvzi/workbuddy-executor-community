@@ -2388,8 +2388,8 @@
     },
     {
       "path": "test/deepseek-client.test.ts",
-      "sha256": "6ca3fd4e5755210303e3572322ca4f961e16aafb6dc2163b3597c8c962e4455b",
-      "bytes": 4814
+      "sha256": "f7221902067d7d87d21d1b72970b5969058664fdf2b718a8c7b845aed34d5b10",
+      "bytes": 5722
     },
     {
       "path": "test/deepseek-coordinator.test.ts",
@@ -2398,8 +2398,8 @@
     },
     {
       "path": "test/deepseek-server.test.ts",
-      "sha256": "6cad7612111054cb587bd6bb09bd9188b7671ec84342e7ff92b876ef1c8c1c37",
-      "bytes": 5630
+      "sha256": "a41e56749f10d2307003796807c7782b71be543af14ed64257683d538519af6a",
+      "bytes": 6112
     },
     {
       "path": "test/deployment.test.ts",
@@ -2468,8 +2468,8 @@
     },
     {
       "path": "test/launcher.test.ts",
-      "sha256": "7b59a2634f3414908a28b35b0d96a36de82db7b842d8b8194f27cdda3ad98fd0",
-      "bytes": 2416
+      "sha256": "97c6f1b37e6e273688fdf8e7685b0e0b3a4f2910b8748c3e794cfeccf562d84f",
+      "bytes": 2829
     },
     {
       "path": "test/mcp-entry.test.ts",
@@ -2723,8 +2723,8 @@
     },
     {
       "path": "verify-snapshot.mjs",
-      "sha256": "114f96e753a40a83c59d09d438bcfe1aa75d53bb437b7217be8777fb7adf322a",
-      "bytes": 1512
+      "sha256": "52ede6dfd549c657c09e21845bee2126713aceaf0412ad6d3ef734ba7bb1f7cf",
+      "bytes": 2869
     },
     {
       "path": "workbench/app.mjs",

@@ -10,7 +10,14 @@ import { fileURLToPath } from "node:url";
 const execute = promisify(execFile);
 const source = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
-test("all Node launchers load the shipped example config even without node on desktop PATH", async () => {
+// bin/workbuddy-* are #!/bin/sh launchers executed with chmod 0755 and a
+// PATH without node: Windows has neither a shebang interpreter for an
+// extensionless file nor POSIX execute bits.
+const posixLaunchers = process.platform === "win32"
+  ? "POSIX-only: bin/workbuddy-* are #!/bin/sh launchers run with chmod 0755 and PATH=/usr/bin:/bin. Run on Linux or macOS."
+  : false;
+
+test("all Node launchers load the shipped example config even without node on desktop PATH", { skip: posixLaunchers }, async () => {
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), "workbuddy-launcher-"));
   const root = path.join(temporary, "fresh install with spaces");
   try {
