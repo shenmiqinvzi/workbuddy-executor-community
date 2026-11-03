@@ -124,12 +124,18 @@ export function assertSafeContent(relative, content) {
   if (/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/.test(content)) {
     throw new Error(`Private key in release file: ${relative}`);
   }
-  if (/\/Users\/(?!example(?:\/|\b)|YOUR_(?:NAME|USER|USERNAME)(?:\/|\b))[A-Za-z0-9._-]+\//i.test(content) || /\/private\/var\/folders\//.test(content)) {
+  // POSIX and Windows home directories both name a real account. Fixtures may only use
+  // the placeholder names the project documents, so keep those out of the rule.
+  if (/\/Users\/(?!example(?:\/|\b)|YOUR_(?:NAME|USER|USERNAME)(?:\/|\b)|<[^>]+>)[A-Za-z0-9._-]+\//i.test(content)
+    || /\/home\/(?!example(?:\/|\b)|YOUR_(?:NAME|USER|USERNAME)(?:\/|\b)|<[^>]+>)[A-Za-z0-9._-]+\//i.test(content)
+    || /[A-Za-z]:[\\/]{1,2}Users[\\/]{1,2}(?!example(?![A-Za-z0-9._-])|YOUR_(?:NAME|USER|USERNAME)|Public(?![A-Za-z0-9._-])|<[^>]+>)[A-Za-z0-9._-]+[\\/]/i.test(content)
+    || /\/private\/var\/folders\//.test(content)) {
     throw new Error(`Private machine path in release file: ${relative}`);
   }
-  if (relative === ".env.example") {
+  // Every example configuration is a place where a real secret silently looks like a template.
+  if (/(?:^|[\\/])\.env(?:\.|$)/i.test(relative) || /\.example$/i.test(relative)) {
     for (const line of content.split(/\r?\n/)) {
-      const match = line.match(/^\s*(?:#\s*)?(WORKBUDDY_(?:CLIENT_SECRET|ACCESS_TOKEN|GATEWAY_PASSWORD))\s*=\s*(.*)$/);
+      const match = line.match(/^\s*(?:#\s*)?([A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|PASSWD|API_KEY|ACCESS_KEY)[A-Z0-9_]*)\s*=\s*(.*)$/);
       if (match && match[2].trim().replace(/^(?:""|'')$/, "")) throw new Error(`Nonempty secret in example configuration: ${match[1]}`);
     }
   }

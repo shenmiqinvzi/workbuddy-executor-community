@@ -40,6 +40,25 @@ test("blank values do not count as evidence", () => {
   assert.equal(stepResult(VERIFICATION_STEPS[1], blank).status, "missing");
 });
 
+test("a failure value is not evidence of success", () => {
+  const failed: VerificationEvidence[] = [
+    { stepId: "reserve", kind: "reserved_session", value: "identity_mismatch", observedAt: at },
+    { stepId: "reserve", kind: "worker_key", value: "error", observedAt: at },
+  ];
+  assert.equal(stepResult(VERIFICATION_STEPS[1], failed).status, "missing");
+  const unknownCapacity: VerificationEvidence[] = [{ stepId: "preflight", kind: "capacity", value: "unknown (workflow_capacity missing)", observedAt: at }];
+  assert.equal(stepResult(VERIFICATION_STEPS[0], unknownCapacity).missing.includes("capacity"), true);
+});
+
+test("a reserved session must look like a session id", () => {
+  const notAUuid: VerificationEvidence[] = [{ stepId: "reserve", kind: "reserved_session", value: "session-7", observedAt: at }];
+  assert.equal(stepResult(VERIFICATION_STEPS[1], notAUuid).missing.includes("reserved_session"), true);
+  const uuid = "0f9d2f1e-2c55-4b7a-9f1d-8d9a6f0a1b23";
+  const ok: VerificationEvidence[] = [{ stepId: "reserve", kind: "reserved_session", value: uuid, observedAt: at }];
+  assert.equal(stepResult(VERIFICATION_STEPS[1], ok).missing.includes("reserved_session"), false);
+  assert.equal(stepResult(VERIFICATION_STEPS[1], ok).missing.includes("worker_key"), true);
+});
+
 test("summary counts steps and keeps every limitation attached", () => {
   const evidence = [...evidenceFor("preflight", ["capacity", "dispatch_flag", "database_path", "workspace"]), ...evidenceFor("dispatch", ["request_id", "receipt_state", "lease"])];
   const summary = verificationSummary(evidence);
@@ -65,11 +84,43 @@ test("review alone never claims acceptance", () => {
   assert.match(claims[0].limitation, /不等同真实派工验收/);
 });
 
+test("an executor reviewing its own work is not an independent review", () => {
+  const evidence: VerificationEvidence[] = [
+    { stepId: "independent-review", kind: "reviewer", value: "workbuddy", observedAt: at },
+    { stepId: "independent-review", kind: "reviewed_artifact", value: "run-7", observedAt: at },
+    { stepId: "independent-review", kind: "review_conclusion", value: "looks fine", observedAt: at },
+  ];
+  const claims = allowedClaims(evidence, { executor: "workbuddy" });
+  assert.equal(claims.length, 1);
+  assert.match(claims[0].claim, /独立性没有得到核对/);
+  const unnamed = allowedClaims(evidence);
+  assert.match(unnamed[0].claim, /独立性没有得到核对/);
+});
+
+test("identity is only claimed when both sides name the same session", () => {
+  const session = "0f9d2f1e-2c55-4b7a-9f1d-8d9a6f0a1b23";
+  const same: VerificationEvidence[] = [
+    { stepId: "reserve", kind: "reserved_session", value: session, observedAt: at },
+    { stepId: "reserve", kind: "worker_key", value: "workbuddy-native", observedAt: at },
+    { stepId: "native-create", kind: "create_result", value: `{"sessionId":"${session}"}`, observedAt: at },
+    { stepId: "native-create", kind: "elapsed_ms", value: "812", observedAt: at },
+  ];
+  assert.match(allowedClaims(same)[0].claim, /身份一致/);
+  const other: VerificationEvidence[] = [
+    { stepId: "reserve", kind: "reserved_session", value: session, observedAt: at },
+    { stepId: "reserve", kind: "worker_key", value: "workbuddy-native", observedAt: at },
+    { stepId: "native-create", kind: "create_result", value: `{"sessionId":"1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f"}`, observedAt: at },
+    { stepId: "native-create", kind: "elapsed_ms", value: "812", observedAt: at },
+  ];
+  assert.match(allowedClaims(other)[0].claim, /没有指向同一个会话/);
+});
+
 test("preflight refuses to start while capacity is held", () => {
   const report = preflightReport({
     occupant: { taskId: "task-old", executor: "workbuddy", operationId: "desktop-send-old" },
     dispatchEnabled: true,
     databasePath: "C:\\state\\workbuddy.db",
+    capacityTable: true,
     workspace: "C:\\work",
     workspaceWritable: true,
   });
@@ -80,7 +131,7 @@ test("preflight refuses to start while capacity is held", () => {
 });
 
 test("preflight reports every blocker, not the first one", () => {
-  const report = preflightReport({ occupant: null, dispatchEnabled: false, databasePath: "", workspace: "", workspaceWritable: false });
+  const report = preflightReport({ occupant: null, dispatchEnabled: false, databasePath: "", capacityTable: false, workspace: "", workspaceWritable: false });
   assert.equal(report.ready, false);
   assert.equal(report.blockers.length, 3);
   assert.match(report.blockers[0], /^dispatch_not_enabled/);
@@ -89,12 +140,19 @@ test("preflight reports every blocker, not the first one", () => {
 });
 
 test("a missing ledger reports unknown capacity, never free", () => {
-  const report = preflightReport({ occupant: null, dispatchEnabled: false, databasePath: "", workspace: "C:\\work", workspaceWritable: true });
+  const report = preflightReport({ occupant: null, dispatchEnabled: false, databasePath: "", capacityTable: false, workspace: "C:\\work", workspaceWritable: true });
   assert.equal(report.observed.capacity, "unknown (database missing)");
 });
 
+test("a ledger without the capacity table blocks instead of reporting free", () => {
+  const report = preflightReport({ occupant: null, dispatchEnabled: true, databasePath: "C:\\state\\old.db", capacityTable: false, workspace: "C:\\work", workspaceWritable: true });
+  assert.equal(report.ready, false);
+  assert.match(report.blockers[0], /capacity_table_missing/);
+  assert.equal(report.observed.capacity, "unknown (workflow_capacity missing)");
+});
+
 test("preflight passes only when nothing blocks", () => {
-  const report = preflightReport({ occupant: null, dispatchEnabled: true, databasePath: "C:\\state\\workbuddy.db", workspace: "C:\\work", workspaceWritable: true });
+  const report = preflightReport({ occupant: null, dispatchEnabled: true, databasePath: "C:\\state\\workbuddy.db", capacityTable: true, workspace: "C:\\work", workspaceWritable: true });
   assert.equal(report.ready, true);
   assert.deepEqual(report.blockers, []);
   assert.equal(report.observed.capacity, "free");
@@ -113,4 +171,17 @@ test("the read-only preflight script never writes and reports the occupant", () 
   assert.equal(report.ready, false);
   assert.match(report.blockers[0], /task-held/);
   assert.equal(fs.statSync(dbFile).mtimeMs, before);
+});
+
+test("the preflight script refuses a database that has no capacity table", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "wb-p0-5-old-"));
+  const dbFile = path.join(root, "workbuddy.db");
+  const db = new DatabaseSync(dbFile);
+  db.exec("CREATE TABLE tasks(id TEXT PRIMARY KEY)");
+  db.close();
+  const output = execFileSync(process.execPath, [path.join(process.cwd(), "scripts", "verification-preflight.mjs"), "--db", dbFile, "--workspace", root], { encoding: "utf8" });
+  const report = JSON.parse(output);
+  assert.equal(report.ready, false);
+  assert.ok(report.blockers.some((blocker: string) => /^capacity_table_missing/.test(blocker)), report.blockers.join("; "));
+  assert.equal(report.observed.capacity, "unknown (workflow_capacity missing)");
 });

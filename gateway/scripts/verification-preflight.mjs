@@ -17,10 +17,14 @@ const databasePath = path.resolve(arg("db"));
 const workspace = path.resolve(arg("workspace", process.cwd()));
 
 let occupant = null;
+let capacityTable = false;
 if (databasePath && fs.existsSync(databasePath)) {
   const db = new DatabaseSync(databasePath, { readOnly: true });
   try {
     const table = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='workflow_capacity'").get();
+    // 表不存在就是“看不见容量”，不是“容量为空”。交给 preflightReport 报阻塞，
+    // 否则错库或旧库也会给出 ready:true 的绿灯。
+    capacityTable = Boolean(table);
     if (table) {
       const row = db.prepare("SELECT * FROM workflow_capacity WHERE slot=1").get();
       if (row) occupant = { taskId: String(row.task_id), executor: String(row.executor), operationId: String(row.operation_id) };
@@ -42,6 +46,7 @@ process.stdout.write(`${JSON.stringify(preflightReport({
   occupant,
   dispatchEnabled: process.env.WORKBUDDY_DESKTOP_DISPATCH_ENABLED === "1",
   databasePath: fs.existsSync(databasePath) ? databasePath : "",
+  capacityTable,
   workspace,
   workspaceWritable,
 }), null, 2)}\n`);

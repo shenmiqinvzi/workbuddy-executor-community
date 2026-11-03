@@ -37,6 +37,9 @@ export const RENDERER_BRIDGE = String.raw`(async function(){
   const configurePolicy=(model,zeroRate)=>{
     if(typeof model!=='string')throw Error('Invalid native model policy');
     if(freeModel&&!model)throw Error('An unrestricted client cannot relax the active free-only model policy');
+    // Once the zero-rate rule is on, a later configurePolicy call may keep or tighten it,
+    // never switch it off: otherwise a paid run could be admitted after the fact.
+    if(requestedZeroRate===true&&zeroRate===false)throw Error('An unrestricted client cannot relax the active zero-rate policy');
     if(typeof zeroRate==='boolean')requestedZeroRate=zeroRate;
     freeModel=model;
   };
@@ -212,11 +215,13 @@ export const RENDERER_BRIDGE = String.raw`(async function(){
 
 /** One place that decides which native model policy the gateway asks for.
  * WORKBUDDY_PINNED_MODEL pins an exact model without demanding a zero rate;
- * WORKBUDDY_REQUIRED_FREE_MODEL is the legacy pin that also demands x0. */
+ * WORKBUDDY_REQUIRED_FREE_MODEL is the legacy pin that also demands x0.
+ * A legacy free-only pin stays binding: pinning a model may change which model
+ * runs, never whether the zero-rate rule applies. */
 export function nativeModelPolicy(env: NodeJS.ProcessEnv = process.env): { model: string; requireZeroRate: boolean } {
   const pinned = (env.WORKBUDDY_PINNED_MODEL ?? "").trim();
-  if (pinned) return { model: pinned, requireZeroRate: env.WORKBUDDY_PINNED_MODEL_ZERO_RATE === "1" };
   const free = (env.WORKBUDDY_REQUIRED_FREE_MODEL ?? "").trim();
+  if (pinned) return { model: pinned, requireZeroRate: free.length > 0 || env.WORKBUDDY_PINNED_MODEL_ZERO_RATE === "1" };
   return { model: free, requireZeroRate: !!free };
 }
 

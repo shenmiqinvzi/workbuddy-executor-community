@@ -5,7 +5,7 @@ import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
 import { readZip } from "./support/read-zip.mjs";
-import { collectReleaseFiles, createPackage, createSkillPackage } from "../scripts/package.mjs";
+import { assertSafeContent, collectReleaseFiles, createPackage, createSkillPackage } from "../scripts/package.mjs";
 import { createDesktopPackage } from "../scripts/package-desktop.mjs";
 
 
@@ -215,6 +215,22 @@ test("release refuses a populated example secret and removes partial output", as
     await assert.rejects(createPackage(value.source, value.output, "0.2.0"), /Nonempty secret/);
     assert.deepEqual(await fs.readdir(value.output), []);
   } finally { await fs.rm(value.root, { recursive: true, force: true }); }
+});
+
+test("example configuration checks cover every template, not just .env.example", () => {
+  assert.throws(() => assertSafeContent("WINDOWS_ENV.example", "WORKBUDDY_CLIENT_SECRET=real-value\n"), /Nonempty secret in example configuration: WORKBUDDY_CLIENT_SECRET/);
+  assert.throws(() => assertSafeContent("config/.env.production", "API_KEY=real-value\n"), /Nonempty secret/);
+  assert.doesNotThrow(() => assertSafeContent("WINDOWS_ENV.example", "WORKBUDDY_CLIENT_SECRET=\nWORKBUDDY_ACCESS_TOKEN=\"\"\n"));
+  assert.doesNotThrow(() => assertSafeContent("docs/PROGRESS.md", "WORKBUDDY_CLIENT_SECRET=<user-set>\n"));
+});
+
+test("private machine paths are rejected on POSIX and Windows, placeholders still pass", () => {
+  for (const content of ["/home/alice/private/run.log", "C:\\Users\\alice\\private\\run.log", "/Users/alice/private/run.log", "/private/var/folders/xy/run.log"]) {
+    assert.throws(() => assertSafeContent("docs/note.md", content), /Private machine path/, content);
+  }
+  for (const content of ["C:\\Users\\<user>\\private\\run.log", "C:\\Users\\Public\\run.log", "C:\\Users\\example\\run.log", "/Users/example/run.log", "/home/YOUR_USER/run.log"]) {
+    assert.doesNotThrow(() => assertSafeContent("docs/note.md", content), content);
+  }
 });
 
 test("release refuses token-like content in an allowed source file", async () => {

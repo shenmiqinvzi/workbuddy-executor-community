@@ -97,6 +97,23 @@ export interface VerificationEvidence {
 
 export type VerificationStepStatus = "recorded" | "missing";
 
+/** 证据值里出现这些词，说明记到的是失败而不是结果；
+ *  把 “identity_mismatch / reviewer=executor / error” 当成“记到了”会让下面的声明变成假话。 */
+const FAILURE_VALUE = /^(?:identity_mismatch|mismatch|error|failed|failure|timeout|denied|rejected|refused|unknown)\b/i;
+const UNKNOWN_VALUE = /^unknown\b/i;
+const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+/** 有形状要求的证据：值必须真的是那种东西，不能靠“非空”过关。 */
+const EVIDENCE_SHAPE: Readonly<Record<string, RegExp>> = Object.freeze({ reserved_session: UUID });
+
+export function usableEvidence(item: VerificationEvidence): boolean {
+  const value = item.value.trim();
+  if (!value) return false;
+  const shape = EVIDENCE_SHAPE[item.kind];
+  if (shape && !shape.test(value)) return false;
+  if (item.kind === "capacity" && UNKNOWN_VALUE.test(value)) return false;
+  return !FAILURE_VALUE.test(value);
+}
+
 export interface VerificationStepResult {
   readonly id: string;
   readonly title: string;
@@ -113,7 +130,7 @@ export interface VerificationSummary {
 }
 
 export function stepResult(step: VerificationStep, evidence: readonly VerificationEvidence[]): VerificationStepResult {
-  const present = new Set(evidence.filter(item => item.stepId === step.id && item.value.trim()).map(item => item.kind));
+  const present = new Set(evidence.filter(item => item.stepId === step.id && usableEvidence(item)).map(item => item.kind));
   const missing = step.evidence.filter(kind => !present.has(kind));
   return {
     id: step.id,
@@ -139,19 +156,41 @@ export interface VerificationClaim {
   readonly limitation: string;
 }
 
+export interface ClaimContext {
+  /** 执行者是谁；不给就说明“审查者不是执行者”这件事没有被核对过。 */
+  readonly executor?: string;
+}
+
 /**
  * 允许对外说的话，由“哪几步有证据”机械推导。
  * 没有对应证据时返回空数组——不说比说错安全。
  */
-export function allowedClaims(evidence: readonly VerificationEvidence[]): VerificationClaim[] {
+export function allowedClaims(evidence: readonly VerificationEvidence[], context: ClaimContext = {}): VerificationClaim[] {
   const done = (id: string) => stepResult(VERIFICATION_STEPS.find(step => step.id === id)!, evidence).status === "recorded";
+  const value = (stepId: string, kind: string) => evidence.find(item => item.stepId === stepId && item.kind === kind && usableEvidence(item))?.value.trim() ?? "";
   const claims: VerificationClaim[] = [];
   if (done("preflight")) claims.push({ claim: "本次验证在独立状态目录中开始，旧账本未被打开写入。", limitation: "独立目录不证明旧任务的副作用范围。" });
-  if (done("reserve") && done("native-create")) claims.push({ claim: "本次预留身份与原生返回身份一致。", limitation: "一致不等于该会话已被派工或产生结果。" });
+  if (done("reserve") && done("native-create")) {
+    const reserved = value("reserve", "reserved_session");
+    const created = UUID.exec(value("native-create", "create_result"))?.[0] ?? "";
+    const same = !!reserved && !!created && reserved.toLowerCase() === created.toLowerCase();
+    claims.push(same
+      ? { claim: "本次预留身份与原生返回身份一致。", limitation: "一致不等于该会话已被派工或产生结果。" }
+      : { claim: "记录到预留身份与原生创建返回，但两份证据没有指向同一个会话 UUID。", limitation: "没有核对成一致，就不能说身份一致。" });
+  }
   if (done("dispatch")) claims.push({ claim: "网关记录到一次派工请求及其回执。", limitation: "回执状态不等于最终结果。" });
   if (done("report-received") && !done("native-stop")) claims.push({ claim: "已收到报告，但原生停止尚未确认。", limitation: "报告收到≠原生停止≠独立验收。" });
   if (done("report-received") && done("native-stop")) claims.push({ claim: "已收到报告，且记录到原生停止证据。", limitation: "停止证据不等于结果正确。" });
-  if (done("independent-review")) claims.push({ claim: "存在一份由非执行者给出的审查结论。", limitation: "审查通过仍不等同真实派工验收。" });
+  if (done("independent-review")) {
+    const reviewer = value("independent-review", "reviewer").toLowerCase();
+    const executor = (context.executor ?? "").trim().toLowerCase();
+    const selfReview = /^(?:executor|self|author|executor-self|same-as-executor)$/.test(reviewer);
+    // “不是执行者”只有在知道执行者是谁时才是事实；没给执行者就只能说记录了一份审查结论。
+    const independent = !!reviewer && !selfReview && executor.length > 0 && reviewer !== executor;
+    claims.push(independent
+      ? { claim: "存在一份由非执行者给出的审查结论。", limitation: "审查通过仍不等同真实派工验收。" }
+      : { claim: "记录到一份审查结论，但审查者与执行者的独立性没有得到核对。", limitation: "审查通过仍不等同真实派工验收；身份未核对时更不能当成独立审查。" });
+  }
   return claims;
 }
 
@@ -159,6 +198,9 @@ export interface PreflightInput {
   readonly occupant: { taskId: string; executor: string; operationId: string } | null;
   readonly dispatchEnabled: boolean;
   readonly databasePath: string;
+  /** 账本里是否真的有一张可读的 workflow_capacity 表；
+   *  表缺失时“没看到占用者”只说明看不见，不说明容量是空的。 */
+  readonly capacityTable: boolean;
   readonly workspace: string;
   readonly workspaceWritable: boolean;
 }
@@ -174,6 +216,7 @@ export interface PreflightReport {
 export function preflightReport(input: PreflightInput): PreflightReport {
   const blockers: string[] = [];
   if (input.occupant) blockers.push(`capacity_held_by_another_task: ${input.occupant.taskId} (${input.occupant.operationId})`);
+  if (input.databasePath && !input.capacityTable) blockers.push(`capacity_table_missing: ${input.databasePath} (workflow_capacity 表不存在或不可读)`);
   if (!input.dispatchEnabled) blockers.push("dispatch_not_enabled: WORKBUDDY_DESKTOP_DISPATCH_ENABLED 未设为 1");
   if (!input.workspaceWritable) blockers.push(`workspace_not_writable: ${input.workspace}`);
   if (!input.databasePath) blockers.push("database_path_missing");
@@ -182,7 +225,11 @@ export function preflightReport(input: PreflightInput): PreflightReport {
     ready: blockers.length === 0,
     blockers,
     observed: {
-      capacity: input.occupant ? `occupied by ${input.occupant.taskId}` : input.databasePath ? "free" : "unknown (database missing)",
+      capacity: input.occupant
+        ? `occupied by ${input.occupant.taskId}`
+        : !input.databasePath
+          ? "unknown (database missing)"
+          : input.capacityTable ? "free" : "unknown (workflow_capacity missing)",
       dispatch: input.dispatchEnabled ? "enabled" : "disabled",
       database: input.databasePath || "missing",
       workspace: input.workspace || "missing",

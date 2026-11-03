@@ -440,8 +440,8 @@
     },
     {
       "path": "scripts/package.mjs",
-      "sha256": "2ae2691bd3b0fe94812ca5219da8ef3fc41b37c370dabc61e85cfd8d966d52b8",
-      "bytes": 14459
+      "sha256": "0a9454411fa3d53f050355bcfa921243c4033e11e21358dd13e7d067205b569f",
+      "bytes": 15081
     },
     {
       "path": "scripts/setup.mjs",
@@ -455,8 +455,8 @@
     },
     {
       "path": "scripts/verification-preflight.mjs",
-      "sha256": "8931ca8080fe0765591b806ff7878d197f1e205170c04b149f21ac362e9571f0",
-      "bytes": 1664
+      "sha256": "bbd076eaf48800b8aa6316c8fa64b3424640e0ae8b5347bdb87a53190d9940af",
+      "bytes": 1921
     },
     {
       "path": "scripts/verify-release.mjs",
@@ -740,8 +740,8 @@
     },
     {
       "path": "src/native-desktop-trigger.ts",
-      "sha256": "2da4512f96f8ade3a3f473fc18fd0825961c1d5e887c86e27892f36473b3fa6a",
-      "bytes": 40455
+      "sha256": "7ca72978822c320dc2a2056e0b4e9cd04bc9b3547488a160f648b6db4525b3bc",
+      "bytes": 40909
     },
     {
       "path": "src/native-ownership.ts",
@@ -950,8 +950,8 @@
     },
     {
       "path": "src/verification-plan.ts",
-      "sha256": "b9374638fa0db86153a6f5c46cc1b4f3c65b7f0a89f78c2d4da02088ef35fb5f",
-      "bytes": 8566
+      "sha256": "a5bf34c68cd51d7d672896b795701c11c27baf0066b925b2f70744d21fed0997",
+      "bytes": 11526
     },
     {
       "path": "src/workbench-assets.ts",
@@ -1130,8 +1130,8 @@
     },
     {
       "path": "test/native-desktop-trigger.test.ts",
-      "sha256": "95f7235c8b8c25b65d6bcf51c6d7e8e61f8c647aec13023ca8f98022f770c3ad",
-      "bytes": 39705
+      "sha256": "2844f9f9c1871f1304ad7ba04fa59615289f0654e5a725541d61d25bb423eb20",
+      "bytes": 41289
     },
     {
       "path": "test/native-failure-diagnostic.test.ts",
@@ -1155,8 +1155,8 @@
     },
     {
       "path": "test/package.test.ts",
-      "sha256": "686028bafa54abdc74f38cf5a1ab51f47f63463d777e85a33f863a27d44141ef",
-      "bytes": 18724
+      "sha256": "6df365233dbe4170e73109ebed58a30d22d3fd7038a0bdfc986deb4c1919fdf2",
+      "bytes": 20017
     },
     {
       "path": "test/persistent-service.test.ts",
@@ -1325,8 +1325,8 @@
     },
     {
       "path": "test/verification-plan.test.ts",
-      "sha256": "649a377c1e4d906317be146f0406875654998b34a43441ce118ed1ed6bbf135c",
-      "bytes": 5533
+      "sha256": "98b1953c7638e7898065cbd805facaac95e96dd0547d8eb081e6e8973119478e",
+      "bytes": 9974
     },
     {
       "path": "test/windows-startup.test.ts",
