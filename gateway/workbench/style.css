@@ -1197,6 +1197,19 @@ small,.small {
   :root {
     font-size:14px
   }
+  /* P0-4 narrow window: let the metric strip wrap instead of clipping its
+     labels, and stack the three proof columns once they stop fitting. */
+  .metrics {
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    row-gap:14px
+  }
+  .metric-label {
+    white-space:normal
+  }
+  .proofs {
+    grid-template-columns:1fr;
+    row-gap:14px
+  }
   .sheet {
     margin:0;
     border-left:0;
@@ -1240,8 +1253,7 @@ small,.small {
     padding-bottom:17px
   }
   .metric-label {
-    font-size:11px;
-    white-space:nowrap
+    font-size:11px
   }
   .metric-number {
     font-size:24px
@@ -1415,6 +1427,40 @@ small,.small {
 @media(prefers-reduced-motion:no-preference) {
   button {
     transition:border-color .13s,background-color .13s,color .13s
+  }
+}
+/* P0-4 very narrow windows: single-column key facts, bounded controls. */
+@media(max-width:480px) {
+  .kv {
+    grid-template-columns:1fr
+  }
+  .check>summary {
+    grid-template-columns:minmax(0,1fr);
+    gap:4px
+  }
+  .check-actor,.check-status {
+    text-align:left
+  }
+  .file-row {
+    grid-template-columns:22px minmax(0,1fr)
+  }
+  .file-kind {
+    grid-column:2;
+    text-align:left
+  }
+  .technical-row {
+    grid-template-columns:minmax(0,1fr);
+    gap:2px
+  }
+  .technical-row .copy {
+    justify-self:start
+  }
+  .metrics {
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:10px
+  }
+  .metric-number {
+    font-size:22px
   }
 }
 /* Readability pass: primary data stays at 13–14px; 12px is reserved for metadata. */ .sidebar {

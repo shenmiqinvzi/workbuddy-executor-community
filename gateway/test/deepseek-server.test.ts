@@ -7,7 +7,14 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { DeepSeekStore, type DeepSeekTask } from "../src/deepseek-store.js";
 
-test("MCP health returns sanitized choices for multiple live hosts without attempting dispatch", async (t) => {
+// The health tool enumerates the same registry: the fixture writes *.sock hosts
+// whose privacy is checked by mode/uid, which only exists on POSIX. Windows
+// hosts are ACL-checked named pipes, covered by dsh-transport.test.ts.
+const posixRegistry = process.platform === "win32"
+  ? "POSIX-only: the fixture registers *.sock hosts whose privacy is checked by mode/uid; Windows hosts are ACL-checked named pipes. Run on Linux or macOS."
+  : false;
+
+test("MCP health returns sanitized choices for multiple live hosts without attempting dispatch", { skip: posixRegistry }, async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dsh-mcp-"));
   for (const hostId of ["desktop", "web"]) fs.writeFileSync(path.join(dir, `${hostId}.json`), JSON.stringify({ hostId, pid: process.pid, profile: hostId, runtimeSource: `deepseek-${hostId}`, socketPath: path.join(dir, `${hostId}.sock`), token: `private-token-${hostId}-do-not-return` }), { mode: 0o600 });
   const client = new Client({ name: "deepseek-test", version: "0.1.0" });

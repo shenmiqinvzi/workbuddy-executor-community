@@ -7,7 +7,9 @@ import { AdmissionError, defaultModelPolicy } from "./collaboration.js";
 import { contractExecution } from "./task-contract.js";
 import type { StoredTask, StoredTaskEvent } from "./task-store.js";
 import { readTaskProjection } from "./task-view-reader.js";
+import { capacityResource } from "./capacity-view.js";
 import { PANEL_SCHEMA, readPanelTask } from "./workbench-panel.js";
+import type { DispatchLease } from "./dispatch-settlement.js";
 import { stageTaskViewFromProjection, STAGE_TASK_VIEW_UNAVAILABLE, STAGE_TASK_VIEW_SCHEMA_VERSION, type StageTaskView } from "./task-view-stage.js";
 
 /** A conservative status projection for existing tasks. This is not the vNext TaskView. */
@@ -83,8 +85,11 @@ export type StageListItem =
 
 /** The MCP entry point and future local HTTP adapter share this service. */
 export class TaskApplicationService {
-  constructor(private readonly coordinator: TaskCoordinator, private readonly maxAttempts: number, private readonly runsDir: string, readonly dsh?: DshTaskCoordinator) {
+  /** R12: optional read-side dispatch-lease reader, wired at composition roots. */
+  readonly leaseReader?: (taskId: string) => DispatchLease | null;
+  constructor(private readonly coordinator: TaskCoordinator, private readonly maxAttempts: number, private readonly runsDir: string, readonly dsh?: DshTaskCoordinator, leaseReader?: (taskId: string) => DispatchLease | null) {
     if (dsh && dsh.store !== coordinator.store) throw new Error("DSH and WorkBuddy must share the same TaskStore");
+    this.leaseReader = leaseReader;
   }
 
   /** Trusted local setup and authorization seams; no HTTP write routes. */
@@ -111,6 +116,15 @@ export class TaskApplicationService {
     return this.coordinator.store.quotas.read(options);
   }
   readCreditBalances(connectionId?: string) { return this.coordinator.store.creditBalances.read(connectionId); }
+  /**
+   * The saved execution-capacity slot, as its own read resource.
+   *
+   * occupant() is one SELECT against workflow_capacity; nothing here claims,
+   * releases or re-derives the slot, and the reading is not a stop decision. A
+   * read failure throws so the HTTP layer answers 503 instead of reporting a
+   * free slot it never saw.
+   */
+  readCapacity() { return capacityResource(this.coordinator.store.operations.occupant(), new Date().toISOString()); }
 
   getOperation(operationId: string) { return this.coordinator.store.operations.get(operationId); }
   reviewChecks(input: ReviewOptions) { return this.coordinator.store.reviews.checks(input, this.runsDir); }
@@ -119,11 +133,11 @@ export class TaskApplicationService {
   review(input: ReviewInput) { return this.coordinator.store.reviews.review(input, this.runsDir); }
   acceptReview(input: ReviewOptions & { reviewId: string }) { return this.coordinator.store.reviews.accept(input); }
   listReviews(taskId: string) { return this.coordinator.store.reviews.list(taskId); }
-  readPanelTask(taskId: string) { return readPanelTask(this.coordinator.store, this.runsDir, taskId); }
+  readPanelTask(taskId: string) { return readPanelTask(this.coordinator.store, this.runsDir, taskId, true, this.leaseReader); }
   listPanelTasks(options: { limit: number; afterTaskId?: string }) {
     const page = this.listStageViews(options);
     if (!page.ok) return page;
-    return { ok: true as const, readOnly: true, snapshotOnly: true, schemaVersion: PANEL_SCHEMA, tasks: page.tasks.map(item => item.ok ? readPanelTask(this.coordinator.store, this.runsDir, item.taskId, false) : item), nextAfterTaskId: page.nextAfterTaskId };
+    return { ok: true as const, readOnly: true, snapshotOnly: true, schemaVersion: PANEL_SCHEMA, tasks: page.tasks.map(item => item.ok ? readPanelTask(this.coordinator.store, this.runsDir, item.taskId, false, this.leaseReader) : item), nextAfterTaskId: page.nextAfterTaskId };
   }
   listUnfinishedOperations() { return this.coordinator.store.operations.listUnfinished(); }
   readOperationRecovery(targetOperationId: string) { return this.coordinator.store.recoveries.inspect(targetOperationId, this.runsDir); }

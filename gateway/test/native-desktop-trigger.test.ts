@@ -7,7 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import vm from "node:vm";
 import type { Config } from "../src/config.js";
-import { NativeDesktopRpcTrigger, RENDERER_BRIDGE, rendererBridgeForFreeModel, type NativeDesktopProcessControl } from "../src/native-desktop-trigger.js";
+import { NativeDesktopRpcTrigger, RENDERER_BRIDGE, nativeModelPolicy, rendererBridgeForFreeModel, type NativeDesktopProcessControl } from "../src/native-desktop-trigger.js";
 
 type Envelope = { id: string; type: string; channel: string; args: unknown[]; result?: unknown; error?: { message: string } };
 type Frame = { kind: string; json?: Envelope; text?: string };
@@ -171,6 +171,26 @@ test("cached bridge refreshes free-only policy without replacing the transport a
   await assert.rejects(() => f.bridge.setModel(f.sessionId, "paid"), /Free-only/);
   assert.equal(f.ports.length, 1);
   assert.equal(f.sends().length, 0);
+});
+
+test("the legacy free-only pin keeps its zero-rate rule when a model is pinned", () => {
+  const freeOnly = "free-model";
+  assert.deepEqual(nativeModelPolicy({ WORKBUDDY_REQUIRED_FREE_MODEL: freeOnly }), { model: freeOnly, requireZeroRate: true });
+  assert.deepEqual(nativeModelPolicy({ WORKBUDDY_PINNED_MODEL: "paid-model" }), { model: "paid-model", requireZeroRate: false });
+  // Pinning must not quietly relax a restriction the deployment already asked for.
+  assert.deepEqual(nativeModelPolicy({ WORKBUDDY_PINNED_MODEL: "paid-model", WORKBUDDY_REQUIRED_FREE_MODEL: freeOnly }), { model: "paid-model", requireZeroRate: true });
+  assert.deepEqual(nativeModelPolicy({ WORKBUDDY_PINNED_MODEL: "paid-model", WORKBUDDY_PINNED_MODEL_ZERO_RATE: "1" }), { model: "paid-model", requireZeroRate: true });
+  assert.deepEqual(nativeModelPolicy({}), { model: "", requireZeroRate: false });
+});
+
+test("a live bridge cannot switch the zero-rate rule off, even for the same model", async t => {
+  const f = await fixture(t);
+  await f.evaluate(rendererBridgeForFreeModel("fast"));
+  const refused = await f.evaluate("(() => { try { globalThis.__codexNativeQueueBridgeV2.configurePolicy('fast', false); return 'allowed'; } catch (error) { return String(error && error.message); } })()");
+  assert.match(String(refused), /cannot relax the active zero-rate policy/);
+  const kept = await f.evaluate("(() => { globalThis.__codexNativeQueueBridgeV2.configurePolicy('fast', true); return 'allowed'; })()");
+  assert.equal(kept, "allowed");
+  assert.equal(f.ports.length, 1);
 });
 
 test("policy refresh preserves an acknowledged in-flight turn, its busy exclusion and later native failure", async t => {

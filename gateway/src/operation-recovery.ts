@@ -15,10 +15,12 @@ export interface RecoveryInput {
 }
 export interface RecoveryDecision {
   operationId: string; targetOperationId: string; taskId: string; attemptId: string | null;
-  action: "reconcile" | "close"; proof: "queue_receipt" | "dsh_receipt" | "native_stopped" | "not_dispatched";
+  action: "reconcile" | "close"; proof: "queue_receipt" | "dsh_receipt" | "native_stopped" | "declared_stop" | "not_dispatched";
   actor: string; reason: string; confirmedAt: string; decidedAt: string; termsDigest: string; evidenceToken: string;
+  /** Present only for `declared_stop`: the human assertion this closure rests on. */
+  declarationId?: string;
 }
-type Proof = { reconcile: "queue_receipt" | "dsh_receipt" | null; close: "native_stopped" | "not_dispatched" | null; token: string; runEvidenceDigest?: string };
+type Proof = { reconcile: "queue_receipt" | "dsh_receipt" | null; close: "native_stopped" | "declared_stop" | "not_dispatched" | null; token: string; runEvidenceDigest?: string };
 const unknownStates = ["reserved", "effect_started", "outcome_unknown"];
 const fail = (code: string, message: string): never => { throw new AdmissionError(code, message); };
 
@@ -36,7 +38,7 @@ export class RecoveryStore {
     if (!row) return null;
     try {
       const value = JSON.parse(String(row.body_json)) as RecoveryDecision;
-      if (value.operationId !== row.operation_id || value.targetOperationId !== row.target_operation_id || value.taskId !== row.task_id || value.action !== row.action || !["close", "reconcile"].includes(value.action) || !["queue_receipt", "dsh_receipt", "native_stopped", "not_dispatched"].includes(value.proof)) throw Error();
+      if (value.operationId !== row.operation_id || value.targetOperationId !== row.target_operation_id || value.taskId !== row.task_id || value.action !== row.action || !["close", "reconcile"].includes(value.action) || !["queue_receipt", "dsh_receipt", "native_stopped", "declared_stop", "not_dispatched"].includes(value.proof)) throw Error();
       return value;
     } catch { return fail("CONTRACT_INTEGRITY", "Invalid recovery audit record; retain the original workflow."); }
   }
@@ -78,11 +80,16 @@ export class RecoveryStore {
     // A new phase-aware operation can be fenced before dispatch. Missing historical fields prove nothing.
     if (!attemptId && operations.length && operations.every(op => op.phaseVersion === 1 && !op.dispatchEnteredAt &&
         (!op.effectStartedAt || !!op.preparationCompletedAt)) && (!dsh || dsh.dispatch === "preparing")) close = "not_dispatched";
+    // A human declaration is a weaker fact than native evidence: it is consulted
+    // only when the run record itself has nothing, and it keeps its own proof
+    // name so a decision resting on it never looks like a native stop.
+    if (!close && identity && attemptId && snapshot && !hasNativeStopEvidence(snapshot) && !["queued", "working"].includes(String(snapshot.status))
+        && this.store.stopDeclarations.get(operation.taskId, attemptId)) close = "declared_stop";
     let runEvidenceDigest: string | undefined;
     try {
       const cancellation = files["cancel.json"] ? JSON.parse(files["cancel.json"]) : undefined;
       if (cancellation !== undefined && (!cancellation || typeof cancellation !== "object" || Array.isArray(cancellation) || [cancellation.requestedAt, cancellation.reason].some(value => value != null && typeof value !== "string"))) throw Error();
-      if (snapshot && close) runEvidenceDigest = runEvidenceDigestOf(snapshot, cancellation);
+      if (snapshot && close && close !== "declared_stop") runEvidenceDigest = runEvidenceDigestOf(snapshot, cancellation);
     } catch { close = null; }
     return { reconcile, close, runEvidenceDigest, token: operationDigest({ files, dsh, operations: operations.map(op => ({ id: op.operationId, token: operationDigest(op) })) }) };
   }
@@ -92,6 +99,8 @@ export class RecoveryStore {
       if (!operation || !["send", "rework", "queue"].includes(operation.kind)) return fail("OPERATION_NOT_FOUND", "The original execution operation was not found.");
       const task = this.store.get(operation.taskId), proof = this.proof(operation, runsDir);
       const history = this.history(operation.taskId);
+      const attemptId = task?.attemptId ?? null;
+      const declaration = attemptId ? this.store.stopDeclarations.get(operation.taskId, attemptId) : null;
       return { schemaVersion: "operation-recovery-1" as const, operation, operationToken: operationDigest(operation),
         revision: task?.revision ?? null, attemptId: task?.attemptId ?? null, evidenceToken: operationDigest({ proof: proof.token, history }),
         preparation: {
@@ -106,7 +115,8 @@ export class RecoveryStore {
         runEvidenceDigest: proof.runEvidenceDigest ?? null,
         available: this.closure(operation.taskId) ? [] : [ ...(proof.reconcile && unknownStates.includes(operation.state) && !this.forOperation(targetOperationId) ? ["reconcile"] : []), ...(proof.close && task?.state !== "accepted" ? ["close"] : []) ],
         proof: { reconcile: proof.reconcile, close: proof.close }, capacity: this.store.operations.occupant(), history,
-        note: "Stored evidence only. An absent receipt, idle session or timeout never proves that native execution stopped." };
+        declaration: declaration ? { declarationId: declaration.declarationId, actor: declaration.actor, declaredAt: declaration.declaredAt, statement: declaration.statement, source: "human_declaration" as const } : null,
+        note: "Stored evidence only. An absent receipt, idle session or timeout never proves that native execution stopped; a human declaration is recorded as a declaration, never as native evidence." };
     });
   }
   private validate(input: RecoveryInput, runsDir: string) {
@@ -139,9 +149,10 @@ export class RecoveryStore {
       if (!authorization || authorization.terms_digest !== operationDigest(input) || authorization.used_by || !Number.isFinite(age) || age < 0 || age > 300000) return fail("AUTHORIZATION_REQUIRED", "A recent actual local confirmation must bind this exact recovery operation.");
       const view = this.validate(input, runsDir), original = view.operation;
       const proof = view.proof[input.action];
+      const declaration = proof === "declared_stop" && view.attemptId ? this.store.stopDeclarations.get(original.taskId, view.attemptId) : null;
       const decision: RecoveryDecision = { operationId: input.operationId, targetOperationId: original.operationId, taskId: original.taskId, attemptId: view.attemptId,
         action: input.action, proof: proof!, actor: String(authorization.actor), confirmedAt: String(authorization.confirmed_at), decidedAt: new Date().toISOString(), reason: input.reason,
-        termsDigest: operationDigest(input), evidenceToken: view.evidenceToken };
+        termsDigest: operationDigest(input), evidenceToken: view.evidenceToken, ...(declaration ? { declarationId: declaration.declarationId } : {}) };
       if (input.action === "close") {
         const binding = this.store.dshBindings.forTask(original.taskId);
         if (binding?.runOpen) {

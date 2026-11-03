@@ -21,6 +21,7 @@ import { WorkbenchHttpServer, workbenchHealth, workbenchPortFromEnv } from "./wo
 import { WorkBuddyQuotaCollector } from "./quota-observation.js";
 import { WorkBuddyCreditBalanceCollector } from "./credit-balance.js";
 import { configuredDshCoordinator } from "./dsh-runtime.js";
+import { desktopJournal } from "./desktop-dispatch-runtime.js";
 
 const config = loadConfig();
 const store = new TaskStore(config.dbFile);
@@ -30,7 +31,9 @@ const coordinator = new TaskCoordinator(config, store, client);
 // WORKBUDDY_RUNS_DIR when set, otherwise the runs directory next to the task
 // database. An empty fallback here would make the read paths resolve run
 // records against the process working directory and silently misread them.
-const service = new TaskApplicationService(coordinator, config.maxTaskAttempts ?? 3, runsDirectory(config), configuredDshCoordinator(store, runsDirectory(config)));
+// R12: the dispatch journal is read-only evidence for the panel; the journal
+// constructor never creates the file, and reads return null while it is absent.
+const service = new TaskApplicationService(coordinator, config.maxTaskAttempts ?? 3, runsDirectory(config), configuredDshCoordinator(store, runsDirectory(config)), taskId => desktopJournal(config).leaseByTask(taskId));
 const server = new WorkbenchHttpServer({
   service,
   health: () => workbenchHealth({

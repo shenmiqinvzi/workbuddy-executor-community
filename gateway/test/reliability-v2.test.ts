@@ -69,7 +69,8 @@ test("mismatched current task/attempt binding never stops native work",async t=>
 test("a report received while native work remains busy cannot evade the absolute deadline",async t=>{
  const f=fixture(t),c=await f.send();f.queue.report({...c,status:"completed",text:"real report",artifacts:[]});
  c.journal.save({...c.journal.snapshot()!,deadline:new Date(Date.now()-1).toISOString()});
- assert.equal((await f.service().pump()).status,"stop_confirmed");assert.equal(c.journal.snapshot()?.status,"blocked");assert.equal(c.journal.snapshot()?.text,"real report");
+ assert.equal((await f.service().pump()).status,"stop_confirmed");
+ assert.equal(c.journal.snapshot()?.status,"blocked");assert.equal(c.journal.snapshot()?.text,"real report");
 });
 test("phase progress survives long tasks, repeated heartbeat does not advance meaningful time",async t=>{
  const f=fixture(t),c=await f.send(),text=JSON.stringify({stage:"validation",completed:"baseline done",running:"long local test",blocker:""});

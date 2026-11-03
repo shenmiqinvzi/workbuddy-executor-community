@@ -1,0 +1,37 @@
+name: POSIX bridge
+
+# The Windows job runs an explicit file list and never reaches these three files.
+# They bind real Unix-domain sockets, assert mode/uid privacy on *.sock host
+# registrations and execute the shipped #!/bin/sh launchers, so they skip
+# themselves on Windows. Without this job those assertions would run nowhere,
+# and "the full suite is green" would only mean "the POSIX half never ran".
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  posix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: gateway
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: gateway/package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Build gateway
+        run: npm run build
+      - name: Unix socket transport, registry privacy and sh launchers
+        run: node --import ./test/support/typescript-loader.mjs --test test/deepseek-client.test.ts test/deepseek-server.test.ts test/launcher.test.ts

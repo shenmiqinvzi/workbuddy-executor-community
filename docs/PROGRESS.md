@@ -1,6 +1,21 @@
 # 后端开发进度
 
-更新日期：2026-10-31。本页区分源码能力、自动验证和运行部署。
+更新日期：2026-11-03。本页区分源码能力、自动验证和运行部署。
+
+## 本分支 T7D（开发与补验中）
+
+PR #22 为草稿；2026-11-02 核对 head `34fcb1b` 的 Windows CI 成功，尚无提交的 PR 审查。桌面停止、返工、独立审查与验收已有源码及隔离验证，真实独立窗口样本覆盖审查、验收、停止和重开；返工目前是模拟执行器证据。原真实模型补验在原生准备阶段结果不明，无记录 attempt 或完整准备回执，不能据此推断无副作用，也没有真实报告、原生停止及最终验收。只读准备阶段诊断已接入；原任务及容量继续保留。2026-11-02 已按“证据充分、仍不确定”收口（副作用不可排除、容量不释放、不关闭不重派），见[T7D P0-1 原任务裁决记录](T7D_P0_1_ORIGINAL_TASK_DECISION.md)。P0-3 源码层已交付：原生准备协议事实写成常量、失败路径追加只读探针、查不到不当作未创建，见[T7D P0-3 原生准备协议](T7D_P0_3_NATIVE_PREPARATION_PROTOCOL.md)。P0-5 方案与只读预检已就位（单机隔离账本，容量被占即停），见[T7D P0-5 独立真实验证方案](T7D_P0_5_INDEPENDENT_VERIFICATION_PLAN.md)。
+
+2026-11-03 平台边界与全量口径：P0-2→P0-5 已在本机落地为一次提交（分支 `feat/t7d-p05-uncertainty-fence`，提交 `b010855`，139 files +5531/−339；该分支随后做过一次历史重写，把作者机器路径从提交内容中移除，行数按重写后的提交重新统计），未推送、未合并、未安装。本机 `npm test` 由 856 条 / 844 通过 / 6 失败 / 6 跳过（基线 `34fcb1b` 为 810/787/17/6）变为 **856 / 844 / 0 失败 / 12 跳过，退出码 0**。原 6 条失败是平台差而非缺陷：其中 5 条把宿主注册表写成 `*.sock` 并用 mode/uid 判私有（`deepseek-client.test.ts` 四处、`deepseek-server.test.ts` 一处），而 Windows 的宿主是命名管道、私有性由 ACL 检查（`dsh-transport.test.ts` 覆盖该分支），`net` 也无法在 Windows 监听套接字路径；另 1 条驱动 `bin/workbuddy-*` 的 `#!/bin/sh` 启动器（`launcher.test.ts`），Windows 没有无扩展名文件的 shebang 解释器和执行位。这 6 条已按仓内既有的 macOS 跳过约定改成显式平台跳过并写明原因；此前 `windows-gateway.yml` 只跑显式文件清单，这三份文件不在任何 job 里，等于本机之外从未被执行。新增 `.github/workflows/posix-bridge.yml` 在 ubuntu 上运行这三个文件，否则“跳过”就是把断言删掉。该 job 随后在 PR #23 上首次运行即失败，暴露出真实缺陷，见下一段；跳过不等于已通过，这三份用例在 Windows 上本次未被实际执行。顺带修掉一个更要紧的空洞：`verify-snapshot.mjs` 只校验清单里列出的条目，不校验跟踪文件是否都在清单里，所以落地那次报 564 / true 时其实有 3 个 `dist/native-stop-declaration.*` 未入清单。清单已重新生成为 567 条，校验器增加与 `git ls-files` 的集合比对并输出 `manifestCompleteness: checked`；漏记和多记两种情形都实测能报出文件名，非 git 检出时返回 `unavailable`，不假装通过。
+2026-11-03 POSIX bridge 首次远端运行与换行修复：`POSIX bridge` 在 PR #23 上首次运行就失败在测试步骤，原因是真实缺陷而不是断言写错。`gateway/.gitattributes` 用 `* -text` 保留快照原始字节，于是 8 个 `bin/workbuddy-*` 的 `#!/bin/sh` 启动器与 `.env.example` 都以 CRLF 入库；在 Linux 上首行变成 `#!/bin/sh\r`，exec 直接报 `spawn ... ENOENT`，而 `.env` 被 source 之后每个值尾部带 CR，`WORKBUDDY_OAUTH_SCOPES` 这类含空格的引号值随之错位。也就是说这些启动器在 POSIX 上从未真正执行过，问题一直被"Windows 跳过"掩盖。修法：`bin/*`、`scripts/*.mjs`（全部是 `#!/usr/bin/env node`）和 `.env.example` 改为 `text eol=lf`，`bin/*.cmd` 保持 `-text eol=crlf`；7 个 `scripts/*.mjs` 只有换行变化（`git diff --ignore-cr-at-eol` 无内容差异）；清单按新字节重新生成仍是 567 条，`capturedAt` 与上游 provenance 保持不变。新增守卫用例直接读字节，出现任何 CR 即失败，因此在 Windows 检出上同样会报警，不依赖"能在哪个平台执行启动器"。验证：Linux 容器（`node:24-bookworm`，`npm ci` + `npm run build`）跑这三份文件 8/8 通过；本机全量 `npm test` 857 条 / 845 通过 / 0 失败 / 12 跳过，退出码 0；`verify-snapshot` 567 / hashesMatch true。未做 macOS 运行，也未在 POSIX 主机上验证已安装包。
+
+2026-11-03 Windows 打包失败与机器路径清理：`Windows gateway` 在 PR #23 上测试全部通过，失败在最后的 `Package desktop workbench`。`scripts/package.mjs` 的 `assertSafeContent` 拒绝发布包含私有机器路径的文件，这次拒得对：P0 批次在本机取证时把作者本人的 Windows 账户目录（形如 `C:\Users\<user>\.workbuddy-ai`）、一个只有本机才存在的状态目录（形如 `<workroot>\_wb-p05-state\...`）和另一个盘符上的客户端路径写进了 `gateway/test/desktop-worker-env.test.ts`，`gateway/src/coordinator.ts` 的诊断分支也把日志写死在同一棵树的固定路径下，于是发布物既含作者账户名，也含读者机器上不存在的盘符。诊断日志改为 `os.tmpdir()`；夹具换成 `D:\state\...` 与 `C:\Program Files\工作区\...`，空格、撇号与非 ASCII 的引号覆盖保持不变；四份 P0 验证记录里的人名与盘符同样中性化。构建产物与快照清单同步更新（仍 567 条）。发布包已能在本机生成（`workbuddy-desktop-v0.7.1-t7d-desktop-preview.zip`，536 files，1,927,997 字节），全量 `npm test` 857 / 845 / 0 / 12，退出码 0；随后该提交在 PR #23 上 `Windows gateway` 与 `POSIX bridge` 均通过。未在已安装的 POSIX 包上运行，异机验收仍未做。
+
+2026-11-03 编译产物出库：`gateway/.gitignore` 早就写着 `dist/`，但索引里仍强制跟踪着 270 个编译产物——每次改源码都要重提交一批可再生成的文件，而“提交的 dist 与源码一致”只能靠维护者的纪律维持。现在改为：`dist/` 不入库，由 `npm run build` 从 `src/` 与 `package-lock.json` 生成；快照清单按跟踪文件重新生成为 **297 条**（原 567 条里有 270 个是 `dist`），`capturedAt` 与上游 provenance 不变，`exclusions`/`notes` 里写明编译产物不再入库及其来源。`verify-snapshot.mjs` 增加硬约束：索引里只要出现 `dist/` 下的文件就报 `Build output is tracked again: ...`（实测 `git add -f` 一个 `dist` 文件即红，撤回即绿）。CI 里原来的 `git diff --exit-code -- dist` 换成 `node scripts/package.mjs <tmp>`：从干净构建出发打一次发布包，`package.mjs` 的必需文件清单会拒绝缺任何一个 `dist` 条目的包，比“比较已提交的字节”更贴近要防的事。验证：`verify-snapshot` 297 / true / checked；`package.test.ts`、`deployment.test.ts`、`mcp-entry.test.ts` 24/24；本机 `node scripts/package.mjs` 产出 release 与两个技能包。仍未做：干净克隆上走一遍 clone → `npm ci` → `build` → `test` 的完整路径（CI 覆盖，本机不重复）。
+
+2026-11-03 独立复审四项修复：用同模型（`gpt-6.1-sol`、只读）对本分支做了一次独立审查，除已修的 `attention.mjs` 缺失外，另指出四处“文档说得比代码更硬”的地方，均已改掉。其一，桥接层的零费率规则可以被降级：`configurePolicy` 只拦“把已有模型限制改空”，同一模型再传 `false` 就能把 x0 关掉；现在已开启就必须保持开启，且 `nativeModelPolicy()` 在旧的 `WORKBUDDY_REQUIRED_FREE_MODEL` 存在时，`WORKBUDDY_PINNED_MODEL` 只决定用哪个模型、不再顺手取消零费率要求。其二，预检在“库在但没有 `workflow_capacity` 表”时把 `occupant` 留空并照样给出 `ready:true`，错库或旧库因此是绿灯；现在表缺失直接进 blockers（`capacity_table_missing`），容量观测值报 `unknown`，不再等于 `free`。其三，验证声明只看证据值非空：`identity_mismatch`、`reviewer=executor`、`error` 这类值会被说成“身份一致”“存在非执行者审查”；现在失败值不算证据、`reserved_session` 必须是 UUID、给不出执行者身份时只能说“记录到一份审查结论”，身份一致性只在两份证据指向同一 UUID 时才敢声明。其四，发布面隐私检查只认 `/Users/` 且密钥检查只对 `.env.example` 生效：现在 `C:\Users\<acct>`、`/home/<acct>` 一并拒绝（`example`、`Public`、`<user>` 等占位名仍放行），所有 `.env*` 与 `*.example` 模板都检查非空密钥——`WINDOWS_ENV.example` 属于此列。文档口径同时校正：`b010855` 按重写后的提交记为 139 files +5531/−339，`dist/` 出库后也不再声称“干净检出可直接运行已提交入口”。验证：本机全量 `npm test` **870 / 858 通过 / 0 失败 / 12 跳过，退出码 0**（新增 7 条用例覆盖上述四处），`verify-snapshot` 298 / hashesMatch true，构建退出码 0。
+
+后续按照 [T7D 开发与验收计划](T7D_DEVELOPMENT_PLAN.md) 分开处理原任务取证、桌面不确定状态、安全可靠性、本机审查命令和另行授权的独立真实验证。预览、完整验收、合并、安装与正式发布分别判定；是否改变原补验交付条件须用户在证据明确后决定。已有预览包未自动更新日常安装。
 
 ## 本分支 T7C
 
@@ -56,7 +71,7 @@ node scripts/workbench-smoke.mjs
 node verify-snapshot.mjs
 ```
 
-本次集成实际重新构建 dist、生成清单并核对重复构建，支持干净检出直接运行已提交入口。清单保留上游 provenance，不把本次提交冒充上游版本。检查结果属于具体提交，远端 CI 是否通过以对应运行记录为准。Windows Job/进程清理等环境敏感测试的历史失败不删除，未运行项目不计为通过。
+本次集成实际重新构建 dist、生成清单并核对重复构建，支持干净检出执行 `npm run build` 后再运行入口（编译产物自 `997b992` 起不再入库，索引里出现 `dist/` 会被 `verify-snapshot.mjs` 直接拒绝）。清单保留上游 provenance，不把本次提交冒充上游版本。检查结果属于具体提交，远端 CI 是否通过以对应运行记录为准。Windows Job/进程清理等环境敏感测试的历史失败不删除，未运行项目不计为通过。
 
 ## 后续顺序
 
@@ -84,3 +99,17 @@ node verify-snapshot.mjs
 ## T7A 桌面外壳补充
 
 已实现 Windows x64 独立窗口、技能启动入口、单实例任务定位及桌面专用 SQLite 只读服务。源码构建和基础测试通过；正常用户目录中的预览安装已通过真实 WebView2 渲染、同窗口定位、导航和写请求限制、窗口关闭及自有查看服务退出检查。本机技能已接入独立查看入口，保留原有执行与模型规则，原执行网关未升级。异机安装仍待验证。见 [桌面运行与边界](../gateway/docs/WORKBENCH.md)。
+
+## T7D 第一梯队（2026-11-03）
+
+P0-2 与 P0-4 已按 [P0-5 独立验证计划](T7D_P0_5_INDEPENDENT_VERIFICATION_PLAN.md) §11 风险表落地，全部为读侧/前端改动，无新 HTTP 写入口：
+
+- R12 运行孤儿证据：`leaseByTask` 按 taskId 读派工租约，`settleDispatch` 判定后把 `dispatchLease`/`runOrphaned` 附加进 stage 视图，面板对 `abandoned`（主人进程退出且无回执）显示"运行已无人管理"卡片；`stuck`（心跳过期）与探测失败不定罪。
+- R2 停止出口：`waiting_stop` 卡片补阻塞原因与核对/人工声明入口；`review_pending` 且停止证据不完整的变体同挂声明入口；修正报告认证字段的读取路径。
+- P0-4 桌面体验：任务列表 ↑/↓/Home/End 键盘导航与移动详情 Escape 返回；≤760 断点 metrics 两列、证明单列，≤480 断点事实表/检查/文件行单列化；实时源读失败后按 2s→30s 退避自动重试（至多 5 次），`online` 事件立即重读，错误横幅显示重试进度。
+
+验证：gateway 后端 872 tests / 860 pass / 0 fail / 12 skipped（`WORKBUDDY_BACKEND=cli`），workbench 前端 63 tests / 63 pass，`npm run build` 与 `typecheck:task-view` 通过。改动未提交、未安装；真实窗口回归属 P0-6。
+
+## P0-6 完整真实验证 run（2026-11-03）
+
+run16（独立账本 `E:\javaproject\_wb-p06-state\run16`）：glm-5.3-flash（x0.08，模型读回+费率披露后用户选定）真实派工 → 71 秒完成 → **完整验收链首次全通**：程序检查（$provenance/$scope passed）→ 独立检查（artifact 哈希入账）→ 不可变 reviewId（check-1 semantic passed）→ `workbuddy_accept_task` → **state=accepted**。artifact 逐字节核验（26 字节，hexdump 一致）。详见 [P0-5 独立验证计划 §10.6](T7D_P0_5_INDEPENDENT_VERIFICATION_PLAN.md)。派工确认走内容指纹（digest 含随机 UUID 每次必变，内容一致作为授权锚）；原生客户端自动确认协作计划。剩余不可主张：额度扣费（报价而已）、异机验证（Issue #3）。

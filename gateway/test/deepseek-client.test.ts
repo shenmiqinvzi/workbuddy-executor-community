@@ -6,7 +6,19 @@ import path from "node:path";
 import { test } from "node:test";
 import { DeepSeekClient, DeepSeekRpcError } from "../src/deepseek-client.js";
 
-test("authenticated Unix socket RPC selects the host without exposing registry credentials", async (t) => {
+// These fixtures bind a real Unix-domain socket at a *.sock path. Windows hosts
+// are named pipes (`\\.\pipe\workbuddy-dsh-*`, covered by dsh-transport.test.ts)
+// and `net` cannot listen on a socket path there, so the fixture is POSIX-only.
+const posixSocket = process.platform === "win32"
+  ? "POSIX-only: the fixture binds a real Unix-domain socket in a temp directory; Windows hosts are named pipes. Run on Linux or macOS."
+  : false;
+// The registry privacy rule is stat.mode/uid on POSIX and an ACL check on
+// Windows, so fixed-mode *.sock registrations only reachable on POSIX.
+const posixRegistry = process.platform === "win32"
+  ? "POSIX-only: the fixture relies on mode/uid privacy for *.sock registrations; Windows hosts are ACL-checked named pipes. Run on Linux or macOS."
+  : false;
+
+test("authenticated Unix socket RPC selects the host without exposing registry credentials", { skip: posixSocket }, async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dsh-rpc-")); const socketPath = path.join(dir, "host.sock"); const token = "private-token-for-test-only";
   const requests: Array<{ method: string; params: Record<string, unknown> }> = [];
   const server = http.createServer((request, response) => {
@@ -25,7 +37,7 @@ test("authenticated Unix socket RPC selects the host without exposing registry c
   assert.deepEqual(requests[0], { method: "health", params: {} });
   await assert.rejects(client.session({ sessionId: "missing" }), (error: unknown) => error instanceof DeepSeekRpcError && error.code === "UNKNOWN_SESSION" && !error.message.includes(token));
 });
-test("registry selection rejects public files and requires explicit host when multiple exist", () => {
+test("registry selection rejects public files and requires explicit host when multiple exist", { skip: posixRegistry }, () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dsh-reg-"));
   try {
     const host = (hostId: string) => ({ hostId, socketPath: path.join(dir, `${hostId}.sock`), token: "private-test-token-12345" });
@@ -35,7 +47,7 @@ test("registry selection rejects public files and requires explicit host when mu
     assert.throws(() => client.resolveHostId(), /Multiple Harness hosts/); assert.equal(client.resolveHostId("two"), "two");
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
-test("socket timeout does not retry or send another prompt", async (t) => {
+test("socket timeout does not retry or send another prompt", { skip: posixSocket }, async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dsh-timeout-")); const socketPath = path.join(dir, "host.sock"); let requests = 0;
   const server = http.createServer(() => { requests++; }); await new Promise<void>((resolve) => server.listen(socketPath, resolve));
   t.after(async () => { await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve())); fs.rmSync(dir, { recursive: true, force: true }); });
@@ -44,7 +56,7 @@ test("socket timeout does not retry or send another prompt", async (t) => {
   await assert.rejects(client.prompt({ hostId: "test-host", sessionId: "session", requestId: "request", text: "task" }), /timed out/); assert.equal(requests, 1);
 });
 
-test("stale registry from a dead pid stays discoverable but does not block default live-host selection", () => {
+test("stale registry from a dead pid stays discoverable but does not block default live-host selection", { skip: posixRegistry }, () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dsh-stale-"));
   try {
     for (const [hostId, pid] of [["live", process.pid], ["stale", 2147483647]] as const) {

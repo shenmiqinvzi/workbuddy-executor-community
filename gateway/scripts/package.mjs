@@ -12,7 +12,7 @@ const SKILLS = new Map([
   ["deepseek-executor", ["skills/deepseek-executor/SKILL.md", "skills/deepseek-executor/references/setup.md"]],
 ]);
 const SKILL_FILES = [...SKILLS.values()].flat();
-const WORKBENCH_FILES = ["index.html", "style.css", "app.mjs", "model.mjs", "task-link.mjs", "dispatch.mjs", "dispatch.css", "controls.mjs", "controls.css", "http-source.mjs", "demo-source.mjs", "fonts/plex-sans.woff2", "fonts/plex-mono.woff2", "fonts/ibmplexsans-OFL.txt", "fonts/ibmplexmono-OFL.txt"].map(name => `workbench/${name}`);
+const WORKBENCH_FILES = ["index.html", "style.css", "app.mjs", "model.mjs", "task-link.mjs", "dispatch.mjs", "dispatch.css", "attention.mjs", "controls.mjs", "controls.css", "http-source.mjs", "demo-source.mjs", "fonts/plex-sans.woff2", "fonts/plex-mono.woff2", "fonts/ibmplexsans-OFL.txt", "fonts/ibmplexmono-OFL.txt"].map(name => `workbench/${name}`);
 const DESKTOP_FILES = ["WorkBuddy.Workbench.csproj","Program.cs","DesktopPolicy.cs","DesktopCommands.cs","DesktopControlPolicy.cs","app.manifest","workbench.ico","packages.lock.json","WEBVIEW2-LICENSE.txt","test/PolicyTests.csproj","test/Program.cs"].map(name => `desktop/${name}`);
 const PLUGIN_FILES = ["index.mjs", "adapter.mjs", "events.mjs", "transport.mjs", "private-path.mjs", "private-path.d.mts", "package.json", "cordis.patch.yml", "README.md", "test/adapter.test.mjs", "test/events.test.mjs", "test/transport.test.mjs"].map(name => `deepseek-plugin/${name}`);
 const REQUIRED_FILES = ["README.md", ".env.example", "package.json", "package-lock.json", "tsconfig.json", "src/server.ts", "dist/server.js", "bin/workbuddy-gateway", "bin/workbuddy-worker", "dist/desktop-worker-cli.js", "bin/workbuddy-service", "src/persistent-service.ts", "src/service-cli.ts", "src/native-desktop-trigger.ts", "dist/persistent-service.js", "dist/service-cli.js", "dist/native-desktop-trigger.js", "docs/QUEUE_WORKER.md", "scripts/install-skill.mjs", "bin/deepseek-gateway", "src/deepseek-server.ts", "dist/deepseek-server.js", "src/deepseek-client.ts", "src/deepseek-store.ts", "src/deepseek-coordinator.ts", "src/deepseek-evidence.ts", "dist/deepseek-client.js", "dist/deepseek-store.js", "dist/deepseek-coordinator.js", "dist/deepseek-evidence.js", "scripts/install-deepseek-skill.mjs", "scripts/install-deepseek-plugin.mjs", "scripts/deepseek-call.mjs", "docs/DEEPSEEK.md", ...SKILL_FILES, ...PLUGIN_FILES];
@@ -124,13 +124,27 @@ export function assertSafeContent(relative, content) {
   if (/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/.test(content)) {
     throw new Error(`Private key in release file: ${relative}`);
   }
-  if (/\/Users\/(?!example(?:\/|\b)|YOUR_(?:NAME|USER|USERNAME)(?:\/|\b))[A-Za-z0-9._-]+\//i.test(content) || /\/private\/var\/folders\//.test(content)) {
+  // POSIX and Windows home directories both name a real account. Fixtures may only use
+  // the placeholder names the project documents, so keep those out of the rule.
+  if (/\/Users\/(?!example(?:\/|\b)|YOUR_(?:NAME|USER|USERNAME)(?:\/|\b)|<[^>]+>)[A-Za-z0-9._-]+\//i.test(content)
+    || /\/home\/(?!example(?:\/|\b)|YOUR_(?:NAME|USER|USERNAME)(?:\/|\b)|<[^>]+>)[A-Za-z0-9._-]+\//i.test(content)
+    || /[A-Za-z]:[\\/]{1,2}Users[\\/]{1,2}(?!example(?![A-Za-z0-9._-])|YOUR_(?:NAME|USER|USERNAME)|Public(?![A-Za-z0-9._-])|<[^>]+>)[A-Za-z0-9._-]+[\\/]/i.test(content)
+    || /\/private\/var\/folders\//.test(content)) {
     throw new Error(`Private machine path in release file: ${relative}`);
   }
-  if (relative === ".env.example") {
+  // Every example configuration is a place where a real secret silently looks like a template.
+  if (/(?:^|[\\/])\.env(?:\.|$)/i.test(relative) || /\.example$/i.test(relative)) {
     for (const line of content.split(/\r?\n/)) {
-      const match = line.match(/^\s*(?:#\s*)?(WORKBUDDY_(?:CLIENT_SECRET|ACCESS_TOKEN|GATEWAY_PASSWORD))\s*=\s*(.*)$/);
-      if (match && match[2].trim().replace(/^(?:""|'')$/, "")) throw new Error(`Nonempty secret in example configuration: ${match[1]}`);
+      // A commented line documents a variable; it cannot supply one.
+      if (/^\s*#/.test(line)) continue;
+      const match = line.match(/^\s*([A-Za-z0-9_]*(?:SECRET|TOKEN|PASSWORD|PASSWD|API_KEY|ACCESS_KEY)[A-Za-z0-9_]*)\s*=\s*(.*)$/);
+      if (!match) continue;
+      // WORKBUDDY_TOKEN_FILE points at where a secret lives; the path is not the secret.
+      if (/_(?:FILE|PATH|DIR|URL)$/i.test(match[1])) continue;
+      const value = match[2].trim().replace(/^(?:""|'')$/, "");
+      if (value && !/^(?:<[^>]*>|YOUR_[A-Za-z0-9_]+|example|changeme|placeholder|none|null)$/i.test(value)) {
+        throw new Error(`Nonempty secret in example configuration: ${match[1]}`);
+      }
     }
   }
 }

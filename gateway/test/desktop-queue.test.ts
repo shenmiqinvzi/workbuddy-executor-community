@@ -6,7 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import { loadConfig, type Config } from "../src/config.js";
-import { DesktopQueue, assertDesktopCaller, windowsWorkerCommand } from "../src/desktop-queue.js";
+import { DesktopQueue, assertDesktopCaller, ownedCommandStopReason, windowsWorkerCommand } from "../src/desktop-queue.js";
 import { TaskStore } from "../src/task-store.js";
 import { SelectedModelClient as WorkBuddyClient } from "./support/selected-model-client.js";
 import { TaskCoordinator } from "../src/coordinator.js";
@@ -152,7 +152,7 @@ test("bootstrap instructions do not pretend to start a worker and preserve quote
   assert.match(prepared.prompt, /claim --session-id 'unit-session'/);
   assert.match(prepared.prompt, /```bash/);
   assert.match(prepared.prompt, /不要沿用历史命令/);
-  if (process.platform === "win32") assert.match(prepared.prompt, /cd '[^\n]+' && '[^\n]+' '[^\n]+' claim/);
+  if (process.platform === "win32") assert.match(prepared.prompt, /cd '[^\n]+' && WORKBUDDY_CLI_ELECTRON='[^\n]+' WORKBUDDY_CONFIG_DIR='[^\n]+' WORKBUDDY_DB_FILE='[^\n]+' WORKBUDDY_RUNS_DIR='[^\n]+' '[^\n]+' '[^\n]+' claim/);
   assert.match(prepared.prompt, /成功回报后也结束/);
   assert.doesNotMatch(prepared.prompt, /连续重试 4 次/);
   assert.throws(() => f.queue.prepare("missing-session"), /not registered/);
@@ -286,4 +286,18 @@ test("a rejected queue dispatch remains inspectable and can be corrected without
   assert.equal((await f.coordinator.sync("rejected-mode")).state, "blocked");
   await f.coordinator.continue({ taskId: "rejected-mode", feedback: "Use the native desktop model already selected" });
   assert.equal((await f.queue.claim("unit-session", 0)).status, "task");
+});
+
+
+
+
+test("a supervisor that never started a process cannot block a native stop", () => {
+  // D-4: a blocked supervisor script (execution policy) or an unlaunchable executable leaves no
+  // process tree, so its missing cleanup evidence must not masquerade as an unconfirmed stop.
+  assert.equal(ownedCommandStopReason(undefined), "no_end_evidence");
+  assert.equal(ownedCommandStopReason({ processStarted: false }), "no_end_evidence", "a command without an end still blocks");
+  assert.equal(ownedCommandStopReason({ endedAt: "2026-11-02T08:00:00.000Z", processStarted: false, cleanupConfirmed: false, reason: "Job supervisor exited 1: running scripts is disabled" }), null, "a supervisor that never created the target has nothing to clean");
+  assert.equal(ownedCommandStopReason({ endedAt: "2026-11-02T08:00:00.000Z", processStarted: true, cleanupConfirmed: false }), "cleanup_unconfirmed", "a started command with unproven cleanup still blocks");
+  assert.equal(ownedCommandStopReason({ endedAt: "2026-11-02T08:00:00.000Z", processStarted: true, cleanupConfirmed: true }), null);
+  assert.equal(ownedCommandStopReason({ endedAt: "2026-11-02T08:00:00.000Z", cleanupConfirmed: false }), "cleanup_unconfirmed", "legacy records without a start marker keep the strict behaviour");
 });

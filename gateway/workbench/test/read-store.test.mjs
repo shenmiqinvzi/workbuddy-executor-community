@@ -75,6 +75,31 @@ test('saved review corruption is rejected and damaged scope does not become miss
         assert.equal(reader.workspaceProtection.readView('first').baseline,'integrity_failure');
     } finally {reader.close();writer.close();fs.rmSync(dir,{recursive:true,force:true});}
 });
+test('task evidence separates a saved report from a missing stop proof',()=>{
+    const {dir,file,writer}=fixture();
+    const attemptId='run-11111111-2222-3333-4444-555555555555';
+    const runsDir=path.join(dir,'runs'),runDir=path.join(runsDir,attemptId);
+    fs.mkdirSync(runDir,{recursive:true});
+    writer.db.prepare('UPDATE tasks SET state=?, attempt_id=?, report_json=? WHERE task_id=?').run('needs_review',attemptId,JSON.stringify({rawText:'saved report'}),'first');
+    writer.db.exec("INSERT INTO workflow_capacity(slot,task_id,executor,operation_id) VALUES(1,'first','workbuddy','op-1')");
+    const writeRun=value=>fs.writeFileSync(path.join(runDir,'state.json'),JSON.stringify(value));
+    writeRun({status:'needs_review',reportDigest:'digest',updatedAt:'2026-11-02T12:09:49.478Z'});
+    writer.close();
+    const before=hash(file),reader=openWorkbenchReadStore(file,{runsDir});
+    try {
+        const withoutStop=reader.taskEvidence('first');
+        assert.equal(withoutStop.available,true);
+        assert.equal(withoutStop.task.reportPresent,true);
+        assert.equal(withoutStop.stop.available,true);
+        assert.equal(withoutStop.stop.nativeStoppedAt,null);
+        assert.equal(withoutStop.capacityHeld,true);
+        writeRun({status:'needs_review',reportDigest:'digest',nativeStoppedAt:'2026-11-02T12:10:00.000Z',stopReason:'end_turn',updatedAt:'2026-11-02T12:10:00.000Z'});
+        const withStop=reader.taskEvidence('first');
+        assert.equal(withStop.stop.nativeStoppedAt,'2026-11-02T12:10:00.000Z');
+        assert.equal(reader.taskEvidence('missing').reason,'unknown_task');
+        assert.equal(hash(file),before);
+    } finally {reader.close();fs.rmSync(dir,{recursive:true,force:true});}
+});
 test('desktop host reads changed saved facts and exits when its owning stdin closes',{timeout:20000},async()=>{
     const {dir,file,writer}=fixture();
     const child=spawn(process.execPath,['scripts/workbench-desktop-host.mjs'],{cwd:path.resolve(import.meta.dirname,'../..'),env:{...process.env,WORKBUDDY_DB_FILE:file,WORKBUDDY_RUNS_DIR:path.join(dir,'runs'),WORKBUDDY_CLI_ELECTRON:path.join(dir,'not-an-executor.exe'),WORKBUDDY_CONFIG_DIR:path.join(dir,'config')},stdio:['pipe','pipe','pipe']});

@@ -16,6 +16,48 @@ export function controlCandidates(record) {
     return result;
 }
 
+const stateLabels={queued:'排队中',working:'执行中',needs_review:'待审查',blocked:'受阻',submitted:'已提交',succeeded:'已完成',failed:'失败',cancelled:'已取消',accepted:'已验收'};
+const stateLabel=state=>stateLabels[state]||(state?String(state):'未知状态');
+
+/** The capacity slot is a separate read resource, so a missing reading is its
+ * own fact: it is reported as unknown, never as a free slot. */
+function capacityNote(capacity,taskId){
+    if(capacity==='unreadable')return{code:'capacity_unknown',text:'无法读取执行容量记录，因此不能据此判断能否开始新的执行；这不等于容量空闲。'};
+    if(!capacity||typeof capacity!=='object')return null;
+    const occupant=capacity.occupied;
+    if(!occupant||occupant.taskId===taskId)return null;
+    return{code:'capacity_occupied_other',text:`执行容量同一时间只允许一项任务，当前由任务 ${occupant.taskId} 占用；这不表示本条任务仍在运行。`};
+}
+
+/** Why there is nothing to click. Every reason names evidence that is already
+ * recorded; an absent record never becomes a guess about the original task. */
+export function unavailableReasons(record,{desktopAvailable=true,live=true,capacity=null}={}) {
+    const view=record?.view, reasons=[];
+    if(!desktopAvailable)reasons.push({code:'desktop_unavailable',text:'当前在只读面板中查看，桌面应用内的操作入口不可用；这里只用于核对已保存的证据。'});
+    if(!live)reasons.push({code:'not_live',text:'当前显示的是缓存快照，不能据此提交操作。'});
+    if(!view?.attempt?.id)reasons.push({code:'attempt_missing',text:'这项任务没有可核对的执行轮次（缺少 attemptId），因此没有操作基准。'});
+    if(view?.revision==null)reasons.push({code:'revision_missing',text:'记录缺少版本号，无法核对操作是否针对当前版本。'});
+    if(reasons.length||!view)return reasons;
+    if(controlCandidates(record).length)return [];
+    const capacityReason=capacityNote(capacity,record?.taskId);
+    if(capacityReason)reasons.push(capacityReason);
+    const state=view.businessState;
+    if(['needs_review','blocked'].includes(state)&&view.remoteStopped!==true)reasons.push({code:'native_stop_unconfirmed',text:`当前状态为「${stateLabel(state)}」，但尚未确认原生停止；返工、独立审查与验收要等停止确认后才能提交。`});
+    else if(['queued','working'].includes(state))reasons.push({code:'already_stopped',text:'原生停止已确认，因此没有可提交的停止请求；刷新执行状态以核对结果。'});
+    else if(state==='needs_review')reasons.push({code:'review_incomplete',text:'本轮没有满足条件的最新审查，或审查中存在未通过项，因此没有可确认的验收。'});
+    else reasons.push({code:'state_not_actionable',text:`当前状态为「${stateLabel(state)}」，没有可提交的停止、返工、审查或验收操作。`});
+    return reasons;
+}
+
+export function renderControlUnavailable(record,options={}) {
+    const reasons=unavailableReasons(record,options);
+    if(!reasons.length)return null;
+    const root=el('section',{class:'task-controls task-controls-unavailable','aria-label':'任务操作不可用原因'});
+    root.append(el('h3',{},'任务操作'),el('p',{class:'task-controls-note'},'当前没有可点的操作。以下只陈述已记录的证据，不做推测：'));
+    for(const reason of reasons)root.append(el('p',{class:'task-controls-note','data-reason':reason.code},reason.text));
+    return root;
+}
+
 /** The host remains authoritative; these are candidate controls, not grants. */
 export function renderDesktopControls(record,{refresh}) {
     const view=record.view, taskId=record.taskId, attemptId=view.attempt.id, revision=view.revision;

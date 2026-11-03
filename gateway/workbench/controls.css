@@ -20,4 +20,26 @@
 .task-control-review :is(textarea,select):focus-visible {outline:2px solid var(--accent);outline-offset:3px}
 .task-control-requirement {padding:12px 0;border-bottom:1px solid var(--border)}
 .task-control-requirement p {margin:0 0 8px;line-height:1.6;overflow-wrap:anywhere}
-@media (max-width:760px) {.task-control-observe {margin-left:0}.task-control-actions {gap:8px}}
+.attention-card {margin:20px 0 8px;padding:16px 18px;border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:var(--radius);background:var(--surface)}
+.attention-card h3 {font-size:15px;line-height:1.4;margin:0 0 8px;font-weight:600}
+.attention-why {font-size:13px;line-height:1.7;color:var(--text);margin:0 0 6px;overflow-wrap:anywhere}
+.attention-next {font-size:13px;line-height:1.7;color:var(--muted);margin:0 0 12px;overflow-wrap:anywhere}
+.attention-card .button {min-height:38px;padding:7px 13px}
+.attention-card .button:disabled {opacity:.55;cursor:not-allowed}
+.attention-facts {margin-top:14px;display:grid;gap:6px}
+.attention-facts[hidden] {display:none}
+.attention-fact {display:grid;grid-template-columns:8.5em 1fr;gap:10px;font-size:13px;line-height:1.6;overflow-wrap:anywhere}
+.attention-fact-label {color:var(--muted)}
+.attention-fact-value {font-family:var(--mono,ui-monospace,SFMono-Regular,Menlo,monospace)}
+.attention-error {font-size:13px;line-height:1.65;margin:0;color:var(--text)}
+.attention-declare {margin-top:16px;padding-top:14px;border-top:1px solid var(--border)}
+.attention-declare summary {font-size:13px;font-weight:600;cursor:pointer}
+.attention-label {display:block;font-size:12px;color:var(--muted);margin:12px 0 6px}
+.attention-declare textarea,.attention-declare input {display:block;width:100%;margin-top:8px;padding:9px 12px;border:1px solid var(--control);border-radius:var(--radius);background:var(--surface);color:var(--text);font:inherit;line-height:1.55}
+.attention-declare textarea {min-height:72px;resize:vertical;caret-color:var(--accent)}
+.attention-sentence {display:inline-block;margin:4px 0;padding:2px 6px;border-radius:4px;background:var(--border);font-size:12px;overflow-wrap:anywhere}
+.attention-declare .button {margin-top:12px;min-height:38px;padding:7px 13px}
+.attention-declare .button:disabled {opacity:.55;cursor:not-allowed}
+@media (max-width:760px) {.attention-fact {grid-template-columns:1fr;gap:2px}.attention-fact-label {font-size:12px}.task-control-observe {margin-left:0}.task-control-actions {gap:8px}}
+
+
