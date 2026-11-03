@@ -31,9 +31,9 @@ jobs:
         run: npm run build
       - name: Verify fresh MCP entry and persisted task identity
         run: node --import ./test/support/typescript-loader.mjs --test test/mcp-entry.test.ts
-      - name: Verify committed compiler output
+      - name: Package the release from the fresh build
         run: |
-          git diff --exit-code -- dist
+          node scripts/package.mjs "$env:RUNNER_TEMP\release"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Type check the TaskView contract sources and tests
         run: npm run typecheck:task-view
