@@ -4,7 +4,7 @@ import { taskIdFromHash } from './task-link.mjs';
 import { mountDesktopDispatch } from './dispatch.mjs';
 import { renderControlUnavailable, renderDesktopControls } from './controls.mjs';
 import { renderAttention } from './attention.mjs';
-import { STATES, CHECKS, ACTORS, stateInfo, taskName, workspaceName, executorName, currentReview, proofs, filterRecords, formatTime, eventName } from './model.mjs';
+import { STATES, CHECKS, ACTORS, stateInfo, taskName, workspaceName, executorName, currentReview, proofs, filterRecords, formatTime, eventName, taskListNavigation, RETRY_MAX_ATTEMPTS, nextRetryDelayMs } from './model.mjs';
 const $ = id => document.getElementById(id);
 function h(tag, props = {}, ...children) {
     const el = document.createElement(tag);
@@ -40,7 +40,7 @@ function icon(name, cls = '') { const el = document.createElementNS('http://www.
     p.setAttribute('d', d);
     el.append(p);
 } return el; }
-const state = { source: new HttpSource(), records: [], selected: null, detail: null, capacity: null, tab: 'overview', filters: { search: '', state: '', executor: '', workspace: '', group: 'all' }, cursor: null, fetchedAt: null, error: null, detailError: null, events: [], eventError: null, eventCursor: 0, eventsLoaded: false, eventsBusy: false, eventMore: false, busy: false, detailBusy: false, health: null, healthError: false, listSerial: 0, detailSerial: 0 };
+const state = { source: new HttpSource(), records: [], selected: null, detail: null, capacity: null, tab: 'overview', filters: { search: '', state: '', executor: '', workspace: '', group: 'all' }, cursor: null, fetchedAt: null, error: null, detailError: null, events: [], eventError: null, eventCursor: 0, eventsLoaded: false, eventsBusy: false, eventMore: false, busy: false, detailBusy: false, health: null, healthError: false, listSerial: 0, detailSerial: 0, retryTimer: null, retryAttempt: 0 };
 let listController, detailController, eventController, toastTimer;
 let linkedTask = taskIdFromHash(location.hash);
 let desktopControlsAvailable = false;
@@ -95,7 +95,7 @@ function render() {
     const notice = $('source-notice');
     notice.replaceChildren();
     if (state.error)
-        notice.append(h('div', { class: 'notice error', role: 'status' }, state.fetchedAt ? '无法读取新的快照，以下保留上次记录，业务状态未被改变。' : '无法读取任务。请确认运行的是支持 panel-1 的本地网关。', h('div', { class: 'small' }, state.error), h('button', { class: 'text-button', type: 'button', onclick: () => refreshTasks() }, '重试读取')));
+        notice.append(h('div', { class: 'notice error', role: 'status' }, state.fetchedAt ? '无法读取新的快照，以下保留上次记录，业务状态未被改变。' : '无法读取任务。请确认运行的是支持 panel-1 的本地网关。', h('div', { class: 'small' }, state.error), state.source.kind === 'live' && state.retryAttempt > 0 ? h('div', { class: 'small' }, `将自动重试（第 ${state.retryAttempt} / ${RETRY_MAX_ATTEMPTS} 次尝试已安排）。网络恢复后会立即重新读取。`) : null, h('button', { class: 'text-button', type: 'button', onclick: () => refreshTasks() }, '重试读取')));
     else if (state.healthError)
         notice.append(h('div', { class: 'notice' }, '任务可以读取，网关健康信息暂不可用。原生执行器连接状态未被确认。'));
     $('list-count').textContent = state.fetchedAt ? `${visible.length} 项任务` : '任务记录尚未读取';
@@ -107,7 +107,7 @@ function render() {
     else if (!visible.length)
         list.append(empty(state.error ? '读取暂不可用' : state.records.length ? '没有匹配的任务' : '还没有任务记录', state.records.length ? '尝试清空搜索或调整筛选条件。' : '现有任务会在这里显示；此面板只读取记录。'));
     else
-        visible.forEach(record => list.append(h('button', { class: 'task-row', type: 'button', 'aria-current': String(record.taskId === state.selected), onclick: () => selectTask(record.taskId), 'aria-label': taskName(record) + '，' + stateInfo(record).label }, h('div', { class: 'task-row-top' }, h('span', { class: 'task-name' }, taskName(record)), icon('chevron', 'row-arrow')), h('div', { class: 'task-meta' }, h('span', {}, workspaceName(record)), h('span', {}, record.view?.attempt?.number ? `第 ${record.view.attempt.number} 轮` : '轮次未提供')), h('div', { class: 'task-bottom' }, status(record), h('span', { class: 'task-source' }, executorName(record))))));
+        visible.forEach(record => list.append(h('button', { class: 'task-row', type: 'button', 'data-task-id': record.taskId, 'aria-current': String(record.taskId === state.selected), onclick: () => selectTask(record.taskId), 'aria-label': taskName(record) + '，' + stateInfo(record).label }, h('div', { class: 'task-row-top' }, h('span', { class: 'task-name' }, taskName(record)), icon('chevron', 'row-arrow')), h('div', { class: 'task-meta' }, h('span', {}, workspaceName(record)), h('span', {}, record.view?.attempt?.number ? `第 ${record.view.attempt.number} 轮` : '轮次未提供')), h('div', { class: 'task-bottom' }, status(record), h('span', { class: 'task-source' }, executorName(record))))));
     $('list-foot').replaceChildren(h('span', {}, state.fetchedAt ? '已加载 ' + state.records.length + ' 项' + (state.cursor ? ' · 还有更多' : '') : '尚未读取记录'), state.cursor ? h('button', { class: 'text-button', type: 'button', disabled: state.busy, onclick: () => refreshTasks(true) }, '加载更多') : h('span', {}, '只读记录'));
     renderDetail();
 }
@@ -238,6 +238,12 @@ async function refreshTasks(more = false) {
         state.health = health;
         state.healthError = !health;
         state.fetchedAt = new Date().toISOString();
+        // A successful read proves the connection again; stop any pending retry.
+        if (state.retryTimer) {
+            clearTimeout(state.retryTimer);
+            state.retryTimer = null;
+        }
+        state.retryAttempt = 0;
         updateWorkspaces();
         if (!more) {
             const selected = linkedTask ?? (state.records.some(r => r.taskId === state.selected) ? state.selected : state.records.find(r => r.ok && stateInfo(r).key === 'needs_review')?.taskId ?? state.records[0]?.taskId);
@@ -251,8 +257,10 @@ async function refreshTasks(more = false) {
         }
     }
     catch (error) {
-        if (serial === state.listSerial && error.name !== 'AbortError')
+        if (serial === state.listSerial && error.name !== 'AbortError') {
             state.error = error.message || '连接失败。';
+            scheduleAutoRetry();
+        }
     }
     finally {
         if (serial === state.listSerial) {
@@ -260,6 +268,18 @@ async function refreshTasks(more = false) {
             render();
         }
     }
+}
+// P0-4 reconnect: after a failed live list read, retry a bounded number of
+// times with a deterministic backoff. Any successful read or a manual
+// refresh resets the sequence; demo sources never auto-retry.
+function scheduleAutoRetry() {
+    if (state.source.kind !== 'live' || state.retryAttempt >= RETRY_MAX_ATTEMPTS)
+        return;
+    clearTimeout(state.retryTimer);
+    const delay = nextRetryDelayMs(state.retryAttempt);
+    state.retryAttempt += 1;
+    state.retryTimer = setTimeout(() => { state.retryTimer = null; if (state.source.kind === 'live' && state.error)
+        void refreshTasks(); }, delay);
 }
 async function selectTask(id, mobile = true) {
     detailController?.abort();
@@ -351,6 +371,9 @@ async function switchSource(kind, scenario = 'normal') {
     listController?.abort();
     detailController?.abort();
     eventController?.abort();
+    clearTimeout(state.retryTimer);
+    state.retryTimer = null;
+    state.retryAttempt = 0;
     state.listSerial++;
     state.detailSerial++;
     state.records = [];
@@ -392,11 +415,48 @@ window.addEventListener('hashchange', async () => {
     if (state.source.kind === 'demo') await switchSource('live');
     else if (!state.busy) { linkedTask = null; await selectTask(taskId, false); }
 });
+// P0-4 reconnect UX: when the OS reports connectivity returning, read again
+// right away instead of waiting out the backoff timer.
+window.addEventListener('online', () => {
+    if (state.source.kind !== 'live' || !state.error || state.busy)
+        return;
+    clearTimeout(state.retryTimer);
+    state.retryTimer = null;
+    void refreshTasks();
+});
 document.addEventListener('keydown', e => { if (e.key === '/' && !e.ctrlKey && !e.metaKey && !['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName) && !document.activeElement.isContentEditable) {
     e.preventDefault();
     $('search').focus();
 } if (e.key === 'Escape')
     closeMenu(); });
+// P0-4 keyboard navigation over the visible task list, and Escape to leave
+// the mobile detail back to the list. Plain keys only when no text field and
+// no modifier is involved, so typing and shortcuts keep their meaning.
+document.addEventListener('keydown', e => {
+    if (e.ctrlKey || e.metaKey || e.altKey)
+        return;
+    const active = document.activeElement;
+    if (['INPUT', 'SELECT', 'TEXTAREA'].includes(active?.tagName) || active?.isContentEditable)
+        return;
+    if (e.key === 'Escape' && document.body.classList.contains('mobile-detail') && matchMedia('(max-width:760px)').matches) {
+        e.preventDefault();
+        backToList();
+        return;
+    }
+    const steps = { ArrowDown: 1, ArrowUp: -1 };
+    if (!(e.key in steps) && e.key !== 'Home' && e.key !== 'End')
+        return;
+    const target = e.target instanceof Element ? e.target.closest('.task-list') : null;
+    if (!target)
+        return;
+    e.preventDefault();
+    const visible = filterRecords(state.records, state.filters);
+    const nextId = e.key === 'Home' ? visible[0]?.taskId ?? null : e.key === 'End' ? visible.at(-1)?.taskId ?? null : taskListNavigation(visible, state.selected, steps[e.key]);
+    if (!nextId)
+        return;
+    selectTask(nextId, false);
+    requestAnimationFrame(() => { const row = document.querySelector(`.task-row[data-task-id="${CSS.escape(nextId)}"]`); row?.focus({ preventScroll: false }); row?.scrollIntoView({ block: 'nearest' }); });
+});
 if (!linkedTask && new URL(location.href).searchParams.get('demo') === '1')
     switchSource('demo');
 else

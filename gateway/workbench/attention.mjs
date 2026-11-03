@@ -18,6 +18,7 @@ const near = {
     blocked: '先看阻塞原因；若涉及停止或身份，只做核对，不做自动重试。',
     failed: '失败不等于工作区没有变化；按允许修改范围核对后再决定。',
     unknown_state: '状态本身无法判定；以证据为准，不要用界面上的空白推断结果。',
+    run_orphaned: '派工进程已退出且没有回执；先核对它做了什么，再决定重派或收口。',
 };
 
 /** Which saved fact puts this task here, in the reader's words. */
@@ -30,7 +31,13 @@ export function attentionReason(record) {
     const business = view.businessState;
     const review = currentReview(record);
     const stopMissing = view.remoteStopped === false || view.timing?.nativeStoppedAt == null;
-    if (display === 'waiting_stop') return { code: 'stop_unconfirmed', title: '报告已到，原生停止未确认', why: `执行报告已记录（认证：${view.reportAuthentication || '未提供'}），但停止证据缺失：停止记录时间 ${view.timing?.nativeStoppedAt ? view.timing.nativeStoppedAt : '为空'}。停止未确认时，返工、审查与验收都不能提交。`, next: near.stop_unconfirmed };
+    // R12: the lease evidence outranks every other reading — a dead owner with
+    // no receipt means nobody is managing this run, whatever the state says.
+    if (view.runOrphaned === true) {
+        const lease = view.dispatchLease;
+        return { code: 'run_orphaned', title: '运行已无人管理（派工进程已退出）', why: `派工租约显示主人进程已退出（owner_pid ${lease?.ownerPid ?? '未知'}，心跳 ${lease?.heartbeatAt ?? '无'}），且没有任何回执。这个状态可能出现在报告已到或尚未到时；先核对证据，再决定重派或收口。`, next: near.run_orphaned };
+    }
+    if (display === 'waiting_stop') return { code: 'stop_unconfirmed', title: '报告已到，原生停止未确认', why: `执行报告已记录（认证：${view.presentation?.report?.authentication || view.reportAuthentication || '未提供'}），但停止证据缺失：停止记录时间 ${view.timing?.nativeStoppedAt ? view.timing.nativeStoppedAt : '为空'}。停止未确认时，返工、审查与验收都不能提交。`, next: near.stop_unconfirmed };
     if (display === 'waiting_input') return { code: 'input_waiting', title: '执行器在等待输入', why: '原会话停在等待输入，没有继续执行；这里没有替它作答的入口。', next: near.input_waiting };
     if (info.key === 'inconsistent') return { code: 'stop_unconfirmed', title: '待验收记录缺少停止证明', why: '记录写着待验收，但原生停止没有确认；这两个事实不能互相顶替。', next: near.stop_unconfirmed };
     if (business === 'blocked' || info.key === 'blocked') return { code: 'blocked', title: '任务受阻', why: `已记录阻塞原因：${record.presentation?.blockingReason || '未提供'}。`, next: near.blocked };
@@ -75,7 +82,10 @@ export function renderAttention(record, { refresh } = {}) {
         }
     } }, '核对当前证据');
     root.append(button, facts);
-    if (reason.code === 'stop_unconfirmed') {
+    // R2: the human stop-declaration entry belongs wherever the card says the
+    // stop evidence is incomplete — the waiting_stop card and the review card
+    // whose stop records disagree. A completed review keeps no entry.
+    if (reason.code === 'stop_unconfirmed' || (reason.code === 'review_pending' && view.remoteStopped === false)) {
         const declared = declarationBlock(record, { refresh });
         if (declared) root.append(declared);
     }
@@ -126,6 +136,7 @@ function factRows(value) {
     const rows = [];
     const stop = value.stop || {};
     const dispatch = value.dispatch || null;
+    const lease = record.view?.dispatchLease || null;
     const pairs = [
         ['任务状态', value.task?.state ?? '未提供'],
         ['报告', value.task?.reportPresent ? '已记录' : '未记录'],
@@ -135,9 +146,10 @@ function factRows(value) {
         ['原操作', value.operationId ?? '未记录'],
         ['操作状态', FACT_LABELS.state ? `${value.operationState ?? '未提供'}（${value.conclusion ?? '未知'}）` : ''],
         ['派工', dispatch ? `${dispatch.state} / ${dispatch.settlement}` : '无派工记录'],
+        lease ? ['派工租约', `${lease.state} · ${lease.settlement}/${lease.reason} · owner_pid ${lease.ownerPid ?? '未知'} · 心跳 ${lease.heartbeatAt ?? '无'}`] : null,
         value.declaration ? ['人工声明', `${value.declaration.actor} · ${value.declaration.declaredAt} · ${value.declaration.declarationId}`] : ['人工声明', '没有'],
         ['执行容量', value.capacityHeld ? `仍由任务 ${value.capacityTaskId} 占用` : '未占用'],
-    ];
+    ].filter(Boolean);
     for (const [label, text] of pairs) rows.push(el('div', { class: 'attention-fact' }, el('span', { class: 'attention-fact-label' }, label), el('span', { class: 'attention-fact-value' }, text)));
     return rows;
 }

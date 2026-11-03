@@ -97,6 +97,25 @@ test("journal reads are zero-creation, worker claims are durable and singular, a
  assert.equal(new DesktopDispatchJournal(file).receipt(value.draftId)!.operationId,value.operationId);
  const raw=new DatabaseSync(file);raw.prepare("UPDATE desktop_dispatch_requests SET body='{}'").run();raw.close();assert.throws(()=>journal.receipt(value.draftId));
 });
+test("leaseByTask reads the dispatch lease by task id without creating anything (R12)",async t=>{
+ const f=fixture(t),value=await draft(f),file=path.join(f.dir,"state","requests.sqlite"),journal=new DesktopDispatchJournal(file);
+ // A missing journal file is "no evidence", never an error and never a write.
+ assert.equal(journal.leaseByTask(value.taskId),null);assert.equal(fs.existsSync(file),false);
+ journal.enqueue(value);
+ const absent=journal.leaseByTask("desktop-00000000-0000-4000-8000-000000000000");
+ assert.equal(absent,null);
+ const owner={pid:process.pid,startedAt:new Date(Date.now()-10).toISOString()};
+ const claimed=journal.claim(value.draftId,owner);assert.ok(claimed);
+ const lease=journal.leaseByTask(value.taskId);
+ assert.ok(lease);assert.equal(lease!.state,"dispatching");
+ assert.equal(lease!.ownerPid,process.pid);assert.equal(typeof lease!.ownerStartedAt,"string");
+ assert.equal(typeof lease!.claimedAt,"string");assert.equal(lease!.heartbeatAt,lease!.claimedAt);
+ journal.heartbeat(value.draftId,owner);
+ const refreshed=journal.leaseByTask(value.taskId);
+ assert.ok(refreshed);assert.equal(typeof refreshed!.heartbeatAt,"string");
+ // Oversized identifiers read as absent, exactly like the request-id lease path.
+ assert.equal(journal.leaseByTask("x".repeat(201)),null);
+});
 test("legacy database is refused before migration and its bytes stay unchanged",t=>{
  const f=fixture(t),file=path.join(f.dir,"legacy.sqlite"),db=new DatabaseSync(file);db.exec("CREATE TABLE tasks(task_id TEXT PRIMARY KEY)");db.close();
  const before=fs.readFileSync(file);assert.throws(()=>assertDesktopDispatchDatabase({dbFile:file} as Config),hasCode("GATEWAY_UPGRADE_REQUIRED"));assert.deepEqual(fs.readFileSync(file),before);

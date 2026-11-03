@@ -22,7 +22,9 @@ const config = loadConfig();
 if (!fs.statSync(config.dbFile).isFile()) throw new Error('The configured task database must exist.');
 const store = openWorkbenchReadStore(config.dbFile, { dispatchFile: desktopJournal(config).file, runsDir: runsDirectory(config) });
 const coordinator = Object.freeze({ store });
-const service = new TaskApplicationService(coordinator, config.maxTaskAttempts ?? 3, runsDirectory(config));
+// R12: read-side dispatch-lease evidence from the same journal the read store
+// already opened. The journal file may be absent; reads then return null.
+const service = new TaskApplicationService(coordinator, config.maxTaskAttempts ?? 3, runsDirectory(config), undefined, taskId => desktopJournal(config).leaseByTask(taskId));
 const server = new WorkbenchHttpServer({ service, health: () => workbenchHealth({ runtime: runtimeVersion }) });
 try {
     const port = await server.listen(0);

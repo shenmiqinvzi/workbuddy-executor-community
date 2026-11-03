@@ -99,3 +99,13 @@ node verify-snapshot.mjs
 ## T7A 桌面外壳补充
 
 已实现 Windows x64 独立窗口、技能启动入口、单实例任务定位及桌面专用 SQLite 只读服务。源码构建和基础测试通过；正常用户目录中的预览安装已通过真实 WebView2 渲染、同窗口定位、导航和写请求限制、窗口关闭及自有查看服务退出检查。本机技能已接入独立查看入口，保留原有执行与模型规则，原执行网关未升级。异机安装仍待验证。见 [桌面运行与边界](../gateway/docs/WORKBENCH.md)。
+
+## T7D 第一梯队（2026-11-03）
+
+P0-2 与 P0-4 已按 [P0-5 独立验证计划](T7D_P0_5_INDEPENDENT_VERIFICATION_PLAN.md) §11 风险表落地，全部为读侧/前端改动，无新 HTTP 写入口：
+
+- R12 运行孤儿证据：`leaseByTask` 按 taskId 读派工租约，`settleDispatch` 判定后把 `dispatchLease`/`runOrphaned` 附加进 stage 视图，面板对 `abandoned`（主人进程退出且无回执）显示"运行已无人管理"卡片；`stuck`（心跳过期）与探测失败不定罪。
+- R2 停止出口：`waiting_stop` 卡片补阻塞原因与核对/人工声明入口；`review_pending` 且停止证据不完整的变体同挂声明入口；修正报告认证字段的读取路径。
+- P0-4 桌面体验：任务列表 ↑/↓/Home/End 键盘导航与移动详情 Escape 返回；≤760 断点 metrics 两列、证明单列，≤480 断点事实表/检查/文件行单列化；实时源读失败后按 2s→30s 退避自动重试（至多 5 次），`online` 事件立即重读，错误横幅显示重试进度。
+
+验证：gateway 后端 872 tests / 860 pass / 0 fail / 12 skipped（`WORKBUDDY_BACKEND=cli`），workbench 前端 63 tests / 63 pass，`npm run build` 与 `typecheck:task-view` 通过。改动未提交、未安装；真实窗口回归属 P0-6。

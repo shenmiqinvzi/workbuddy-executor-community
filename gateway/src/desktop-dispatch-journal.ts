@@ -76,6 +76,18 @@ export class DesktopDispatchJournal {
       return { state: String(row.state), ownerPid: row.owner_pid == null ? null : Number(row.owner_pid), ownerStartedAt: text(row.owner_started_at), claimedAt: text(row.claimed_at), heartbeatAt: text(row.heartbeat_at) };
     } finally { db.close(); }
   }
+  /** The read-side twin of lease(): one task owns at most one dispatch row
+   * (task_id UNIQUE), so the newest row for the task is the dispatch lease
+   * evidence. Read-only: a missing journal file returns null, never a write. */
+  leaseByTask(taskId: string): { state: string; ownerPid: number | null; ownerStartedAt: string | null; claimedAt: string | null; heartbeatAt: string | null } | null {
+    if (!taskId || taskId.length > 200) return null;
+    const db = this.open(false); if (!db) return null;
+    try {
+      const row = db.prepare("SELECT * FROM desktop_dispatch_requests WHERE task_id=? ORDER BY rowid DESC LIMIT 1").get(taskId); if (!row) return null;
+      const text = (value: unknown) => value == null ? null : String(value);
+      return { state: String(row.state), ownerPid: row.owner_pid == null ? null : Number(row.owner_pid), ownerStartedAt: text(row.owner_started_at), claimedAt: text(row.claimed_at), heartbeatAt: text(row.heartbeat_at) };
+    } finally { db.close(); }
+  }
   finish(requestId: string, state: DesktopReceipt["state"], code?: string, message?: string) {
     const db = this.open(true)!;
     try { db.prepare("UPDATE desktop_dispatch_requests SET state=?,code=?,message=?,updated_at=? WHERE request_id=? AND state IN ('launch_requested','dispatching')").run(state,code??null,message??null,new Date().toISOString(),requestId); }

@@ -59,3 +59,26 @@ export function validateRecord(value) {
     const reviewsValid = value?.reviews === null || Array.isArray(value?.reviews) && value.reviews.every(r => r && typeof r.reviewId === 'string' && typeof r.attemptId === 'string' && Array.isArray(r.checks) && r.checks.every(c => c && typeof c.checkId === 'string' && typeof c.status === 'string' && typeof c.actor === 'string' && Array.isArray(c.evidenceRefs) && c.evidenceRefs.every(v => typeof v === 'string')));
     return Boolean(value && value.ok === true && typeof value.taskId === 'string' && value.view?.taskId === value.taskId && value.view?.schemaVersion === 'workbuddy-executor/stage-2' && typeof value.view.businessState === 'string' && value.view.attempt && value.view.binding && value.view.timing && value.view.workspace && value.presentation && typeof value.presentation.objective === 'string' && [true, false, null].includes(value.view.remoteStopped) && reviewsValid && (report === null || report && typeof report.text === 'string'));
 }
+
+/** P0-4 keyboard list navigation: derive the next task id from the visible
+ * rows so the browser handler stays a thin wrapper. Unknown anchors and
+ * out-of-range steps return null — no wraparound guessing. */
+export function taskListNavigation(visible, selectedId, step) {
+    if (!Array.isArray(visible) || visible.length === 0 || !Number.isInteger(step) || step === 0)
+        return null;
+    const index = visible.findIndex(r => r?.taskId === selectedId);
+    if (index === -1)
+        return null;
+    const next = index + step;
+    return next >= 0 && next < visible.length ? visible[next].taskId : null;
+}
+
+/** P0-4 reconnect backoff for live reads: deterministic doubling, capped at
+ * 30s. The caller owns the attempt budget (RETRY_MAX_ATTEMPTS); a bad attempt
+ * value yields null so a caller bug surfaces instead of retrying blindly. */
+export const RETRY_MAX_ATTEMPTS = 5;
+export function nextRetryDelayMs(attempt) {
+    if (!Number.isInteger(attempt) || attempt < 0)
+        return null;
+    return Math.min(30000, 2000 * 2 ** attempt);
+}
