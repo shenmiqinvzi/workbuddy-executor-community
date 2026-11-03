@@ -113,3 +113,17 @@ P0-2 与 P0-4 已按 [P0-5 独立验证计划](T7D_P0_5_INDEPENDENT_VERIFICATION
 ## P0-6 完整真实验证 run（2026-11-03）
 
 run16（独立账本 `E:\javaproject\_wb-p06-state\run16`）：glm-5.3-flash（x0.08，模型读回+费率披露后用户选定）真实派工 → 71 秒完成 → **完整验收链首次全通**：程序检查（$provenance/$scope passed）→ 独立检查（artifact 哈希入账）→ 不可变 reviewId（check-1 semantic passed）→ `workbuddy_accept_task` → **state=accepted**。artifact 逐字节核验（26 字节，hexdump 一致）。详见 [P0-5 独立验证计划 §10.6](T7D_P0_5_INDEPENDENT_VERIFICATION_PLAN.md)。派工确认走内容指纹（digest 含随机 UUID 每次必变，内容一致作为授权锚）；原生客户端自动确认协作计划。剩余不可主张：额度扣费（报价而已）、异机验证（Issue #3）。
+
+## 发布（2026-11-03）
+
+- CI：0282c72 补交 SNAPSHOT_MANIFEST.json（R12 改了 7 个源文件，清单未再生成导致 "Verify source snapshot" 红）；重跑后 posix/gateway 双 job 绿。
+- 合并：PR #23（base 为 stage-2 分支 feat/t7d-desktop-controls，merge cf0bb9d）→ PR #24 把该分支合入 main（merge 47f9886）。main 现含 T7D 全部改动；本地 feat/t7d-p05 分支已 fast-forward 对齐 47f9886。
+- 升级安装（T7B 预览网关 `C:\Users\LENOVO\AppData\Local\Programs\WorkBuddyWorkbenchT7BPreview-20261031\...\gateway`，手工部署快照、非 setup.mjs 安装，故走构建物同步而非 upgrade --apply）：
+  1. 备份至 `E:\javaproject\outputs\t7b-preview-backup-20261103`（排除 node_modules）。
+  2. 依赖不变（package.json/package-lock 逐字节一致），node_modules 未动。
+  3. robocopy /MIR 同步 dist/src/workbench/scripts/skills/bin/desktop/deepseek-plugin/docs/test 十目录 + 根 package.json 等 8 文件；`.env` 与 `data/`（persistent-service.json 等）保留未触碰。
+  4. doctor ok=true、buildPresent、desktopRoute，codeHash 9bb1582b。
+  5. 技能升级：install-skill.mjs 6 文件全部 DIFF→已安装，旧版备份 `C:\Users\LENOVO\.codex\skill-backups\workbuddy-executor-IDxavp`。
+  6. 常驻服务 service-c（service-cli.js run，1.5s 轮询 pumpWorkspaceWorkers，Windows 无自动拉起）已 kill+detached 重拉：新 pid 17404，status=no_task，codeHash=9bb1582b——已跑新代码。
+  7. MCP server（codex.exe 子进程）不动，Codex Desktop 重连/新会话自动加载新 dist/server.js。
+- 验证：WorkBuddy 客户端 7 进程健康、CDP 18491 可达；`.env`/`data/` 时间戳未变（10-31）。run_orphaned/waiting_stop 真实窗口回归仍属 P0-6 后续。
