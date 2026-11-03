@@ -9,6 +9,7 @@ test("arguments including whitespace, quotes, backslashes and Unicode survive ex
  const dir=fixture(t),args=['with spaces','quote"here','trail\\',' space ','中文'];
  const r=await runBounded({executable:process.execPath,args:['-e','console.log(JSON.stringify(process.argv.slice(1)))',...args],cwd:dir,timeoutSeconds:5},dir);
  assert.equal(r.exitCode,0,JSON.stringify(r));assert.equal(r.cleanupConfirmed,true);assert.deepEqual(JSON.parse(fs.readFileSync(r.stdout,'utf8')),args);
+ assert.equal(r.processStarted,true,"a started command must leave a durable start marker");assert.ok(fs.existsSync(r.startedMarker!),"the marker path must be reported");
 });
 test("intentional hang and its detached child end within bound with owned tree cleanup",async t=>{
  const dir=fixture(t),pidFile=path.join(dir,"child.pid");
@@ -42,6 +43,8 @@ test("a supervisor that cannot start reports why instead of a bare 125",{skip:pr
  fs.writeFileSync(notAProgram,"this file is not an executable");
  const r=await runBounded({executable:notAProgram,args:[],cwd:dir,timeoutSeconds:5},dir);
  assert.equal(r.exitCode,125,JSON.stringify(r));assert.equal(r.cleanupConfirmed,false);
+ // D-4: a supervisor that never created the target leaves no marker, so nothing is left to clean.
+ assert.equal(r.processStarted,false,"no start marker means the target process never existed");
  assert.ok(r.failure,"a failed supervisor must carry evidence");
  assert.equal(r.failure!.watchdogFired,false,"the supervisor exited, so the watchdog did not fire");
  assert.equal(r.failure!.helperExitCode,1,"the supervisor should report a PowerShell failure exit code");

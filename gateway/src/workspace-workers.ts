@@ -5,6 +5,8 @@ import { DatabaseSync } from "node:sqlite";
 import type { Config } from "./config.js";
 import { readDesktopSession, waitForDesktopSession } from "./desktop-runtime.js";
 import { runsDirectory } from "./run-journal.js";
+import { PreparationJournal } from "./preparation-journal.js";
+import type { PreparationProbeInput, PreparationProbeRecord } from "./preparation-protocol.js";
 
 export interface WorkspaceWorker {
   sessionId: string;
@@ -18,6 +20,8 @@ export interface WorkspaceWorker {
 export interface NativeWorkerCreator {
   createWorker(workspace: string, sessionId: string, title?: string): Promise<{sessionId: string; workspace: string}>;
   setModel?(sessionId: string, model: string): Promise<{sessionId:string;model:string}>;
+  /** 只读观测：返回该会话当前是否在原生端可见；缺席不代表没有创建。 */
+  probe?(sessionId: string, workspace: string): Promise<{sessionId: string; workspace: string} | null>;
 }
 type Row = Omit<WorkspaceWorker, "selected"> & { selected: number };
 function decode(row: Row): WorkspaceWorker {return {...row,selected:row.selected===1,error:row.error??undefined};}
@@ -36,6 +40,7 @@ export function readWorkspaceWorkers(config: Config, fallback?: {workspace:strin
 /** This is our routing registry, never WorkBuddy's own database. */
 export class WorkspaceWorkers {
   private readonly db: DatabaseSync;
+  private readonly journal: PreparationJournal;
   constructor(readonly config: Config) {
     const root = runsDirectory(config);
     fs.mkdirSync(root, { recursive: true, mode: 0o700 });
@@ -47,6 +52,37 @@ export class WorkspaceWorkers {
         selected INTEGER NOT NULL, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL, error TEXT);
       CREATE UNIQUE INDEX IF NOT EXISTS selected_workspace ON workers(workspace) WHERE selected=1;`);
     this.db.exec("CREATE TABLE IF NOT EXISTS worker_keys(workspace TEXT NOT NULL, workerKey TEXT NOT NULL, sessionId TEXT NOT NULL UNIQUE, PRIMARY KEY(workspace, workerKey))");
+    this.journal = new PreparationJournal(this.db);
+  }
+  /**
+   * 失败路径上的只读观测。它只记录“现在能看到什么”，不推导终态：
+   * 查不到 ≠ 未创建，异常 ≠ 未到达。任何异常都不得顶替原来的失败原因。
+   */
+  private async observePreparation(worker: {sessionId: string; workspace: string}, native: NativeWorkerCreator): Promise<void> {
+    const expected = { sessionId: worker.sessionId, workspace: worker.workspace };
+    let input: PreparationProbeInput;
+    if (native.probe) {
+      try {
+        input = { source: "native_session_get", expected, observed: await native.probe(worker.sessionId, worker.workspace) };
+      } catch (error) {
+        input = { source: "native_session_get", expected, observed: null, error: error instanceof Error ? error.message : String(error) };
+      }
+    } else {
+      try {
+        const evidence = readDesktopSession(this.config.workbuddyConfigDir, worker.sessionId);
+        input = { source: "desktop_history", expected, observed: evidence.registered && evidence.cwd ? { sessionId: worker.sessionId, workspace: evidence.cwd } : null };
+      } catch (error) {
+        input = { source: "desktop_history", expected, observed: null, error: error instanceof Error ? error.message : String(error) };
+      }
+    }
+    this.journal.record({ ...input, sessionId: worker.sessionId, workspace: worker.workspace });
+  }
+  private async safeProbe(worker: {sessionId: string; workspace: string}, native: NativeWorkerCreator): Promise<void> {
+    try { await this.observePreparation(worker, native); } catch { /* 观测不可用不能顶替原来的失败原因；日志缺行本身就是“未观测” */ }
+  }
+  /** 只读：某次预留身份上记录过的全部观测，按时间升序，永不改写。 */
+  preparationProbes(sessionId: string): PreparationProbeRecord[] {
+    return this.journal.forSession(sessionId);
   }
   private decode(row: Row | undefined): WorkspaceWorker | undefined {
     return row ? decode(row) : undefined;
@@ -123,6 +159,7 @@ export class WorkspaceWorkers {
     const previous = input.workerKey ? this.keyed(workspace, input.workerKey) : this.selected(workspace);
     if(previous) {
       if(this.verify(previous)){await configure(previous.sessionId);checkSelection();return {created:false,worker:this.select(workspace,previous.sessionId),model:input.model};}
+      if(previous.state!=='ready')await this.safeProbe(previous,native);
       throw new Error(previous.state==='ready' ? "The registered WorkBuddy session was deleted or is unavailable; select another real session explicitly" : "Native creation is in progress or uncertain; inspect the reserved session before retrying. No second session was created");
     }
     const worker = this.reserve(workspace, input.workerKey);
@@ -139,6 +176,7 @@ export class WorkspaceWorkers {
       return {created:true,worker:selected,model:input.model};
     } catch(error) {
       this.db.prepare("UPDATE workers SET state='uncertain',error=?,updatedAt=? WHERE sessionId=? AND state='creating'").run(error instanceof Error?error.message:String(error),new Date().toISOString(),worker.sessionId);
+      await this.safeProbe(worker,native);
       throw error;
     }
   }

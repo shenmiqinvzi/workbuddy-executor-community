@@ -41,9 +41,10 @@ function blocked(model, source) {
     catch {
         return "当前部署的模型政策不允许此选择";
     }
+    const requireZeroRate = source.requireZeroRate ?? !!source.requiredFreeModel;
     if (model.execution.executorId === "workbuddy" && source.requiredFreeModel && model.execution.modelId !== source.requiredFreeModel)
         return "当前 WorkBuddy 部署限定了其他精确模型";
-    if ((source.policy.requireFree || model.execution.executorId === "workbuddy" && !!source.requiredFreeModel) && (!model.pricingVerified || !zero(model.credits)))
+    if ((source.policy.requireFree || model.execution.executorId === "workbuddy" && requireZeroRate) && (!model.pricingVerified || !zero(model.credits)))
         return "当前部署要求已核实的零费率，此模型费用尚未满足要求";
     return null;
 }

@@ -2,7 +2,8 @@ import { HttpSource } from './http-source.mjs';
 import { DemoSource, SCENARIOS } from './demo-source.mjs';
 import { taskIdFromHash } from './task-link.mjs';
 import { mountDesktopDispatch } from './dispatch.mjs';
-import { renderDesktopControls } from './controls.mjs';
+import { renderControlUnavailable, renderDesktopControls } from './controls.mjs';
+import { renderAttention } from './attention.mjs';
 import { STATES, CHECKS, ACTORS, stateInfo, taskName, workspaceName, executorName, currentReview, proofs, filterRecords, formatTime, eventName } from './model.mjs';
 const $ = id => document.getElementById(id);
 function h(tag, props = {}, ...children) {
@@ -39,7 +40,7 @@ function icon(name, cls = '') { const el = document.createElementNS('http://www.
     p.setAttribute('d', d);
     el.append(p);
 } return el; }
-const state = { source: new HttpSource(), records: [], selected: null, detail: null, tab: 'overview', filters: { search: '', state: '', executor: '', workspace: '', group: 'all' }, cursor: null, fetchedAt: null, error: null, detailError: null, events: [], eventError: null, eventCursor: 0, eventsLoaded: false, eventsBusy: false, eventMore: false, busy: false, detailBusy: false, health: null, healthError: false, listSerial: 0, detailSerial: 0 };
+const state = { source: new HttpSource(), records: [], selected: null, detail: null, capacity: null, tab: 'overview', filters: { search: '', state: '', executor: '', workspace: '', group: 'all' }, cursor: null, fetchedAt: null, error: null, detailError: null, events: [], eventError: null, eventCursor: 0, eventsLoaded: false, eventsBusy: false, eventMore: false, busy: false, detailBusy: false, health: null, healthError: false, listSerial: 0, detailSerial: 0 };
 let listController, detailController, eventController, toastTimer;
 let linkedTask = taskIdFromHash(location.hash);
 let desktopControlsAvailable = false;
@@ -136,7 +137,16 @@ function renderDetail() {
     el.append(h('div', { class: 'detail-context' }, icon('folder'), workspaceName(record), ' / ', executorName(record), ` / 第 ${number} 轮`), h('div', { class: 'detail-heading' }, h('h2', { id: 'detail-title', tabindex: '-1' }, taskName(record))), h('div', { class: 'detail-status' }, status(record)), h('p', { class: 'detail-description' }, info.description));
     if (record.presentation.blockingReason) el.append(h('p', { class: 'notice' }, '已存提示：', record.presentation.blockingReason));
     el.append(h('div', { class: 'proofs', 'aria-label': '交付凭证，三个事实分别记录' }, proofs(record).map((proof, i) => h('div', { class: 'proof' }, h('div', { class: 'proof-label' }, icon(['file', 'circle', 'check'][i]), proof.label), h('div', { class: 'proof-value' + (proof.confirmed ? ' confirmed' : '') }, proof.value), h('div', { class: 'proof-detail' }, proof.detail)))));
-    if (desktopControlsAvailable && state.source.kind === 'live' && record.view.revision && record.view.attempt?.id) el.append(renderDesktopControls(record,{refresh:async id=>{linkedTask=id;await refreshTasks();}}));
+    if (state.source.kind === 'live') {
+        const refresh = async id => { linkedTask = id; await refreshTasks(); };
+        const attention = renderAttention(record, { refresh });
+        if (attention) el.append(attention);
+        if (desktopControlsAvailable && record.view.revision && record.view.attempt?.id) el.append(renderDesktopControls(record, { refresh }));
+        else {
+            const unavailable = renderControlUnavailable(record, { desktopAvailable: desktopControlsAvailable, live: true, capacity: state.capacity });
+            if (unavailable) el.append(unavailable);
+        }
+    }
     const tabs = [['overview', '概况'], ['checks', '检查与审查'], ['files', '文件变化'], ['events', '事件历史']];
     el.append(h('div', { class: 'tabs', role: 'tablist', 'aria-label': '任务详情分区' }, tabs.map(([key, label], i) => h('button', { class: 'tab', role: 'tab', id: 'tab-' + key, 'aria-controls': 'detail-panel', 'aria-selected': String(state.tab === key), tabindex: state.tab === key ? '0' : '-1', type: 'button', onclick: () => activateTab(key), onkeydown: event => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
             event.preventDefault();
@@ -258,6 +268,9 @@ async function selectTask(id, mobile = true) {
     const serial = ++state.detailSerial, source = state.source;
     if (state.selected !== id)
         state.detail = null;
+    // A stale capacity reading describes another task, so it is dropped with the
+    // detail and re-read from the same snapshot as this task.
+    state.capacity = null;
     state.selected = id;
     state.detailBusy = true;
     state.detailError = null;
@@ -277,6 +290,16 @@ async function selectTask(id, mobile = true) {
         if (serial !== state.detailSerial || source !== state.source)
             return;
         state.detail = record;
+        try {
+            state.capacity = await source.capacity(detailController.signal);
+        }
+        catch (error) {
+            if (error.name === 'AbortError')
+                throw error;
+            // No reading is its own fact: the panel says it cannot tell rather
+            // than implying the slot is free.
+            state.capacity = 'unreadable';
+        }
         if (state.tab === 'events')
             loadEvents();
     }

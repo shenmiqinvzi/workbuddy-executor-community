@@ -21,24 +21,22 @@ export interface InstallServiceOptions {
     homeDir?: string;
     uid?: number;
 }
-export declare function installService(options: InstallServiceOptions, run?: LaunchctlRunner): {
+export type InstallServiceResult = {
     ok: true;
     registration: ServiceRegistration;
     configFile: string;
     restartWorkBuddyRequired: boolean;
+    startupEntry?: string;
+    startupWarning?: string;
 };
+export declare function installService(options: InstallServiceOptions, run?: LaunchctlRunner): InstallServiceResult;
 /** WSH requires a Unicode BOM to preserve paths beyond the system code page. */
 export declare function windowsStartupScript(projectDir: string, nodeBin: string, configFile: string): Buffer;
 /**
  * Windows has no launchd. The same supervision loop runs as a detached Node
  * process, started now and re-started at logon through the Startup folder.
  */
-export declare function installServiceWindows(options: InstallServiceOptions): {
-    ok: true;
-    registration: ServiceRegistration;
-    configFile: string;
-    restartWorkBuddyRequired: boolean;
-};
+export declare function installServiceWindows(options: InstallServiceOptions): InstallServiceResult;
 export declare function serviceStatus(configFile: string, run?: LaunchctlRunner, uid?: number | undefined): Record<string, unknown>;
 export declare function verifyServiceProcess(registration: ServiceRegistration, configFile: string, pid: number, table?: import("./native-process.js").NativeProcess[]): void;
 export declare function serviceProcessToStop(registration: ServiceRegistration, configFile: string, table: ReturnType<typeof windowsProcessTable>, recordedPid?: number): number | undefined;

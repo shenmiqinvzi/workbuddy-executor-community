@@ -9,6 +9,18 @@ import { readDesktopSession } from "./desktop-runtime.js";
 import { TaskStore } from "./task-store.js";
 import { RunJournal, runsDirectory, hasNativeStopEvidence } from "./run-journal.js";
 import fs from "node:fs";
+export function installAutostartIfNeeded(registration, install) {
+    if (registration)
+        return { installed: false, reused: true };
+    try {
+        install();
+        return { installed: true, reused: false };
+    }
+    catch (error) {
+        const code = error?.code;
+        return { installed: false, reused: false, error: `${code ?? error?.name ?? "Error"}: ${String(error?.message ?? error)}` };
+    }
+}
 export function workerRegistration(config) {
     const file = config.serviceConfigFile ?? path.join(path.dirname(config.dbFile), "persistent-service.json");
     const registration = readServiceRegistration(file);
@@ -74,11 +86,17 @@ export async function ensureWorkspace(config, input) {
                 return trigger.setModel(sessionId, model);
             },
         });
-        if (!registration) {
+        let startupWarning;
+        const persistentService = installAutostartIfNeeded(registration, () => {
             const projectDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-            installService({ config, projectDir, workspace: result.worker.workspace, sessionId: result.worker.sessionId, cdpPort: 18491 });
-        }
-        return { ok: true, ...result, workspace: result.worker.workspace, sessionId: result.worker.sessionId, next: "Pass this workspace to send_task; the persistent service routes and wakes its native WorkBuddy session automatically." };
+            const installed = installService({ config, projectDir, workspace: result.worker.workspace, sessionId: result.worker.sessionId, cdpPort: 18491 });
+            startupWarning = installed.startupWarning;
+        });
+        if (startupWarning)
+            persistentService.startupWarning = startupWarning;
+        if (persistentService.error && process.env.WORKBUDDY_WORKBENCH_DIAGNOSTICS === "1")
+            console.error("[workspace] auto-start not installed: " + persistentService.error);
+        return { ok: true, ...result, workspace: result.worker.workspace, sessionId: result.worker.sessionId, persistentService, next: "Pass this workspace to send_task; the persistent service routes and wakes its native WorkBuddy session automatically." };
     }
     finally {
         workers.close();

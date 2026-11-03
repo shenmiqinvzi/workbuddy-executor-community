@@ -30,6 +30,8 @@ export declare function runBounded(spec: CommandSpec, directory: string, options
     cancelFile?: string;
     reportBy?: string;
 }): Promise<{
+    processStarted: boolean;
+    startedMarker: string;
     stdout: string;
     stderr: string;
     record: string;

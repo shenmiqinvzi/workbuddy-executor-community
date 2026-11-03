@@ -179,10 +179,21 @@ export function installServiceWindows(options) {
     fs.mkdirSync(path.join(projectDir, "data", "service-logs"), { recursive: true });
     writePrivateJson(configFile, registration);
     const entry = windowsStartupEntry(projectDir);
-    fs.mkdirSync(path.dirname(entry), { recursive: true });
-    fs.writeFileSync(entry, windowsStartupScript(projectDir, nodeBin, configFile));
+    // The logon entry is a convenience for later sessions. Refusing to write it
+    // (protected profile, redirected AppData, policy) must not keep this session's
+    // service from starting, and must not abort an already prepared native session.
+    let startupEntry;
+    let startupWarning;
+    try {
+        fs.mkdirSync(path.dirname(entry), { recursive: true });
+        fs.writeFileSync(entry, windowsStartupScript(projectDir, nodeBin, configFile));
+        startupEntry = entry;
+    }
+    catch (error) {
+        startupWarning = `${error?.code ?? error?.name ?? "Error"}: ${String(error?.message ?? error)}`;
+    }
     startWindowsService(registration, configFile);
-    return { ok: true, registration, configFile, restartWorkBuddyRequired: false };
+    return { ok: true, registration, configFile, restartWorkBuddyRequired: false, ...(startupEntry ? { startupEntry } : {}), ...(startupWarning ? { startupWarning } : {}) };
 }
 export function serviceStatus(configFile, run = launchctl, uid = process.getuid?.()) {
     const registration = readServiceRegistration(configFile);

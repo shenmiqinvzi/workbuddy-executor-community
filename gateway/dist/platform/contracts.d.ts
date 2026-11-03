@@ -25,10 +25,10 @@ export declare const requestSchema: z.ZodObject<{
     model?: string | undefined;
     timeoutSeconds?: number | undefined;
     workspace?: string | undefined;
+    idempotencyKey?: string | undefined;
     constraints?: string[] | undefined;
     output?: "text" | "artifacts" | "json" | undefined;
     provider?: string | undefined;
-    idempotencyKey?: string | undefined;
 }>;
 export type RunInput = z.infer<typeof requestSchema>;
 export type RunRequestInput = z.input<typeof requestSchema>;

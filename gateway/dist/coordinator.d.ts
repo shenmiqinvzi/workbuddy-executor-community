@@ -18,6 +18,8 @@ export interface SendTaskInput extends OperationOptions {
     contract?: unknown;
     scope?: TaskContractScope;
 }
+/** A bounded, non-secret cause label for an operator-facing blocked reason. */
+export declare function failureCause(error: unknown): string | null;
 export declare class TaskCoordinator {
     private readonly config;
     readonly store: TaskStore;

@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import { ensureWorkspace, listModels } from "./workspace-manager.js";
 import { readDesktopSession } from "./desktop-runtime.js";
 import { readWorkspaceWorkers } from "./workspace-workers.js";
@@ -20,6 +21,13 @@ async function observeSelectedModel(config, sessionId, model) {
     if (!entry || result.sessionId !== sessionId || result.currentModel !== model)
         throw new AdmissionError("MODEL_UNVERIFIED", "The selected native session, model catalog entry could not be verified.");
     return { sessionId, modelId: entry.id, selectedModel: result.currentModel, credits: typeof entry.credits === "string" ? entry.credits : null, observedAt: new Date().toISOString(), level: "selected" };
+}
+/** A bounded, non-secret cause label for an operator-facing blocked reason. */
+export function failureCause(error) {
+    if (error instanceof AdmissionError)
+        return error.code;
+    const code = error?.code;
+    return typeof code === "string" && /^[A-Z][A-Z0-9_]{2,40}$/.test(code) ? code : null;
 }
 export class TaskCoordinator {
     config;
@@ -181,9 +189,21 @@ export class TaskCoordinator {
             return await this.dispatch(task, buildTaskPrompt({ taskId: task.taskId, objective: task.objective, workspace: task.workspace, constraints, acceptanceCommands: commands, timeoutSeconds: contract.timeoutSeconds }), { sessionId: selected.sessionId, model: execution.modelId, timeoutSeconds: contract.timeoutSeconds, acceptanceCommands: commands, modelObservation, scopeGuard });
         }
         catch (error) {
+            // Opt-in diagnostics land in the OS temporary directory: a fixed path from
+            // one developer's machine has no meaning on another one, and the release
+            // packager refuses to ship such a path.
+            if (process.env.WORKBUDDY_WORKBENCH_DIAGNOSTICS === "1") {
+                try {
+                    fs.appendFileSync(path.join(os.tmpdir(), "workbuddy-workbench-send-error.log"), new Date().toISOString() + " " + String(error?.stack ?? error) + "\n");
+                }
+                catch { /* diagnostics only */ }
+            }
             const task = this.requireTask(contract.taskId);
+            // The operator needs a bounded cause, not just "failed": without it the
+            // only evidence is an unknown outcome and no one can tell what to fix.
+            const cause = failureCause(error);
             if (!task.attemptId)
-                this.store.update(task.taskId, { state: "blocked", blockingReason: "Contract preparation failed; inspect the original task before any recovery." });
+                this.store.update(task.taskId, { state: "blocked", blockingReason: `Contract preparation failed${cause ? ` (${cause})` : ""}; inspect the original task before any recovery.` });
             throw error;
         }
     }

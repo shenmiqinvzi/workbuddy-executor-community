@@ -173,6 +173,15 @@ export declare class TaskApplicationService {
         actualTaskCredits: null;
         attribution: "connection_only";
     };
+    /**
+     * The saved execution-capacity slot, as its own read resource.
+     *
+     * occupant() is one SELECT against workflow_capacity; nothing here claims,
+     * releases or re-derives the slot, and the reading is not a stop decision. A
+     * read failure throws so the HTTP layer answers 503 instead of reporting a
+     * free slot it never saw.
+     */
+    readCapacity(): import("./capacity-view.js").CapacityResource;
     getOperation(operationId: string): import("./operation-admission.js").OperationRecord | null;
     reviewChecks(input: ReviewOptions): {
         machineCheckIds: string[];
@@ -356,7 +365,7 @@ export declare class TaskApplicationService {
         available: string[];
         proof: {
             reconcile: "queue_receipt" | "dsh_receipt" | null;
-            close: "not_dispatched" | "native_stopped" | null;
+            close: "not_dispatched" | "native_stopped" | "declared_stop" | null;
         };
         capacity: {
             taskId: string;
@@ -364,6 +373,13 @@ export declare class TaskApplicationService {
             operationId: string;
         } | null;
         history: import("./operation-recovery.js").RecoveryDecision[];
+        declaration: {
+            declarationId: string;
+            actor: string;
+            declaredAt: string;
+            statement: string;
+            source: "human_declaration";
+        } | null;
         note: string;
     };
     getOperationRecoveryDecision(operationId: string): import("./operation-recovery.js").RecoveryDecision | null;
@@ -389,7 +405,7 @@ export declare class TaskApplicationService {
         available: string[];
         proof: {
             reconcile: "queue_receipt" | "dsh_receipt" | null;
-            close: "not_dispatched" | "native_stopped" | null;
+            close: "not_dispatched" | "native_stopped" | "declared_stop" | null;
         };
         capacity: {
             taskId: string;
@@ -397,6 +413,13 @@ export declare class TaskApplicationService {
             operationId: string;
         } | null;
         history: import("./operation-recovery.js").RecoveryDecision[];
+        declaration: {
+            declarationId: string;
+            actor: string;
+            declaredAt: string;
+            statement: string;
+            source: "human_declaration";
+        } | null;
         note: string;
     }>;
     /** Stored facts only: deliberately bypasses every synchronising coordinator method. */

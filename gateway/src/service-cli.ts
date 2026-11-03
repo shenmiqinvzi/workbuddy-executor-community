@@ -63,7 +63,8 @@ export interface InstallServiceOptions {
   uid?: number;
 }
 
-export function installService(options: InstallServiceOptions, run: LaunchctlRunner = launchctl): { ok: true; registration: ServiceRegistration; configFile: string; restartWorkBuddyRequired: boolean } {
+export type InstallServiceResult = { ok: true; registration: ServiceRegistration; configFile: string; restartWorkBuddyRequired: boolean; startupEntry?: string; startupWarning?: string };
+export function installService(options: InstallServiceOptions, run: LaunchctlRunner = launchctl): InstallServiceResult {
   const platform = options.platform ?? process.platform;
   if (platform === "win32") return installServiceWindows(options);
   if (platform !== "darwin") throw new Error("Persistent desktop service installation requires macOS launchd");
@@ -152,7 +153,7 @@ function startWindowsService(registration: ServiceRegistration, configFile: stri
  * Windows has no launchd. The same supervision loop runs as a detached Node
  * process, started now and re-started at logon through the Startup folder.
  */
-export function installServiceWindows(options: InstallServiceOptions): { ok: true; registration: ServiceRegistration; configFile: string; restartWorkBuddyRequired: boolean } {
+export function installServiceWindows(options: InstallServiceOptions): InstallServiceResult {
   const projectDir = fs.realpathSync(options.projectDir);
   const workspace = path.resolve(options.workspace);
   if (!fs.statSync(workspace).isDirectory()) throw new Error("The worker workspace must be a directory");
@@ -172,10 +173,20 @@ export function installServiceWindows(options: InstallServiceOptions): { ok: tru
   fs.mkdirSync(path.join(projectDir, "data", "service-logs"), { recursive: true });
   writePrivateJson(configFile, registration);
   const entry = windowsStartupEntry(projectDir);
-  fs.mkdirSync(path.dirname(entry), { recursive: true });
-  fs.writeFileSync(entry, windowsStartupScript(projectDir, nodeBin, configFile));
+  // The logon entry is a convenience for later sessions. Refusing to write it
+  // (protected profile, redirected AppData, policy) must not keep this session's
+  // service from starting, and must not abort an already prepared native session.
+  let startupEntry: string | undefined;
+  let startupWarning: string | undefined;
+  try {
+    fs.mkdirSync(path.dirname(entry), { recursive: true });
+    fs.writeFileSync(entry, windowsStartupScript(projectDir, nodeBin, configFile));
+    startupEntry = entry;
+  } catch (error) {
+    startupWarning = `${(error as NodeJS.ErrnoException)?.code ?? (error as Error)?.name ?? "Error"}: ${String((error as Error)?.message ?? error)}`;
+  }
   startWindowsService(registration, configFile);
-  return { ok: true, registration, configFile, restartWorkBuddyRequired: false };
+  return { ok: true, registration, configFile, restartWorkBuddyRequired: false, ...(startupEntry ? { startupEntry } : {}), ...(startupWarning ? { startupWarning } : {}) };
 }
 
 export function serviceStatus(configFile: string, run: LaunchctlRunner = launchctl, uid = process.getuid?.()): Record<string, unknown> {

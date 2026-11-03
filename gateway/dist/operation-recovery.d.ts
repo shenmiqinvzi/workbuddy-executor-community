@@ -17,13 +17,15 @@ export interface RecoveryDecision {
     taskId: string;
     attemptId: string | null;
     action: "reconcile" | "close";
-    proof: "queue_receipt" | "dsh_receipt" | "native_stopped" | "not_dispatched";
+    proof: "queue_receipt" | "dsh_receipt" | "native_stopped" | "declared_stop" | "not_dispatched";
     actor: string;
     reason: string;
     confirmedAt: string;
     decidedAt: string;
     termsDigest: string;
     evidenceToken: string;
+    /** Present only for `declared_stop`: the human assertion this closure rests on. */
+    declarationId?: string;
 }
 /** Immutable decisions and local authorizations. Never inferred from caller-provided evidence. */
 export declare class RecoveryStore {
@@ -57,7 +59,7 @@ export declare class RecoveryStore {
         available: string[];
         proof: {
             reconcile: "queue_receipt" | "dsh_receipt" | null;
-            close: "not_dispatched" | "native_stopped" | null;
+            close: "not_dispatched" | "native_stopped" | "declared_stop" | null;
         };
         capacity: {
             taskId: string;
@@ -65,6 +67,13 @@ export declare class RecoveryStore {
             operationId: string;
         } | null;
         history: RecoveryDecision[];
+        declaration: {
+            declarationId: string;
+            actor: string;
+            declaredAt: string;
+            statement: string;
+            source: "human_declaration";
+        } | null;
         note: string;
     };
     private validate;

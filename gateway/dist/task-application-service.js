@@ -1,6 +1,7 @@
 import { AdmissionError, defaultModelPolicy } from "./collaboration.js";
 import { contractExecution } from "./task-contract.js";
 import { readTaskProjection } from "./task-view-reader.js";
+import { capacityResource } from "./capacity-view.js";
 import { PANEL_SCHEMA, readPanelTask } from "./workbench-panel.js";
 import { stageTaskViewFromProjection, STAGE_TASK_VIEW_UNAVAILABLE, STAGE_TASK_VIEW_SCHEMA_VERSION } from "./task-view-stage.js";
 /** The MCP entry point and future local HTTP adapter share this service. */
@@ -39,6 +40,15 @@ export class TaskApplicationService {
         return this.coordinator.store.quotas.read(options);
     }
     readCreditBalances(connectionId) { return this.coordinator.store.creditBalances.read(connectionId); }
+    /**
+     * The saved execution-capacity slot, as its own read resource.
+     *
+     * occupant() is one SELECT against workflow_capacity; nothing here claims,
+     * releases or re-derives the slot, and the reading is not a stop decision. A
+     * read failure throws so the HTTP layer answers 503 instead of reporting a
+     * free slot it never saw.
+     */
+    readCapacity() { return capacityResource(this.coordinator.store.operations.occupant(), new Date().toISOString()); }
     getOperation(operationId) { return this.coordinator.store.operations.get(operationId); }
     reviewChecks(input) { return this.coordinator.store.reviews.checks(input, this.runsDir); }
     runReviewCommand(input) { return this.coordinator.store.reviews.runCommand(input, this.runsDir); }

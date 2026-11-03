@@ -23,6 +23,28 @@ export interface QueueTask {
 /** Prove the helper was launched by the native desktop app, not a standalone CLI or Codex. */
 export declare function assertDesktopCaller(config: Config): DesktopActor;
 export declare function windowsWorkerCommand(nodeBin: string, helperFile: string, workspace: string): string;
+/** The generated worker command runs inside the native application's own shell,
+ * which never inherits this gateway's environment. Without the pinned
+ * configuration the CLI either fails on a machine with more than one WorkBuddy
+ * installation or silently addresses another task database. */
+/** What a bounded command record must prove before it stops blocking a native stop. */
+export type OwnedCommandRecord = {
+    endedAt?: string;
+    cleanupConfirmed?: boolean;
+    processStarted?: boolean;
+    reason?: string;
+};
+/**
+ * A command blocks stop confirmation unless it ended and its cleanup is either confirmed or
+ * vacuous. A supervisor that never started a process (script blocked by execution policy,
+ * unlaunchable executable) writes no marker, so no process tree was left behind to vouch for.
+ * The distinction is recorded as `processStarted` by the bounded runner; older records lack it
+ * and keep the strict behaviour.
+ */
+export declare function ownedCommandStopReason(record: OwnedCommandRecord | undefined): "no_end_evidence" | "cleanup_unconfirmed" | null;
+export declare function workerEnvPrefix(config: Config): string;
+/** Applies the pinned configuration to the invoked command, not to the `cd`. */
+export declare function withWorkerEnv(command: string, prefix: string): string;
 export declare class DesktopQueue {
     private readonly config;
     private readonly verifyActor;

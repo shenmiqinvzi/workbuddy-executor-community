@@ -34,6 +34,7 @@ function fixture(i, key) {
 export class DemoSource {
     constructor(scenario = 'normal') { this.kind = 'demo'; this.scenario = scenario; this.reads = 0; }
     async health() { return { schemaVersion: 'workbuddy-executor/stage-2', ready: true, runtime: { packageVersion: '演示', release: 'synthetic' } }; }
+    async capacity() { return { schemaVersion: 'workbuddy-executor/capacity-1', readOnly: true, snapshotOnly: true, limit: 1, occupied: null, observedAt: now }; }
     async list() { if (this.scenario === 'error' || this.scenario === 'stale' && this.reads++ > 0)
         throw new Error('演示场景：无法连接数据源。'); return { schemaVersion: 'workbuddy-executor/panel-1', tasks: this.scenario === 'empty' ? [] : names.slice(0, this.scenario === 'all' ? 10 : 6).map((_, i) => fixture(i, this.scenario)), nextAfterTaskId: null }; }
     async task(id) { const i = Number(id.split('-').at(-1)) - 1; return fixture(i, this.scenario); }

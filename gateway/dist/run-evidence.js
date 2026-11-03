@@ -29,6 +29,16 @@ export function runEvidenceDigestOf(snapshot, cancellation) {
     catch {
         contentDigest = null;
     }
+    // `stopControl.checkedAt` is an observation timestamp refreshed on every poll. Binding it
+    // to the evidence identity made the read path permanently stale whenever an observer was
+    // alive: the digest moved even though no recorded fact did. Only transitions belong here.
+    const stopControl = snapshot.stopControl ? {
+        state: snapshot.stopControl.state,
+        requestedAt: snapshot.stopControl.requestedAt,
+        issuedAt: snapshot.stopControl.issuedAt ?? null,
+        acknowledgedAt: snapshot.stopControl.acknowledgedAt ?? null,
+        error: snapshot.stopControl.error ?? null,
+    } : null;
     return JSON.stringify({
         taskId: snapshot.taskId,
         attemptId: snapshot.attemptId,
@@ -39,7 +49,7 @@ export function runEvidenceDigestOf(snapshot, cancellation) {
         nativeStopSource: snapshot.nativeStopSource ?? null,
         stopReason: snapshot.stopReason ?? null,
         stopProofDigest: crypto.createHash("sha256").update(JSON.stringify([
-            snapshot.nativeFailure ?? null, snapshot.stopControl ?? null, snapshot.nativeStopCheck ?? null,
+            snapshot.nativeFailure ?? null, stopControl, snapshot.nativeStopCheck ?? null,
         ])).digest("hex"),
         rawContentDigest: crypto.createHash("sha256").update(JSON.stringify([
             snapshot.text ?? null, snapshot.artifacts ?? null, snapshot.validationRecords ?? null,

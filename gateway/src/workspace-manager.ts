@@ -11,6 +11,18 @@ import { TaskStore } from "./task-store.js";
 import { RunJournal, runsDirectory, hasNativeStopEvidence } from "./run-journal.js";
 import fs from "node:fs";
 
+/** The auto-start entry is a convenience, never part of the dispatch effect
+ * boundary: a login-item or profile failure must not turn an already prepared
+ * native session into an unknown outcome. */
+export type AutostartAttempt = { installed: boolean; reused: boolean; error?: string; startupWarning?: string };
+export function installAutostartIfNeeded(registration: unknown, install: () => void): AutostartAttempt {
+  if (registration) return { installed: false, reused: true };
+  try { install(); return { installed: true, reused: false }; }
+  catch (error) {
+    const code = (error as NodeJS.ErrnoException)?.code;
+    return { installed: false, reused: false, error: `${code ?? (error as Error)?.name ?? "Error"}: ${String((error as Error)?.message ?? error)}` };
+  }
+}
 export function workerRegistration(config: Config) {
   const file = config.serviceConfigFile??path.join(path.dirname(config.dbFile),"persistent-service.json");
   const registration = readServiceRegistration(file);
@@ -57,11 +69,15 @@ export async function ensureWorkspace(config: Config, input: {workspace:string;s
         return trigger.setModel(sessionId,model);
       },
     });
-    if(!registration) {
+    let startupWarning: string | undefined;
+    const persistentService = installAutostartIfNeeded(registration, () => {
       const projectDir=path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-      installService({config,projectDir,workspace:result.worker.workspace,sessionId:result.worker.sessionId,cdpPort:18491});
-    }
-    return {ok:true,...result,workspace:result.worker.workspace,sessionId:result.worker.sessionId,next:"Pass this workspace to send_task; the persistent service routes and wakes its native WorkBuddy session automatically."};
+      const installed=installService({config,projectDir,workspace:result.worker.workspace,sessionId:result.worker.sessionId,cdpPort:18491});
+      startupWarning=installed.startupWarning;
+    });
+    if (startupWarning) persistentService.startupWarning=startupWarning;
+    if (persistentService.error && process.env.WORKBUDDY_WORKBENCH_DIAGNOSTICS === "1") console.error("[workspace] auto-start not installed: " + persistentService.error);
+    return {ok:true,...result,workspace:result.worker.workspace,sessionId:result.worker.sessionId,persistentService,next:"Pass this workspace to send_task; the persistent service routes and wakes its native WorkBuddy session automatically."};
   } finally {workers.close();trigger.close();}
 }
 export async function listModels(config:Config,sessionId?:string){

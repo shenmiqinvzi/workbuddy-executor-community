@@ -422,3 +422,30 @@ test("workbench entry subprocess resolves the default runs directory next to the
   assert.equal(body!.remoteStopped, true);
   assert.equal(child.exitCode, null, "the entry stays up; it did not crash resolving paths");
 });
+
+test("the capacity resource answers from the saved slot and stays read-only", async t => {
+  const f = fixture(t);
+  const { server, port, close } = await startServer(f.service);
+  t.after(close);
+
+  const read = await request(port, { path: "/workbench/v1/resources/capacity" });
+  assert.equal(read.status, 200);
+  const body = JSON.parse(read.body);
+  assert.equal(body.schemaVersion, "workbuddy-executor/capacity-1");
+  assert.equal(body.readOnly, true);
+  assert.equal(body.snapshotOnly, true);
+  assert.equal(body.limit, 1);
+  assert.equal(body.occupied, null, "the fixture never claimed the slot");
+  assert.equal(typeof body.observedAt, "string");
+  // Capacity is a read resource, not a stage-2 field: the health view keeps its shape.
+  const health = await request(port, { path: "/workbench/v1/health" });
+  assert.equal(JSON.parse(health.body).capacity.occupiedByTaskId, null);
+
+  const queried = await request(port, { path: "/workbench/v1/resources/capacity?limit=1" });
+  assert.equal(queried.status, 400);
+  assert.equal(JSON.parse(queried.body).error.code, "INVALID_RESOURCE_QUERY");
+
+  const post = await request(port, { method: "POST", path: "/workbench/v1/resources/capacity" });
+  assert.equal(post.status, 405);
+  assert.equal(post.headers.allow, "GET, HEAD");
+});

@@ -25,7 +25,7 @@ export declare function runRecoveryConsole(service: TaskApplicationService, args
     available: string[];
     proof: {
         reconcile: "queue_receipt" | "dsh_receipt" | null;
-        close: "not_dispatched" | "native_stopped" | null;
+        close: "not_dispatched" | "native_stopped" | "declared_stop" | null;
     };
     capacity: {
         taskId: string;
@@ -33,5 +33,12 @@ export declare function runRecoveryConsole(service: TaskApplicationService, args
         operationId: string;
     } | null;
     history: import("./operation-recovery.js").RecoveryDecision[];
+    declaration: {
+        declarationId: string;
+        actor: string;
+        declaredAt: string;
+        statement: string;
+        source: "human_declaration";
+    } | null;
     note: string;
 }>;

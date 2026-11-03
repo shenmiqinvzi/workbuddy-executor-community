@@ -4,9 +4,11 @@ import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
+import { DISPATCH_HEARTBEAT_MS } from "./dispatch-settlement.js";
 import { AdmissionError, defaultModelPolicy } from "./collaboration.js";
 import { listModels } from "./workspace-manager.js";
 import { DshClient } from "./dsh-client.js";
+import { nativeModelPolicy } from "./native-desktop-trigger.js";
 import { TaskStore } from "./task-store.js";
 import { TaskCoordinator } from "./coordinator.js";
 import { WorkBuddyClient } from "./workbuddy-client.js";
@@ -48,7 +50,8 @@ function policy(config) {
     }
 }
 export async function desktopModelCatalog(config, env = process.env) {
-    const source = { models: [], sessions: [], policy: policy(config), requiredFreeModel: env.WORKBUDDY_REQUIRED_FREE_MODEL?.trim() || null, dispatchEnabled: env.WORKBUDDY_DESKTOP_DISPATCH_ENABLED === "1", errors: [] };
+    const pinned = nativeModelPolicy(env);
+    const source = { models: [], sessions: [], policy: policy(config), requiredFreeModel: pinned.model || null, requireZeroRate: pinned.requireZeroRate, dispatchEnabled: env.WORKBUDDY_DESKTOP_DISPATCH_ENABLED === "1", errors: [] };
     if (source.dispatchEnabled)
         try {
             assertDesktopDispatchDatabase(config);
@@ -76,8 +79,11 @@ export async function desktopModelCatalog(config, env = process.env) {
             source.sessions = sessions.filter(s => typeof s.workspace === "string").map(s => ({ hostId, sessionId: s.sessionId, workspace: s.workspace, attached: s.attached === true, busy: s.busy !== false }));
         })(),
     ]);
-    observations.forEach((result, index) => { if (result.status === "rejected")
-        source.errors.push(index === 0 ? "无法读取 WorkBuddy 模型，请检查原应用连接后刷新。" : "无法读取已配置的 DSH 来源，不会自动换用其他来源。"); });
+    observations.forEach((result, index) => { if (result.status === "rejected") {
+        if (process.env.WORKBUDDY_WORKBENCH_DIAGNOSTICS === "1")
+            console.error("[desktop-catalog] source " + index + " failed: " + (result.reason instanceof Error ? result.reason.message : String(result.reason)));
+        source.errors.push(index === 0 ? "无法读取 WorkBuddy 模型，请检查原应用连接后刷新。" : "无法读取已配置的 DSH 来源，不会自动换用其他来源。");
+    } });
     return normalizedDesktopCatalog(source);
 }
 export function desktopJournal(config, env = process.env) {
@@ -140,10 +146,18 @@ export async function runDesktopDispatchWorker(config, requestId, env = process.
     if (env.WORKBUDDY_DESKTOP_DISPATCH_ENABLED !== "1")
         throw new AdmissionError("DISPATCH_NOT_ENABLED", "Desktop dispatch is disabled.");
     assertDesktopDispatchDatabase(config);
-    const journal = desktopJournal(config, env), draft = journal.claim(requestId);
+    const journal = desktopJournal(config, env);
+    const owner = { pid: process.pid, startedAt: new Date(Date.now() - Math.round(process.uptime() * 1000)).toISOString() };
+    const draft = journal.claim(requestId, owner);
     if (!draft)
         return;
     let store;
+    /** The lease is refreshed while the real work runs, so a worker that dies
+     * mid-dispatch stops looking healthy after the TTL instead of forever. */
+    const beat = setInterval(() => { try {
+        journal.heartbeat(requestId, owner);
+    }
+    catch { } }, DISPATCH_HEARTBEAT_MS);
     try {
         if (Date.parse(draft.expiresAt) <= Date.now())
             throw new AdmissionError("DRAFT_EXPIRED", "Desktop agreement expired before dispatch.");
@@ -166,6 +180,7 @@ export async function runDesktopDispatchWorker(config, requestId, env = process.
         journal.finish(requestId, uncertain ? "outcome_unknown" : "failed", error instanceof AdmissionError ? error.code : "DISPATCH_FAILED", uncertain ? "派工结果尚未明确。请查询原任务和原操作，不要重复派工。" : "派工未完成。请检查原任务与操作记录后处理，不会自动换模型或重试。");
     }
     finally {
+        clearInterval(beat);
         store?.close();
     }
 }

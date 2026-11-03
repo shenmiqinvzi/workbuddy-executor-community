@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { readDesktopSession, waitForDesktopSession } from "./desktop-runtime.js";
 import { runsDirectory } from "./run-journal.js";
+import { PreparationJournal } from "./preparation-journal.js";
 function decode(row) { return { ...row, selected: row.selected === 1, error: row.error ?? undefined }; }
 export function readWorkspaceWorkers(config, fallback) {
     const file = path.join(runsDirectory(config), "workspace-workers.sqlite");
@@ -25,6 +26,7 @@ export function readWorkspaceWorkers(config, fallback) {
 export class WorkspaceWorkers {
     config;
     db;
+    journal;
     constructor(config) {
         this.config = config;
         const root = runsDirectory(config);
@@ -38,6 +40,43 @@ export class WorkspaceWorkers {
         selected INTEGER NOT NULL, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL, error TEXT);
       CREATE UNIQUE INDEX IF NOT EXISTS selected_workspace ON workers(workspace) WHERE selected=1;`);
         this.db.exec("CREATE TABLE IF NOT EXISTS worker_keys(workspace TEXT NOT NULL, workerKey TEXT NOT NULL, sessionId TEXT NOT NULL UNIQUE, PRIMARY KEY(workspace, workerKey))");
+        this.journal = new PreparationJournal(this.db);
+    }
+    /**
+     * 失败路径上的只读观测。它只记录“现在能看到什么”，不推导终态：
+     * 查不到 ≠ 未创建，异常 ≠ 未到达。任何异常都不得顶替原来的失败原因。
+     */
+    async observePreparation(worker, native) {
+        const expected = { sessionId: worker.sessionId, workspace: worker.workspace };
+        let input;
+        if (native.probe) {
+            try {
+                input = { source: "native_session_get", expected, observed: await native.probe(worker.sessionId, worker.workspace) };
+            }
+            catch (error) {
+                input = { source: "native_session_get", expected, observed: null, error: error instanceof Error ? error.message : String(error) };
+            }
+        }
+        else {
+            try {
+                const evidence = readDesktopSession(this.config.workbuddyConfigDir, worker.sessionId);
+                input = { source: "desktop_history", expected, observed: evidence.registered && evidence.cwd ? { sessionId: worker.sessionId, workspace: evidence.cwd } : null };
+            }
+            catch (error) {
+                input = { source: "desktop_history", expected, observed: null, error: error instanceof Error ? error.message : String(error) };
+            }
+        }
+        this.journal.record({ ...input, sessionId: worker.sessionId, workspace: worker.workspace });
+    }
+    async safeProbe(worker, native) {
+        try {
+            await this.observePreparation(worker, native);
+        }
+        catch { /* 观测不可用不能顶替原来的失败原因；日志缺行本身就是“未观测” */ }
+    }
+    /** 只读：某次预留身份上记录过的全部观测，按时间升序，永不改写。 */
+    preparationProbes(sessionId) {
+        return this.journal.forSession(sessionId);
     }
     decode(row) {
         return row ? decode(row) : undefined;
@@ -134,6 +173,8 @@ export class WorkspaceWorkers {
                 checkSelection();
                 return { created: false, worker: this.select(workspace, previous.sessionId), model: input.model };
             }
+            if (previous.state !== 'ready')
+                await this.safeProbe(previous, native);
             throw new Error(previous.state === 'ready' ? "The registered WorkBuddy session was deleted or is unavailable; select another real session explicitly" : "Native creation is in progress or uncertain; inspect the reserved session before retrying. No second session was created");
         }
         const worker = this.reserve(workspace, input.workerKey);
@@ -155,6 +196,7 @@ export class WorkspaceWorkers {
         }
         catch (error) {
             this.db.prepare("UPDATE workers SET state='uncertain',error=?,updatedAt=? WHERE sessionId=? AND state='creating'").run(error instanceof Error ? error.message : String(error), new Date().toISOString(), worker.sessionId);
+            await this.safeProbe(worker, native);
             throw error;
         }
     }

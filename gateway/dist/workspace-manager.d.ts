@@ -1,4 +1,14 @@
 import type { Config } from "./config.js";
+/** The auto-start entry is a convenience, never part of the dispatch effect
+ * boundary: a login-item or profile failure must not turn an already prepared
+ * native session into an unknown outcome. */
+export type AutostartAttempt = {
+    installed: boolean;
+    reused: boolean;
+    error?: string;
+    startupWarning?: string;
+};
+export declare function installAutostartIfNeeded(registration: unknown, install: () => void): AutostartAttempt;
 export declare function workerRegistration(config: Config): import("./persistent-service.js").ServiceRegistration | undefined;
 export declare function ensureWorkspace(config: Config, input: {
     workspace: string;
@@ -11,6 +21,7 @@ export declare function ensureWorkspace(config: Config, input: {
 }): Promise<{
     workspace: string;
     sessionId: string;
+    persistentService: AutostartAttempt;
     next: string;
     created: boolean;
     worker: import("./workspace-workers.js").WorkspaceWorker;

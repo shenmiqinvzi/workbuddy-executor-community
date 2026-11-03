@@ -6,6 +6,7 @@ import { CreditBalanceStore } from "./credit-balance.js";
 import { OperationAdmission } from "./operation-admission.js";
 import { TaskReviews } from "./task-reviews.js";
 import { RecoveryStore } from "./operation-recovery.js";
+import { NativeStopDeclarations } from "./native-stop-declaration.js";
 import { DshBindingStore } from "./dsh-bindings.js";
 import { WorkspaceProtection } from "./workspace-protection.js";
 export type TaskState = "queued" | "working" | "completed" | "blocked" | "failed" | "cancelled" | "needs_review" | "accepted";
@@ -167,6 +168,7 @@ export declare class TaskStore {
     readonly recoveries: RecoveryStore;
     readonly workspaceProtection: WorkspaceProtection;
     readonly reviews: TaskReviews;
+    readonly stopDeclarations: NativeStopDeclarations;
     constructor(file: string);
     close(): void;
     /**

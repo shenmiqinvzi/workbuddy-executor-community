@@ -26,7 +26,14 @@ export class DesktopDispatchJournal {
         if (write) {
             if (process.platform !== "win32")
                 fs.chmodSync(this.file, 0o600);
-            db.exec("PRAGMA busy_timeout=3000; CREATE TABLE IF NOT EXISTS desktop_dispatch_requests (request_id TEXT PRIMARY KEY, task_id TEXT NOT NULL UNIQUE, operation_id TEXT NOT NULL UNIQUE, digest TEXT NOT NULL, body TEXT NOT NULL, state TEXT NOT NULL, code TEXT, message TEXT, updated_at TEXT NOT NULL)");
+            db.exec("PRAGMA busy_timeout=3000; CREATE TABLE IF NOT EXISTS desktop_dispatch_requests (request_id TEXT PRIMARY KEY, task_id TEXT NOT NULL UNIQUE, operation_id TEXT NOT NULL UNIQUE, digest TEXT NOT NULL, body TEXT NOT NULL, state TEXT NOT NULL, code TEXT, message TEXT, updated_at TEXT NOT NULL, owner_pid INTEGER, owner_started_at TEXT, claimed_at TEXT, heartbeat_at TEXT)");
+            /** A lease is additive evidence: older rows keep their row identity and
+             * simply read as "no lease record" until a worker claims them again. */
+            const columns = new Set(db.prepare("PRAGMA table_info(desktop_dispatch_requests)").all().map(row => String(row.name)));
+            for (const column of ["owner_pid", "owner_started_at", "claimed_at", "heartbeat_at"]) {
+                if (!columns.has(column))
+                    db.exec(`ALTER TABLE desktop_dispatch_requests ADD COLUMN ${column} ${column === "owner_pid" ? "INTEGER" : "TEXT"}`);
+            }
         }
         return db;
     }
@@ -35,7 +42,7 @@ export class DesktopDispatchJournal {
             throw Error("Invalid desktop request identity.");
         const db = this.open(true);
         try {
-            db.prepare("INSERT INTO desktop_dispatch_requests VALUES(?,?,?,?,?,'launch_requested',NULL,NULL,?) ON CONFLICT(request_id) DO NOTHING")
+            db.prepare("INSERT INTO desktop_dispatch_requests (request_id,task_id,operation_id,digest,body,state,code,message,updated_at) VALUES(?,?,?,?,?,'launch_requested',NULL,NULL,?) ON CONFLICT(request_id) DO NOTHING")
                 .run(draft.draftId, draft.taskId, draft.operationId, digest(draft), JSON.stringify(draft), new Date().toISOString());
             const row = db.prepare("SELECT digest FROM desktop_dispatch_requests WHERE request_id=?").get(draft.draftId);
             if (row?.digest !== digest(draft))
@@ -46,7 +53,7 @@ export class DesktopDispatchJournal {
         }
         return this.receipt(draft.draftId);
     }
-    claim(requestId) {
+    claim(requestId, owner) {
         if (!validId(requestId))
             return null;
         const db = this.open(true);
@@ -60,7 +67,9 @@ export class DesktopDispatchJournal {
             const draft = JSON.parse(String(row.body));
             if (digest(draft) !== row.digest || draft.draftId !== requestId || draft.taskId !== row.task_id || draft.operationId !== row.operation_id)
                 throw Error("Desktop request integrity failed.");
-            db.prepare("UPDATE desktop_dispatch_requests SET state='dispatching',updated_at=? WHERE request_id=?").run(new Date().toISOString(), requestId);
+            const now = new Date().toISOString();
+            db.prepare("UPDATE desktop_dispatch_requests SET state='dispatching',updated_at=?,claimed_at=?,heartbeat_at=?,owner_pid=?,owner_started_at=? WHERE request_id=?")
+                .run(now, now, now, owner?.pid ?? null, owner?.startedAt ?? null, requestId);
             db.exec("COMMIT");
             return draft;
         }
@@ -70,6 +79,38 @@ export class DesktopDispatchJournal {
             }
             catch { }
             throw error;
+        }
+        finally {
+            db.close();
+        }
+    }
+    /** Only the exact owner may refresh a lease; a late heartbeat from a
+     * superseded worker must never revive the row. */
+    heartbeat(requestId, owner) {
+        if (!validId(requestId))
+            return false;
+        const db = this.open(true);
+        try {
+            const result = db.prepare("UPDATE desktop_dispatch_requests SET heartbeat_at=? WHERE request_id=? AND state='dispatching' AND owner_pid=? AND owner_started_at=?")
+                .run(new Date().toISOString(), requestId, owner.pid, owner.startedAt);
+            return Number(result.changes) > 0;
+        }
+        finally {
+            db.close();
+        }
+    }
+    lease(requestId) {
+        if (!validId(requestId))
+            return null;
+        const db = this.open(false);
+        if (!db)
+            return null;
+        try {
+            const row = db.prepare("SELECT * FROM desktop_dispatch_requests WHERE request_id=?").get(requestId);
+            if (!row)
+                return null;
+            const text = (value) => value == null ? null : String(value);
+            return { state: String(row.state), ownerPid: row.owner_pid == null ? null : Number(row.owner_pid), ownerStartedAt: text(row.owner_started_at), claimedAt: text(row.claimed_at), heartbeatAt: text(row.heartbeat_at) };
         }
         finally {
             db.close();

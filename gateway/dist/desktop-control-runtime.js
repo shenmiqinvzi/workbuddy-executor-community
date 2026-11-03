@@ -51,7 +51,7 @@ export async function inspectDesktopControl(config, taskId, kind, env = process.
             if (execution.executorId === "workbuddy" && catalog.requiredFreeModel && execution.modelId !== catalog.requiredFreeModel)
                 throw new AdmissionError("MODEL_POLICY_BLOCKED", "原模型与当前部署政策不符。");
             rate = selected.pricingVerified ? selected.credits : null;
-            if ((catalog.policy.requireFree || execution.executorId === "workbuddy" && !!catalog.requiredFreeModel) && (!rate || !/^x0(?:\.0+)?(?: credits)?$/i.test(rate.trim())))
+            if ((catalog.policy.requireFree || execution.executorId === "workbuddy" && (catalog.requireZeroRate ?? !!catalog.requiredFreeModel)) && (!rate || !/^x0(?:\.0+)?(?: credits)?$/i.test(rate.trim())))
                 throw new AdmissionError("MODEL_UNVERIFIED", "当前政策要求已核实的零费率。");
         }
         const reviews = kind === "accept" ? service.listReviews(taskId) : [];

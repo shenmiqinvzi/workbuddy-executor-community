@@ -23,6 +23,7 @@
     "dev": "tsx src/server.ts",
     "test": "tsx --test test/**/*.test.ts",
     "doctor": "node scripts/doctor.mjs",
+    "verification:preflight": "node scripts/verification-preflight.mjs",
     "package": "node scripts/package.mjs",
     "skill:install": "node scripts/install-skill.mjs",
     "deepseek:start": "node dist/deepseek-server.js",

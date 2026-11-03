@@ -147,6 +147,37 @@ export function windowsWorkerCommand(nodeBin, helperFile, workspace) {
     const helper = path.win32.relative(workspace, helperFile);
     return `cd ${quote(workspace)} && ${quote(nodeBin)} ${quote(helper)}`;
 }
+/**
+ * A command blocks stop confirmation unless it ended and its cleanup is either confirmed or
+ * vacuous. A supervisor that never started a process (script blocked by execution policy,
+ * unlaunchable executable) writes no marker, so no process tree was left behind to vouch for.
+ * The distinction is recorded as `processStarted` by the bounded runner; older records lack it
+ * and keep the strict behaviour.
+ */
+export function ownedCommandStopReason(record) {
+    if (!record?.endedAt)
+        return "no_end_evidence";
+    if (record.cleanupConfirmed === true)
+        return null;
+    if (record.processStarted === false)
+        return null;
+    return "cleanup_unconfirmed";
+}
+export function workerEnvPrefix(config) {
+    const quoted = (value) => `'${value.replaceAll("\\", "/").replaceAll("'", "'\\''")}'`;
+    const pairs = [
+        ["WORKBUDDY_CLI_ELECTRON", config.cliElectronPath],
+        ["WORKBUDDY_CONFIG_DIR", config.workbuddyConfigDir],
+        ["WORKBUDDY_DB_FILE", config.dbFile],
+        ["WORKBUDDY_RUNS_DIR", runsDirectory(config)],
+    ];
+    return pairs.filter(([, value]) => typeof value === "string" && value.length > 0).map(([name, value]) => `${name}=${quoted(value)} `).join("");
+}
+/** Applies the pinned configuration to the invoked command, not to the `cd`. */
+export function withWorkerEnv(command, prefix) {
+    const at = command.indexOf("&& ");
+    return at >= 0 ? `${command.slice(0, at + 3)}${prefix}${command.slice(at + 3)}` : `${prefix}${command}`;
+}
 export class DesktopQueue {
     config;
     verifyActor;
@@ -179,10 +210,10 @@ export class DesktopQueue {
             const service = process.platform === "win32"
                 ? `${quote(winPath(process.execPath))} ${quote(winPath(fileURLToPath(new URL("../dist/service-cli.js", import.meta.url))))}`
                 : quote(fileURLToPath(new URL("../bin/workbuddy-service", import.meta.url)));
-            return { sessionId, workspace: evidence.cwd, started: false, mode: "persistent", prompt: `请一次性配置本桌面会话为 Codex 的常驻执行会话。会话 ID：${sessionId}。用户授权安装本机服务，并在需要启用原生接口时、其他任务结束后自动重启 WorkBuddy 一次。\n请用你自己的 Bash 工具执行：\n${process.platform === "win32" ? service : quote(service)} install --session-id ${quote(sessionId)} --workspace ${quote(evidence.cwd)} --cdp-port 18491\n安装完成只回报安装状态或真实错误，结束当前回复。不要启动无限 claim，不改桥接器源码，不写其他成果或记忆，不改变权限设置。服务会保存会话绑定、按真实队列自动唤起本会话，退出和重开后无需再次粘贴。安装成功不等于任务通过；后续仍需实际领取、产物和验收证明。需要登录或原生权限时如实说明。` };
+            return { sessionId, workspace: evidence.cwd, started: false, mode: "persistent", prompt: `请一次性配置本桌面会话为 Codex 的常驻执行会话。会话 ID：${sessionId}。用户授权安装本机服务，并在需要启用原生接口时、其他任务结束后自动重启 WorkBuddy 一次。\n请用你自己的 Bash 工具执行：\n${withWorkerEnv(process.platform === "win32" ? service : quote(service), workerEnvPrefix(this.config))} install --session-id ${quote(sessionId)} --workspace ${quote(evidence.cwd)} --cdp-port 18491\n安装完成只回报安装状态或真实错误，结束当前回复。不要启动无限 claim，不改桥接器源码，不写其他成果或记忆，不改变权限设置。服务会保存会话绑定、按真实队列自动唤起本会话，退出和重开后无需再次粘贴。安装成功不等于任务通过；后续仍需实际领取、产物和验收证明。需要登录或原生权限时如实说明。` };
         }
         // The native model sees this before it can claim and read review feedback.
-        const claimCommand = `\`\`\`bash\n${helper} claim --session-id ${quote(sessionId)} --wait-seconds 0\n\`\`\``;
+        const claimCommand = `\`\`\`bash\n${withWorkerEnv(helper, workerEnvPrefix(this.config))} claim --session-id ${quote(sessionId)} --wait-seconds 0\n\`\`\``;
         const claimInstructions = `下方是网关按真实安装位置生成的完整领取命令，逐字执行。不要沿用历史命令、从工作目录推测或增删路径层级。\n${claimCommand}`;
         return { sessionId, workspace: evidence.cwd, started: false, prompt: `仅执行本次领取的任务，不沿用此前会话的构建、清理或排障计划。会话 ID：${sessionId}。\n使用自己的 Bash 工具执行（不能由 Codex 代执行）：\n${claimInstructions}\n返回 status=task 后按 prompt 执行。完成时用 Write 工具在 reporting.resultFile 写 JSON：{"status":"completed|blocked|failed","text":"实际修改、检查结果及遗留问题","artifacts":["实际绝对路径"]}，然后原样执行 reporting.command。不要自行拼接租约、长文本或路径参数。空报告和计划不能报 completed。\n回报失败只允许原命令原样重试一次；仍失败就保留文件并结束，说明错误，不排障网关、不读源码、不改权限、不换 shell、不重做任务。权限等待或服务错误时停止并说明。status=retry 表示空队列，直接结束；成功回报后也结束，不再 claim 或循环等待。` };
     }
@@ -302,8 +333,10 @@ export class DesktopQueue {
                                 writePrivateJson(contextFile, { sessionId, attemptId: task.attemptId, leaseToken });
                                 const quote = (value) => "'" + value.replaceAll("\\", "/").replaceAll("'", "'\\''") + "'";
                                 const helper = fileURLToPath(new URL("../dist/desktop-worker-cli.js", import.meta.url));
-                                const command = `${quote(process.execPath)} ${quote(helper)} finish --claim-file ${quote(contextFile)} --result-file ${quote(resultFile)}`;
-                                const prefix = `${quote(process.execPath)} ${quote(helper)}`;
+                                const envPrefix = workerEnvPrefix(this.config);
+                                const helperCommand = `${quote(process.execPath)} ${quote(helper)}`;
+                                const command = `${withWorkerEnv(helperCommand, envPrefix)} finish --claim-file ${quote(contextFile)} --result-file ${quote(resultFile)}`;
+                                const prefix = withWorkerEnv(helperCommand, envPrefix);
                                 const progressFile = path.join(journal.dir, "worker-progress.json");
                                 const commandFile = path.join(journal.dir, "worker-command.json");
                                 const executionContract = `\n截止 ${current.deadline}；最迟 ${current.reportBy} 进入回报阶段，预留时间内不再开新验证；未完成就提交真实 blocked/failed 和部分成果，不自动延时。\n阶段变化或约60秒有意义进展时，Write ${progressFile}，JSON {"stage":"调查/实现/验证/回报","completed":"最近动作","running":"验证或等待事项","blocker":"阻塞或空串"}，执行：\n${prefix} update --claim-file ${quote(contextFile)} --progress-file ${quote(progressFile)}\n测试/浏览器样本使用有界执行器：Write ${commandFile}，JSON {"executable":"绝对可执行文件路径","args":["参数"],"cwd":"工作目录绝对路径","timeoutSeconds":60,"inputs":["被验证源码相对路径"]}，执行：\n${prefix} exec --claim-file ${quote(contextFile)} --command-file ${quote(commandFile)}\n执行器记录命令、退出码、源码哈希、日志路径并清理本命令进程树。124=超时，130=取消，125或cleanupConfirmed=false=监督/清理失败，不能算通过。不得按进程名杀其他进程。正常长任务无需修改文件来证明活动；等待用户输入时说明原因。\n验证当前改动的实际入口和相关异常边界；区分源码检查、Mock、本地浏览器、真实环境，报告实际命令/退出码/证据路径；修改后重跑受影响检查，不用旧结果。回报通常500字以内，详细日志留 artifacts。`;
@@ -526,9 +559,10 @@ export class DesktopQueue {
                         if (!/^[a-f0-9-]{36}\.json$/.test(name))
                             continue;
                         const command = readJson(path.join(commands, name));
-                        if (!command?.endedAt || command.cleanupConfirmed !== true)
-                            throw Error(`stop_unconfirmed: owned command cleanup lacks evidence: ${name}`);
-                        if (command.reason === "supervisor_exited_job_closed" && snapshot.status === "needs_review") {
+                        const blocked = ownedCommandStopReason(command);
+                        if (blocked)
+                            throw Error(`stop_unconfirmed: owned command cleanup lacks evidence (${blocked}): ${name}`);
+                        if (command?.reason === "supervisor_exited_job_closed" && snapshot.status === "needs_review") {
                             const error = "Owned command supervisor exited without a final result; cleanup was verified, validation was not. Inspect existing artifacts before rework.";
                             snapshot = { ...snapshot, status: "blocked", error };
                             journal.save(snapshot);
@@ -646,7 +680,7 @@ export class DesktopQueue {
                         if (!/^[a-f0-9-]{36}\.json$/.test(name))
                             continue;
                         const record = readJson(path.join(commands, name));
-                        if (!record?.endedAt || record.cleanupConfirmed !== true || record.reason === "supervisor_exited_job_closed")
+                        if (ownedCommandStopReason(record) || record?.reason === "supervisor_exited_job_closed")
                             throw Error("Owned command completion/cleanup is not verified; report reconciliation refused");
                     }
                 this.preserveReportedFailure(journal, snapshot, native, failure, reportedAt, input.reason);

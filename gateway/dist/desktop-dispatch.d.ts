@@ -19,6 +19,8 @@ export interface DesktopCatalogSource {
     sessions: DesktopSession[];
     policy: ModelPolicy;
     requiredFreeModel: string | null;
+    /** Absent means "the pin carries the legacy free-only rule" (requireZeroRate = !!requiredFreeModel). */
+    requireZeroRate?: boolean;
     dispatchEnabled: boolean;
     errors: string[];
 }

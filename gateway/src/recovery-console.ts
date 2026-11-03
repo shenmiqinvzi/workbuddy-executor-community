@@ -31,10 +31,14 @@ export async function runRecoveryConsole(service: TaskApplicationService, args: 
   if (!view.available.includes(action)) throw new AdmissionError("RECOVERY_UNPROVEN", "The stored original evidence does not prove this action is safe. Observe the original source or investigate without resending.");
   const input: RecoveryInput = { operationId, targetOperationId: target, action, reason,
     expectedRevision: view.revision, expectedAttemptId: view.attemptId, expectedOperationToken: view.operationToken, expectedEvidenceToken: view.evidenceToken };
+  const declared = action === "close" && view.proof.close === "declared_stop" ? view.declaration : null;
   io.write({ action, operationId, originalOperationId: target, taskId: view.operation.taskId, attemptId: view.attemptId,
     executor: view.operation.executor, originalBinding: view.operation.binding, proof: view.proof[action], reason,
+    ...(declared ? { declaration: declared } : {}),
     effect: action === "close" ? "Permanently close the original workflow and release its shared slot. Delivery is not accepted." : "Reconcile the original receipt; retain its workflow slot. No prompt is resent." });
-  const confirmation = `${action} ${target} ${operationId}`;
+  // A closure resting on a human declaration must be typed differently, so the
+  // person cannot confirm a native stop they never claimed to have seen.
+  const confirmation = declared ? `close ${target} ${operationId} declared ${declared.declarationId}` : `${action} ${target} ${operationId}`;
   if (await io.question(`Type exactly '${confirmation}' to confirm, or anything else to leave it unchanged: `) !== confirmation) throw new AdmissionError("AUTHORIZATION_REQUIRED", "Recovery was not confirmed; the original workflow is unchanged.");
   const authorization = service.authorizeOperationRecovery(input, "local-interactive-user");
   const decision = service.resolveOperationRecovery(input, authorization);
