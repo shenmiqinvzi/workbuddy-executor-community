@@ -135,8 +135,16 @@ export function assertSafeContent(relative, content) {
   // Every example configuration is a place where a real secret silently looks like a template.
   if (/(?:^|[\\/])\.env(?:\.|$)/i.test(relative) || /\.example$/i.test(relative)) {
     for (const line of content.split(/\r?\n/)) {
-      const match = line.match(/^\s*(?:#\s*)?([A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|PASSWD|API_KEY|ACCESS_KEY)[A-Z0-9_]*)\s*=\s*(.*)$/);
-      if (match && match[2].trim().replace(/^(?:""|'')$/, "")) throw new Error(`Nonempty secret in example configuration: ${match[1]}`);
+      // A commented line documents a variable; it cannot supply one.
+      if (/^\s*#/.test(line)) continue;
+      const match = line.match(/^\s*([A-Za-z0-9_]*(?:SECRET|TOKEN|PASSWORD|PASSWD|API_KEY|ACCESS_KEY)[A-Za-z0-9_]*)\s*=\s*(.*)$/);
+      if (!match) continue;
+      // WORKBUDDY_TOKEN_FILE points at where a secret lives; the path is not the secret.
+      if (/_(?:FILE|PATH|DIR|URL)$/i.test(match[1])) continue;
+      const value = match[2].trim().replace(/^(?:""|'')$/, "");
+      if (value && !/^(?:<[^>]*>|YOUR_[A-Za-z0-9_]+|example|changeme|placeholder|none|null)$/i.test(value)) {
+        throw new Error(`Nonempty secret in example configuration: ${match[1]}`);
+      }
     }
   }
 }

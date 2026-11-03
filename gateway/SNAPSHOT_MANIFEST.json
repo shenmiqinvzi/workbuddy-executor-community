@@ -440,8 +440,8 @@
     },
     {
       "path": "scripts/package.mjs",
-      "sha256": "0a9454411fa3d53f050355bcfa921243c4033e11e21358dd13e7d067205b569f",
-      "bytes": 15081
+      "sha256": "7186616afa77ed452f20ddaa1b5d0ceb86d2019127a4793cce68eb9d56128be9",
+      "bytes": 15496
     },
     {
       "path": "scripts/setup.mjs",
@@ -1155,8 +1155,8 @@
     },
     {
       "path": "test/package.test.ts",
-      "sha256": "6df365233dbe4170e73109ebed58a30d22d3fd7038a0bdfc986deb4c1919fdf2",
-      "bytes": 20017
+      "sha256": "8120f6746402bfa8613ce096e79c2ad4e28c7c2f0ac9fc151ac8c5135a80d054",
+      "bytes": 20695
     },
     {
       "path": "test/persistent-service.test.ts",

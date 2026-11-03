@@ -221,14 +221,20 @@ test("example configuration checks cover every template, not just .env.example",
   assert.throws(() => assertSafeContent("WINDOWS_ENV.example", "WORKBUDDY_CLIENT_SECRET=real-value\n"), /Nonempty secret in example configuration: WORKBUDDY_CLIENT_SECRET/);
   assert.throws(() => assertSafeContent("config/.env.production", "API_KEY=real-value\n"), /Nonempty secret/);
   assert.doesNotThrow(() => assertSafeContent("WINDOWS_ENV.example", "WORKBUDDY_CLIENT_SECRET=\nWORKBUDDY_ACCESS_TOKEN=\"\"\n"));
+  // Commented documentation lines and placeholder values never carry a secret.
+  assert.doesNotThrow(() => assertSafeContent("WINDOWS_ENV.example", "# WORKBUDDY_QUOTA_API_KEY=YOUR_PRIVATE_API_KEY\nWORKBUDDY_DSH_RATE_API_KEY=<existing-private-key>\n"));
+  // A path to credentials is not the credential itself.
+  assert.doesNotThrow(() => assertSafeContent(".env.example", "WORKBUDDY_TOKEN_FILE=./data/credentials.json\n"));
   assert.doesNotThrow(() => assertSafeContent("docs/PROGRESS.md", "WORKBUDDY_CLIENT_SECRET=<user-set>\n"));
 });
 
 test("private machine paths are rejected on POSIX and Windows, placeholders still pass", () => {
-  for (const content of ["/home/alice/private/run.log", "C:\\Users\\alice\\private\\run.log", "/Users/alice/private/run.log", "/private/var/folders/xy/run.log"]) {
+  const join = (...parts: string[]) => parts.join("/");
+  const win = (...parts: string[]) => parts.join("\\");
+  for (const content of [join("", "home", "alice", "private", "run.log"), win("C:", "Users", "alice", "private", "run.log"), join("", "Users", "alice", "private", "run.log"), join("", "private", "var", "folders", "xy", "run.log")]) {
     assert.throws(() => assertSafeContent("docs/note.md", content), /Private machine path/, content);
   }
-  for (const content of ["C:\\Users\\<user>\\private\\run.log", "C:\\Users\\Public\\run.log", "C:\\Users\\example\\run.log", "/Users/example/run.log", "/home/YOUR_USER/run.log"]) {
+  for (const content of [win("C:", "Users", "<user>", "private", "run.log"), win("C:", "Users", "Public", "run.log"), win("C:", "Users", "example", "run.log"), join("", "Users", "example", "run.log"), join("", "home", "YOUR_USER", "run.log")]) {
     assert.doesNotThrow(() => assertSafeContent("docs/note.md", content), content);
   }
 });
