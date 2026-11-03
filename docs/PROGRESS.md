@@ -109,3 +109,7 @@ P0-2 与 P0-4 已按 [P0-5 独立验证计划](T7D_P0_5_INDEPENDENT_VERIFICATION
 - P0-4 桌面体验：任务列表 ↑/↓/Home/End 键盘导航与移动详情 Escape 返回；≤760 断点 metrics 两列、证明单列，≤480 断点事实表/检查/文件行单列化；实时源读失败后按 2s→30s 退避自动重试（至多 5 次），`online` 事件立即重读，错误横幅显示重试进度。
 
 验证：gateway 后端 872 tests / 860 pass / 0 fail / 12 skipped（`WORKBUDDY_BACKEND=cli`），workbench 前端 63 tests / 63 pass，`npm run build` 与 `typecheck:task-view` 通过。改动未提交、未安装；真实窗口回归属 P0-6。
+
+## P0-6 完整真实验证 run（2026-11-03）
+
+run16（独立账本 `E:\javaproject\_wb-p06-state\run16`）：glm-5.3-flash（x0.08，模型读回+费率披露后用户选定）真实派工 → 71 秒完成 → **完整验收链首次全通**：程序检查（$provenance/$scope passed）→ 独立检查（artifact 哈希入账）→ 不可变 reviewId（check-1 semantic passed）→ `workbuddy_accept_task` → **state=accepted**。artifact 逐字节核验（26 字节，hexdump 一致）。详见 [P0-5 独立验证计划 §10.6](T7D_P0_5_INDEPENDENT_VERIFICATION_PLAN.md)。派工确认走内容指纹（digest 含随机 UUID 每次必变，内容一致作为授权锚）；原生客户端自动确认协作计划。剩余不可主张：额度扣费（报价而已）、异机验证（Issue #3）。

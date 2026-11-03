@@ -157,15 +157,32 @@ node scripts/verification-preflight.mjs --db <state>\workbuddy.db --workspace <s
 
 ### 10.4 仍然不可主张（截至 2026-11-02）
 
-1. 完整验收通过：`tasks.state=needs_review`，没有 accept。
-2. 全工作区零越界：命令记录只覆盖 `hello.txt` 的前后哈希。
-3. 额度可用或已扣费：`x0.03` 是报价；资源端点仍 503。
+1. ~~完整验收通过：`tasks.state=needs_review`，没有 accept。~~ **2026-11-03 run16 已补**：完整验收链 checks→inspection→review→accept 全通，state=accepted（§10.6）。
+2. 全工作区零越界：命令记录只覆盖 `hello.txt` 的前后哈希。run16 无命令检查（契约只有 check-1 语义检查+T5 范围围栏），T5 inventory passed。
+3. 额度可用或已扣费：`x0.03` 是报价；资源端点仍 503。run16 的 x0.08 同样只是报价。
 4. **“死亡之后账本能自己说清楚”**：run8/run9/run10 已经实测到副作用在死亡后 24s、54s 发生（见执行记录 §6.7），但账本停在 `queued`、容量仍被占、面板只给 `EVIDENCE_STALE`——所以不能主张“出事后系统会自己追平”。副作用的存在本身已经证实；缺的是追平。
 5. 异机验证：Issue #3 未做。
 
 ### 10.5 对 §4 表格的一条实证补充
 
 第 5 步“无回执≠无副作用”不再是纸面推断：run7 的租约主人死了、模型没开始，系统**仍然无法自证清白**；run8/run9/run10 更进一步——杀死网关进程之后，文件照样被写出来了。保留原请求、保留容量、等人核对，不是保守，是唯一诚实的做法。
+
+### 10.6 run16（2026-11-03）：第一次完整验收链全通（P0-6）
+
+独立账本 `E:\javaproject\_wb-p06-state\run16`（DB/RUNS_DIR/DESKTOP_STATE_DIR 全隔离），工作区 `E:\javaproject\_wb-p06-workspace`。模型 `glm-5.3-flash`（报价 x0.08，用户经模型读回+费率披露后选定）。授权走内容指纹：用户确认任务内容后，探针在同一常驻 session 进程内 preview→校验内容指纹（`CONFIRMED_CONTENT` hash `f88f5da5…a294f869`）→commit，digest 因含随机 UUID/时间戳每次必变（`desktop-dispatch.ts` L53/L120-122），故以内容一致作为授权锚。
+
+| # | 证据 | 实测值 |
+|---|---|---|
+| 1 | 派工 | requestId `d457c993-…`、taskId `desktop-fda28ce6-93e3-4fdb-8892-de50d6b292e5`，回执 `submitted`（lease ownerPid 23196）；原生客户端自动确认（`sendDesktopAgreement` → `authorizeCollaborationPlan("desktop-native-confirmation")`），无需人工点弹窗 |
+| 2 | 执行 | 71 秒完成（14:11:26 创建 → 14:12:36 停止）；queued→working→needs_review，16 个事件（含 workspace_baseline_bound / report_received / native_stop_confirmed / workspace_scope_checked） |
+| 3 | 报告认证 | `reportAuthentication.authenticatedAt=14:12:20.786Z`，`reportDigest=669ecb71…3eaf0`；`nativeStoppedAt=14:12:36.911Z`（`end_turn` / `native_idle`） |
+| 4 | artifact | `E:\javaproject\_wb-p06-workspace\p06-smoke.txt` 26 字节 `P0-6 run16 dispatch smoke\n`，hexdump 比对一致 |
+| 5 | 程序检查 | `workbuddy_check_task` → `machine-84e31e64-…`：`$provenance` passed + `$scope` passed（actor=program） |
+| 6 | 独立检查 | `workbuddy_record_inspection` → `inspection-16627b0a-…`（artifact 哈希入账，actor=independent_reviewer） |
+| 7 | 不可变审查 | `workbuddy_review_task` → `review-d843eec4-a336-41dc-a227-8d3df3767ac6`（check-1 semantic passed，evidenceRefs=inspection，committedRevision `BPC5qQZKk2y3Np-_46dJQn5w`） |
+| 8 | 验收 | `workbuddy_accept_task`（expectedRevision=committedRevision）→ **state=accepted**，revision `jAjag4Zh9sZq51GA`，task_closed by independent_reviewer；事件链尾部 program_checks_recorded×2 / independent_inspection_recorded / independent_review_recorded / review_recorded / task_closed |
+
+这就是 §10.4 第 1 条「完整验收通过」第一次成为可主张事实：T6 不可变 reviewId、T5 范围围栏、R2/R12 面板事实在真实派工上全部走通。剩余不可主张：额度扣费（x0.08 仍只是报价）、异机验证（Issue #3）。
 
 ## 11. 已知限制与风险（截至 2026-11-02）
 
