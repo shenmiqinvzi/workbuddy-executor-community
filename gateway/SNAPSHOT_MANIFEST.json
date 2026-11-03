@@ -28,13 +28,13 @@
   "files": [
     {
       "path": ".env.example",
-      "sha256": "3d45ec85c36da417badc3955cadfc7797365ac06ec01e8c5adac51c6eebbf0a1",
-      "bytes": 3302
+      "sha256": "706e576ace517c4338c29e05a9740485d719ee2881a879e32d4603ec24c58f6d",
+      "bytes": 3238
     },
     {
       "path": ".gitattributes",
-      "sha256": "4607ffc303b333ac6e1323134d9b642c7f5165884e240d8c4cf94648f0c20ad6",
-      "bytes": 111
+      "sha256": "e715344d339c0f2966f6d2e217f54bfddfbff0394dbf41616c787a444e31a3b6",
+      "bytes": 442
     },
     {
       "path": ".gitignore",
@@ -68,33 +68,33 @@
     },
     {
       "path": "bin/agent-hub",
-      "sha256": "78cb8ac94b750d396dc48381eb928b8311d4596b104815bb5f35b6295c835573",
-      "bytes": 284
+      "sha256": "051d373a4e72810bf405857500b9780a78f2ed2f34f22a0c0ec006beef3984b6",
+      "bytes": 272
     },
     {
       "path": "bin/agent-hub-mcp",
-      "sha256": "cfe070945a659f38c7a87782454935763a0b551b1645fe7765c5215b22d6e76c",
-      "bytes": 228
+      "sha256": "965f5a92c827d4bf05f8cfc17bebd85612faf110957b4fffe00878febd68a56b",
+      "bytes": 218
     },
     {
       "path": "bin/deepseek-gateway",
-      "sha256": "94aaac9f4577c2673e0591f757e3dacd5a536460b5505fd5d79b8531b7053ff2",
-      "bytes": 179
+      "sha256": "11065751f7076ecdfac6dc0b402b723995996bd89b2061169c48f3b69a5a52f6",
+      "bytes": 173
     },
     {
       "path": "bin/workbuddy-cli",
-      "sha256": "a597b2a5b1e168abffa06eb3ab4a9e620167f8e4ae18a1c6b287890da762dd99",
-      "bytes": 394
+      "sha256": "4ea1c38d0027554087d87ef686597f567265e84033d7bb02e6160ebc708f9f38",
+      "bytes": 386
     },
     {
       "path": "bin/workbuddy-doctor",
-      "sha256": "4101ca815a05fc96f60139e9e22060afe074f2fde6b733f5613d55fc449f3ad0",
-      "bytes": 443
+      "sha256": "0e7ba6393a4719a18fbae314df483f9e0f63a14ff83ce141fd0069b07680d64c",
+      "bytes": 425
     },
     {
       "path": "bin/workbuddy-gateway",
-      "sha256": "b6d245402c25ea04fef51fcafaa11c074bed803fd07727a6cce19eea7b073801",
-      "bytes": 252
+      "sha256": "737df9b3992b99a3a4768b3fdaaf58f234091049a7d106acbf072d84b939d839",
+      "bytes": 239
     },
     {
       "path": "bin/workbuddy-gateway.cmd",
@@ -108,13 +108,13 @@
     },
     {
       "path": "bin/workbuddy-service",
-      "sha256": "c57487d551651490f4b3556d65a885a05e8c40eec438aad0297c76c932aaaef3",
-      "bytes": 227
+      "sha256": "4ba8a1603ca2c5b62797f1021cc82992156aff8a23e7b8fb0ed30b08c1af04e0",
+      "bytes": 217
     },
     {
       "path": "bin/workbuddy-worker",
-      "sha256": "db094c5599615ee8f033163bc64282f56e9dd823209b70aa3ddd882e20c1e978",
-      "bytes": 234
+      "sha256": "2e3e5d55de2abdbc60a6edf23cb57ed1db8d2fb821fde7d258af7ca194927f73",
+      "bytes": 224
     },
     {
       "path": "deepseek-plugin/README.md",
@@ -1718,8 +1718,8 @@
     },
     {
       "path": "scripts/agent-hub-call.mjs",
-      "sha256": "fa711db82e22ad794dd24413529d32ff3173b205a7a9f3cc9591c5bf594af79b",
-      "bytes": 1328
+      "sha256": "1f90306f70c6c9d88e58b9ba23ee18ac792ff604d22e8c1f007d60fa4b635e39",
+      "bytes": 1308
     },
     {
       "path": "scripts/bounded-job.ps1",
@@ -1733,8 +1733,8 @@
     },
     {
       "path": "scripts/deepseek-call.mjs",
-      "sha256": "a259b2daed531c07400a1a4c7235c4bdfdfe671872efa8c171dd7b03f0d369df",
-      "bytes": 1540
+      "sha256": "d0568a8ea7956123aa9249c38da3b798ca020ab3e6c4dd4584bfe2653f8a02fe",
+      "bytes": 1517
     },
     {
       "path": "scripts/deployment-check.mjs",
@@ -1758,18 +1758,18 @@
     },
     {
       "path": "scripts/install-deepseek-plugin.mjs",
-      "sha256": "bf3b89e123e7ef95cd3f45d6ba194d26a10cf55a8adbaf863916a1953282d3a6",
-      "bytes": 4707
+      "sha256": "efd5e734271d710a780298fc2983e6f39f7ebab13c73d6f65a1c6140ed003742",
+      "bytes": 4647
     },
     {
       "path": "scripts/install-deepseek-skill.mjs",
-      "sha256": "35deccfd8e52a0b820a305ff46690048650daa4d06cd9350620d064576120fc2",
-      "bytes": 2647
+      "sha256": "ba70aaadd9acc8bccb3a50e994c72750b477d42f4363b137f84b360836c131bc",
+      "bytes": 2588
     },
     {
       "path": "scripts/install-skill.mjs",
-      "sha256": "badb76520a3fb88cbc6c8d57417539f3595ef1b7aa6509cd22b2c1312caf791f",
-      "bytes": 2755
+      "sha256": "f5dee03ff24eeb0c51862a466782e3d9182e148496762725ba90be2fae70555d",
+      "bytes": 2696
     },
     {
       "path": "scripts/open-workbench-router.mjs",
@@ -1788,8 +1788,8 @@
     },
     {
       "path": "scripts/package.mjs",
-      "sha256": "1b61f2996137bbf75f849ab58cc67fe9488fca6491fb9d266395c230d7ac83f1",
-      "bytes": 14625
+      "sha256": "b32767b90b03c1bca2efcaac4ab5dd492ce2eba56d222f9acb28541d447a6f8f",
+      "bytes": 14442
     },
     {
       "path": "scripts/setup.mjs",
@@ -1843,8 +1843,8 @@
     },
     {
       "path": "scripts/workbuddy-call.mjs",
-      "sha256": "9001d725ba2057e14270f13d1dc68b12f67f8be29fee3cb7953685ec64c3eecf",
-      "bytes": 1739
+      "sha256": "dfe1d1bd43395059a5379cba66f9e6484d17fbe8b64828c923d8861656b9fa0b",
+      "bytes": 1711
     },
     {
       "path": "scripts/workbuddy-inspect.mjs",
@@ -2468,8 +2468,8 @@
     },
     {
       "path": "test/launcher.test.ts",
-      "sha256": "97c6f1b37e6e273688fdf8e7685b0e0b3a4f2910b8748c3e794cfeccf562d84f",
-      "bytes": 2829
+      "sha256": "8ac70d308b2809c1c3066ad9ec3c97f8effb2a4917ed06df588d9d7b207a6cd3",
+      "bytes": 3831
     },
     {
       "path": "test/mcp-entry.test.ts",

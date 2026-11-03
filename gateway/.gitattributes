@@ -1,2 +1,10 @@
 # Preserve the exact installed snapshot bytes, including original line endings.
 * -text whitespace=cr-at-eol
+
+# POSIX executes the bin/ entry points and sources .env from them, so those
+# bytes cannot keep a CR before each newline: "#!\\bin\\sh\\r" is not an
+# interpreter (exec fails ENOENT) and every sourced value keeps a trailing CR.
+bin/* text eol=lf
+bin/*.cmd -text eol=crlf
+scripts/*.mjs text eol=lf
+.env.example text eol=lf
