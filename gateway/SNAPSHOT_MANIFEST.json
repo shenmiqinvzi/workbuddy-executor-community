@@ -440,8 +440,8 @@
     },
     {
       "path": "scripts/package.mjs",
-      "sha256": "b32767b90b03c1bca2efcaac4ab5dd492ce2eba56d222f9acb28541d447a6f8f",
-      "bytes": 14442
+      "sha256": "2ae2691bd3b0fe94812ca5219da8ef3fc41b37c370dabc61e85cfd8d966d52b8",
+      "bytes": 14459
     },
     {
       "path": "scripts/setup.mjs",
@@ -955,8 +955,8 @@
     },
     {
       "path": "src/workbench-assets.ts",
-      "sha256": "4c79b5e8be4041b3a946b21947da7eaa0a69a11846e975cd0e4dbc253f979c32",
-      "bytes": 2440
+      "sha256": "0d1ca035d20b3993b2f7b12ea5bb3a4be35e7e0deae022c597221b6ce3713f6b",
+      "bytes": 2523
     },
     {
       "path": "src/workbench-entry.ts",
@@ -1155,8 +1155,8 @@
     },
     {
       "path": "test/package.test.ts",
-      "sha256": "cd07ce7f58a7566f68229c660cede0fe07de758cc0af039eef8fe319cb78063a",
-      "bytes": 18659
+      "sha256": "686028bafa54abdc74f38cf5a1ab51f47f63463d777e85a33f863a27d44141ef",
+      "bytes": 18724
     },
     {
       "path": "test/persistent-service.test.ts",
@@ -1332,6 +1332,11 @@
       "path": "test/windows-startup.test.ts",
       "sha256": "d626717cc61789a4b7d1328fe535d0a3360b558267b3d8ab8044ff41e0840ccf",
       "bytes": 1721
+    },
+    {
+      "path": "test/workbench-assets.test.ts",
+      "sha256": "965ec15f2bec3dcd8e8fb36285cb6b96dfde5a7a4c3734eca72c8b907f23ebe0",
+      "bytes": 2520
     },
     {
       "path": "test/workbench-http.test.ts",
