@@ -127,7 +127,7 @@
 - 任务方案关联（D3-03 的关联部分）、可信路由（D3-02）、真实来源（D3-01）、任务监督停机的端到端隔离（D3-04）、D0/D1 与正式发行均未在本轮验证。
 - 200% 缩放是 CDP 模拟；系统实际 DPI 缩放未单独测量。仅一个 Windows 环境、单显示器；暗色主题与高对比模式未覆盖。
 - 只验证 Chromium WebView2 与 headless Chrome，未验证其它浏览器。
-- 容量只读验证覆盖"空闲/占用/缺表/损坏"四态，未在真实占用的运行中任务上验证（不启动真实派工）。
+- 容量只读验证在修复分支覆盖"空闲 / 占用 / 缺表"三态；"表结构损坏"一态在集成收尾时补入回归（见文末补记），四态均未在真实占用的运行中任务上验证（不启动真实派工）。
 - 演示模式只能证明页面能标记并展示合成样本，**不等于**桌面真实缓存读取通过；真实缓存读取的证据是第 3、8 节的 200 响应与实窗数据。
 
 ## 11. 进程与清理
@@ -170,3 +170,13 @@ npm run package -- E:\javaproject\outputs\resource-desktop-fix-20261104\package
 cd E:\javaproject\outputs\resource-desktop-fix-20261104\browser\scripts; node run-acceptance.mjs
 cd E:\javaproject\outputs\resource-desktop-fix-20261104\desktop; node webview-acceptance.mjs
 ```
+
+## 15. 集成收尾补记（`integration/resource-center`，2026-11-04）
+
+本节记录纳入集成分支之后的状态，不修改上文对修复分支的历史描述。
+
+- 纳入方式：`integration/resource-center` 从 `0bb9ffe` **fast-forward** 到 `a8ce8f0`，因此 `c5cf788` 与 `a8ce8f0` 以原提交号进入集成分支，没有产生 cherry-pick 副本。
+- 快照修正：`node scripts/generate-snapshot-manifest.mjs` 后 `node verify-snapshot.mjs` → `{"snapshotFilesVerified":316,"hashesMatch":true,"manifestCompleteness":"checked"}`，退出码 0。`capturedAt` 保持 `2026-10-23T00:39:39.586Z`，`upstream` / `upstreamCommit` / `snapshot` / `packageVersion` 原样保留，未手写哈希、未放宽验证器、`dist` 未回到 Git。
+- 运行文件一致性：用 `collectReleaseFiles()` 对当前集成分支与已验收包的 `RELEASE_MANIFEST.json` 逐文件比对，**552 个文件路径与 SHA-256 全等**（`identical: true`），四个资源页文件也在其中。因此浏览器 128/128 与 WebView2 71/71 的证据仍归属于这个包，不需要重建候选。
+- 容量损坏态补齐：集成收尾时新增 1 个用例——`workflow_capacity` 表存在但缺少 `slot` 列（无法按契约查询）时必须拒绝读取，而不是回答 `occupied: null`。预期行为来自现有契约：读不到的占用行不是"已知空闲"。该用例只改测试文件，不改运行代码与容量准入/恢复规则；因此该文件与已验收包内容有 1 处差异（`test/desktop-readonly-resources.test.ts`），其余 551 个文件仍逐字节一致，运行文件一致性结论不变。
+- 因此本文第 5 节的 13/13 是修复分支当时的记录；集成分支上同一文件现为 **14/14**。

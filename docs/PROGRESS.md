@@ -151,3 +151,7 @@ run16（独立账本 `<STATE_DIR>\run16`）：glm-5.3-flash（x0.08，模型读�
 ### D3 桌面验收补充（2026-11-04）
 
 `5104af6` 候选的隔离 WebView2 窗口实际打开，桌面策略测试 70/70；发现桌面只读存储未接入 quota/credit，两个资源 API 对有效合成快照返回 503，桌面验收未通过。浏览器报告尚待核对。修复、共同新包及后续实窗回归待完成；未部署、未合主分支、未发布。详见 [集成验收记录](RESOURCE_INTEGRATION_ACCEPTANCE.md) 的桌面补充；真实来源、可信路由、任务方案关联及 D0/D1 仍待完成。
+
+### D3 资源中心本地集成收尾（2026-11-04）
+
+上段的 503 已在 `c5cf788` 修复，并被 fast-forward 纳入 `integration/resource-center`（连同文档提交 `a8ce8f0`）。`SNAPSHOT_MANIFEST.json` 已用仓库脚本重新生成（316 文件，`capturedAt` 与上游 provenance 保持原值），`verify-snapshot.mjs` 通过。当前集成分支的发布文件集合与已验收包 `60b79f56…`（552 文件）逐文件比对：运行文件全等，仅新增的容量损坏态回归测试使测试文件有 1 处差异，故未重建候选包，浏览器 128/128 与 WebView2 71/71 的证据仍归属该包。容量只读验证补到空闲 / 占用 / 缺表 / 表结构损坏四态；WebView2 与浏览器均为隔离合成数据，未接真实账号，未部署、未合 main、未发布。基线见 [RESOURCE_CENTER_BASELINE.md](RESOURCE_CENTER_BASELINE.md)。

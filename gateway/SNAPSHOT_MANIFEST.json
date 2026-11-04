@@ -490,8 +490,8 @@
     },
     {
       "path": "scripts/workbench-read-store.mjs",
-      "sha256": "17370bf9a4108cbba92703c68454bb6e64333e29312bb7b5f091a2fbc9bbde1d",
-      "bytes": 14516
+      "sha256": "16b10e4b1fbad047f212c307c412772a51d9a9d3715efb7208bdaf4d0ef134d0",
+      "bytes": 15300
     },
     {
       "path": "scripts/workbench-smoke.mjs",
@@ -600,8 +600,8 @@
     },
     {
       "path": "src/credit-balance.ts",
-      "sha256": "01de1ecd1bea9d9bbe26889ae2f9ed224f530a4af4a52c7a2258ba9c68e1743d",
-      "bytes": 12967
+      "sha256": "faa7e232f4d629bdf0a6b86b9366b24cd752d848059ce99e8fb68858410094c2",
+      "bytes": 13648
     },
     {
       "path": "src/deepseek-client.ts",
@@ -780,8 +780,8 @@
     },
     {
       "path": "src/operation-admission.ts",
-      "sha256": "a14e64eddc69eb589c35ad899f12b4895bcbb28b979c010786baef2e5992949b",
-      "bytes": 29005
+      "sha256": "c53e5452488dfc6a5e29f297d946c8178f0804c8c38eccc3d972c4fa2dda08c0",
+      "bytes": 29616
     },
     {
       "path": "src/operation-recovery.ts",
@@ -860,8 +860,8 @@
     },
     {
       "path": "src/quota-observation.ts",
-      "sha256": "f38bc7c84b7429f53cdbdc0093166f15d98432a64484feb6baa28107e521d29c",
-      "bytes": 15337
+      "sha256": "6468aa8bb056267ae403112af1c2bbea845a88f52a53bb1d67ee4e33544ef78d",
+      "bytes": 16317
     },
     {
       "path": "src/recovery-cli.ts",
@@ -1102,6 +1102,11 @@
       "path": "test/desktop-queue.test.ts",
       "sha256": "0e580d520c62d827c1af749d1082395ffe5762e0091c4eeb73ceacd406e03522",
       "bytes": 20780
+    },
+    {
+      "path": "test/desktop-readonly-resources.test.ts",
+      "sha256": "6bbe67529814fefc682b695c108910294716d2fce83757c37b9bb0c6d2ae5228",
+      "bytes": 21095
     },
     {
       "path": "test/desktop-worker-env.test.ts",

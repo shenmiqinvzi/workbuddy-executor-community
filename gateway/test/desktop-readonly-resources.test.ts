@@ -280,6 +280,20 @@ test("capacity distinguishes a saved occupant from a saved free slot", async t =
   } finally { busy.store.close(); }
 });
 
+test("a damaged capacity table is refused instead of being reported as a free slot", async t => {
+  const f = seed(t);
+  f.finish();
+  writeOnce(f.file, "DROP TABLE workflow_capacity");
+  writeOnce(f.file, "CREATE TABLE workflow_capacity (task_id TEXT, executor TEXT)");
+  const { store, service } = readOnlyService(f.file, f.runsDir);
+  try {
+    // Contract: a row this reader cannot query is not evidence that the slot is free,
+    // so it must fail loudly rather than answer `occupied: null`.
+    assert.throws(() => service.readCapacity(), /no such column: slot/);
+    assert.equal(service.listStageViews({ limit: 10 }).ok, true, "damaged capacity is not a task failure");
+  } finally { store.close(); }
+});
+
 test("opening and reading leaves the database unchanged and creates no storage", async t => {
   const f = seed(t);
   f.publishQuota("synthetic-quota", quotaSnapshot("synthetic-quota", [observation()]));

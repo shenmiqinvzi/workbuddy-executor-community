@@ -54,3 +54,15 @@
 同一个包上的交互验收：浏览器（官方 `WorkbenchHttpServer` + 精确白名单 + 真实存储 + 隔离合成行）128 项全通过，退出码 0，覆盖 1440×1000、720×1000、420×900 与 200% 模拟缩放；WebView2 实窗 71 项全通过，退出码 0，覆盖真实读取、单侧/双侧失败与恢复、成功时间不被失败请求覆盖、离页取消、返回重读、真实↔演示切换、嵌入面板、键盘、窄窗口、容量 `occupied:null`、关闭后 host 停止与重开后仍为真实读取。两份报告的 `source.commit` 均为 `c5cf788`、`package.sha256` 均为 `60b79f56…`，可证明是同一个包。
 
 本轮未做：真实上游来源与真实账号、可信路由、任务方案关联、D3-04 停机隔离、D0/D1 与正式发行；200% 缩放是 CDP 模拟而非系统 DPI。细节与复现命令见 `docs/RESOURCE_DESKTOP_READONLY_FIX.md`，证据在 `E:\javaproject\outputs\resource-desktop-fix-20261104`。未推送、未合入本集成分支、未部署。
+
+## 2026-11-04 本地集成收尾
+
+`c5cf788` 与文档提交 `a8ce8f0` 已通过 `git merge --ff-only` 纳入 `integration/resource-center`，分支由 `0bb9ffe` 前进到 `a8ce8f0`，无 cherry-pick 副本，原提交号保留。集成分支上的 `README.md`、`ROADMAP.md` 未提交修改原样保留，未使用 `reset`、`clean` 或 `git add -A`。
+
+快照：`node scripts/generate-snapshot-manifest.mjs` 重新生成，`node verify-snapshot.mjs` 输出 `{"snapshotFilesVerified":316,"hashesMatch":true,"manifestCompleteness":"checked"}`、退出码 0。`capturedAt` 保持 `2026-10-23T00:39:39.586Z`，上游 provenance 未改写。
+
+源码与已验收包：用 `collectReleaseFiles()` 取当前集成分支的发布文件集合并逐一计算 SHA-256，与包 `60b79f56…` 的 `RELEASE_MANIFEST.json` 比较，552 个文件全等；补入容量损坏态回归用例后仍只有 `test/desktop-readonly-resources.test.ts` 一个非运行时文件存在差异，运行文件保持一致，因此未重建候选包，上一节的浏览器 128/128 与 WebView2 71/71 仍是对该包的结论。
+
+回归：集成分支上 `npm run build`、`npm run typecheck:task-view`、资源与容量相关 69 项、HTTP/静态资源/打包/服务 61 项（隔离 env）、工作台 100/100、快照校验、`git diff --check` 全部退出码 0。桌面只读回归从 13 项增至 14 项（新增损坏容量表必须拒绝而非报告空闲）。
+
+基线汇总与证据归属见 `docs/RESOURCE_CENTER_BASELINE.md`。仍未完成：D3-01 真实来源、D3-02 可信路由、D3-03 任务方案关联、D3-04 停机隔离、D0/D1、main 合入、部署与发布。
