@@ -298,6 +298,7 @@ export class WorkbenchHttpServer {
           || pathname === "/workbench/v1/resources/quotas"
           || pathname === "/workbench/v1/resources/credit-balances"
           || pathname === "/workbench/v1/resources/capacity"
+        || pathname === "/workbench/v1/resources/routing"
           || pathname === TASKS_PREFIX
           || /^\/workbench\/v1\/tasks\/[^/]+(\/(rework|cancel|reviews|accept|events|export))?$/.test(pathname);
         if (isKnownPath) {
@@ -365,6 +366,14 @@ export class WorkbenchHttpServer {
         }
         try {this.send(response,200,this.options.service.readCapacity());}
         catch {this.refuse(response,503,"RESOURCE_STORE_UNAVAILABLE","The saved execution capacity could not be read; it is not reported as a free slot.");}
+        return;
+      }
+      if (pathname === "/workbench/v1/resources/routing") {
+        if ([...url.searchParams.keys()].length) {
+          this.refuse(response,400,"INVALID_RESOURCE_QUERY","The routing evidence resource takes no query parameters.");return;
+        }
+        try {this.send(response,200,this.options.service.readRoutingEvidence());}
+        catch {this.refuse(response,503,"RESOURCE_STORE_UNAVAILABLE","The routing evidence could not be read; no mapping is reported as verified.");}
         return;
       }
       if (pathname === TASKS_PREFIX) {

@@ -879,6 +879,11 @@
       "bytes": 6473
     },
     {
+      "path": "src/resource-routing.ts",
+      "sha256": "be916b5abdf048aefbfc0d69b18534275d87c30dc8ab6c2217d49283026dbaa5",
+      "bytes": 7630
+    },
+    {
       "path": "src/run-evidence.ts",
       "sha256": "77071af62a7afd9a09d59ffde29bf09378cc58d270af6d4ec742baae61585ce1",
       "bytes": 3438
@@ -915,8 +920,8 @@
     },
     {
       "path": "src/task-application-service.ts",
-      "sha256": "22a0339b6862bb1d98861f99fc2e49548c523befc02bef2805409eb0abe91d42",
-      "bytes": 26619
+      "sha256": "986f89d4f4d50c0e38f8e4099e9fd4d59a132545ce530aec3249e833fad20444",
+      "bytes": 27250
     },
     {
       "path": "src/task-contract.ts",
@@ -985,8 +990,8 @@
     },
     {
       "path": "src/workbench-http.ts",
-      "sha256": "2e5a883c4ce29eac0e7cde8d4d5ad3be180b43986186702f184afd917a267361",
-      "bytes": 21924
+      "sha256": "7f5135f83a9580bb4c2dc97c9109df3d6a1c33af3d46219056f4da47b80dc8e1",
+      "bytes": 22487
     },
     {
       "path": "src/workbench-panel.ts",
@@ -1237,6 +1242,11 @@
       "path": "test/report-authentication.test.ts",
       "sha256": "70d4e4da1882ce370464e55d8faf0275df803c3d37e972ab3c6baf22e1e89ed2",
       "bytes": 31803
+    },
+    {
+      "path": "test/resource-routing.test.ts",
+      "sha256": "bf21a4a9fb4b7be5e53a42f95a99e19f8bcee3eceb4199f3ec04a2d2470868c0",
+      "bytes": 13974
     },
     {
       "path": "test/run-journal.test.ts",

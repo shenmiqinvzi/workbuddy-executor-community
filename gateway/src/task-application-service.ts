@@ -8,6 +8,7 @@ import { contractExecution } from "./task-contract.js";
 import type { StoredTask, StoredTaskEvent } from "./task-store.js";
 import { readTaskProjection } from "./task-view-reader.js";
 import { capacityResource } from "./capacity-view.js";
+import { buildRoutingEvidence } from "./resource-routing.js";
 import { PANEL_SCHEMA, readPanelTask } from "./workbench-panel.js";
 import type { DispatchLease } from "./dispatch-settlement.js";
 import { stageTaskViewFromProjection, STAGE_TASK_VIEW_UNAVAILABLE, STAGE_TASK_VIEW_SCHEMA_VERSION, type StageTaskView } from "./task-view-stage.js";
@@ -125,6 +126,16 @@ export class TaskApplicationService {
    * free slot it never saw.
    */
   readCapacity() { return capacityResource(this.coordinator.store.operations.occupant(), new Date().toISOString()); }
+  /**
+   * Routing evidence derived from the two saved resource views only.
+   *
+   * It is deliberately not merged into quota-1 or credit-balance-1: those
+   * schemas mean "what the gateway observed", this one means "how strongly a
+   * pool is bound to a source, and what stays unknown". Both reads happen
+   * here, so a read failure throws and the HTTP layer answers 503 rather than
+   * implying a verified mapping.
+   */
+  readRoutingEvidence() { return buildRoutingEvidence(this.coordinator.store.quotas.read(), this.coordinator.store.creditBalances.read()); }
 
   getOperation(operationId: string) { return this.coordinator.store.operations.get(operationId); }
   reviewChecks(input: ReviewOptions) { return this.coordinator.store.reviews.checks(input, this.runsDir); }
