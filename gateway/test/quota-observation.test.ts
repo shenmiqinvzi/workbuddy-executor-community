@@ -26,6 +26,23 @@ async function source(t:{after:(fn:()=>void|Promise<void>)=>void},handler:(reque
 }
 const input=(baseUrl:string,overrides:Record<string,unknown>={})=>({id:"local-source",baseUrl,apiKey:"synthetic-private-key",intervalMs:1000,maxAgeMs:10000,timeoutMs:5000,...overrides});
 
+test("regressing source time preserves the previous quota snapshot and marks it stale",async t=>{
+  const f=fixture(t);let generated=Date.now()/1000,remaining=80;
+  const url=await source(t,(_req,res)=>res.end(JSON.stringify({generated_at:generated,rows:[row({remaining})]})));
+  const first=new WorkBuddyQuotaCollector(f.store.quotas,input(url));await first.collect();await first.stop();
+  const before=f.store.quotas.read();generated-=60;remaining=5;
+  const second=new WorkBuddyQuotaCollector(f.store.quotas,input(url));await second.collect();await second.stop();
+  const after=f.store.quotas.read();assert.equal(after.observations[0]!.remaining,80);assert.equal(after.connections[0]!.snapshotId,before.connections[0]!.snapshotId);
+  assert.equal(after.connections[0]!.errorCode,"source_invalid");assert.equal(after.connections[0]!.freshness,"stale");
+});
+
+test("quota deduplication prefers a known source time over a later unverified collection",async t=>{
+  const f=fixture(t);const url=await source(t,(req,res)=>res.end(JSON.stringify({generated_at:req.headers.authorization?.includes("unknown")?null:Date.now()/1000-10,rows:[row({remaining:req.headers.authorization?.includes("unknown")?5:80})]})));
+  const first=new WorkBuddyQuotaCollector(f.store.quotas,input(url));await first.collect();await first.stop();
+  const second=new WorkBuddyQuotaCollector(f.store.quotas,input(url,{id:"unknown-time",apiKey:"unknown"}));await second.collect();await second.stop();
+  const view=f.store.quotas.read();assert.equal(view.observations[0]!.remaining,80);assert.equal(view.observations[0]!.connectionIds.length,2);
+});
+
 test("real GET collection authenticates privately and strips account identities",async t=>{
   const f=fixture(t);let requests=0;
   const url=await source(t,(req,res)=>{requests++;assert.equal(req.url,"/usage/remaining");assert.equal(req.method,"GET");assert.equal(req.headers.authorization,"Bearer synthetic-private-key");assert.equal(req.headers["x-panel-token"],"synthetic-panel-token");res.end(JSON.stringify(body()));});

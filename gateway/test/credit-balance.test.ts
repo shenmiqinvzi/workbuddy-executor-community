@@ -24,6 +24,16 @@ async function source(t:{after:(fn:()=>void|Promise<void>)=>void},handler:(req:h
 }
 const connection=(baseUrl:string,overrides:Record<string,unknown>={})=>({id:"credit-local",baseUrl,apiKey:"synthetic-credit-key",intervalMs:1000,maxAgeMs:10000,timeoutMs:5000,...overrides});
 
+test("regressing aggregate time preserves the last credit snapshot and marks the cache stale",async t=>{
+  const f=fixture(t);let updated=Date.now()/1000,balance=123.45;
+  const url=await source(t,(_req,res)=>res.end(JSON.stringify(payload({updated_at:updated,balance}))));
+  const first=new WorkBuddyCreditBalanceCollector(f.store.creditBalances,connection(url));await first.collect();await first.stop();
+  const before=f.store.creditBalances.read();updated-=60;balance=10;
+  const second=new WorkBuddyCreditBalanceCollector(f.store.creditBalances,connection(url));await second.collect();await second.stop();
+  const after=f.store.creditBalances.read();assert.equal(after.balances[0]!.balance,123.45);assert.equal(after.connections[0]!.snapshotId,before.connections[0]!.snapshotId);
+  assert.equal(after.connections[0]!.errorCode,"source_invalid");assert.equal(after.connections[0]!.cacheFreshness,"stale");
+});
+
 test("credit endpoint uses only the existing API key and preserves reported-cache semantics",async t=>{
   const f=fixture(t);let calls=0;const url=await source(t,(req,res)=>{calls++;assert.equal(req.method,"GET");assert.equal(req.url,"/v1/balance-summary");assert.equal(req.headers.authorization,"Bearer synthetic-credit-key");assert.equal(req.headers["x-panel-token"],undefined);res.end(JSON.stringify(payload({nickname:"must-not-leak",accountId:"must-not-leak"})));});
   const collector=new WorkBuddyCreditBalanceCollector(f.store.creditBalances,connection(url));const before=f.store.get("existing-task"),events=f.store.listTaskEvents("existing-task");

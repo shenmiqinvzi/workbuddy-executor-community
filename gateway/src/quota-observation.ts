@@ -82,7 +82,10 @@ export class QuotaStore {
     if(row.snapshot_json){
       let previous:QuotaSnapshot|undefined;
       try{previous=savedSnapshot(row.snapshot_json,id);}catch{/* only a verified background refresh may replace corrupt cache; GET still refuses it */}
-      if(previous?.sourceObservedAt && (!snapshot.sourceObservedAt || previous.sourceObservedAt>snapshot.sourceObservedAt))return false;
+      if(previous?.sourceObservedAt && (!snapshot.sourceObservedAt || previous.sourceObservedAt>snapshot.sourceObservedAt)){
+        this.failed(id,epoch,generation,"source_invalid");
+        return false;
+      }
     }
     return Number(this.db.prepare("UPDATE quota_connections SET snapshot_json=?,error_code=NULL WHERE id=? AND epoch=? AND generation=?").run(JSON.stringify(snapshot),id,epoch,generation).changes)===1;
   }
@@ -102,7 +105,12 @@ export class QuotaStore {
     const candidates=rows.flatMap(row=>{
       const snapshot=row.snapshot_json ? savedSnapshot(row.snapshot_json,row.id) : null;
       return (snapshot?.observations??[]).filter(item=>options.modelId===undefined||item.modelId===options.modelId).map(item=>({...item,connectionId:row.id,snapshotId:snapshot!.snapshotId,sourceObservedAt:snapshot!.sourceObservedAt,collectedAt:snapshot!.collectedAt}));
-    }).sort((a,b)=>(b.sourceObservedAt??b.collectedAt).localeCompare(a.sourceObservedAt??a.collectedAt));
+    }).sort((a,b)=>{
+      // A local collection time does not establish when the source observed data.
+      if (a.sourceObservedAt && !b.sourceObservedAt) return -1;
+      if (!a.sourceObservedAt && b.sourceObservedAt) return 1;
+      return (b.sourceObservedAt??b.collectedAt).localeCompare(a.sourceObservedAt??a.collectedAt);
+    });
     const unique=new Map<string,(typeof candidates)[number]&{connectionIds:string[]}>();
     for(const item of candidates){const key=`${item.scopeId}:${item.modelId}`;const prior=unique.get(key);if(prior)prior.connectionIds.push(item.connectionId);else unique.set(key,{...item,connectionIds:[item.connectionId]});}
     const observations=[...unique.values()].sort((a,b)=>`${a.scopeId}:${a.modelId}`.localeCompare(`${b.scopeId}:${b.modelId}`));

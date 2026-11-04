@@ -71,7 +71,10 @@ export class CreditBalanceStore {
     if (previous.snapshot_json) {
       let prior:CreditBalanceSnapshot|undefined;
       try {prior=decode(previous.snapshot_json,id);}catch{/* a validated refresh can repair a resource cache; never a GET */}
-      if (prior?.latestMemberObservedAt && (!snapshot.latestMemberObservedAt || prior.latestMemberObservedAt > snapshot.latestMemberObservedAt)) return false;
+      if (prior?.latestMemberObservedAt && (!snapshot.latestMemberObservedAt || prior.latestMemberObservedAt > snapshot.latestMemberObservedAt)) {
+        this.failed(id, epoch, generation, "source_invalid");
+        return false;
+      }
     }
     return Number(this.db.prepare("UPDATE credit_balance_connections SET snapshot_json=?,error_code=NULL WHERE id=? AND epoch=? AND generation=?").run(JSON.stringify(snapshot), id, epoch, generation).changes) === 1;
   }
