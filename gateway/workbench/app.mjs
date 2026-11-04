@@ -55,17 +55,55 @@ const copyButton = value => h('button', { class: 'copy', type: 'button', 'aria-l
     } } }, icon('copy'));
 function option(value, text) { return h('option', { value }, text); }
 function backToList() { document.body.classList.remove('mobile-detail'); requestAnimationFrame(() => { window.scrollTo(0, state.listScrollY ?? 0); document.querySelector('.task-row[aria-current=true]')?.focus({ preventScroll: true }); }); }
+let embedPanel = null;
+let embedStage = 'idle';
+function navEmbed() { return h('button', { class: 'nav-button', type: 'button', 'data-group': 'embed', onclick: () => { state.filters.group = 'embed'; document.body.classList.remove('mobile-detail'); closeMenu(); render(); } }, icon('lock'), embedPanel?.title ?? '嵌入面板'); }
+function loadEmbedFrame() {
+    if (embedStage !== 'idle' || !embedPanel) return;
+    const frame = $('embed-frame'), note = $('embed-status');
+    if (!frame) return;
+    embedStage = 'loading';
+    if (note) { note.hidden = false; note.className = 'embed-status'; note.textContent = '正在连接' + embedPanel.title + '…'; }
+    frame.addEventListener('load', () => { embedStage = 'ready'; if (note) note.hidden = true; }, { once: true });
+    frame.src = embedPanel.url;
+    setTimeout(() => {
+        if (embedStage === 'loading' && note) {
+            embedStage = 'failed';
+            note.className = 'embed-status embed-status-failed';
+            note.textContent = embedPanel.title + '没有载入。请确认 ' + embedPanel.origin + ' 上的服务正在运行。';
+        }
+    }, 8000);
+}
+// The gateway decides whether there is an embedded view at all; an install with
+// nothing configured gets no extra navigation entry and no framed page.
+async function loadEmbedConfig() {
+    let panel = null;
+    try {
+        const response = await fetch('/workbench/v1/embed', { signal: AbortSignal.timeout(5000) });
+        const result = await response.json();
+        panel = result?.ok === true ? result.value?.panel ?? null : null;
+    }
+    catch { panel = null; }
+    embedPanel = panel && typeof panel.url === 'string' && typeof panel.title === 'string' ? panel : null;
+    const views = $('embed-views');
+    if (!views) return;
+    views.hidden = embedPanel === null;
+    if (embedPanel === null) { if (state.filters.group === 'embed') { state.filters.group = 'all'; render(); } return; }
+    const heading = $('embed-heading'); if (heading) heading.textContent = embedPanel.title;
+    const button = views.querySelector('[data-group="embed"]'); if (button) button.lastChild.textContent = embedPanel.title;
+    const frame = $('embed-frame'); if (frame) frame.title = embedPanel.title;
+}
 function navItem(group, label, glyph, count = false) { return h('button', { class: 'nav-button', type: 'button', 'data-group': group, onclick: () => { state.filters.group = group; state.filters.state = ''; $('state-filter').value = ''; document.body.classList.remove('mobile-detail'); closeMenu(); render(); } }, icon(glyph), label, count ? h('span', { class: 'count', id: 'attention-count' }, '0') : null); }
 function buildShell() {
     const source = h('select', { class: 'source-select', id: 'data-source', 'aria-label': '数据来源', onchange: e => switchSource(e.target.value) }, option('live', '已保存任务 · 本地网关'), option('demo', '演示数据 · 合成样本'));
-    const sidebar = h('aside', { class: 'sidebar', id: 'sidebar', 'aria-label': '工作台导航' }, h('div', { class: 'brand' }, icon('mark', 'brand-mark'), h('div', {}, h('div', { class: 'brand-name' }, 'WorkBuddy'), h('div', { class: 'brand-sub' }, 'Executor workbench'))), h('div', { class: 'scope-label' }, icon('folder'), '本地协作工作区'), h('div', {}, h('div', { class: 'nav-heading' }, '工作台'), h('nav', { class: 'nav' }, navItem('all', '全部任务', 'grid'), navItem('attention', '待处理', 'inbox', true), navItem('accepted', '验收记录', 'circle'))), h('div', { class: 'sidebar-foot' }, h('label', { class: 'source-label', for: 'data-source' }, '数据来源', source), h('div', { class: 'foot-line', id: 'connection-mode' }, icon('lock'), '只读连接'), h('div', { class: 'foot-line', id: 'runtime-label' }, '正在读取网关版本…')));
+    const sidebar = h('aside', { class: 'sidebar', id: 'sidebar', 'aria-label': '工作台导航' }, h('div', { class: 'brand' }, icon('mark', 'brand-mark'), h('div', {}, h('div', { class: 'brand-name' }, 'WorkBuddy'), h('div', { class: 'brand-sub' }, 'Executor workbench'))), h('div', { class: 'scope-label' }, icon('folder'), '本地协作工作区'), h('div', {}, h('div', { class: 'nav-heading' }, '工作台'), h('nav', { class: 'nav' }, navItem('all', '全部任务', 'grid'), navItem('attention', '待处理', 'inbox', true), navItem('accepted', '验收记录', 'circle'))), h('div', { class: 'sidebar-foot' }, h('label', { class: 'source-label', for: 'data-source' }, '数据来源', source), h('div', { class: 'sidebar-views', id: 'embed-views', hidden: true }, h('div', { class: 'nav-heading', id: 'embed-heading' }, '嵌入面板'), h('nav', { class: 'nav' }, navEmbed())), h('div', { class: 'foot-line', id: 'connection-mode' }, icon('lock'), '只读连接'), h('div', { class: 'foot-line', id: 'runtime-label' }, '正在读取网关版本…')));
     const refresh = h('button', { class: 'button', type: 'button', id: 'refresh', onclick: () => refreshTasks(), 'aria-label': '刷新已存快照' }, icon('refresh'), h('span', {}, '刷新快照'));
     const metricLabels = [['', '已加载任务'], ['running', '执行中'], ['needs_review', '待独立验收'], ['accepted', '已验收']];
     const metrics = h('div', { class: 'metrics', 'aria-label': '已加载任务中的状态数量' }, metricLabels.map(([key, label], i) => h('button', { class: 'metric', type: 'button', 'data-state': key, onclick: () => { state.filters.state = key; $('state-filter').value = key; state.filters.group = 'all'; render(); } }, h('span', { class: 'metric-label' }, label), h('span', { class: 'metric-number', id: 'metric-' + i }, '—'))));
     const search = h('label', { class: 'search' }, h('span', { class: 'sr-only' }, '搜索任务、目标或 ID'), icon('search'), h('input', { id: 'search', type: 'search', autocomplete: 'off', placeholder: '搜索任务、目标或 ID', 'aria-label': '搜索任务、目标或 ID', oninput: e => { state.filters.search = e.target.value; render(); } }), h('kbd', {}, '/'));
     const stateFilter = h('select', { class: 'filter', id: 'state-filter', 'aria-label': '筛选任务状态', onchange: e => { state.filters.state = e.target.value; render(); } }, option('', '全部状态'), ...Object.entries(STATES).map(([key, values]) => option(key, values[0])));
     const workspaceFilter = h('select', { class: 'filter', id: 'workspace-filter', 'aria-label': '筛选工作区', onchange: e => { state.filters.workspace = e.target.value; render(); } }, option('', '全部工作区'));
-    const sheet = h('main', { class: 'sheet', id: 'main', tabindex: '-1' }, h('header', { class: 'page-heading' }, h('div', {}, h('h1', { id: 'page-title' }, '任务工作台'), h('p', { class: 'page-intro' }, '执行有记录，交付有依据。')), h('div', { class: 'heading-tools' }, h('span', { class: 'source-badge', id: 'source-badge' }, '已保存任务'), refresh)), h('div', { class: 'demo-controls', id: 'demo-controls', hidden: true }, h('span', {}, '合成样本，不代表真实执行'), h('select', { class: 'filter', id: 'demo-scenario', 'aria-label': '演示场景', onchange: e => switchSource('demo', e.target.value) })), metrics, h('div', { class: 'toolbar' }, search, stateFilter, workspaceFilter, h('span', { class: 'filter-label' }, '筛选已加载的记录')), h('div', { id: 'source-notice', 'aria-live': 'polite' }), h('div', { class: 'workspace' }, h('section', { class: 'list-pane', 'aria-label': '任务列表' }, h('div', { class: 'list-heading' }, h('span', { id: 'list-count' }, '任务'), h('span', {}, '创建时间顺序')), h('div', { class: 'task-list', id: 'task-list' }), h('div', { class: 'list-foot', id: 'list-foot' })), h('section', { class: 'detail', id: 'detail', 'aria-label': '任务详情' })), h('footer', { class: 'page-foot' }, h('span', { id: 'freshness' }, '尚未获取快照'), h('span', {}, '报告收到、停止确认与独立验收，分别记录。')));
+    const sheet = h('main', { class: 'sheet', id: 'main', tabindex: '-1' }, h('header', { class: 'page-heading' }, h('div', {}, h('h1', { id: 'page-title' }, '任务工作台'), h('p', { class: 'page-intro' }, '执行有记录，交付有依据。')), h('div', { class: 'heading-tools' }, h('span', { class: 'source-badge', id: 'source-badge' }, '已保存任务'), refresh)), h('div', { class: 'demo-controls', id: 'demo-controls', hidden: true }, h('span', {}, '合成样本，不代表真实执行'), h('select', { class: 'filter', id: 'demo-scenario', 'aria-label': '演示场景', onchange: e => switchSource('demo', e.target.value) })), metrics, h('div', { class: 'toolbar' }, search, stateFilter, workspaceFilter, h('span', { class: 'filter-label' }, '筛选已加载的记录')), h('div', { id: 'source-notice', 'aria-live': 'polite' }), h('div', { class: 'embed-pane', id: 'embed-pane', hidden: true }, h('div', { class: 'embed-status', id: 'embed-status', role: 'status' }, '正在连接…'), h('iframe', { class: 'embed-frame', id: 'embed-frame', title: '嵌入面板' })), h('div', { class: 'workspace' }, h('section', { class: 'list-pane', 'aria-label': '任务列表' }, h('div', { class: 'list-heading' }, h('span', { id: 'list-count' }, '任务'), h('span', {}, '创建时间顺序')), h('div', { class: 'task-list', id: 'task-list' }), h('div', { class: 'list-foot', id: 'list-foot' })), h('section', { class: 'detail', id: 'detail', 'aria-label': '任务详情' })), h('footer', { class: 'page-foot' }, h('span', { id: 'freshness' }, '尚未获取快照'), h('span', {}, '报告收到、停止确认与独立验收，分别记录。')));
     $('app').append(h('div', { class: 'shell' }, sidebar, h('header', { class: 'topbar' }, h('div', { class: 'breadcrumbs' }, h('button', { class: 'menu-button', id: 'menu', type: 'button', 'aria-label': '打开工作台导航', 'aria-controls': 'sidebar', 'aria-expanded': 'false', onclick: toggleMenu }, icon('menu')), h('span', {}, '工作台'), icon('chevron'), h('span', {}, '本地协作')), h('div', { class: 'topbar-meta' }, h('span', { id: 'connection', role: 'status' }, '连接中'), h('span', { class: 'readonly-top', id: 'snapshot-mode' }, icon('lock'), '只读模式'))), sheet), h('button', { class: 'nav-overlay', type: 'button', 'aria-label': '关闭导航', onclick: closeMenu }));
 }
 function toggleMenu() { const open = document.body.classList.toggle('nav-open'); $('menu').setAttribute('aria-expanded', String(open)); if (open)
@@ -83,7 +121,7 @@ function render() {
     else
         el.removeAttribute('aria-current'); });
     $('attention-count').textContent = String(filterRecords(scoped, { group: 'attention' }).length);
-    if (!document.querySelector('.sheet.composing')) $('page-title').textContent = ({ all: '任务工作台', attention: '待处理任务', accepted: '验收记录' })[state.filters.group];
+    if (!document.querySelector('.sheet.composing')) $('page-title').textContent = state.filters.group === 'embed' ? (embedPanel?.title ?? '嵌入面板') : (({ all: '任务工作台', attention: '待处理任务', accepted: '验收记录' })[state.filters.group] ?? '任务工作台');
     $('refresh').disabled = state.busy;
     $('source-badge').className = 'source-badge' + (state.source.kind === 'demo' ? ' demo' : '');
     $('source-badge').textContent = state.source.kind === 'demo' ? '演示数据' : '已保存任务';
@@ -110,6 +148,14 @@ function render() {
         visible.forEach(record => list.append(h('button', { class: 'task-row', type: 'button', 'data-task-id': record.taskId, 'aria-current': String(record.taskId === state.selected), onclick: () => selectTask(record.taskId), 'aria-label': taskName(record) + '，' + stateInfo(record).label }, h('div', { class: 'task-row-top' }, h('span', { class: 'task-name' }, taskName(record)), icon('chevron', 'row-arrow')), h('div', { class: 'task-meta' }, h('span', {}, workspaceName(record)), h('span', {}, record.view?.attempt?.number ? `第 ${record.view.attempt.number} 轮` : '轮次未提供')), h('div', { class: 'task-bottom' }, status(record), h('span', { class: 'task-source' }, executorName(record))))));
     $('list-foot').replaceChildren(h('span', {}, state.fetchedAt ? '已加载 ' + state.records.length + ' 项' + (state.cursor ? ' · 还有更多' : '') : '尚未读取记录'), state.cursor ? h('button', { class: 'text-button', type: 'button', disabled: state.busy, onclick: () => refreshTasks(true) }, '加载更多') : h('span', {}, '只读记录'));
     renderDetail();
+    const embedShowing = state.filters.group === 'embed' && embedPanel !== null;
+    const embedPane = $('embed-pane');
+    if (embedPane) {
+        embedPane.hidden = !embedShowing;
+        $('main').classList.toggle('embed-view', embedShowing);
+        if (embedShowing) loadEmbedFrame();
+    }
+    document.querySelectorAll('.metrics, .toolbar, .workspace').forEach(el => { if (embedShowing) el.setAttribute('hidden', ''); else el.removeAttribute('hidden'); });
 }
 function section(title, content, side = null) { return h('section', { class: 'section' }, h('div', { class: 'section-title' }, h('h3', {}, title), side ? h('small', {}, side) : null), content); }
 function renderDetail() {
@@ -406,6 +452,7 @@ async function switchSource(kind, scenario = 'normal') {
     await refreshTasks();
 }
 buildShell();
+void loadEmbedConfig();
 void fetch('/workbench/desktop/capabilities',{method:'GET',signal:AbortSignal.timeout(5000)}).then(response=>response.json()).then(result=>{desktopControlsAvailable=result?.ok===true&&result.value?.controls===true;if(state.detail)render();}).catch(()=>{});
 void mountDesktopDispatch({ onTask: async taskId => { if (state.source.kind === 'demo') await switchSource('live'); linkedTask = taskId; location.hash = 'taskId=' + encodeURIComponent(taskId); await refreshTasks(); } });
 window.addEventListener('hashchange', async () => {

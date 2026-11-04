@@ -21,16 +21,19 @@ const assets: Record<string, [string, string]> = {
   "/workbench/fonts/ibmplexmono-OFL.txt": ["fonts/ibmplexmono-OFL.txt", "text/plain; charset=utf-8"],
 };
 
-export function serveWorkbenchAsset(pathname: string, response: ServerResponse): boolean {
+export function serveWorkbenchAsset(pathname: string, response: ServerResponse, embedOrigins: readonly string[] = []): boolean {
   if (pathname === "/workbench") { response.writeHead(308, { location: "/workbench/", "cache-control": "no-store" }); response.end(); return true; }
   const entry = assets[pathname];
   if (!entry) return false;
+  // Nothing may be framed unless the installer named the origin; the default
+  // stays 'none' so an unconfigured workbench cannot load a third-party page.
+  const frameSrc = embedOrigins.length === 0 ? "'none'" : embedOrigins.join(" ");
   try {
     const body = fs.readFileSync(new URL(`../workbench/${entry[0]}`, import.meta.url));
     response.writeHead(200, {
       "content-type": entry[1], "cache-control": "no-store", "x-content-type-options": "nosniff",
       "referrer-policy": "no-referrer",
-      "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+      "content-security-policy": `default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src ${frameSrc}; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`,
     });
     response.end(body);
   } catch { response.writeHead(503, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" }); response.end("Workbench assets are unavailable. Check this gateway package."); }

@@ -40,6 +40,7 @@
 
 import http from "node:http";
 import { serveWorkbenchAsset } from "./workbench-assets.js";
+import { readEmbedConfig, type EmbedConfig } from "./embed-panel.js";
 import type { AddressInfo } from "node:net";
 import { TaskApplicationService } from "./task-application-service.js";
 import { STAGE_TASK_VIEW_SCHEMA_VERSION, STAGE_TASK_VIEW_UNAVAILABLE, type StageTaskView } from "./task-view-stage.js";
@@ -124,6 +125,8 @@ interface WorkbenchAdapterOptions {
   health: (service: TaskApplicationService) => WorkbenchHealth;
   /** Loopback enforced by default; tests may pass their own predicate. */
   requestAllowed?: (remoteAddress: string | undefined, host: string | undefined, origin: string | undefined) => boolean;
+  /** Embedded-panel settings; read from the environment when omitted. */
+  embed?: EmbedConfig;
 }
 
 /** One {code,message} pair per failure shape, kept stable. */
@@ -167,6 +170,7 @@ function defaultRequestAllowed(remoteAddress: string | undefined, host: string |
 /** Path shape shared by list and detail parsing. */
 const TASKS_PREFIX = "/workbench/v1/tasks";
 const HEALTH_PATH = "/workbench/v1/health";
+const EMBED_PATH = "/workbench/v1/embed";
 
 /** Parse {limit, afterTaskId} from the list query string. */
 export function parseListQuery(query: string): { ok: true; limit: number; afterTaskId?: string } | { ok: false; code: string; message: string } {
@@ -225,9 +229,11 @@ function statusForStageFailure(code: string): number {
 export class WorkbenchHttpServer {
   private readonly server: http.Server;
   private readonly allowed: NonNullable<WorkbenchAdapterOptions["requestAllowed"]>;
+  private readonly embed: EmbedConfig;
 
   constructor(private readonly options: WorkbenchAdapterOptions) {
     this.allowed = options.requestAllowed ?? defaultRequestAllowed;
+    this.embed = options.embed ?? readEmbedConfig();
     this.server = http.createServer((request, response) => { void this.handle(request, response); });
     // A read server must not hang on dead clients; the default agent timeout
     // is irrelevant here because no upstream connection exists.
@@ -286,6 +292,7 @@ export class WorkbenchHttpServer {
         // would be legal; POST write entries (tasks submit, rework, cancel,
         // reviews, accept) are not opened in this stage at all.
         const isKnownPath = pathname === HEALTH_PATH
+          || pathname === EMBED_PATH
           || pathname.startsWith("/workbench/v1/panel/")
           || pathname === "/workbench" || pathname.startsWith("/workbench/") && !pathname.startsWith("/workbench/v1/")
           || pathname === "/workbench/v1/resources/quotas"
@@ -304,7 +311,12 @@ export class WorkbenchHttpServer {
       if (pathname === "/workbench/desktop/capabilities") {
         this.send(response, 200, { ok: true, value: { available: false, confirmation: "native_required" } }); return;
       }
-      if (serveWorkbenchAsset(pathname, response)) return;
+      if (pathname === EMBED_PATH) {
+        // The page asks once at boot; an installer who configured nothing gets
+        // a null panel and the workbench simply shows no extra view.
+        this.send(response, 200, { ok: true, value: { panel: this.embed.panel } }); return;
+      }
+      if (serveWorkbenchAsset(pathname, response, this.embed.origins)) return;
       if (pathname === "/workbench/v1/panel/tasks") {
         const parsed = parseListQuery(url.search);
         if (!parsed.ok) { this.refuse(response, 400, parsed.code, parsed.message); return; }

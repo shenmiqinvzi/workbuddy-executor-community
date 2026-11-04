@@ -1,6 +1,6 @@
 # 后端开发进度
 
-更新日期：2026-11-03。本页区分源码能力、自动验证和运行部署。
+更新日期：2026-11-04。本页区分源码能力、自动验证和运行部署。
 
 ## 本分支 T7D（开发与补验中）
 
@@ -14,6 +14,8 @@ PR #22 为草稿；2026-11-02 核对 head `34fcb1b` 的 Windows CI 成功，尚�
 2026-11-03 编译产物出库：`gateway/.gitignore` 早就写着 `dist/`，但索引里仍强制跟踪着 270 个编译产物——每次改源码都要重提交一批可再生成的文件，而“提交的 dist 与源码一致”只能靠维护者的纪律维持。现在改为：`dist/` 不入库，由 `npm run build` 从 `src/` 与 `package-lock.json` 生成；快照清单按跟踪文件重新生成为 **297 条**（原 567 条里有 270 个是 `dist`），`capturedAt` 与上游 provenance 不变，`exclusions`/`notes` 里写明编译产物不再入库及其来源。`verify-snapshot.mjs` 增加硬约束：索引里只要出现 `dist/` 下的文件就报 `Build output is tracked again: ...`（实测 `git add -f` 一个 `dist` 文件即红，撤回即绿）。CI 里原来的 `git diff --exit-code -- dist` 换成 `node scripts/package.mjs <tmp>`：从干净构建出发打一次发布包，`package.mjs` 的必需文件清单会拒绝缺任何一个 `dist` 条目的包，比“比较已提交的字节”更贴近要防的事。验证：`verify-snapshot` 297 / true / checked；`package.test.ts`、`deployment.test.ts`、`mcp-entry.test.ts` 24/24；本机 `node scripts/package.mjs` 产出 release 与两个技能包。仍未做：干净克隆上走一遍 clone → `npm ci` → `build` → `test` 的完整路径（CI 覆盖，本机不重复）。
 
 2026-11-03 独立复审四项修复：用同模型（`gpt-6.1-sol`、只读）对本分支做了一次独立审查，除已修的 `attention.mjs` 缺失外，另指出四处“文档说得比代码更硬”的地方，均已改掉。其一，桥接层的零费率规则可以被降级：`configurePolicy` 只拦“把已有模型限制改空”，同一模型再传 `false` 就能把 x0 关掉；现在已开启就必须保持开启，且 `nativeModelPolicy()` 在旧的 `WORKBUDDY_REQUIRED_FREE_MODEL` 存在时，`WORKBUDDY_PINNED_MODEL` 只决定用哪个模型、不再顺手取消零费率要求。其二，预检在“库在但没有 `workflow_capacity` 表”时把 `occupant` 留空并照样给出 `ready:true`，错库或旧库因此是绿灯；现在表缺失直接进 blockers（`capacity_table_missing`），容量观测值报 `unknown`，不再等于 `free`。其三，验证声明只看证据值非空：`identity_mismatch`、`reviewer=executor`、`error` 这类值会被说成“身份一致”“存在非执行者审查”；现在失败值不算证据、`reserved_session` 必须是 UUID、给不出执行者身份时只能说“记录到一份审查结论”，身份一致性只在两份证据指向同一 UUID 时才敢声明。其四，发布面隐私检查只认 `/Users/` 且密钥检查只对 `.env.example` 生效：现在 `C:\Users\<acct>`、`/home/<acct>` 一并拒绝（`example`、`Public`、`<user>` 等占位名仍放行），所有 `.env*` 与 `*.example` 模板都检查非空密钥——`WINDOWS_ENV.example` 属于此列。文档口径同时校正：`b010855` 按重写后的提交记为 139 files +5531/−339，`dist/` 出库后也不再声称“干净检出可直接运行已提交入口”。验证：本机全量 `npm test` **870 / 858 通过 / 0 失败 / 12 跳过，退出码 0**（新增 7 条用例覆盖上述四处），`verify-snapshot` 298 / hashesMatch true，构建退出码 0。
+
+2026-11-04 可选的嵌入面板与桌面壳白名单：这个仓库要发给别人用，所以这里只提供机制，不提供任何具体页面的地址。需要看自己本地面板的人设置 `WORKBUDDY_WORKBENCH_EMBED_URL`（可选 `WORKBUDDY_WORKBENCH_EMBED_TITLE` 改侧栏与标题、`WORKBUDDY_WORKBENCH_EMBED_ORIGINS` 追加额外来源），不设置就完全没有这一栏、也不内嵌任何页面，与之前行为一致。挡路的是两条既有设计：桌面壳 `Program.cs` 的 `FrameNavigationStarting` 取消**所有**子框架导航，`WebResourceRequested` 对 `/workbench/` 之外的请求一律回 403，于是 iframe 在 WebView2 里必然空白——此前用无头 Edge 打开同一页面却能正常渲染，那条"已验证"结论就是这样被推翻的，教训是壳内行为只能在壳里验。改法是把放行做成显式白名单而不是删掉防护：`DesktopOptions` 增加 `EmbedOrigins`，来源只有两个——`WORKBUDDY_WORKBENCH_EMBED_ORIGINS` 的逐条解析，以及面板 URL 自身的 origin；两者都只接受 http + 回环主机（`127.0.0.1`/`localhost`）、且 origin 条目不得带路径、查询、片段或用户信息，去重后只留 authority；`AllowsEmbed(target, method)` 要求 method ∈ GET/HEAD/POST、scheme 为 http、authority 与白名单逐字相等。默认列表为空即维持"全部取消 + 403"。同样的来源集合也决定 CSP：`workbench-assets.ts` 的 `frame-src` 在无配置时是 `'none'`，有配置时逐个列出，避免出现"桌面壳放行、页面 CSP 却拦住"的两套口径。前端不再硬编码地址：启动时 GET `/workbench/v1/embed`，由网关回答有没有面板、叫什么、什么 origin，没有就隐藏侧栏入口；iframe 首次切到该视图才设置 `src`，8 秒仍未加载则显示"请确认 <origin> 上的服务正在运行"；嵌入视图下 `.sheet` 转为纵向 flex，面板铺满标题区与页脚之间。另加仅用于取证的 `WORKBUDDY_WORKBENCH_DEBUG_PORT`（1..65535，默认不设）给 WebView2 传 `--remote-debugging-port`。按 CONTRIBUTING 对执行约束改动的自审：不触碰任务状态机、不写库、不放宽 `AllowedRequest` 既有的 `/workbench/` 前缀与同端口约束，只在一个维度上新增默认关闭的口子——"子框架 + 跨源"；iframe 内容是另一台本机服务自渲染的页面，工作台不读它的 cookie、也不向其注入脚本。验证：`dotnet run --project desktop/test/PolicyTests.csproj -c Release` 70/70（原 52 + 白名单 12 + 面板 URL 派生 6）；新增 `test/embed-panel.test.ts` 9/9（未配置不内嵌、URL 自带 origin、标题回退与截断、非 http/非回环/带凭据/带查询一律拒绝、`localhost` 可用、额外来源严格解析去重、HTTP 端点与 CSP 两套口径、POST 405）；`node --test workbench/test/*.test.mjs` 63/63；`tsc -p tsconfig.json` 退出码 0；本机全量 `npm test` 881 / 868 通过 / 1 失败 / 12 跳过，唯一失败是 `bounded-command.test.ts` 在整轮高负载下等不到子进程 pid 文件（单文件复跑 6/6 通过），属于既有的时序敏感用例而非本轮改动；`node verify-snapshot.mjs` 在重生成清单后 298 / hashesMatch true / manifestCompleteness checked。真实窗口取证用 CDP 在 WebView2 内切到该视图再截图，面板完整渲染并随窗口伸缩；同一条路径在改动前是空白。环境注意：本机同时存在两个 WorkBuddy 数据目录（`.workbuddy` 与 `.workbuddy-ai`），未显式指定 `WORKBUDDY_CONFIG_DIR` 时 `loadConfig` 会按"多份安装/数据目录"直接抛错，上面的全量数字是在 shell 里显式设置 `WORKBUDDY_CLI_ELECTRON` 与 `WORKBUDDY_CONFIG_DIR` 后取得的（生产 `.env` 一直显式指定）。仍未做：异机与签名发行未验证；嵌入页面自身的登录态由该页面自己管理，强制结束窗口会丢它的 cookie。
 
 后续按照 [T7D 开发与验收计划](T7D_DEVELOPMENT_PLAN.md) 分开处理原任务取证、桌面不确定状态、安全可靠性、本机审查命令和另行授权的独立真实验证。预览、完整验收、合并、安装与正式发布分别判定；是否改变原补验交付条件须用户在证据明确后决定。已有预览包未自动更新日常安装。
 
@@ -112,18 +114,18 @@ P0-2 与 P0-4 已按 [P0-5 独立验证计划](T7D_P0_5_INDEPENDENT_VERIFICATION
 
 ## P0-6 完整真实验证 run（2026-11-03）
 
-run16（独立账本 `E:\javaproject\_wb-p06-state\run16`）：glm-5.3-flash（x0.08，模型读回+费率披露后用户选定）真实派工 → 71 秒完成 → **完整验收链首次全通**：程序检查（$provenance/$scope passed）→ 独立检查（artifact 哈希入账）→ 不可变 reviewId（check-1 semantic passed）→ `workbuddy_accept_task` → **state=accepted**。artifact 逐字节核验（26 字节，hexdump 一致）。详见 [P0-5 独立验证计划 §10.6](T7D_P0_5_INDEPENDENT_VERIFICATION_PLAN.md)。派工确认走内容指纹（digest 含随机 UUID 每次必变，内容一致作为授权锚）；原生客户端自动确认协作计划。剩余不可主张：额度扣费（报价而已）、异机验证（Issue #3）。
+run16（独立账本 `<STATE_DIR>\run16`）：glm-5.3-flash（x0.08，模型读回+费率披露后用户选定）真实派工 → 71 秒完成 → **完整验收链首次全通**：程序检查（$provenance/$scope passed）→ 独立检查（artifact 哈希入账）→ 不可变 reviewId（check-1 semantic passed）→ `workbuddy_accept_task` → **state=accepted**。artifact 逐字节核验（26 字节，hexdump 一致）。详见 [P0-5 独立验证计划 §10.6](T7D_P0_5_INDEPENDENT_VERIFICATION_PLAN.md)。派工确认走内容指纹（digest 含随机 UUID 每次必变，内容一致作为授权锚）；原生客户端自动确认协作计划。剩余不可主张：额度扣费（报价而已）、异机验证（Issue #3）。
 
 ## 发布（2026-11-03）
 
 - CI：0282c72 补交 SNAPSHOT_MANIFEST.json（R12 改了 7 个源文件，清单未再生成导致 "Verify source snapshot" 红）；重跑后 posix/gateway 双 job 绿。
 - 合并：PR #23（base 为 stage-2 分支 feat/t7d-desktop-controls，merge cf0bb9d）→ PR #24 把该分支合入 main（merge 47f9886）。main 现含 T7D 全部改动；本地 feat/t7d-p05 分支已 fast-forward 对齐 47f9886。
-- 升级安装（T7B 预览网关 `C:\Users\LENOVO\AppData\Local\Programs\WorkBuddyWorkbenchT7BPreview-20261031\...\gateway`，手工部署快照、非 setup.mjs 安装，故走构建物同步而非 upgrade --apply）：
-  1. 备份至 `E:\javaproject\outputs\t7b-preview-backup-20261103`（排除 node_modules）。
+- 升级安装（T7B 预览网关 `<GATEWAY_DIR>`，手工部署快照、非 setup.mjs 安装，故走构建物同步而非 upgrade --apply）：
+  1. 备份至 `<BACKUP_DIR>`（排除 node_modules）。
   2. 依赖不变（package.json/package-lock 逐字节一致），node_modules 未动。
   3. robocopy /MIR 同步 dist/src/workbench/scripts/skills/bin/desktop/deepseek-plugin/docs/test 十目录 + 根 package.json 等 8 文件；`.env` 与 `data/`（persistent-service.json 等）保留未触碰。
   4. doctor ok=true、buildPresent、desktopRoute，codeHash 9bb1582b。
-  5. 技能升级：install-skill.mjs 6 文件全部 DIFF→已安装，旧版备份 `C:\Users\LENOVO\.codex\skill-backups\workbuddy-executor-IDxavp`。
+  5. 技能升级：install-skill.mjs 6 文件全部 DIFF→已安装，旧版备份 `<SKILL_BACKUP_DIR>`。
   6. 常驻服务 service-c（service-cli.js run，1.5s 轮询 pumpWorkspaceWorkers，Windows 无自动拉起）已 kill+detached 重拉：新 pid 17404，status=no_task，codeHash=9bb1582b——已跑新代码。
   7. MCP server（codex.exe 子进程）不动，Codex Desktop 重连/新会话自动加载新 dist/server.js。
 - 验证：WorkBuddy 客户端 7 进程健康、CDP 18491 可达；`.env`/`data/` 时间戳未变（10-31）。run_orphaned/waiting_stop 真实窗口回归仍属 P0-6 后续。
