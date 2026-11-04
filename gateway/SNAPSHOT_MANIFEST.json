@@ -30,8 +30,8 @@
   "files": [
     {
       "path": ".env.example",
-      "sha256": "706e576ace517c4338c29e05a9740485d719ee2881a879e32d4603ec24c58f6d",
-      "bytes": 3238
+      "sha256": "2e9bf8e0150d0b872da36282c93b0533439acbc67acd183004721cb9e2157a45",
+      "bytes": 3661
     },
     {
       "path": ".gitattributes",
@@ -195,13 +195,13 @@
     },
     {
       "path": "desktop/DesktopPolicy.cs",
-      "sha256": "372074be68db65eecd7a6f6da343a88b4040f4860d90d249c3481ab7f93a0c5d",
-      "bytes": 3854
+      "sha256": "9917cf242240686211b31cd6cc7b5fcb5b3efac3204986a1009247e419902306",
+      "bytes": 6527
     },
     {
       "path": "desktop/Program.cs",
-      "sha256": "bbce5663525f365c977971f6c64a4c7a92bce75a87545b1e781bd3bb213f142d",
-      "bytes": 20783
+      "sha256": "10eb4cf9f792ebee5f9c6f6150c000e257abe5498690e7d51fad5c4cca2aea0b",
+      "bytes": 21483
     },
     {
       "path": "desktop/WEBVIEW2-LICENSE.txt",
@@ -230,8 +230,8 @@
     },
     {
       "path": "desktop/test/Program.cs",
-      "sha256": "f4324fdc51f6f18cf520aad4e731a8a538da1f4ec2b89a3a2ff9df2bf1dcee33",
-      "bytes": 10678
+      "sha256": "d382f40fd0f0d93dffb3f83a9618055d5cdd3e1582cbe4c041b7e549dbe1975f",
+      "bytes": 13058
     },
     {
       "path": "desktop/workbench.ico",
@@ -270,8 +270,8 @@
     },
     {
       "path": "docs/INSTALL_WINDOWS.md",
-      "sha256": "930bdcc2f3d1f5d318cb348f066b7f2a50a170a87b09bda24f6d8836d1ba63d4",
-      "bytes": 11872
+      "sha256": "92bd5ef6c7ba3843f0e7accaf605fc83484585cc371ed02719beeed95a06bc42",
+      "bytes": 12493
     },
     {
       "path": "docs/OPERATION_RECOVERY.md",
@@ -430,8 +430,8 @@
     },
     {
       "path": "scripts/open-workbench.mjs",
-      "sha256": "d2c9ed288610ae9372fd2fdb5cdc04218d1fe66d3952930f826b9084beef80f3",
-      "bytes": 3780
+      "sha256": "cb383b2a1dcb720ef7b61803f20b858d57cf00a39fa4ba1b4727850a7700dea7",
+      "bytes": 4576
     },
     {
       "path": "scripts/package-desktop.mjs",
@@ -724,6 +724,11 @@
       "bytes": 1276
     },
     {
+      "path": "src/embed-panel.ts",
+      "sha256": "f83f655252630a839a9da9b35689d63323002b7021b4ab99c61ca59d80f586ab",
+      "bytes": 3048
+    },
+    {
       "path": "src/env.ts",
       "sha256": "7b0e80846349c1d1d05248bc97ccfdf87b77ec82f2e5354af5a20d78c1acebd9",
       "bytes": 1429
@@ -955,8 +960,8 @@
     },
     {
       "path": "src/workbench-assets.ts",
-      "sha256": "0d1ca035d20b3993b2f7b12ea5bb3a4be35e7e0deae022c597221b6ce3713f6b",
-      "bytes": 2523
+      "sha256": "30768d64fa7338f03218372a7680419c726777f2552b54b2c4f3fdc7b0da8e8a",
+      "bytes": 2823
     },
     {
       "path": "src/workbench-entry.ts",
@@ -965,8 +970,8 @@
     },
     {
       "path": "src/workbench-http.ts",
-      "sha256": "4b08da4e6447415ed9c9636c3cdb2581d5e6b94527dc8111553452100f2923cc",
-      "bytes": 21279
+      "sha256": "2e5a883c4ce29eac0e7cde8d4d5ad3be180b43986186702f184afd917a267361",
+      "bytes": 21924
     },
     {
       "path": "src/workbench-panel.ts",
@@ -1104,6 +1109,11 @@
       "bytes": 2966
     },
     {
+      "path": "test/embed-panel.test.ts",
+      "sha256": "6958d3aaea075222e7b3c34e851bac98b7fa81393965c450c39da3b2c5a5feb2",
+      "bytes": 7021
+    },
+    {
       "path": "test/evidence-consistency.test.ts",
       "sha256": "c0409357dce02d7d6a0ae45631f8b3da71b75990567717aefe8bb0cb41d4d106",
       "bytes": 11926
@@ -1180,8 +1190,8 @@
     },
     {
       "path": "test/quota-entry.test.ts",
-      "sha256": "0a7897b506b8a52e115ac8d89de567aad01159a2cd328c3c584589e2c6399946",
-      "bytes": 5013
+      "sha256": "ecaddc24080786e16d2210b307a81e819e2e1985a2a0c48f16f62ebe48de6d6b",
+      "bytes": 5151
     },
     {
       "path": "test/quota-observation.test.ts",
@@ -1385,8 +1395,8 @@
     },
     {
       "path": "workbench/app.mjs",
-      "sha256": "39e8100ee67587750f29f6151f603e8511532b49449f2ca9668880535b391a0d",
-      "bytes": 37595
+      "sha256": "b2e504453f0fecc57486c517d03fd1c82459610f9c1541df40b475b6b9d748d3",
+      "bytes": 40843
     },
     {
       "path": "workbench/attention.mjs",
@@ -1455,8 +1465,8 @@
     },
     {
       "path": "workbench/style.css",
-      "sha256": "8c434bf21cbd8c1d4fe34abdc45a776f3cde3c7173b2938ebf87c893c8f40b64",
-      "bytes": 24795
+      "sha256": "b02a9e91b2b172cd0f83bdbbd5f1d350487ca1b7d252b7c6f53f5f2ebeaa1784",
+      "bytes": 26313
     },
     {
       "path": "workbench/task-link.mjs",

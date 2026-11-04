@@ -142,7 +142,12 @@ internal sealed class WorkbenchWindow : Form
             if (web.CoreWebView2 is null)
             {
                 Directory.CreateDirectory(options.ProfileDirectory);
-                var environment = await CoreWebView2Environment.CreateAsync(null, options.ProfileDirectory);
+                // Diagnostics only: a loopback debugging port stays closed unless the operator opts in,
+                // because any local process could otherwise drive the page.
+                CoreWebView2EnvironmentOptions? environmentOptions = null;
+                if (int.TryParse(Environment.GetEnvironmentVariable("WORKBUDDY_WORKBENCH_DEBUG_PORT"), out var debugPort) && debugPort is > 0 and < 65536)
+                    environmentOptions = new CoreWebView2EnvironmentOptions { AdditionalBrowserArguments = "--remote-debugging-port=" + debugPort };
+                var environment = await CoreWebView2Environment.CreateAsync(null, options.ProfileDirectory, environmentOptions);
                 await web.EnsureCoreWebView2Async(environment);
                 ConfigureWebView();
             }
@@ -168,7 +173,7 @@ internal sealed class WorkbenchWindow : Form
         core.NewWindowRequested += (_, e) => e.Handled = true;
         core.DownloadStarting += (_, e) => e.Cancel = true;
         core.NavigationStarting += (_, e) => { if (origin is null || !DesktopOptions.AllowedRequest(origin, e.Uri, "GET")) e.Cancel = true; };
-        core.FrameNavigationStarting += (_, e) => e.Cancel = true;
+        core.FrameNavigationStarting += (_, e) => { if (!options.AllowsEmbed(e.Uri, "GET")) e.Cancel = true; };
         core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
         core.WebResourceRequested += (_, e) =>
         {
@@ -179,7 +184,8 @@ internal sealed class WorkbenchWindow : Form
                 _ = HandleDesktopResourceAsync(e, deferral);
                 return;
             }
-            if (origin is null || !DesktopOptions.AllowedRequest(origin, e.Request.Uri, e.Request.Method))
+            if (origin is null || !(DesktopOptions.AllowedRequest(origin, e.Request.Uri, e.Request.Method)
+                || options.AllowsEmbed(e.Request.Uri, e.Request.Method)))
                 e.Response = core.Environment.CreateWebResourceResponse(new MemoryStream(), 403, "Forbidden", "Content-Type: text/plain");
         };
         core.NavigationCompleted += (_, e) =>

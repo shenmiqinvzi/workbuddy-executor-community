@@ -1492,3 +1492,20 @@ small,.small {
     height:calc(100dvh - 48px)
   }
 }
+
+/* 外部看板链接（可选，默认不渲染） */
+.embed-link { display: inline-flex; align-items: center; gap: 6px; color: inherit; text-decoration: none; border-radius: 6px; padding: 2px 6px; margin: 0 -6px; }
+.embed-link:hover { background: color-mix(in srgb, currentColor 8%, transparent); text-decoration: underline; }
+
+/* 内嵌面板（默认不启用，由 WORKBUDDY_WORKBENCH_EMBED_URL 打开） */
+.embed-pane { flex: 1 1 auto; min-height: 420px; border: 1px solid var(--line, #d9d9d9); border-radius: 12px; overflow: hidden; background: #fff; display: flex; flex-direction: column; position: relative; }
+.embed-frame { width: 100%; height: 100%; min-height: 0; border: 0; display: block; flex: 1 1 auto; }
+.embed-status { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; min-height: 320px; padding: 24px; color: #5b6b7a; font-size: 14px; text-align: center; }
+.embed-status[hidden] { display: none !important; }
+.embed-status-failed { color: #9a3b32; }
+/* 额度视图铺满内容区，而不是缩在固定高度的小框里 */
+.sheet.embed-view { display: flex; flex-direction: column; }
+.sheet.embed-view .embed-pane { min-height: 0; flex: 1 1 auto; }
+.sheet.embed-view .heading-tools { display: none; }
+/* 视图切换：这些容器自带 display 规则，会覆盖 hidden 属性的默认 display:none，这里显式让 hidden 生效 */
+.metrics[hidden], .toolbar[hidden], .workspace[hidden], .embed-pane[hidden], .sidebar-views[hidden] { display: none !important; }

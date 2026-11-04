@@ -169,14 +169,14 @@ node scripts/verification-preflight.mjs --db <state>\workbuddy.db --workspace <s
 
 ### 10.6 run16（2026-11-03）：第一次完整验收链全通（P0-6）
 
-独立账本 `E:\javaproject\_wb-p06-state\run16`（DB/RUNS_DIR/DESKTOP_STATE_DIR 全隔离），工作区 `E:\javaproject\_wb-p06-workspace`。模型 `glm-5.3-flash`（报价 x0.08，用户经模型读回+费率披露后选定）。授权走内容指纹：用户确认任务内容后，探针在同一常驻 session 进程内 preview→校验内容指纹（`CONFIRMED_CONTENT` hash `f88f5da5…a294f869`）→commit，digest 因含随机 UUID/时间戳每次必变（`desktop-dispatch.ts` L53/L120-122），故以内容一致作为授权锚。
+独立账本 `<STATE_DIR>\run16`（DB/RUNS_DIR/DESKTOP_STATE_DIR 全隔离），工作区 `<WORKSPACE_DIR>`。模型 `glm-5.3-flash`（报价 x0.08，用户经模型读回+费率披露后选定）。授权走内容指纹：用户确认任务内容后，探针在同一常驻 session 进程内 preview→校验内容指纹（`CONFIRMED_CONTENT` hash `f88f5da5…a294f869`）→commit，digest 因含随机 UUID/时间戳每次必变（`desktop-dispatch.ts` L53/L120-122），故以内容一致作为授权锚。
 
 | # | 证据 | 实测值 |
 |---|---|---|
 | 1 | 派工 | requestId `d457c993-…`、taskId `desktop-fda28ce6-93e3-4fdb-8892-de50d6b292e5`，回执 `submitted`（lease ownerPid 23196）；原生客户端自动确认（`sendDesktopAgreement` → `authorizeCollaborationPlan("desktop-native-confirmation")`），无需人工点弹窗 |
 | 2 | 执行 | 71 秒完成（14:11:26 创建 → 14:12:36 停止）；queued→working→needs_review，16 个事件（含 workspace_baseline_bound / report_received / native_stop_confirmed / workspace_scope_checked） |
 | 3 | 报告认证 | `reportAuthentication.authenticatedAt=14:12:20.786Z`，`reportDigest=669ecb71…3eaf0`；`nativeStoppedAt=14:12:36.911Z`（`end_turn` / `native_idle`） |
-| 4 | artifact | `E:\javaproject\_wb-p06-workspace\p06-smoke.txt` 26 字节 `P0-6 run16 dispatch smoke\n`，hexdump 比对一致 |
+| 4 | artifact | `<WORKSPACE_DIR>\p06-smoke.txt` 26 字节 `P0-6 run16 dispatch smoke\n`，hexdump 比对一致 |
 | 5 | 程序检查 | `workbuddy_check_task` → `machine-84e31e64-…`：`$provenance` passed + `$scope` passed（actor=program） |
 | 6 | 独立检查 | `workbuddy_record_inspection` → `inspection-16627b0a-…`（artifact 哈希入账，actor=independent_reviewer） |
 | 7 | 不可变审查 | `workbuddy_review_task` → `review-d843eec4-a336-41dc-a227-8d3df3767ac6`（check-1 semantic passed，evidenceRefs=inspection，committedRevision `BPC5qQZKk2y3Np-_46dJQn5w`） |

@@ -4,6 +4,15 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
+/** Origin of a configured panel URL, or '' when the URL is missing or not usable. */
+export function originOf(url) {
+    if (!url) return '';
+    try {
+        const parsed = new URL(url);
+        return parsed.protocol === 'http:' && parsed.username === '' && parsed.password === '' ? parsed.origin : '';
+    } catch { return ''; }
+}
+
 export function desktopArguments(args, gateway, node, env = process.env) {
     let taskId, status = false;
     for (let i = 0; i < args.length; i++) {
@@ -32,7 +41,11 @@ export async function openWorkbench(args = process.argv.slice(2)) {
     if (!fs.existsSync(exe)) return { opened: false, code: 'DESKTOP_NOT_BUILT', message: 'Run npm run desktop:build in this gateway.' };
     if (!fs.existsSync(parameters[5])) return { opened: false, code: 'TASK_DATABASE_NOT_FOUND', message: 'Use the actual executor WORKBUDDY_DB_FILE; no empty database was created.' };
     const status = args.includes('--status');
-    const child = spawn(exe, parameters, { cwd: gateway, shell: false, detached: !status, windowsHide: false, stdio: status ? ['ignore', 'pipe', 'pipe'] : 'ignore' });
+    // The shell cancels every sub-frame unless an installer named an origin. A
+    // panel URL implies its own origin, so one variable is enough; with neither
+    // set the window behaves exactly as before and frames nothing.
+    const embedOrigins = process.env.WORKBUDDY_WORKBENCH_EMBED_ORIGINS ?? originOf(process.env.WORKBUDDY_WORKBENCH_EMBED_URL);
+    const child = spawn(exe, parameters, { cwd: gateway, shell: false, detached: !status, windowsHide: false, env: { ...process.env, ...(embedOrigins ? { WORKBUDDY_WORKBENCH_EMBED_ORIGINS: embedOrigins } : {}) }, stdio: status ? ['ignore', 'pipe', 'pipe'] : 'ignore' });
     if (status) {
         return await new Promise((resolve, reject) => {
             let output = ''; const timer = setTimeout(() => { child.kill(); reject(new Error('Desktop status timed out.')); }, 12000);
