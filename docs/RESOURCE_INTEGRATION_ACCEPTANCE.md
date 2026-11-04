@@ -66,3 +66,16 @@
 回归：集成分支上 `npm run build`、`npm run typecheck:task-view`、资源与容量相关 69 项、HTTP/静态资源/打包/服务 61 项（隔离 env）、工作台 100/100、快照校验、`git diff --check` 全部退出码 0。桌面只读回归从 13 项增至 14 项（新增损坏容量表必须拒绝而非报告空闲）。
 
 基线汇总与证据归属见 `docs/RESOURCE_CENTER_BASELINE.md`。仍未完成：D3-01 真实来源、D3-02 可信路由、D3-03 任务方案关联、D3-04 停机隔离、D0/D1、main 合入、部署与发布。
+
+## 2026-11-04 路由证据一致性修复与集成
+
+来源分支 `feat/resource-source-routing` 的三个提交按 fast-forward 纳入本分支：`ec917c3`（新增 `routing-evidence-1` 只读资源）、`cdfb4c0`（真实来源契约核对与本轮首份记录）、`240eef8`（证据一致性修复）、`85fdfce`（本轮记录）；分支由 `98a39f2` 前进到 `85fdfce`，9 个文件 +1311/−6，无 cherry-pick 副本。`README.md`、`ROADMAP.md` 的既有未提交修改原样保留。
+
+修复内容见 `docs/RESOURCE_SOURCE_ROUTING_ACCEPTANCE.md` 第 11 节：映射等级改为只由聚合视图选中的主证据（`primaryConnectionId`）决定，其他 `connectionIds` 只作为来源引用分别列入 `sources[]`；有快照但来源时间缺失改判 `unavailable` + `source_time_unknown`，不再与"确认过期"混用；映射有效期只引用与主证据一致的快照，`generatedAt` 不延长有效期。
+
+集成后回归（均在 `gateway/`，隔离 env）：`npm run build` 0、资源与容量批次 76/76、工作台 100/100、HTTP/静态资源/打包/服务 61/61、桌面策略 70/70、`node verify-snapshot.mjs` 319 文件一致（`hashesMatch: true`、完整性已检查）、`git diff --check` 0。
+
+源码与已验收包：用 `collectReleaseFiles()` 取当前分支发布文件集合并逐一比对包 `da637ece…`（558 文件）的侧车清单，558/558 路径与哈希全等（`runtime-identical`），因此该包就是本分支构建的结果，无需再重建；新接口的验收记录是该包上的 `verify-package-routing.mjs`（34/34）与 `desktop-routing-host-check.mjs`（16/16）。前端资源文件本轮未改，浏览器与 WebView2 的历史合成场景未机械重跑，其结论只作回归参考。
+
+仍未完成：D3-01 真实账号池只读联调（缺 `WORKBUDDY_*` 注入；token 侧需面板会话令牌、积分侧需确认现有 Key 的授权）、D3-02 任务级路由证据、D3-03 任务方案关联、D3-04 停机隔离、D0/D1、main 合入、部署与发布。
+
