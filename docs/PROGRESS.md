@@ -147,3 +147,7 @@ run16（独立账本 `<STATE_DIR>\run16`）：glm-5.3-flash（x0.08，模型读�
   6. 常驻服务 service-c（service-cli.js run，1.5s 轮询 pumpWorkspaceWorkers，Windows 无自动拉起）已 kill+detached 重拉：新 pid 17404，status=no_task，codeHash=9bb1582b——已跑新代码。
   7. MCP server（codex.exe 子进程）不动，Codex Desktop 重连/新会话自动加载新 dist/server.js。
 - 验证：WorkBuddy 客户端 7 进程健康、CDP 18491 可达；`.env`/`data/` 时间戳未变（10-31）。run_orphaned/waiting_stop 真实窗口回归仍属 P0-6 后续。
+
+### D3 桌面验收补充（2026-11-04）
+
+`5104af6` 候选的隔离 WebView2 窗口实际打开，桌面策略测试 70/70；发现桌面只读存储未接入 quota/credit，两个资源 API 对有效合成快照返回 503，桌面验收未通过。浏览器报告尚待核对。修复、共同新包及后续实窗回归待完成；未部署、未合主分支、未发布。详见 [集成验收记录](RESOURCE_INTEGRATION_ACCEPTANCE.md) 的桌面补充；真实来源、可信路由、任务方案关联及 D0/D1 仍待完成。
