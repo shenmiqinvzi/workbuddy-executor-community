@@ -71,8 +71,10 @@ export function renderAttention(record, { refresh } = {}) {
         try {
             const value = await desktopRequest('attention_verify', { taskId: record.taskId });
             facts.hidden = false;
-            facts.replaceChildren(...factRows(value));
-            if (typeof refresh === 'function') refresh(record.taskId);
+            facts.replaceChildren(...factRows(value, record));
+            // Deliberately no refresh here: re-rendering the record rebuilds the
+            // card and throws away the evidence the reader just asked to see.
+            // The saved records did not change, so the reader stays on the answer.
         } catch (error) {
             facts.hidden = false;
             facts.replaceChildren(el('p', { class: 'attention-error' }, '核对没有完成：' + (error?.message || '桌面通道不可用') + '。已保存的证据没有改变。'));
@@ -85,7 +87,7 @@ export function renderAttention(record, { refresh } = {}) {
     // R2: the human stop-declaration entry belongs wherever the card says the
     // stop evidence is incomplete — the waiting_stop card and the review card
     // whose stop records disagree. A completed review keeps no entry.
-    if (reason.code === 'stop_unconfirmed' || (reason.code === 'review_pending' && view.remoteStopped === false)) {
+    if (offersDeclaration(reason, record)) {
         const declared = declarationBlock(record, { refresh });
         if (declared) root.append(declared);
     }
@@ -129,27 +131,39 @@ function declarationBlock(record, { refresh }) {
     return block;
 }
 
-function factRows(value) {
+/** Whether this card owes the reader a human stop declaration. Kept pure so
+ * the rule is testable without a DOM: it used to read `view` from a scope that
+ * never had one, which threw whenever a 待复核 card lacked stop evidence. */
+export function offersDeclaration(reason, record) {
+    if (!reason) return false;
+    return reason.code === 'stop_unconfirmed' || (reason.code === 'review_pending' && record?.view?.remoteStopped === false);
+}
+
+/** Label/value pairs of the 核对 result, including the R12 dispatch lease that
+ * lives on the record rather than in the evidence answer. Pure, so a wrong
+ * scope is caught by a unit test instead of by an operator clicking 核对. */
+export function evidenceFacts(value, record = null) {
+    const stop = value?.stop || {};
+    const dispatch = value?.dispatch || null;
+    const lease = record?.view?.dispatchLease ?? null;
+    return [
+        ['任务状态', value?.task?.state ?? '未提供'],
+        ['报告', value?.task?.reportPresent ? '已记录' : '未记录'],
+        ['独立审查', value?.task?.reviewedAt ? value.task.reviewedAt : '未记录'],
+        ['原生停止', stop.nativeStoppedAt ? stop.nativeStoppedAt : '没有停止证据'],
+        ['运行状态', stop.status ?? '未提供'],
+        ['原操作', value?.operationId ?? '未记录'],
+        ['操作状态', FACT_LABELS.state ? `${value?.operationState ?? '未提供'}（${value?.conclusion ?? '未知'}）` : ''],
+        ['派工', dispatch ? `${dispatch.state} / ${dispatch.settlement}` : '无派工记录'],
+        lease ? ['派工租约', `${lease.state} · ${lease.settlement}/${lease.reason} · owner_pid ${lease.ownerPid ?? '未知'} · 心跳 ${lease.heartbeatAt ?? '无'}`] : null,
+        value?.declaration ? ['人工声明', `${value.declaration.actor} · ${value.declaration.declaredAt} · ${value.declaration.declarationId}`] : ['人工声明', '没有'],
+        ['执行容量', value?.capacityHeld ? `仍由任务 ${value.capacityTaskId} 占用` : '未占用'],
+    ].filter(Boolean);
+}
+
+function factRows(value, record) {
     if (!value || value.available === false) {
         return [el('p', { class: 'attention-error' }, `没有可读的证据：${(value && value.reason) || '未知原因'}。这不代表原效果没有发生。`)];
     }
-    const rows = [];
-    const stop = value.stop || {};
-    const dispatch = value.dispatch || null;
-    const lease = record.view?.dispatchLease || null;
-    const pairs = [
-        ['任务状态', value.task?.state ?? '未提供'],
-        ['报告', value.task?.reportPresent ? '已记录' : '未记录'],
-        ['独立审查', value.task?.reviewedAt ? value.task.reviewedAt : '未记录'],
-        ['原生停止', stop.nativeStoppedAt ? stop.nativeStoppedAt : '没有停止证据'],
-        ['运行状态', stop.status ?? '未提供'],
-        ['原操作', value.operationId ?? '未记录'],
-        ['操作状态', FACT_LABELS.state ? `${value.operationState ?? '未提供'}（${value.conclusion ?? '未知'}）` : ''],
-        ['派工', dispatch ? `${dispatch.state} / ${dispatch.settlement}` : '无派工记录'],
-        lease ? ['派工租约', `${lease.state} · ${lease.settlement}/${lease.reason} · owner_pid ${lease.ownerPid ?? '未知'} · 心跳 ${lease.heartbeatAt ?? '无'}`] : null,
-        value.declaration ? ['人工声明', `${value.declaration.actor} · ${value.declaration.declaredAt} · ${value.declaration.declarationId}`] : ['人工声明', '没有'],
-        ['执行容量', value.capacityHeld ? `仍由任务 ${value.capacityTaskId} 占用` : '未占用'],
-    ].filter(Boolean);
-    for (const [label, text] of pairs) rows.push(el('div', { class: 'attention-fact' }, el('span', { class: 'attention-fact-label' }, label), el('span', { class: 'attention-fact-value' }, text)));
-    return rows;
+    return evidenceFacts(value, record).map(([label, text]) => el('div', { class: 'attention-fact' }, el('span', { class: 'attention-fact-label' }, label), el('span', { class: 'attention-fact-value' }, text)));
 }

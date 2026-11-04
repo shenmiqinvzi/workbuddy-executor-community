@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { attentionItems, attentionReason } from '../attention.mjs';
+import { attentionItems, attentionReason, offersDeclaration, evidenceFacts } from '../attention.mjs';
 
 const record = (view, extra = {}) => ({
     ok: true,
@@ -113,4 +113,24 @@ test('R12 the attention fact sheet includes the lease line when dispatch evidenc
     // renderAttention returns null without a DOM; only assert the derived reason wiring here.
     const recordWithLease = record({ runOrphaned: true, dispatchLease: { state: 'dispatching', settlement: 'abandoned', reason: 'owner_exited', ownerAlive: false, heartbeatAgeMs: 999999, ownerPid: 5, ownerStartedAt: null, claimedAt: null, heartbeatAt: null } });
     assert.equal(attentionReason(recordWithLease).code, 'run_orphaned');
+});
+
+test('the fact sheet reads the lease from the record instead of an undefined scope', () => {
+    const value = { available: true, task: { state: 'working', reportPresent: false, reviewedAt: null }, stop: { status: 'working', nativeStoppedAt: null }, operationId: null, operationState: null, conclusion: null, dispatch: null, capacityHeld: false };
+    const withLease = evidenceFacts(value, record({ dispatchLease: { state: 'dispatching', settlement: 'abandoned', reason: 'owner_exited', ownerPid: 5, heartbeatAt: '2026-11-04T07:00:00.000Z' } }));
+    const leases = withLease.filter(([label]) => label === '派工租约');
+    assert.equal(leases.length, 1);
+    assert.match(leases[0][1], /owner_pid 5/);
+    // A record without a view (or a bare answer) must still render, never throw.
+    assert.equal(evidenceFacts(value).filter(([label]) => label === '派工租约').length, 0);
+    assert.equal(evidenceFacts(null, null).some(([, text]) => text === '未提供'), true);
+});
+
+test('the declaration entry follows the reason and the stop fact, not a missing view', () => {
+    assert.equal(offersDeclaration({ code: 'stop_unconfirmed' }, record({})), true);
+    assert.equal(offersDeclaration({ code: 'review_pending' }, record({ remoteStopped: false })), true);
+    assert.equal(offersDeclaration({ code: 'review_pending' }, record({ remoteStopped: true })), false);
+    assert.equal(offersDeclaration({ code: 'run_orphaned' }, record({})), false);
+    assert.equal(offersDeclaration(null, record({})), false);
+    assert.equal(offersDeclaration({ code: 'review_pending' }, { taskId: 'desktop-1' }), false);
 });

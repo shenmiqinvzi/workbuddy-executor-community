@@ -1430,8 +1430,8 @@
     },
     {
       "path": "workbench/attention.mjs",
-      "sha256": "294095f707b5425ddf2eb6942b812cf0f0b63b6098254568bd91c6174dbef792",
-      "bytes": 12444
+      "sha256": "7f230fb9b8577fdeb37146157f766144180a01b7af70556df5942be304252b29",
+      "bytes": 13288
     },
     {
       "path": "workbench/controls.css",
@@ -1505,8 +1505,8 @@
     },
     {
       "path": "workbench/test/attention.test.mjs",
-      "sha256": "95cb725fea63ee49289cf09f3c1af55cf577722e04b9e40e197f1cfd34a3da86",
-      "bytes": 7956
+      "sha256": "50968b2229db4405ef00748ff5b160e13a2417faa21ce7c59d2070953f74b79d",
+      "bytes": 9608
     },
     {
       "path": "workbench/test/controls.test.mjs",
