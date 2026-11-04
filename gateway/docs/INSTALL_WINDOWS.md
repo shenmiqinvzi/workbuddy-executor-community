@@ -16,6 +16,15 @@ npm run build
 
 快照核验应在修改或重新构建之前执行。Node 和 WorkBuddy 可以安装在不同目录，项目路径允许中文和空格。当前安装向导以 Windows 为支持范围，其他平台沿用上游代码不等于经过本版验证。
 
+桌面工作台窗口是可选的独立外壳，同一份界面也可在浏览器里查看。源码 clone 不含已编译的桌面程序（`desktop/app` 不入库），需要该窗口时额外准备 .NET SDK 10 与 WebView2 Runtime：
+
+```powershell
+npm run desktop:build
+npm run desktop
+```
+
+运行该窗口还要求本机已安装 .NET Desktop Runtime 10。跳过这一步不影响技能与 MCP 派工流程，浏览器界面用 `npm run workbench` 启动后在 `http://127.0.0.1:18493/workbench/` 查看同一份只读记录。构建细节、预览包内容与签名状态见 [桌面工作台说明](WORKBENCH.md)。
+
 如果使用完整发布 ZIP，在解压后的网关目录先运行 `node scripts/verify-release.mjs` 核对发布清单，再运行 `npm ci`。包内已有构建产物，可直接进入下一步；源码 clone 使用上述 verify-snapshot/build 流程。单独技能 ZIP 只有指令，不包含网关或可用连接。
 
 ## 2. 先预览，再安装
