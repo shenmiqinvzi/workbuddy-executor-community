@@ -215,6 +215,14 @@
     color: var(--muted);
 }
 
+/* 分区自己的成功读取时间；与页面顶部的“本次读取尝试”分开显示。 */
+.resource-section-status {
+    margin: 0;
+    font-size: 12px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+}
+
 .resource-cards {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));

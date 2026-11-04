@@ -12,11 +12,11 @@
 - 保留现有任务、待处理、验收记录与嵌入面板的全部行为；资源视图只切换显示层，不改任何任务数据流。
 - 进入资源视图时，若派工面板 `#task-compose` 处于展开态，会先点它的返回按钮恢复，避免两个页面的工具栏互相遮挡。
 - 资源视图下隐藏任务页的指标卡、工具栏、任务列表/详情、页脚、来源提示、演示开关、嵌入面板、派工面板，以及 `#refresh`、`#source-badge`、`#new-task`；不会新增任何探测、刷新上游、改账号或改模型的按钮，唯一的写操作是「重新读取缓存」，它只重复调用两个 GET 接口。
-- 首次进入才发起读取，之后不再自动轮询；离开页面会中止在途请求并停止更新视图。
+- 首次进入才发起读取，之后不再自动轮询；离开页面会中止在途请求并停止更新视图，返回时重新读取一次。
 
 页面结构（自上而下）：
 
-1. 标题行：「只读资源视图」+ 模式徽标（「真实读取」/「演示数据」）+「重新读取缓存」+ 上次读取时间。
+1. 标题行：「只读资源视图」+ 模式徽标（「真实读取」/「演示数据」）+「重新读取缓存」+ 本次读取尝试时间（与两个分区各自的上次成功读取时间分开显示）。
 2. 一行说明：手动刷新只重新读取网关缓存，不探测上游额度。
 3. 概览四格：数据来源、连接（已观测 / 已配置）、token 记录数（含截断标记）、积分池数（含部分覆盖标记）。
 4. 「Token 额度」分区：每行一张卡片，展示模型、来源连接与区域、单位 `token`、值类型（估算值）、可用性（未观测到耗尽证据 / 可用性未知 / 已证实耗尽（存在触顶证据））、新鲜度、剩余/预算/已用、重置时间、来源时间、采集时间、共享范围、覆盖率（接口未提供时写「接口未提供覆盖率」）、推算方法、作用域、路由验证状态、限制与说明（可折叠）。
@@ -137,7 +137,7 @@
    - `/workbench/resources-source.mjs` → `resources-source.mjs`，`text/javascript; charset=utf-8`
    - `/workbench/resources-model.mjs` → `resources-model.mjs`，`text/javascript; charset=utf-8`
    - `/workbench/resources.css` → `resources.css`，`text/css; charset=utf-8`
-2. **快照清单**：`gateway/SNAPSHOT_MANIFEST.json` 需要登记新增的两个测试文件（`workbench/test/resources-model.test.mjs`、`workbench/test/resources-source.test.mjs`），重跑 `gateway/scripts/generate-snapshot-manifest.mjs` 生成。
+2. **快照清单**：`gateway/SNAPSHOT_MANIFEST.json` 需要登记新增的三个测试文件（`workbench/test/resources-model.test.mjs`、`workbench/test/resources-source.test.mjs`、`workbench/test/resources-view.test.mjs`），重跑 `gateway/scripts/generate-snapshot-manifest.mjs` 生成。`workbench/test/support/` 下是视图测试的 DOM 与接口桩，只被测试导入，不是独立用例，按清单生成器的既有规则处理即可。
 3. **安装包/打包清单**：新增的四个前端文件必须进入打包产物清单，否则安装后的桌面壳加载 `resources.css` 与三个模块会 404。本轮只验证了开发目录下的静态加载，安装包可用性未验证。
 4. **接口层**：本轮不需要后端改动；若后续要展示任务方案关联，需要新增接口字段，不在本轮范围。
 
@@ -154,3 +154,75 @@ cd E:\javaproject\.dsh-resource-preview
 node server.mjs                     # 另一个终端，监听 127.0.0.1:8123
 node drive.mjs                      # Chrome headless + CDP，输出 14 张截图与 report.json
 ```
+
+## 11. 评审修复记录（resource-review-fixes）
+
+评审材料：`E:\javaproject\outputs\resource-review-20261104\`（`REVIEW.md`、`review.mjs`、`review-results.json`）。本轮只修行为缺陷，不改接口契约、不扩大为整页重设计。
+
+### 11.1 缺陷一：失败刷新冒充成功快照时间
+
+症状（评审复现）：17:00 成功读取，17:02 两个接口 503，页面保留旧数据却显示「上次读取 17:02」，双失败提示还写「以下是上次成功读取的快照（上次读取 17:02）」；首次读取就失败时同样声称有成功快照。
+
+根因：`readAt` 记录的是每次读取尝试（含失败），`loadedOnce` 只表示"尝试结束"却被当成"曾经成功"的证据，`applyQuota` / `applyCredit` 的时间也从本次尝试时间取值。
+
+修复：
+
+- 删掉 `readAt` 与 `loadedOnce`，拆成三个独立事实：`attempted`（只表示完成过一次尝试）、`attemptAt`（本次尝试时间）、分区级 `quota.at` / `credit.at`（**只在该分区真的读到数据时写入**，失败不覆盖）。
+- 页头文案由「上次读取 …」改为「本次读取尝试 …」，从未读取时显示「尚无读取尝试」。
+- 每个分区新增状态行 `#resource-quota-status` / `#resource-credit-status`：「上次成功读取 …」或「本次读取没有取得 token/积分快照」。
+- 双失败提示按 `state.quota || state.credit` 判断是否真有快照：有则「token 分区保留了 … 的成功快照；积分分区保留了 … 的成功快照」，没有则「两个分区都没有可展示的快照」。
+- 单侧失败分别说明：「本次读取尝试 …：该分区保留了 …／没有可展示的快照；另一分区已在本次读取中更新（…）」，并注明失败分区没有替换成演示数据。
+- 失败卡片末行同样区分「保留 … 的成功快照」与「本次没有可展示的快照；读取失败不等于零额度」。
+- 恢复成功后写回该分区成功时间并清除该分区错误，提示随之消失。
+
+### 11.2 缺陷二：离开资源页未取消在途请求
+
+症状（评审复现）：发起延迟读取后 `setVisible(false)`，`aborts=0`，隐藏页仍被迟到响应更新。
+
+根因：`setVisible` 只切换可见性，没有使读取票据失效。
+
+修复：
+
+- 离页时 `guard.cancel()`：serial 递增并 abort 两个在途请求，随后复位 `state.loading`；若确有在途读取则置 `needsReload`，返回页面时重新读取一次。
+- `refresh()` 改为 `try/finally`：只有票据仍然有效且视图未销毁时才收尾（复位 `loading`、重绘）。成功、失败、schema 解析三条路径都在写界面前检查 `ticket.isCurrent() && !destroyed`；`AbortError` 直接返回，不写任何状态。
+- `setMode`（真实/演示切换）与 `destroy` 同样 cancel 票据；切源后旧响应不会写进新来源的数据。
+- 离页取消不写 error，已有快照保留，因此取消不会被渲染成"来源故障"。
+
+### 11.3 新增回归测试（视图行为，不是纯函数）
+
+- `gateway/workbench/test/support/mini-dom.mjs`：最小 DOM（元素、文本、属性、`classList`、事件、`#id` / `.class` / tag 查询），让真实 `resources.mjs` 在 Node 里跑起来。
+- `gateway/workbench/test/support/mini-fetch.mjs`：只读接口桩，可切成功/失败、加延迟、统计真实取消次数；响应体由 `demoDocuments` 生成，保证 schema 合法。
+- `gateway/workbench/test/resources-view.test.mjs`：9 个用例——首次双失败、成功后双失败（保留数值与成功时间）、单侧失败、首次单侧失败、失败后恢复、离页取消且迟到结果无效、返回页重新读取、切换真实/演示来源不串、销毁后迟到不写。
+
+用例断言的是视图状态与渲染文本（`state.attemptAt`、`state.quota.at`、`#resource-quota-status`、`#resource-read-stamp`、`#resource-notice`、`aria-busy`），不是纯格式化函数。
+
+### 11.4 变异检验
+
+为确认新测试真的能抓住这两个缺陷，逐条制造回归再跑测试，每次改完即还原：
+
+| 制造的回归 | 结果 |
+| --- | --- |
+| 删掉 `setVisible` 里的 `guard.cancel()` | 「离开资源页会取消在途请求」失败 |
+| `retainedText` 无条件返回"保留了…" | 「首次单侧失败」失败 |
+| 双失败分支 `hasSnapshot` 恒 `true` | 「首次读取就双双失败」失败 |
+| `applyQuota` 失败时也覆盖 `at` | 「成功后再双失败」失败 |
+
+### 11.5 实际运行结果
+
+| 命令（在 `gateway/` 下） | 结果 | 退出码 |
+| --- | --- | --- |
+| `node --test workbench/test/resources-view.test.mjs` | 9 / 9 通过 | 0 |
+| `npm run test:workbench` | 100 / 100 通过（原 91 + 新增 9） | 0 |
+
+工作区外（未提交）的补充证据：
+
+- `node E:\javaproject\.dsh-resource-preview\verify-fixes.mjs` → 21 / 21，退出码 0。用后端 `gateway/dist` 的真实 `QuotaStore` / `CreditBalanceStore` 生成响应，再驱动真实前端模块，逐条核对页头时间、分区成功时间、提示文案、保留数值、离页取消与返回重读。
+- `node E:\javaproject\.dsh-resource-preview\verify-browser.mjs` → 13 / 13，退出码 0。Chrome headless + CDP 真实页面点击，截图 4 张在 `E:\javaproject\.dsh-resource-preview\shots-fix\`（进页成功、双失败保留快照、恢复、返回后重读）。
+
+### 11.6 本轮未做
+
+- 视觉层级、11px 标签小于 `DESIGN.md` 的 12px 下限、资源导航作为"切换按钮"的语义、成功刷新缺少完成播报：按评审建议记录为后续完善项，本轮未改。
+- 静态资源白名单、打包清单、`SNAPSHOT_MANIFEST.json`、跨端集成：仍由 Codex 负责。
+- WebView2 桌面壳未验收；浏览器结论只代表 Chromium。
+- 浏览器验证把页面时钟固定为 2026-11-04 用于复现评审时间线，卡片里的「采集时间」由后端按真实时间生成，两者不同源属测试构造，不代表线上两个时间不一致。
+

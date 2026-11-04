@@ -135,7 +135,7 @@ function failureText(code) {
     return ['资源读取失败', '网关返回了错误状态。'];
 }
 
-function failureCard(label, failure, stale) {
+function failureCard(label, failure, retained) {
     const [title, description] = failureText(failure.code);
     return el('div', { class: 'resource-failure', role: 'group', 'aria-label': label + '读取失败' },
         el('h3', {}, label + '：' + title),
@@ -144,7 +144,9 @@ function failureCard(label, failure, stale) {
             el('span', { class: 'mono' }, failure.code || 'HTTP_ERROR'),
             failure.httpStatus ? el('span', {}, 'HTTP ' + failure.httpStatus) : null,
             failure.detail ? el('span', { class: 'mono resource-break' }, failure.detail) : null),
-        stale ? el('p', { class: 'small muted' }, '此分区暂时保留上次成功读取的快照，未用演示数据替代。') : null);
+        el('p', { class: 'small muted' }, retained?.at
+            ? '此分区保留 ' + retained.at + ' 的成功快照，未用演示数据替代。'
+            : '此分区本次没有可展示的快照；读取失败不等于零额度，也不会替换成演示数据。'));
 }
 
 function tile(label, value, note) {
@@ -160,21 +162,23 @@ export function mountResources(host, { now = () => new Date() } = {}) {
     const source = new ResourceSource({ now });
     const demoSource = new DemoResourceSource({ now });
     const guard = createReadGuard();
+    // attempted 只表示“完成过一次读取尝试”，不代表成功；
+    // 成功时间按分区各自记录，失败的分区不会覆盖自己的成功时间。
     const state = {
         mode: 'live',
         loading: false,
-        loadedOnce: false,
+        attempted: false,
         needsReload: true,
         quota: null,
         credit: null,
         quotaError: null,
         creditError: null,
-        readAt: null,
+        attemptAt: null,
         snapshotDrift: [],
         maxDriftMs: 0,
     };
 
-    const stamp = el('p', { class: 'resource-stamp', id: 'resource-read-stamp' }, '尚未读取');
+    const stamp = el('p', { class: 'resource-stamp', id: 'resource-read-stamp' }, '尚无读取尝试');
     const modeBadge = el('span', { class: 'resource-mode', id: 'resource-mode' }, '真实读取');
     const refreshButton = el('button', {
         type: 'button',
@@ -212,8 +216,14 @@ export function mountResources(host, { now = () => new Date() } = {}) {
         return state.mode === 'demo' ? demoSource : source;
     }
 
-    function readStampText() {
-        return state.readAt ? '上次读取 ' + state.readAt : '尚未读取';
+    /** 最近一次读取尝试；它既不是成功时间，也不证明曾经有快照。 */
+    function attemptText() {
+        return state.attemptAt ? '本次读取尝试 ' + state.attemptAt : '尚无读取尝试';
+    }
+
+    /** 单个分区自己的成功时间；只在它成功读到时才存在。 */
+    function retainedText(entry) {
+        return entry?.at ? '保留了 ' + entry.at + ' 的成功快照' : '没有可展示的快照';
     }
 
     function notices() {
@@ -224,18 +234,29 @@ export function mountResources(host, { now = () => new Date() } = {}) {
                 ' 当前显示的是与真实响应同构的合成样本，不代表任何真实额度。在工作台左侧数据来源中选择“真实网关”可返回实际读取。'));
         }
         if (state.quotaError && state.creditError) {
+            const hasSnapshot = Boolean(state.quota || state.credit);
             nodes.push(el('div', { class: 'resource-alert' },
                 el('strong', {}, '资源读取失败'),
                 ' ' + (state.quotaError.code === state.creditError.code
                     ? (failureText(state.quotaError.code)[0] + '：' + state.quotaError.message)
                     : 'quota 与 credit 两个接口都失败了：' + state.quotaError.message + ' / ' + state.creditError.message),
-                state.loadedOnce ? el('span', {}, ' 以下是上次成功读取的快照（' + readStampText() + '），未用演示数据替代。') : null));
+                ' ' + attemptText() + ' 未取得新数据。',
+                hasSnapshot
+                    ? el('span', {}, ' token 分区' + retainedText(state.quota) + '；积分分区' + retainedText(state.credit) + '。未用演示数据替代。')
+                    : el('span', {}, ' 两个分区都没有可展示的快照；本页不会用演示数据替代，也不会把没有读数当成零。')));
         }
         else if (state.quotaError || state.creditError) {
-            const [which, failure] = state.quotaError ? ['token 额度', state.quotaError] : ['积分', state.creditError];
+            const failedQuota = Boolean(state.quotaError);
+            const label = failedQuota ? 'token 额度' : '积分';
+            const failure = failedQuota ? state.quotaError : state.creditError;
+            const retained = failedQuota ? state.quota : state.credit;
+            const other = failedQuota ? state.credit : state.quota;
             nodes.push(el('div', { class: 'resource-alert' },
-                el('strong', {}, which + '接口读取失败'),
-                ' ' + failure.message + ' 另一分区仍显示本次读取结果；失败分区没有替换成演示数据。'));
+                el('strong', {}, label + '接口读取失败'),
+                ' ' + failure.message,
+                ' ' + attemptText() + '：该分区' + retainedText(retained) + '；',
+                other?.at ? '另一分区已在本次读取中更新（' + other.at + '）。' : '另一分区本次没有可用结果。',
+                ' 失败分区没有替换成演示数据。'));
         }
         if (state.snapshotDrift.length) {
             nodes.push(el('div', { class: 'resource-alert' }, '两个接口的采集时间相差 ' + Math.round(state.maxDriftMs / 60000) + ' 分钟（' + state.snapshotDrift.join('、') + '），分区数据可能来自不同采集轮次。'));
@@ -262,7 +283,9 @@ export function mountResources(host, { now = () => new Date() } = {}) {
                 el('h2', { id: 'resource-quota-title' }, 'Token 额度'),
                 el('p', { class: 'resource-section-meta' }, '单位 token · 网关共享池 · 估算值')));
         section.append(el('p', { class: 'resource-caveat' }, ROUTING_CAVEAT + ' 下面每行都是网关侧看到的上游余额推算，不是本任务独占额度，也不能与积分相加。'));
-        if (state.quotaError) section.append(failureCard('token 额度', state.quotaError, Boolean(view)));
+        section.append(el('p', { class: 'resource-section-status', id: 'resource-quota-status' },
+            state.quota?.at ? '上次成功读取 ' + state.quota.at : '本次读取没有取得 token 快照'));
+        if (state.quotaError) section.append(failureCard('token 额度', state.quotaError, state.quota));
         if (!view) {
             if (!state.quotaError) section.append(emptyBlock('unavailable'));
             return section;
@@ -282,7 +305,9 @@ export function mountResources(host, { now = () => new Date() } = {}) {
                 el('h2', { id: 'resource-credit-title' }, '积分'),
                 el('p', { class: 'resource-section-meta' }, '单位 credit（页面写作“积分”）· 网关区域池 · 上游报告缓存')));
         section.append(el('p', { class: 'resource-caveat' }, '积分不是货币，也不是可花的钱；它与 token 分开结算口径，单独展示，不换算、不相加。' + ROUTING_CAVEAT));
-        if (state.creditError) section.append(failureCard('积分', state.creditError, Boolean(view)));
+        section.append(el('p', { class: 'resource-section-status', id: 'resource-credit-status' },
+            state.credit?.at ? '上次成功读取 ' + state.credit.at : '本次读取没有取得积分快照'));
+        if (state.creditError) section.append(failureCard('积分', state.creditError, state.credit));
         if (!view) {
             if (!state.creditError) section.append(emptyBlock('unavailable'));
             return section;
@@ -296,13 +321,13 @@ export function mountResources(host, { now = () => new Date() } = {}) {
 
     function render() {
         if (destroyed) return;
-        stamp.textContent = readStampText();
+        stamp.textContent = attemptText();
         modeBadge.textContent = state.mode === 'demo' ? '演示数据' : '真实读取';
         modeBadge.className = 'resource-mode' + (state.mode === 'demo' ? ' resource-mode-demo' : '');
         refreshButton.disabled = state.loading;
         refreshButton.textContent = state.loading ? '正在读取…' : '重新读取缓存';
         notice.replaceChildren(...notices());
-        if (!state.loadedOnce) {
+        if (!state.attempted) {
             summary.replaceChildren();
             body.replaceChildren(el('div', { class: 'resource-skeleton', 'aria-hidden': 'true' },
                 el('div', { class: 'resource-skeleton-line' }),
@@ -318,17 +343,18 @@ export function mountResources(host, { now = () => new Date() } = {}) {
         body.setAttribute('aria-busy', state.loading ? 'true' : 'false');
     }
 
-    function applyQuota(side) {
+    // 只有该分区本次真的读到数据，才更新它自己的成功时间；失败只记录错误。
+    function applyQuota(side, readAt) {
         if (side.status === 'ok') {
-            state.quota = { view: side.view, at: side.readAt ?? null };
+            state.quota = { view: side.view, at: readAt ?? null };
             state.quotaError = null;
         }
         else state.quotaError = side;
     }
 
-    function applyCredit(side) {
+    function applyCredit(side, readAt) {
         if (side.status === 'ok') {
-            state.credit = { view: side.view, at: side.readAt ?? null };
+            state.credit = { view: side.view, at: readAt ?? null };
             state.creditError = null;
         }
         else state.creditError = side;
@@ -340,33 +366,41 @@ export function mountResources(host, { now = () => new Date() } = {}) {
         state.loading = true;
         state.needsReload = false;
         render();
-        let result;
         try {
-            result = await currentSource().readAll({ signal: ticket.signal });
+            let result;
+            try {
+                result = await currentSource().readAll({ signal: ticket.signal });
+            }
+            catch (error) {
+                // 取消是离页、切换来源或销毁视图的结果，不写回任何界面状态。
+                if (error?.name === 'AbortError' || !ticket.isCurrent() || destroyed) return;
+                const attemptAt = formatStamp(now().toISOString());
+                const failure = { code: 'NETWORK_ERROR', message: String(error?.message ?? error), httpStatus: null, detail: null };
+                state.attemptAt = attemptAt;
+                state.quotaError = state.quotaError ?? failure;
+                state.creditError = state.creditError ?? failure;
+                state.attempted = true;
+                return;
+            }
+            // 迟到结果一律丢弃：票据失效或视图已销毁时不碰界面，也不更新时间。
+            if (!ticket.isCurrent() || destroyed) return;
+            const attemptAt = formatStamp(result.readAt);
+            state.attemptAt = attemptAt;
+            applyQuota(result.quota, attemptAt);
+            applyCredit(result.credit, attemptAt);
+            state.snapshotDrift = (result.consistency?.drifted ?? []).map(item => item.connectionId);
+            state.maxDriftMs = result.consistency?.maxDriftMs ?? 0;
+            state.attempted = true;
+            // 失败已经写在页面上：不自动重试，也不切换到演示数据。
         }
-        catch (error) {
-            // 取消是切换来源或销毁视图的结果，不写回任何界面状态。
-            if (error?.name === 'AbortError' || !ticket.isCurrent() || destroyed) return;
-            const failure = { code: 'NETWORK_ERROR', message: String(error?.message ?? error), httpStatus: null, detail: null };
-            state.quotaError = state.quotaError ?? failure;
-            state.creditError = state.creditError ?? failure;
-            state.loadedOnce = true;
-            ticket.finish();
-            state.loading = false;
-            render();
-            return;
+        finally {
+            // 只有这张票据仍然有效时才收尾，避免取消后把隐藏页改回“正在读取”。
+            if (ticket.isCurrent() && !destroyed) {
+                state.loading = false;
+                ticket.finish();
+                render();
+            }
         }
-        if (!ticket.isCurrent() || destroyed) return;
-        state.readAt = formatStamp(result.readAt);
-        applyQuota(result.quota);
-        applyCredit(result.credit);
-        state.snapshotDrift = (result.consistency?.drifted ?? []).map(item => item.connectionId);
-        state.maxDriftMs = result.consistency?.maxDriftMs ?? 0;
-        state.loadedOnce = true;
-        state.loading = false;
-        ticket.finish();
-        render();
-        // 失败已经写在页面上：不自动重试，也不切换到演示数据。
     }
 
     function setMode(kind) {
@@ -375,28 +409,40 @@ export function mountResources(host, { now = () => new Date() } = {}) {
         state.mode = next;
         guard.cancel();
         state.loading = false;
-        state.loadedOnce = false;
+        state.attempted = false;
         state.quota = null;
         state.credit = null;
         state.quotaError = null;
         state.creditError = null;
         state.snapshotDrift = [];
         state.maxDriftMs = 0;
-        state.readAt = null;
+        state.attemptAt = null;
         state.needsReload = true;
         render();
         if (visible) void refresh();
     }
 
     function setVisible(next) {
-        visible = Boolean(next);
-        if (visible && state.needsReload && !state.loading) void refresh();
+        const nextVisible = Boolean(next);
+        if (nextVisible === visible) return;
+        visible = nextVisible;
+        if (!visible) {
+            // 离页：票据立即失效并取消在途请求，复位“正在读取”；返回页面时重新读取。
+            const interrupted = state.loading;
+            guard.cancel();
+            state.loading = false;
+            if (interrupted) state.needsReload = true;
+            render();
+            return;
+        }
+        if (state.needsReload && !state.loading) void refresh();
     }
 
     function destroy() {
         if (destroyed) return;
         destroyed = true;
         visible = false;
+        state.loading = false;
         guard.cancel();
         host.replaceChildren();
     }
