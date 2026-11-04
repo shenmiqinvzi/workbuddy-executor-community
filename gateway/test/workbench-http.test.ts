@@ -32,6 +32,8 @@ import {
   workbenchPortFromEnv,
 } from "../src/workbench-http.js";
 import { STAGE_TASK_VIEW_SCHEMA_VERSION } from "../src/task-view-stage.js";
+import { DatabaseSync } from "node:sqlite";
+import { ResourceSource } from "../workbench/resources-source.mjs";
 
 /** A client that never reaches the network; the read paths do not call it. */
 class NoopClient extends WorkBuddyClient {}
@@ -136,6 +138,38 @@ test("official HTTP serves the resource page assets with exact paths and securit
   assert.notEqual((await request(port, { path: "/workbench/resources-private.mjs" })).status, 200);
   assert.match((await request(port, { path: "/workbench/" })).body, /\/workbench\/resources\.css/);
   assert.match((await request(port, { path: "/workbench/app.mjs" })).body, /\.\/resources\.mjs/);
+});
+
+test("resource frontend reads real cached backend documents and isolates store failures", async t => {
+  const f = fixture(t), { port, close } = await startServer(f.service); t.after(close);
+  f.seedTask({ taskId: "resource-isolation-task", createdAt: "2026-10-18T10:00:00.000Z" });
+  const source = new ResourceSource({ baseUrl: `http://127.0.0.1:${port}/workbench/v1/resources` });
+  let result = await source.readAll();
+  assert.equal(result.ok, true); assert.equal(result.quota.document.connections.length, 0); assert.equal(result.credit.document.balances.length, 0);
+  const qe = f.store.quotas.register("synthetic-q", "fixture"), ce = f.store.creditBalances.register("synthetic-c", "fixture");
+  result = await source.readAll();
+  assert.equal(result.quota.document.connections[0].status, "not_observed"); assert.equal(result.credit.document.connections[0].status, "not_observed");
+  const now = new Date().toISOString(), expiry = new Date(Date.now()+90000).toISOString();
+  const qg = f.store.quotas.beginPoll("synthetic-q", qe)!;
+  f.store.quotas.publish("synthetic-q", qe, qg, { snapshotId: "synthetic-snapshot-quota-001", connectionId: "synthetic-q", collectedAt: now, sourceObservedAt: now, expiresAt: expiry,
+    observations: [{ scopeId: f.store.quotas.anonymize("http://127.0.0.1:1", "cn", "sample"), scopeKind: "gateway_pool", shared: true, modelId: "synthetic-model", realm: "cn", unit: "tokens", valueKind: "estimated", availability: "unknown", used: null, budget: null, remaining: null, resetAt: null, method: "historical_budget_minus_observed_usage", limitations: ["routing_unverified", "shared_pool", "budget_estimated", "gateway_observed_usage_only", "task_attribution_unavailable"] }] });
+  const cg = f.store.creditBalances.begin("synthetic-c", ce)!;
+  f.store.creditBalances.publish("synthetic-c", ce, cg, { snapshotId: "synthetic-snapshot-credit-001", connectionId: "synthetic-c", scopeId: f.store.creditBalances.scope("http://127.0.0.1:1", "cn"), realm: "cn", unit: "credit", valueKind: "reported_cache", balance: 0, accountsEnabled: 2, accountsWithData: 1, coverage: "partial", latestMemberObservedAt: now, collectedAt: now, cacheExpiresAt: expiry });
+  result = await source.readAll(); assert.equal(result.ok, true);
+  assert.equal(result.quota.document.observations[0].remaining, null); assert.equal(result.quota.document.observations[0].unit, "tokens");
+  assert.equal(result.credit.document.balances[0].balance, 0); assert.equal(result.credit.document.balances[0].coverage, "partial"); assert.equal(result.credit.document.balances[0].unit, "credit");
+  const db = new DatabaseSync(f.store.file);
+  try {
+    const quota = db.prepare("SELECT snapshot_json FROM quota_connections WHERE id='synthetic-q'").get()!.snapshot_json as string;
+    const credit = db.prepare("SELECT snapshot_json FROM credit_balance_connections WHERE id='synthetic-c'").get()!.snapshot_json as string;
+    db.exec("UPDATE quota_connections SET snapshot_json='corrupt'");
+    result = await source.readAll(); assert.equal(result.partial, true); assert.equal(result.quota.status, "error"); assert.equal(result.credit.status, "ok");
+    db.exec("UPDATE credit_balance_connections SET snapshot_json='corrupt'");
+    result = await source.readAll(); assert.equal(result.quota.status, "error"); assert.equal(result.credit.status, "error");
+    assert.equal((await request(port, { path: "/workbench/v1/tasks" })).status, 200);
+    db.prepare("UPDATE quota_connections SET snapshot_json=?").run(quota); db.prepare("UPDATE credit_balance_connections SET snapshot_json=?").run(credit);
+    result = await source.readAll(); assert.equal(result.ok, true);
+  } finally { db.close(); }
 });
 
 test("parseListQuery applies the documented defaults and bounds", () => {
