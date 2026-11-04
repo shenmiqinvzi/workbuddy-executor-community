@@ -298,17 +298,27 @@ D3-03 的任务方案关联、D3-04 的监督/停止隔离、D0/D1、生产部�
 
 `npm test`（隔离 env，`full-suite.log`）：935 tests / 922 pass / **1 fail** / 12 skipped，exit 1。
 唯一失败是 `test/bounded-command.test.ts` 的
-「intentional hang and its detached child end within bound with owned tree cleanup」（并行负载下 5667ms，
-超出用例自身的 5s 界限）。
+「intentional hang and its detached child end within bound with owned tree cleanup」。
+失败原因不是路由断言，而是 `ENOENT …\wb-command-*\child.pid`：该用例给被启动命令 1 秒超时，
+再由它 spawn 一个孙进程写 pid 文件；在整套并行跑的情况下，孙进程没能在 1 秒内写出文件。
 
-处理方式：单文件复跑 `npx tsx --test test/bounded-command.test.ts` → **6/6 pass，13.1s，exit 0**。
-另在集成基线 `98a39f2` 上用同一命令跑全量做对照（`baseline-suite.log`）：**911 tests / 899 pass / 0 fail /
-12 skipped，exit 0**——同一用例在基线全量里通过，说明它不是必然失败，只在并行负载下偶发超时。
-本轮不把全量写成"通过"，也不通过放大超时或删断言让它变绿。
+处理过程（不删断言、不放宽超时）：
 
-上一轮的失败是另一个计时用例（`run-worker.test.ts`），两次失败的共同点是并行负载下的挂起类计时断言，
-位置都不在 `resource-routing.ts` 覆盖的路径上；本轮新增的 24 个真实存储用例会增加并行负载，
-这是运行成本而不是路由证据语义的变化。
+| 运行 | 结果 |
+| --- | --- |
+| 分支全量（`full-suite.log`） | 935/922，失败该用例，`ENOENT child.pid` |
+| 分支全量（`full-suite-2.log`，另一轮） | 935/922，同一用例、同一 `ENOENT` |
+| 单文件 `npx tsx --test test/bounded-command.test.ts` | 6/6 pass、13.1s、exit 0 |
+| 单文件 + 1 个并发测试文件 | 6/6 pass、exit 0 |
+| 单文件 + 4 个并发测试文件 | 6/6 pass、exit 0 |
+| 基线 `98a39f2` 全量（`baseline-suite.log`） | 911/899 pass、0 fail、exit 0 |
+| 分支全量第三轮（`full-suite-3.log`） | 在一次真实子进程用例处停止输出约 20 分钟、进程空闲，按自己的 PID 树终止，未作为证据 |
+
+结论：这是该用例 1 秒预算与整套并行负载之间的竞态，失败点是夹具（fixture）准备而不是路由证据逻辑；
+它也不在 `resource-routing.ts` 的覆盖路径上。本轮**不把全量记成通过**，也不修改这个与任务无关的用例；
+建议后续（另行任务）把该夹具改成"轮询等待 pid 文件出现"，而不是提高超时。
+上一轮的失败是另一个计时用例（`run-worker.test.ts`），同样是并行负载下的计时敏感点。
+
 
 
 ## 12. 复现
