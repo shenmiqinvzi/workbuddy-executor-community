@@ -1190,8 +1190,8 @@
     },
     {
       "path": "test/quota-entry.test.ts",
-      "sha256": "0a7897b506b8a52e115ac8d89de567aad01159a2cd328c3c584589e2c6399946",
-      "bytes": 5013
+      "sha256": "ecaddc24080786e16d2210b307a81e819e2e1985a2a0c48f16f62ebe48de6d6b",
+      "bytes": 5151
     },
     {
       "path": "test/quota-observation.test.ts",

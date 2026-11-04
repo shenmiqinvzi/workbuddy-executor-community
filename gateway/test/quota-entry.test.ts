@@ -37,7 +37,8 @@ for(const resource of ["quota","credit"] as const)for(const mode of ["configured
     const ended=new Promise<void>(resolve=>child.once("close",()=>resolve()));
     t.after(async()=>{if(child.exitCode===null)child.kill();await ended;await close(source);fs.rmSync(dir,{recursive:true,force:true,maxRetries:3,retryDelay:50});});
     let resources:any;
-    for(let attempt=0;attempt<60;attempt++){
+    // 冷启动预算：CI 上首个进程要加载 dist 并监听端口，3 秒偶发不够，放宽到约 12 秒仍属有界等待。
+    for(let attempt=0;attempt<240;attempt++){
       if(child.exitCode!==null)throw Error("Compiled quota entry exited before readiness");
       try{
         const response=await fetch(`http://127.0.0.1:${port}/workbench/v1/resources/${resource==="quota"?"quotas":"credit-balances"}`,{signal:AbortSignal.timeout(1000)});
