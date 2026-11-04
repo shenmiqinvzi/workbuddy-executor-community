@@ -163,3 +163,11 @@ run16（独立账本 `<STATE_DIR>\run16`）：glm-5.3-flash（x0.08，模型读�
 验证：真实 hub 代码 + 隔离实例 + 空账号池上 35 项检查全过（工作树构建与包内构建各一轮，GET 期间上游请求日志零增长）；新增 10 项路由证据测试，路由+资源批次 56/56、工作台 100/100、HTTP 与打包批次 34/34、桌面策略 70/70，`npm run build` 与 `typecheck:task-view` 通过，快照 318 文件一致。运行文件已变化，候选包重建为 `532f2b86…`（557 文件，包内 `verify-release` 通过），旧包 `60b79f56…` 的浏览器/实窗结论不迁移。
 
 未完成：本机正式部署没有注入统计连接（缺 `WORKBUDDY_QUOTA_SOURCE_URL`/`API_KEY`/`PANEL_TOKEN` 与积分对应三项），真实账号池的 rows 与余额仍未在正式链路上出现；任务级路由仍不可证，`routing_unverified` 保留。D3-01/D3-02 均不标整体完成。详见 [RESOURCE_SOURCE_ROUTING_ACCEPTANCE.md](RESOURCE_SOURCE_ROUTING_ACCEPTANCE.md)。
+
+### D3-02 路由证据一致性修复（2026-11-04 第二轮）
+
+修掉两处已复现的错标。其一是多连接合并：聚合视图选中连接 B 的数据、`connectionIds` 里还带着更早但新鲜的连接 A，原实现在 `connectionIds` 上取最强等级，于是"数据来自失败连接 B、等级却借用 A 的 observed"；现改为等级只由 `primaryConnectionId` 那条证据决定，其他来源只进 `sources[]` 与 `connectionIds`，不参与提升。其二是来源时间缺失：有快照但 `sourceObservedAt` 为空时原实现判 `expired`，现区分成 `unavailable` + `source_time_unknown`，过期只留给"确实超过有效期"；quota 映射的有效期只在主证据快照与连接快照一致时引用，否则保持 `null`，`generatedAt` 不延长任何快照有效期。
+
+回归：新增 14 项一致性测试（真实 `TaskStore` + 真实 service），修复前 4 pass / 10 fail，修复后 14/14；路由+资源批次 76/76、工作台 100/100、HTTP 与打包批次 61/61、桌面策略 70/70、`build` 与 `typecheck:task-view` 通过、快照 319 文件一致。新候选包 `da637ece…`（558 文件，包内 `verify-release` 通过，与上一包 `532f2b86…` 的文件级差异为 4 改 1 增）。新接口在包内构建上由 `verify-package-routing.mjs` 验 34 项（含成功 / 时间未知 / 过期 / 失败 / 多连接冲突 / HTTP 参数与方法 / 容量路径 / 数据库不变），正式 desktop host 由 `desktop-routing-host-check.mjs` 验 16 项（routing 200、primary=B、level=unavailable、五个前端资源 200、数据库 sha256 前后一致、host 退出 0）。全量 `npm test` 为 935/922 pass/1 fail，唯一失败是并行负载下的挂起类计时用例，单文件复跑 6/6 通过并另做基线对照，未把全量写成通过。
+
+真实来源条件本轮重新核对：本机 hub 在跑（`127.0.0.1:8788`，realm `cn`，8 个账号），但仍无 `WORKBUDDY_*` 注入；`/usage/remaining` 必须面板会话令牌，而本机面板口令为默认值、本轮禁止自行登录，故 token 侧保持阻塞；积分侧技术上可用已有 API Key，但使用授权无法从文件确认，本轮未使用其值。真实账号池联调仍需用户在本机注入令牌/密钥后重跑。D3-01 不标完成；D3-02 只多了"证据一致性已修并可回溯"，任务级路由仍保留 `routing_unverified`。
