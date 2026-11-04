@@ -24,7 +24,29 @@ export function stateInfo(record) {
 }
 export function taskName(record) { return record.presentation?.title || '未命名任务'; }
 export function workspaceName(record) { return record.view?.workspace?.displayName || record.view?.workspace?.storedPath?.split(/[\\/]/).filter(Boolean).at(-1) || '工作区未提供'; }
-export function executorName(record) { const name = ({ desktop_queue: 'WorkBuddy', dsh: 'DSH' })[record.view?.binding?.runtimeSource]; return typeof name === 'string' ? name : '来源未提供'; }
+export const EXECUTORS = ['workbuddy', 'dsh'];
+export const EXECUTOR_LABELS = { workbuddy: 'WorkBuddy', dsh: 'DSH', unknown: '来源未提供' };
+/** Stored execution source → stable filter key. Interactive ACP sessions are
+ * still WorkBuddy desktop runs; only an explicit dsh binding selects DSH. */
+export function executorKey(record) {
+    const source = record?.view?.binding?.runtimeSource;
+    if (source === 'dsh')
+        return 'dsh';
+    if (source === 'desktop_queue' || source === 'desktop_interactive')
+        return 'workbuddy';
+    return 'unknown';
+}
+export function executorName(record) { return EXECUTOR_LABELS[executorKey(record)]; }
+/** Counts for the executor filter chips. Zero-count executors are dropped so
+ * the toolbar never offers a filter that cannot match. */
+export function executorBreakdown(records) {
+    const counts = new Map();
+    for (const record of Array.isArray(records) ? records : []) {
+        const key = executorKey(record);
+        counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    return [...counts.entries()].filter(([, count]) => count > 0).map(([key, count]) => ({ key, label: EXECUTOR_LABELS[key], count }));
+}
 export function currentReview(record) { return record.reviews?.filter(r => r.attemptId === record.view?.attempt?.id).at(-1) ?? null; }
 export function proofs(record) {
     const report = record.presentation?.report, review = currentReview(record);
@@ -43,7 +65,7 @@ export function filterRecords(records, { search = '', state = '', executor = '',
             return false;
         if (group === 'accepted' && info.key !== 'accepted')
             return false;
-        return (!state || info.key === state) && (!executor || executorName(r) === executor) && (!workspace || workspaceName(r) === workspace) && (!query || [taskName(r), r.taskId, r.presentation?.objective, workspaceName(r)].filter(Boolean).join(' ').toLocaleLowerCase().includes(query));
+        return (!state || info.key === state) && (!executor || executorKey(r) === executor) && (!workspace || workspaceName(r) === workspace) && (!query || [taskName(r), r.taskId, r.presentation?.objective, workspaceName(r)].filter(Boolean).join(' ').toLocaleLowerCase().includes(query));
     });
 }
 export function formatTime(value) {

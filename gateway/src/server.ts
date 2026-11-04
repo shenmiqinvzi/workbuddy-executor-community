@@ -21,6 +21,7 @@ import { registerTaskProjectionTool } from "./task-view-reader.js";
 import { runsDirectory } from "./run-journal.js";
 import { AdmissionError } from "./collaboration.js";
 import { configuredDshCoordinator } from "./dsh-runtime.js";
+import { DSH_DISCOVERY_SCHEMA_VERSION, dshExecutorSummary, dshSessionsFor, summarizeDshHosts } from "./dsh-discovery.js";
 
 // Load this installation's .env so the MCP host does not have to export it or
 // run the POSIX launcher. Explicit host variables always win.
@@ -64,6 +65,13 @@ server.tool("workbuddy_ensure_workspace", "Compatibility entry. Standalone nativ
 server.tool("workbuddy_list_models", "Query models currently available in WorkBuddy, with optional session's selected model. Use returned IDs for model selection; availability does not prove quota or execution success.", {sessionId:z.string().min(1).optional(),detail}, ({sessionId,detail})=>guard(()=>listModels(config,sessionId),detail));
 
 server.tool("workbuddy_list_workspaces", "List registered project directories, selected execution sessions and native registration status. An installed worker does not prove task success.", {detail}, ({detail})=>guard(async()=>({ok:true,workers:listWorkspaces(config)}),detail));
+
+// Executor discovery is read-only: it reports what this gateway could accept,
+// never leases a session or dispatches work. A caller picks the executor with
+// the contract's execution.executorId, not by guessing from a task record.
+server.tool("workbuddy_list_executors", "Read-only: report which executors this installation can accept work for. WorkBuddy follows the configured backend; DSH requires WORKBUDDY_DSH_ENABLED=1 plus a live Codex bridge in DeepSeek Harness. Availability is not a fee quote and does not dispatch anything.", {detail}, ({detail})=>guard(async()=>({ok:true,readOnly:true,workbuddy:{executorId:"workbuddy",backend:config.backend,available:true,native:true},dsh:dshExecutorSummary()}),detail));
+
+server.tool("workbuddy_list_dsh_sessions", "Read-only: list live DeepSeek Harness sessions registered for one workspace so a DSH dispatch can name an exact sessionId. Discovery never leases, activates or prompts a session. Empty means no live session for that directory; start one in DeepSeek Harness and re-list.", {workspace:z.string().min(1).describe("Existing absolute project directory"),sessionId:z.string().min(1).optional().describe("Exact session ID, needed only when several live sessions share the workspace."),detail}, ({workspace,sessionId,detail})=>guard(async()=>({ok:true,readOnly:true,schemaVersion:DSH_DISCOVERY_SCHEMA_VERSION,...dshSessionsFor(path.resolve(workspace),sessionId),hosts:summarizeDshHosts(),dsh:dshExecutorSummary()}),detail));
 
 server.tool("workbuddy_prepare_worker", "Generate instructions for the selected real desktop chat. persistent:true installs a one-time native auto-wake service; false starts a temporary listener. Read-only: generating a prompt does not install or start anything.", { sessionId: z.string().min(1), persistent: z.boolean().optional().default(false) }, ({ sessionId, persistent }) => guard(async () => ({ ok: true, ...new DesktopQueue(config).prepare(sessionId, persistent) })));
 

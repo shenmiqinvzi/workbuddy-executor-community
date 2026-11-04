@@ -30,8 +30,8 @@
   "files": [
     {
       "path": ".env.example",
-      "sha256": "2e9bf8e0150d0b872da36282c93b0533439acbc67acd183004721cb9e2157a45",
-      "bytes": 3661
+      "sha256": "e3dcb604fadba497d037f2ad64bf9ea8071a47e3558d08e3053bb37dbea65488",
+      "bytes": 4197
     },
     {
       "path": ".gitattributes",
@@ -444,6 +444,11 @@
       "bytes": 15496
     },
     {
+      "path": "scripts/plan.mjs",
+      "sha256": "31350b8753d3f6385fd68ecfff0028ac0643a07867926ae02dcd42a86b331e18",
+      "bytes": 443
+    },
+    {
       "path": "scripts/setup.mjs",
       "sha256": "38caf4774bbfeb7d4bb2389c85d2db7e98d57886d3994f3b3e445cbe19b822b2",
       "bytes": 396
@@ -709,9 +714,14 @@
       "bytes": 34411
     },
     {
+      "path": "src/dsh-discovery.ts",
+      "sha256": "55798bae1b2bb44809037d2059897acbe3e60d21c75d2639fa1fc3168bc09159",
+      "bytes": 3118
+    },
+    {
       "path": "src/dsh-inspect.ts",
-      "sha256": "2ed13a2b915e92a792ca4981144d18d80a16dfd1b8d54014fbae4c76de52df77",
-      "bytes": 1662
+      "sha256": "1d4b36f38d5cf4d16065b84fb6b674453f2c4b2bf5bed1ae5086347aa6339d6d",
+      "bytes": 1612
     },
     {
       "path": "src/dsh-rate-verifier.ts",
@@ -782,6 +792,11 @@
       "path": "src/persistent-service.ts",
       "sha256": "14822f1969ea6dbf7df01727deeb959732601c1d6473eec08659bd0efa0e8cd6",
       "bytes": 35133
+    },
+    {
+      "path": "src/plan.ts",
+      "sha256": "1c5da9495df7ba7bb12de8ecba9adb35763fc9ed560f401c77808c38a278852e",
+      "bytes": 6385
     },
     {
       "path": "src/platform/cli.ts",
@@ -885,8 +900,8 @@
     },
     {
       "path": "src/server.ts",
-      "sha256": "f894deaf925b1708c6e6cf3bb025b0db245f379311be393544166bd89d5dbb29",
-      "bytes": 21424
+      "sha256": "ae2364a3a27678e1ca67f46bdb98544d2e7ecc0210a38ee87e06acfd36e3d5f6",
+      "bytes": 23039
     },
     {
       "path": "src/service-cli.ts",
@@ -1104,6 +1119,11 @@
       "bytes": 35701
     },
     {
+      "path": "test/dsh-discovery.test.ts",
+      "sha256": "7b1841d5de6bb2177fa9df56c4f5aa1a6899c49609bfaa9dbf508ceb9066b392",
+      "bytes": 4743
+    },
+    {
       "path": "test/dsh-transport.test.ts",
       "sha256": "02c601e8f03807e8da554c4a64b38db0e047eb98348eb68fc50a9f00dc3026f6",
       "bytes": 2966
@@ -1172,6 +1192,11 @@
       "path": "test/persistent-service.test.ts",
       "sha256": "12c128b6aea91ec7bd6056fac03384c8150f8100eb5947d6c8423509ddba9f18",
       "bytes": 61288
+    },
+    {
+      "path": "test/plan-cli.test.ts",
+      "sha256": "0384be4a9864729f5e87f657a60257cc154b165a4f38bfc0e9be430ba49a84f5",
+      "bytes": 4694
     },
     {
       "path": "test/platform.test.ts",
@@ -1395,8 +1420,8 @@
     },
     {
       "path": "workbench/app.mjs",
-      "sha256": "b2e504453f0fecc57486c517d03fd1c82459610f9c1541df40b475b6b9d748d3",
-      "bytes": 40843
+      "sha256": "7823896203b75d6f7eb06c1972e148fa6bba2e52bb987ab8ffbdbcef274f5dc4",
+      "bytes": 42353
     },
     {
       "path": "workbench/attention.mjs",
@@ -1460,13 +1485,13 @@
     },
     {
       "path": "workbench/model.mjs",
-      "sha256": "05a6c14521d9c07d5b891802f3332b2e95bccd83621e34d604f9ea8e945ebe13",
-      "bytes": 7570
+      "sha256": "e64f498895fc0aeb403225a5f27b1c73f3c41121b993acbaa6334154bc638cd3",
+      "bytes": 8545
     },
     {
       "path": "workbench/style.css",
-      "sha256": "b02a9e91b2b172cd0f83bdbbd5f1d350487ca1b7d252b7c6f53f5f2ebeaa1784",
-      "bytes": 26313
+      "sha256": "fa78c31f6987dbdb9ef17122502d97b7eb607e3ad90074f899f4f7190e2a7b77",
+      "bytes": 27979
     },
     {
       "path": "workbench/task-link.mjs",
@@ -1510,8 +1535,8 @@
     },
     {
       "path": "workbench/test/model.test.mjs",
-      "sha256": "8c7fcab256bf8d9f9c7133f69902ced4516363a5938816cc4c7978a8c07ccc7a",
-      "bytes": 5990
+      "sha256": "9d01859aa081f04e8a5660e3f4b969b34481c2c91d3baa39777b75fd1c632c86",
+      "bytes": 7317
     },
     {
       "path": "workbench/test/read-store.test.mjs",

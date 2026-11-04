@@ -47,6 +47,25 @@
 
 路径、范围与检查定义必须替换为实际约定；只支持精确文件或 directory/**。非契约 send 的 scope 仍受支持，但 acceptanceCommands 属于命令要求，不能用自然语言的“测试通过”替代可匹配的机器记录。原有用户修改即便落在范围内也不能覆盖。给 worker 的回报及停止约定见[执行规范](execution.md)。
 
+## 指定 DSH 执行器
+
+Codex 可以把任务摊派给 DeepSeek Harness，但要走三步，缺一步就会被拒。
+
+1. 确认能接：`workbuddy_list_executors` 看到 `dsh.reason = "ready"`，再用 `workbuddy_list_dsh_sessions({"workspace":"项目的绝对路径"})` 拿到 `matched` 的真实 sessionId。`ambiguous` 让用户指定，`no_matching_live_session` 就是该项目现在没有活着的会话，不要自己造一个。
+2. 起草 vnext-2 提案并让用户确认模型：`execution` 里 `executorId: "dsh"`、`connectionId` 用 `hosts[].hostId` 的实际值、`providerId`/`modelId`/`reasoningEffort` 必须是该 host 目录里真实存在的组合（`workbuddy_list_executors` 不报费率，费用仍要单独确认）。
+3. 由本机操作者授权计划，再派工：把提案写成文件后运行
+
+```
+node scripts/plan.mjs create --contract @proposal.json --reason "用户在本轮对话里确认的模型与范围"
+node scripts/plan.mjs authorize <返回的 planId> <返回的 revision> --source "user-confirmed-in-chat"
+```
+
+然后把返回的 `planId` 与 `revision` 填进契约的 `collaboration: {planId, expectedPlanRevision}`，用 `workbuddy_send_task` 提交：`sessionId` 取第 1 步的真实值，`objective` 与契约一致，且不要再传 `model`/`scope`/`constraints`/`acceptanceCommands`/`timeoutSeconds`（DSH 判 TASK_CONFLICT）。计划是修订绑定的：`revision` 变了、提案条款变了或计划过期，都会 PLAN_STALE，重新走第 3 步。
+
+授权不是工具能力。agent 可以起草提案和参数，但不能自己创建或授权计划，也不能用非契约派工绕过去；用户没确认模型时停在准备阶段。计划只授权一次派工，`consumedBy` 记录它绑定的 taskId。
+
+
+
 ## 等待与验收
 
 用 `workbuddy_wait({"taskId":"submit-guard-001","timeoutSeconds":50,"detail":"brief"})` 监督；有新进展时会提前返回。断线后恢复同一 taskId，不重做 ensure_workspace 或 send_task；需要完整报告时 get_task 使用 detail=full。

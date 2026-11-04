@@ -13,6 +13,12 @@ description: 将适合的本地开发、修复、测试及资料整理交给桌�
 
 若本机同时保留旧 MCP 任务库和新版独立任务库，应使用已配置的 `scripts/open-workbench-router.mjs --routes-file <本机绝对配置路径>`，并以同一入口附加 `--task-id <taskId>`。它仅在声明的库中只读定位任务；库内复用窗口，跨库分别定位。编号冲突或库不可读时停止定位，不迁移、复制或重新派工。自动打开/定位本身不调用模型，桌面手动派工仍须另行明确选择和原生确认。
 
+## 执行器选择
+
+派工前先确认这台网关能接哪种执行器：`workbuddy_list_executors` 返回 WorkBuddy 的后端类型和 DSH 适配器状态（`adapter_disabled` 表示网关没开 DSH，`native_bridge_not_registered` 表示没有活着的桥）。选择由契约的 `execution.executorId` 决定：`workbuddy` 走桌面队列，`dsh` 走 DeepSeek Harness。用户指定具体执行器时照办；没说时按任务性质默认 WorkBuddy，并在报告里写明实际执行器——面板的列表行、详情和筛选都按这个字段显示，不要凭任务名或会话猜。
+
+选 DSH 时先用 `workbuddy_list_dsh_sessions`（参数为该项目的绝对路径，可带精确 `sessionId`）取实时会话：返回 `matched` 才拿到可用 sessionId，`ambiguous` 要用户指定，`no_matching_live_session` 表示该项目当前没有活着的会话，`registry_missing` 表示这台机器没装 DSH。DSH 只接受 `workbuddy-executor/vnext-2` 契约，且计划必须已经由本机的 `node scripts/plan.mjs` 创建并授权——那是本地操作者的动作，不是工具能力：agent 可以起草 `execution` 与提案，但不能自己授权，也不要绕过它改用非契约派工。契约必须显式带 sessionId，且不能带 constraints/acceptanceCommands/scope/model/timeoutSeconds 或 `sessionMode: "new"`（这些由 DSH 自己管理，带了会被判 TASK_CONFLICT）；模型选择仍要先让用户确认真实可用与费用。发现是只读的：列会话不租约、不激活、不发模型请求，看到可用不等于已经派出去。
+
 ## 1. 判断与准备
 
 按已有需求判断，不为估算交接成本扫描整套代码。目标和位置清楚、低风险的一次局部修改默认直接处理；用户指定 WorkBuddy 或测试协作时照常委派，不重复劝阻。已有 taskId 先恢复原任务，不能因工作量小而重派或直接接管。

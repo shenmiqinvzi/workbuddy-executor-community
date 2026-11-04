@@ -4,7 +4,7 @@ import { taskIdFromHash } from './task-link.mjs';
 import { mountDesktopDispatch } from './dispatch.mjs';
 import { renderControlUnavailable, renderDesktopControls } from './controls.mjs';
 import { renderAttention } from './attention.mjs';
-import { STATES, CHECKS, ACTORS, stateInfo, taskName, workspaceName, executorName, currentReview, proofs, filterRecords, formatTime, eventName, taskListNavigation, RETRY_MAX_ATTEMPTS, nextRetryDelayMs } from './model.mjs';
+import { STATES, CHECKS, ACTORS, EXECUTOR_LABELS, stateInfo, taskName, workspaceName, executorName, executorKey, executorBreakdown, currentReview, proofs, filterRecords, formatTime, eventName, taskListNavigation, RETRY_MAX_ATTEMPTS, nextRetryDelayMs } from './model.mjs';
 const $ = id => document.getElementById(id);
 function h(tag, props = {}, ...children) {
     const el = document.createElement(tag);
@@ -103,7 +103,8 @@ function buildShell() {
     const search = h('label', { class: 'search' }, h('span', { class: 'sr-only' }, '搜索任务、目标或 ID'), icon('search'), h('input', { id: 'search', type: 'search', autocomplete: 'off', placeholder: '搜索任务、目标或 ID', 'aria-label': '搜索任务、目标或 ID', oninput: e => { state.filters.search = e.target.value; render(); } }), h('kbd', {}, '/'));
     const stateFilter = h('select', { class: 'filter', id: 'state-filter', 'aria-label': '筛选任务状态', onchange: e => { state.filters.state = e.target.value; render(); } }, option('', '全部状态'), ...Object.entries(STATES).map(([key, values]) => option(key, values[0])));
     const workspaceFilter = h('select', { class: 'filter', id: 'workspace-filter', 'aria-label': '筛选工作区', onchange: e => { state.filters.workspace = e.target.value; render(); } }, option('', '全部工作区'));
-    const sheet = h('main', { class: 'sheet', id: 'main', tabindex: '-1' }, h('header', { class: 'page-heading' }, h('div', {}, h('h1', { id: 'page-title' }, '任务工作台'), h('p', { class: 'page-intro' }, '执行有记录，交付有依据。')), h('div', { class: 'heading-tools' }, h('span', { class: 'source-badge', id: 'source-badge' }, '已保存任务'), refresh)), h('div', { class: 'demo-controls', id: 'demo-controls', hidden: true }, h('span', {}, '合成样本，不代表真实执行'), h('select', { class: 'filter', id: 'demo-scenario', 'aria-label': '演示场景', onchange: e => switchSource('demo', e.target.value) })), metrics, h('div', { class: 'toolbar' }, search, stateFilter, workspaceFilter, h('span', { class: 'filter-label' }, '筛选已加载的记录')), h('div', { id: 'source-notice', 'aria-live': 'polite' }), h('div', { class: 'embed-pane', id: 'embed-pane', hidden: true }, h('div', { class: 'embed-status', id: 'embed-status', role: 'status' }, '正在连接…'), h('iframe', { class: 'embed-frame', id: 'embed-frame', title: '嵌入面板' })), h('div', { class: 'workspace' }, h('section', { class: 'list-pane', 'aria-label': '任务列表' }, h('div', { class: 'list-heading' }, h('span', { id: 'list-count' }, '任务'), h('span', {}, '创建时间顺序')), h('div', { class: 'task-list', id: 'task-list' }), h('div', { class: 'list-foot', id: 'list-foot' })), h('section', { class: 'detail', id: 'detail', 'aria-label': '任务详情' })), h('footer', { class: 'page-foot' }, h('span', { id: 'freshness' }, '尚未获取快照'), h('span', {}, '报告收到、停止确认与独立验收，分别记录。')));
+    const executorFilter = h('div', { class: 'executor-filter', id: 'executor-filter', role: 'group', 'aria-label': '按执行器筛选' });
+    const sheet = h('main', { class: 'sheet', id: 'main', tabindex: '-1' }, h('header', { class: 'page-heading' }, h('div', {}, h('h1', { id: 'page-title' }, '任务工作台'), h('p', { class: 'page-intro' }, '执行有记录，交付有依据。')), h('div', { class: 'heading-tools' }, h('span', { class: 'source-badge', id: 'source-badge' }, '已保存任务'), refresh)), h('div', { class: 'demo-controls', id: 'demo-controls', hidden: true }, h('span', {}, '合成样本，不代表真实执行'), h('select', { class: 'filter', id: 'demo-scenario', 'aria-label': '演示场景', onchange: e => switchSource('demo', e.target.value) })), metrics, h('div', { class: 'toolbar' }, search, stateFilter, workspaceFilter, executorFilter, h('span', { class: 'filter-label' }, '筛选已加载的记录')), h('div', { id: 'source-notice', 'aria-live': 'polite' }), h('div', { class: 'embed-pane', id: 'embed-pane', hidden: true }, h('div', { class: 'embed-status', id: 'embed-status', role: 'status' }, '正在连接…'), h('iframe', { class: 'embed-frame', id: 'embed-frame', title: '嵌入面板' })), h('div', { class: 'workspace' }, h('section', { class: 'list-pane', 'aria-label': '任务列表' }, h('div', { class: 'list-heading' }, h('span', { id: 'list-count' }, '任务'), h('span', {}, '创建时间顺序')), h('div', { class: 'task-list', id: 'task-list' }), h('div', { class: 'list-foot', id: 'list-foot' })), h('section', { class: 'detail', id: 'detail', 'aria-label': '任务详情' })), h('footer', { class: 'page-foot' }, h('span', { id: 'freshness' }, '尚未获取快照'), h('span', {}, '报告收到、停止确认与独立验收，分别记录。')));
     $('app').append(h('div', { class: 'shell' }, sidebar, h('header', { class: 'topbar' }, h('div', { class: 'breadcrumbs' }, h('button', { class: 'menu-button', id: 'menu', type: 'button', 'aria-label': '打开工作台导航', 'aria-controls': 'sidebar', 'aria-expanded': 'false', onclick: toggleMenu }, icon('menu')), h('span', {}, '工作台'), icon('chevron'), h('span', {}, '本地协作')), h('div', { class: 'topbar-meta' }, h('span', { id: 'connection', role: 'status' }, '连接中'), h('span', { class: 'readonly-top', id: 'snapshot-mode' }, icon('lock'), '只读模式'))), sheet), h('button', { class: 'nav-overlay', type: 'button', 'aria-label': '关闭导航', onclick: closeMenu }));
 }
 function toggleMenu() { const open = document.body.classList.toggle('nav-open'); $('menu').setAttribute('aria-expanded', String(open)); if (open)
@@ -111,6 +112,16 @@ function toggleMenu() { const open = document.body.classList.toggle('nav-open');
 function closeMenu() { const open = document.body.classList.contains('nav-open'); document.body.classList.remove('nav-open'); $('menu').setAttribute('aria-expanded', 'false'); if (open)
     $('menu').focus(); }
 function empty(title, description) { return h('div', { class: 'empty' }, icon('inbox'), h('h3', {}, title), h('p', {}, description)); }
+function renderExecutorFilter() {
+    const host = $('executor-filter');
+    if (!host)
+        return;
+    const scoped = filterRecords(state.records, { ...state.filters, state: '', executor: '', group: 'all' });
+    const items = executorBreakdown(scoped), selected = state.filters.executor;
+    if (selected && !items.some(item => item.key === selected))
+        items.push({ key: selected, label: EXECUTOR_LABELS[selected] ?? selected, count: 0 });
+    host.replaceChildren(h('button', { class: 'chip', type: 'button', 'data-executor': '', 'aria-pressed': String(!selected), onclick: () => { state.filters.executor = ''; render(); } }, '全部执行器'), ...items.map(item => h('button', { class: 'chip', type: 'button', 'data-executor': item.key, 'aria-pressed': String(selected === item.key), 'aria-label': `${item.label}：${item.count} 项`, onclick: () => { state.filters.executor = selected === item.key ? '' : item.key; render(); } }, h('span', { class: 'chip-label' }, item.label), h('span', { class: 'chip-count' }, String(item.count)))));
+}
 function render() {
     const scoped = filterRecords(state.records, { ...state.filters, state: '', group: 'all' }), visible = filterRecords(state.records, state.filters);
     const counts = [scoped.length, scoped.filter(r => stateInfo(r).key === 'running').length, scoped.filter(r => stateInfo(r).key === 'needs_review').length, scoped.filter(r => stateInfo(r).key === 'accepted').length];
@@ -121,6 +132,7 @@ function render() {
     else
         el.removeAttribute('aria-current'); });
     $('attention-count').textContent = String(filterRecords(scoped, { group: 'attention' }).length);
+    renderExecutorFilter();
     if (!document.querySelector('.sheet.composing')) $('page-title').textContent = state.filters.group === 'embed' ? (embedPanel?.title ?? '嵌入面板') : (({ all: '任务工作台', attention: '待处理任务', accepted: '验收记录' })[state.filters.group] ?? '任务工作台');
     $('refresh').disabled = state.busy;
     $('source-badge').className = 'source-badge' + (state.source.kind === 'demo' ? ' demo' : '');
@@ -145,7 +157,7 @@ function render() {
     else if (!visible.length)
         list.append(empty(state.error ? '读取暂不可用' : state.records.length ? '没有匹配的任务' : '还没有任务记录', state.records.length ? '尝试清空搜索或调整筛选条件。' : '现有任务会在这里显示；此面板只读取记录。'));
     else
-        visible.forEach(record => list.append(h('button', { class: 'task-row', type: 'button', 'data-task-id': record.taskId, 'aria-current': String(record.taskId === state.selected), onclick: () => selectTask(record.taskId), 'aria-label': taskName(record) + '，' + stateInfo(record).label }, h('div', { class: 'task-row-top' }, h('span', { class: 'task-name' }, taskName(record)), icon('chevron', 'row-arrow')), h('div', { class: 'task-meta' }, h('span', {}, workspaceName(record)), h('span', {}, record.view?.attempt?.number ? `第 ${record.view.attempt.number} 轮` : '轮次未提供')), h('div', { class: 'task-bottom' }, status(record), h('span', { class: 'task-source' }, executorName(record))))));
+        visible.forEach(record => list.append(h('button', { class: 'task-row', type: 'button', 'data-task-id': record.taskId, 'aria-current': String(record.taskId === state.selected), onclick: () => selectTask(record.taskId), 'aria-label': taskName(record) + '，' + stateInfo(record).label }, h('div', { class: 'task-row-top' }, h('span', { class: 'task-name' }, taskName(record)), icon('chevron', 'row-arrow')), h('div', { class: 'task-meta' }, h('span', {}, workspaceName(record)), h('span', {}, record.view?.attempt?.number ? `第 ${record.view.attempt.number} 轮` : '轮次未提供')), h('div', { class: 'task-bottom' }, status(record), h('span', { class: 'executor-badge', 'data-executor': executorKey(record) }, executorName(record))))));
     $('list-foot').replaceChildren(h('span', {}, state.fetchedAt ? '已加载 ' + state.records.length + ' 项' + (state.cursor ? ' · 还有更多' : '') : '尚未读取记录'), state.cursor ? h('button', { class: 'text-button', type: 'button', disabled: state.busy, onclick: () => refreshTasks(true) }, '加载更多') : h('span', {}, '只读记录'));
     renderDetail();
     const embedShowing = state.filters.group === 'embed' && embedPanel !== null;
@@ -180,7 +192,7 @@ function renderDetail() {
     if (!filterRecords(state.records, state.filters).some(r => r.taskId === record.taskId))
         el.append(h('p', { class: 'notice' }, '此任务不在当前筛选结果中，详情保留供对照。'));
     const view = record.view, info = stateInfo(record), number = view.attempt.number ?? '—', limit = view.attempt.limit ?? '—';
-    el.append(h('div', { class: 'detail-context' }, icon('folder'), workspaceName(record), ' / ', executorName(record), ` / 第 ${number} 轮`), h('div', { class: 'detail-heading' }, h('h2', { id: 'detail-title', tabindex: '-1' }, taskName(record))), h('div', { class: 'detail-status' }, status(record)), h('p', { class: 'detail-description' }, info.description));
+    el.append(h('div', { class: 'detail-context' }, icon('folder'), workspaceName(record), ' / ', h('span', { class: 'executor-badge', 'data-executor': executorKey(record) }, executorName(record)), ` / 第 ${number} 轮`), h('div', { class: 'detail-heading' }, h('h2', { id: 'detail-title', tabindex: '-1' }, taskName(record))), h('div', { class: 'detail-status' }, status(record)), h('p', { class: 'detail-description' }, info.description));
     if (record.presentation.blockingReason) el.append(h('p', { class: 'notice' }, '已存提示：', record.presentation.blockingReason));
     el.append(h('div', { class: 'proofs', 'aria-label': '交付凭证，三个事实分别记录' }, proofs(record).map((proof, i) => h('div', { class: 'proof' }, h('div', { class: 'proof-label' }, icon(['file', 'circle', 'check'][i]), proof.label), h('div', { class: 'proof-value' + (proof.confirmed ? ' confirmed' : '') }, proof.value), h('div', { class: 'proof-detail' }, proof.detail)))));
     if (state.source.kind === 'live') {
@@ -203,7 +215,7 @@ function renderDetail() {
     const panel = h('div', { role: 'tabpanel', id: 'detail-panel', 'aria-labelledby': 'tab-' + state.tab });
     if (state.tab === 'overview') {
         panel.append(section('任务目标', h('div', {}, h('p', { class: 'objective' }, record.presentation.objective || '原目标正文未提供。'), h('div', { class: 'scope-tokens' }, record.presentation.allowedChanges?.map(path => h('code', { class: 'scope-token' }, path)) || h('span', { class: 'small muted' }, '允许修改范围未提供')))));
-        panel.append(section('本轮记录', h('dl', { class: 'kv' }, [['执行轮次', `${number} / ${limit}`], ['原约定模型', record.presentation.model || '未提供'], ['快照写入时间', formatTime(view.timing.lastObservedAt)], ['停止记录时间', formatTime(view.timing.nativeStoppedAt)]].map(([label, value]) => h('div', { class: 'kv-item' }, h('dt', {}, label), h('dd', {}, value))))));
+        panel.append(section('本轮记录', h('dl', { class: 'kv' }, [['执行器', executorName(record)], ['原生会话', view.binding?.sessionId || '未绑定会话'], ['执行轮次', `${number} / ${limit}`], ['原约定模型', record.presentation.model || '未提供'], ['快照写入时间', formatTime(view.timing.lastObservedAt)], ['停止记录时间', formatTime(view.timing.nativeStoppedAt)]].map(([label, value]) => h('div', { class: 'kv-item' }, h('dt', {}, label), h('dd', {}, value))))));
         const report = record.presentation.report;
         panel.append(section('执行报告', report ? h('div', {}, h('details', { class: 'report-disclosure', open: true }, h('summary', {}, '执行器原始回报'), h('pre', { class: 'report' }, report.text)), h('p', { class: 'report-caption' }, report.truncated ? '报告超过显示上限，此处仅保留前 64,000 字符。' : '执行器自报与独立检查分开保存；报告中的“通过”不等于最终验收。')) : h('p', { class: 'small muted' }, '尚未提供执行报告。没有报告不等于执行失败。')));
     }

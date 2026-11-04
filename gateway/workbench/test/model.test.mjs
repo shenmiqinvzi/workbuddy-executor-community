@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DemoSource } from '../demo-source.mjs';
-import { stateInfo, proofs, filterRecords, currentReview, validateRecord, taskListNavigation, nextRetryDelayMs, RETRY_MAX_ATTEMPTS } from '../model.mjs';
+import { STATES, EXECUTOR_LABELS, stateInfo, proofs, filterRecords, currentReview, validateRecord, taskListNavigation, nextRetryDelayMs, RETRY_MAX_ATTEMPTS, executorKey, executorName, executorBreakdown } from '../model.mjs';
 import { HttpSource } from '../http-source.mjs';
 test('report, stop and independent acceptance remain three separate facts', async () => { const source = new DemoSource(), waiting = await source.task('demo-task-5'), review = await source.task('demo-task-1'), accepted = await source.task('demo-task-4'); assert.deepEqual(proofs(waiting).map(p => p.confirmed), [true, false, false]); assert.deepEqual(proofs(review).map(p => p.confirmed), [true, true, false]); assert.deepEqual(proofs(accepted).map(p => p.confirmed), [true, true, true]); accepted.reviews[0].checks[0].actor = 'worker'; assert.equal(proofs(accepted)[2].confirmed, false); });
 test('old attempts and historical accepted records do not gain a T6 review', async () => { const record = await new DemoSource().task('demo-task-4'); record.reviews[0].attemptId = 'old-attempt'; assert.equal(currentReview(record), null); assert.equal(proofs(record)[2].confirmed, false); assert.equal(stateInfo(record).key, 'accepted'); record.reviews = []; assert.equal(proofs(record)[2].confirmed, false); });
@@ -13,3 +13,21 @@ test('failed live reads never call or substitute the explicit demo source', asyn
 test('event pages cannot mix another task or move their cursor backwards', async () => { const wrong = new HttpSource(async () => ({ ok: true, json: async () => ({ events: [{ eventId: 1, taskId: 'another-task', type: 'task_closed' }], nextEventId: 1 }) })); await assert.rejects(wrong.events('requested-task'), { code: 'INVALID_EVENTS' }); const stale = new HttpSource(async () => ({ ok: true, json: async () => ({ events: [], nextEventId: 0 }) })); await assert.rejects(stale.events('requested-task', 5), { code: 'INVALID_EVENTS' }); const record = await new DemoSource().task('demo-task-1'); record.reviews[0].checks = [null]; assert.equal(validateRecord(record), false); });
 test('P0-4 keyboard list navigation stays inside the visible rows without wraparound', () => { const rows = [{ taskId: 't1' }, { taskId: 't2' }, { taskId: 't3' }]; assert.equal(taskListNavigation(rows, 't1', 1), 't2'); assert.equal(taskListNavigation(rows, 't2', -1), 't1'); assert.equal(taskListNavigation(rows, 't1', -1), null); assert.equal(taskListNavigation(rows, 't3', 1), null); assert.equal(taskListNavigation(rows, 't1', 0), null); assert.equal(taskListNavigation(rows, 'absent', 1), null); assert.equal(taskListNavigation([], 't1', 1), null); assert.equal(taskListNavigation('rows', 't1', 1), null); assert.equal(taskListNavigation(rows, 't1', 1.5), null); assert.equal(taskListNavigation(rows, null, 1), null); });
 test('P0-4 reconnect backoff doubles deterministically and caps at thirty seconds', () => { assert.deepEqual([0, 1, 2, 3, 4].map(nextRetryDelayMs), [2000, 4000, 8000, 16000, 30000]); assert.equal(nextRetryDelayMs(10), 30000); assert.equal(nextRetryDelayMs(-1), null); assert.equal(nextRetryDelayMs(1.5), null); assert.equal(nextRetryDelayMs('1'), null); assert.equal(RETRY_MAX_ATTEMPTS, 5); });
+test('executor identity comes from the stored runtime source and drives the filter', async () => {
+    const { tasks } = await new DemoSource('all').list();
+    assert.deepEqual(tasks.map(executorKey).slice(0, 4), ['workbuddy', 'dsh', 'workbuddy', 'dsh']);
+    assert.deepEqual(executorBreakdown(tasks), [{ key: 'workbuddy', label: 'WorkBuddy', count: 5 }, { key: 'dsh', label: 'DSH', count: 5 }]);
+    assert.equal(filterRecords(tasks, { executor: 'dsh' }).length, 5);
+    assert.equal(filterRecords(tasks, { executor: 'workbuddy' }).length, 5);
+    assert.equal(filterRecords(tasks, { executor: '' }).length, 10);
+    assert.equal(filterRecords(tasks, { executor: 'dsh' }).every(record => executorKey(record) === 'dsh'), true);
+    // Interactive ACP runs are still WorkBuddy; an unrecorded source is never labelled DSH.
+    tasks[1].view.binding.runtimeSource = 'desktop_interactive';
+    assert.equal(executorKey(tasks[1]), 'workbuddy');
+    tasks[3].view.binding.runtimeSource = null;
+    assert.equal(executorName(tasks[3]), '来源未提供');
+    assert.equal(executorKey(undefined), 'unknown');
+    assert.equal(EXECUTOR_LABELS.dsh, 'DSH');
+    assert.deepEqual(executorBreakdown([]), []);
+    assert.deepEqual(executorBreakdown('rows'), []);
+});
