@@ -33,6 +33,8 @@ import {
 } from "../src/workbench-http.js";
 import { STAGE_TASK_VIEW_SCHEMA_VERSION } from "../src/task-view-stage.js";
 import { DatabaseSync } from "node:sqlite";
+// The browser module is intentionally plain JavaScript and has no declaration file.
+// @ts-expect-error The integration test exercises its real runtime exports.
 import { ResourceSource } from "../workbench/resources-source.mjs";
 
 /** A client that never reaches the network; the read paths do not call it. */
