@@ -225,4 +225,3 @@ node drive.mjs                      # Chrome headless + CDP，输出 14 张截�
 - 静态资源白名单、打包清单、`SNAPSHOT_MANIFEST.json`、跨端集成：仍由 Codex 负责。
 - WebView2 桌面壳未验收；浏览器结论只代表 Chromium。
 - 浏览器验证把页面时钟固定为 2026-11-04 用于复现评审时间线，卡片里的「采集时间」由后端按真实时间生成，两者不同源属测试构造，不代表线上两个时间不一致。
-
