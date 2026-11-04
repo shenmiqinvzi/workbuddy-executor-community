@@ -90,7 +90,7 @@ async function fixture() {
     ...["deployment-paths","deployment-safety","deployment-acceptance","setup","doctor","inspect-task"].flatMap(name=>[`src/${name}.ts`,`dist/${name}.js`])])files[name]="fixture\n";
   files["dist/platform/client.d.ts"] = "export {};\n";
   for (const name of ["index.mjs", "adapter.mjs", "events.mjs", "transport.mjs", "private-path.mjs", "private-path.d.mts", "package.json", "cordis.patch.yml", "README.md", "test/adapter.test.mjs", "test/events.test.mjs", "test/transport.test.mjs"]) files[`deepseek-plugin/${name}`] = "fixture\n";
-  for (const name of ["index.html", "style.css", "app.mjs", "model.mjs", "task-link.mjs", "dispatch.mjs", "dispatch.css", "attention.mjs", "controls.mjs", "controls.css", "http-source.mjs", "demo-source.mjs", "fonts/plex-sans.woff2", "fonts/plex-mono.woff2", "fonts/ibmplexsans-OFL.txt", "fonts/ibmplexmono-OFL.txt"]) files[`workbench/${name}`] = "synthetic workbench asset\n";
+  for (const name of ["index.html", "style.css", "app.mjs", "resources.mjs", "resources-source.mjs", "resources-model.mjs", "resources.css", "model.mjs", "task-link.mjs", "dispatch.mjs", "dispatch.css", "attention.mjs", "controls.mjs", "controls.css", "http-source.mjs", "demo-source.mjs", "fonts/plex-sans.woff2", "fonts/plex-mono.woff2", "fonts/ibmplexsans-OFL.txt", "fonts/ibmplexmono-OFL.txt"]) files[`workbench/${name}`] = "synthetic workbench asset\n";
   for (const name of ["workbench-assets", "workbench-panel"]) for (const suffix of ["src/", "dist/"]) files[`${suffix}${name}.${suffix === "src/" ? "ts" : "js"}`] = "export {};\n";
   for (const name of ["WorkBuddy.Workbench.csproj","Program.cs","DesktopPolicy.cs","DesktopCommands.cs","DesktopControlPolicy.cs","app.manifest","workbench.ico","packages.lock.json","WEBVIEW2-LICENSE.txt","test/PolicyTests.csproj","test/Program.cs"]) files[`desktop/${name}`] = "synthetic desktop source fixture\n";
   for (const name of ["build-desktop", "open-workbench", "open-workbench-router", "workbench-desktop-host", "workbench-desktop-commands", "workbench-dispatch-worker", "workbench-control-worker", "workbench-read-store", "package-desktop"]) files[`scripts/${name}.mjs`] = "export {};\n";
@@ -161,6 +161,19 @@ test("release collection requires the persistent service wrapper and complete na
       const content = await fs.readFile(filename);
       await fs.rm(filename);
       await assert.rejects(collectReleaseFiles(value.source), new RegExp(`Missing release file ${relative.replaceAll(".", "\\.")}`));
+      await fs.writeFile(filename, content);
+    }
+  } finally { await fs.rm(value.root, { recursive: true, force: true }); }
+});
+
+test("each resource page asset is required in a release", async () => {
+  const value = await fixture();
+  try {
+    for (const name of ["resources.mjs", "resources-source.mjs", "resources-model.mjs", "resources.css"]) {
+      const filename = path.join(value.source, "workbench", name);
+      const content = await fs.readFile(filename);
+      await fs.rm(filename);
+      await assert.rejects(collectReleaseFiles(value.source), /Missing release file workbench\/resources/);
       await fs.writeFile(filename, content);
     }
   } finally { await fs.rm(value.root, { recursive: true, force: true }); }

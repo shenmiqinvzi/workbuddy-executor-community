@@ -120,6 +120,24 @@ function request(port: number, options: { method?: string; path: string; headers
   });
 }
 
+test("official HTTP serves the resource page assets with exact paths and security headers", async t => {
+  const f = fixture(t), { port, close } = await startServer(f.service); t.after(close);
+  for (const name of ["resources.mjs", "resources-source.mjs", "resources-model.mjs", "resources.css"]) {
+    const response = await request(port, { path: `/workbench/${name}` });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers["content-type"], name.endsWith(".css") ? "text/css; charset=utf-8" : "text/javascript; charset=utf-8");
+    assert.equal(response.headers["x-content-type-options"], "nosniff");
+    assert.match(String(response.headers["content-security-policy"]), /script-src 'self'/);
+    assert.match(String(response.headers["content-security-policy"]), /frame-ancestors 'none'/);
+    assert.equal((await request(port, { path: `/workbench/${name}`, headers: { Origin: "https://example.com" } })).status, 403);
+    assert.equal((await request(port, { path: `/workbench/${name}`, headers: { Host: "example.com" } })).status, 403);
+    assert.equal((await request(port, { path: `/workbench/${name}`, method: "POST" })).status, 405);
+  }
+  assert.notEqual((await request(port, { path: "/workbench/resources-private.mjs" })).status, 200);
+  assert.match((await request(port, { path: "/workbench/" })).body, /\/workbench\/resources\.css/);
+  assert.match((await request(port, { path: "/workbench/app.mjs" })).body, /\.\/resources\.mjs/);
+});
+
 test("parseListQuery applies the documented defaults and bounds", () => {
   assert.deepEqual(parseListQuery(""), { ok: true, limit: 50 });
   assert.deepEqual(parseListQuery("limit=7&afterTaskId=abc"), { ok: true, limit: 7, afterTaskId: "abc" });

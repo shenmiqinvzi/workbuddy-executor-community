@@ -5,6 +5,10 @@ import type { ServerResponse } from "node:http";
 const assets: Record<string, [string, string]> = {
   "/workbench/": ["index.html", "text/html; charset=utf-8"],
   "/workbench/app.mjs": ["app.mjs", "text/javascript; charset=utf-8"],
+  "/workbench/resources.mjs": ["resources.mjs", "text/javascript; charset=utf-8"],
+  "/workbench/resources-source.mjs": ["resources-source.mjs", "text/javascript; charset=utf-8"],
+  "/workbench/resources-model.mjs": ["resources-model.mjs", "text/javascript; charset=utf-8"],
+  "/workbench/resources.css": ["resources.css", "text/css; charset=utf-8"],
   "/workbench/model.mjs": ["model.mjs", "text/javascript; charset=utf-8"],
   "/workbench/task-link.mjs": ["task-link.mjs", "text/javascript; charset=utf-8"],
   "/workbench/dispatch.mjs": ["dispatch.mjs", "text/javascript; charset=utf-8"],
