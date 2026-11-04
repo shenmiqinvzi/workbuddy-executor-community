@@ -880,8 +880,8 @@
     },
     {
       "path": "src/resource-routing.ts",
-      "sha256": "be916b5abdf048aefbfc0d69b18534275d87c30dc8ab6c2217d49283026dbaa5",
-      "bytes": 7630
+      "sha256": "987bc3850c8b987979c7269bcc89191087976c5560bc605d2eb37fc9af61c6db",
+      "bytes": 12979
     },
     {
       "path": "src/run-evidence.ts",
@@ -1242,6 +1242,11 @@
       "path": "test/report-authentication.test.ts",
       "sha256": "70d4e4da1882ce370464e55d8faf0275df803c3d37e972ab3c6baf22e1e89ed2",
       "bytes": 31803
+    },
+    {
+      "path": "test/resource-routing-consistency.test.ts",
+      "sha256": "b5864dec768a9c491ad3447be28c91d5726dd0708d3816d620373b49d58c9e51",
+      "bytes": 17749
     },
     {
       "path": "test/resource-routing.test.ts",
