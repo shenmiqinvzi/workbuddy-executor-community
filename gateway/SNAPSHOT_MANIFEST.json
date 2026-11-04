@@ -440,8 +440,8 @@
     },
     {
       "path": "scripts/package.mjs",
-      "sha256": "49249c587754e484f45d292c7a5a09fe5e9019670699832e375af6aeede3fba1",
-      "bytes": 15529
+      "sha256": "fdc083a5d42cafd76f45070cc94cebb9556b339398f2e05e71ad4edf24fa0505",
+      "bytes": 15610
     },
     {
       "path": "scripts/plan.mjs",
@@ -600,8 +600,8 @@
     },
     {
       "path": "src/credit-balance.ts",
-      "sha256": "8c18e0a6179d646bf2967b789e45b86c42cdb2f400a680c4cfa8f0e7aa78768a",
-      "bytes": 12887
+      "sha256": "01de1ecd1bea9d9bbe26889ae2f9ed224f530a4af4a52c7a2258ba9c68e1743d",
+      "bytes": 12967
     },
     {
       "path": "src/deepseek-client.ts",
@@ -860,8 +860,8 @@
     },
     {
       "path": "src/quota-observation.ts",
-      "sha256": "9ea57ea52c8a40cf67373a609e6b066849b2bdfec90aa5f04cd6600703343c86",
-      "bytes": 15028
+      "sha256": "f38bc7c84b7429f53cdbdc0093166f15d98432a64484feb6baa28107e521d29c",
+      "bytes": 15337
     },
     {
       "path": "src/recovery-cli.ts",
@@ -975,8 +975,8 @@
     },
     {
       "path": "src/workbench-assets.ts",
-      "sha256": "30768d64fa7338f03218372a7680419c726777f2552b54b2c4f3fdc7b0da8e8a",
-      "bytes": 2823
+      "sha256": "e1f2be457d006e23cb73f0ef917d6728ff19ce3b48af0196bb58a305dc02c799",
+      "bytes": 3174
     },
     {
       "path": "src/workbench-entry.ts",
@@ -1055,8 +1055,8 @@
     },
     {
       "path": "test/credit-balance.test.ts",
-      "sha256": "a6448117f235c98bb2484baa1fc7ccee669e8b2ba6e8205144fae52d371da1da",
-      "bytes": 12083
+      "sha256": "9092ded7a31b8a0ab8a0c2e6c029b2f0b1f93821569dd8824f1b06dd366c039a",
+      "bytes": 12997
     },
     {
       "path": "test/deepseek-client.test.ts",
@@ -1185,8 +1185,8 @@
     },
     {
       "path": "test/package.test.ts",
-      "sha256": "80e03835ca9061be3472707b9fdc153b187efba8b1d7943af9ed149db2e9f092",
-      "bytes": 20775
+      "sha256": "01b68117e3e50e353db9abdee08dd86e16d959a37cb9ad7165f2f451bdd5df3c",
+      "bytes": 21476
     },
     {
       "path": "test/persistent-service.test.ts",
@@ -1220,8 +1220,8 @@
     },
     {
       "path": "test/quota-observation.test.ts",
-      "sha256": "aff7e1cb28019c15545f501deb942a2875de4f200d9505882c466f286d725317",
-      "bytes": 15828
+      "sha256": "ca93e43a4ba230062825a76dd16031688875d894ec3dae1eb5725270ed079aca",
+      "bytes": 17446
     },
     {
       "path": "test/reliability-v2.test.ts",
@@ -1380,8 +1380,8 @@
     },
     {
       "path": "test/workbench-http.test.ts",
-      "sha256": "d84f3f9bf7d992e7c8a612aa6176d8a4aa36c71dbda741314462c98a9e560012",
-      "bytes": 25255
+      "sha256": "bb9de8b31bbe452464a868ac745407738ce52bbb8eec425177bca0513752a1c9",
+      "bytes": 30680
     },
     {
       "path": "test/workbench-panel.test.ts",
@@ -1425,8 +1425,8 @@
     },
     {
       "path": "workbench/app.mjs",
-      "sha256": "7823896203b75d6f7eb06c1972e148fa6bba2e52bb987ab8ffbdbcef274f5dc4",
-      "bytes": 42353
+      "sha256": "92ad60e3d662bc9f9d5970042552f701c48eeef7eabaa470c7970eaed4d701a3",
+      "bytes": 45103
     },
     {
       "path": "workbench/attention.mjs",
@@ -1485,13 +1485,33 @@
     },
     {
       "path": "workbench/index.html",
-      "sha256": "6dac44b9a81eb7c280d593ccb83108ec00be099b599da36bd3a484bfcb990d95",
-      "bytes": 825
+      "sha256": "589d481a40eb78cce7b629225f19efd83ec30a916889b421bea8e1d4ebcce675",
+      "bytes": 883
     },
     {
       "path": "workbench/model.mjs",
       "sha256": "e64f498895fc0aeb403225a5f27b1c73f3c41121b993acbaa6334154bc638cd3",
       "bytes": 8545
+    },
+    {
+      "path": "workbench/resources-model.mjs",
+      "sha256": "abbea6c1273a9ea284027f8a38a5f9850576e8115a0a356bac701241d1aa4a46",
+      "bytes": 30274
+    },
+    {
+      "path": "workbench/resources-source.mjs",
+      "sha256": "2ecdd62b4ad419ad15afbb8e8cbd2c165888a4fe72a7f30ea71b357616309994",
+      "bytes": 12486
+    },
+    {
+      "path": "workbench/resources.css",
+      "sha256": "da5d1497229d897513eb3ded94a3081fba692c6a33374b76d5651d5bd1fd360e",
+      "bytes": 9453
+    },
+    {
+      "path": "workbench/resources.mjs",
+      "sha256": "1567e36712be42aac4ff658d2f2a0b9852656fcd7fc956685de113269810fd86",
+      "bytes": 23975
     },
     {
       "path": "workbench/style.css",
@@ -1557,6 +1577,31 @@
       "path": "workbench/test/recovery.test.mjs",
       "sha256": "41fabcbdc1a489f4ae0dff92c21fbf9c74baef4588f73e54c571a58cf7ac4371",
       "bytes": 9036
+    },
+    {
+      "path": "workbench/test/resources-model.test.mjs",
+      "sha256": "c5b9309a7275fe3436cae58cdf7a7a9d020773837b561385ae0b226de9ab8bdb",
+      "bytes": 9776
+    },
+    {
+      "path": "workbench/test/resources-source.test.mjs",
+      "sha256": "c8d61ef6b0819c1203ef21b8d8bf2324cf01f8a1441765961126f78cc92c1336",
+      "bytes": 7414
+    },
+    {
+      "path": "workbench/test/resources-view.test.mjs",
+      "sha256": "3fee2556db934c1a1f512d00d68f1248770716f37ba6514a8d7aec37707bb52a",
+      "bytes": 9414
+    },
+    {
+      "path": "workbench/test/support/mini-dom.mjs",
+      "sha256": "2935effc7fd524ffb1dd24f81ca6f9b9d536ea35e0fb619dd62b76725530601b",
+      "bytes": 6086
+    },
+    {
+      "path": "workbench/test/support/mini-fetch.mjs",
+      "sha256": "68203e70f10ad2c6089de4e10ecccd0b46d7fa058ef147d3715e23cecec9cebf",
+      "bytes": 2591
     }
   ]
 }
