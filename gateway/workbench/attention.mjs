@@ -21,6 +21,17 @@ const near = {
     run_orphaned: '派工进程已退出且没有回执；先核对它做了什么，再决定重派或收口。',
 };
 
+/** Report authentication as the panel actually records it: the field lives on
+ * `record.presentation.report.authentication` (see model.mjs). Kept pure and
+ * exported so a wrong path is caught by a test instead of by a card claiming
+ * "未提供" over an authenticated report. */
+export function reportAuthentication(record) {
+    const value = record?.presentation?.report?.authentication;
+    if (value === 'authenticated') return '通过';
+    if (value === 'unauthenticated') return '未通过';
+    return typeof value === 'string' && value.trim() ? value : '未提供';
+}
+
 /** Which saved fact puts this task here, in the reader's words. */
 export function attentionReason(record) {
     const view = record?.view;
@@ -37,7 +48,7 @@ export function attentionReason(record) {
         const lease = view.dispatchLease;
         return { code: 'run_orphaned', title: '运行已无人管理（派工进程已退出）', why: `派工租约显示主人进程已退出（owner_pid ${lease?.ownerPid ?? '未知'}，心跳 ${lease?.heartbeatAt ?? '无'}），且没有任何回执。这个状态可能出现在报告已到或尚未到时；先核对证据，再决定重派或收口。`, next: near.run_orphaned };
     }
-    if (display === 'waiting_stop') return { code: 'stop_unconfirmed', title: '报告已到，原生停止未确认', why: `执行报告已记录（认证：${view.presentation?.report?.authentication || view.reportAuthentication || '未提供'}），但停止证据缺失：停止记录时间 ${view.timing?.nativeStoppedAt ? view.timing.nativeStoppedAt : '为空'}。停止未确认时，返工、审查与验收都不能提交。`, next: near.stop_unconfirmed };
+    if (display === 'waiting_stop') return { code: 'stop_unconfirmed', title: '报告已到，原生停止未确认', why: `执行报告已记录（认证：${reportAuthentication(record)}），但停止证据缺失：停止记录时间 ${view.timing?.nativeStoppedAt ? view.timing.nativeStoppedAt : '为空'}。停止未确认时，返工、审查与验收都不能提交。`, next: near.stop_unconfirmed };
     if (display === 'waiting_input') return { code: 'input_waiting', title: '执行器在等待输入', why: '原会话停在等待输入，没有继续执行；这里没有替它作答的入口。', next: near.input_waiting };
     if (info.key === 'inconsistent') return { code: 'stop_unconfirmed', title: '待验收记录缺少停止证明', why: '记录写着待验收，但原生停止没有确认；这两个事实不能互相顶替。', next: near.stop_unconfirmed };
     if (business === 'blocked' || info.key === 'blocked') return { code: 'blocked', title: '任务受阻', why: `已记录阻塞原因：${record.presentation?.blockingReason || '未提供'}。`, next: near.blocked };

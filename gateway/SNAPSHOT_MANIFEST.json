@@ -525,8 +525,8 @@
     },
     {
       "path": "skills/workbuddy-executor/SKILL.md",
-      "sha256": "8f9bec291ea78d2bfc06e2f84e51641ddd792b6cc3e568eeca5986903c19c9a6",
-      "bytes": 9402
+      "sha256": "8d902679d4fa80db54504a024fb811b59b0bd56f169760401a1d060bf11cde9e",
+      "bytes": 10108
     },
     {
       "path": "skills/workbuddy-executor/agents/openai.yaml",
@@ -1430,8 +1430,8 @@
     },
     {
       "path": "workbench/attention.mjs",
-      "sha256": "7f230fb9b8577fdeb37146157f766144180a01b7af70556df5942be304252b29",
-      "bytes": 13288
+      "sha256": "f90c81872afa82c294cb617091ccbdb470a920f8788999d13b3ea394db3535e0",
+      "bytes": 13813
     },
     {
       "path": "workbench/controls.css",
@@ -1505,8 +1505,8 @@
     },
     {
       "path": "workbench/test/attention.test.mjs",
-      "sha256": "50968b2229db4405ef00748ff5b160e13a2417faa21ce7c59d2070953f74b79d",
-      "bytes": 9608
+      "sha256": "269058c73c0d3f883804f9d0b7b5c0e02545562aab85ab29780bd2d9a06b6ed1",
+      "bytes": 12142
     },
     {
       "path": "workbench/test/controls.test.mjs",

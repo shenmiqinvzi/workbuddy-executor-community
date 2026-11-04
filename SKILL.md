@@ -48,7 +48,7 @@ description: 将适合的本地开发、修复、测试及资料整理交给桌�
 
 ## 4. 验收与返工
 
-仅 needs_review 且有真实报告、原生停止证据时验收。核对 taskId、attemptId、sessionId、runtimeSource 与契约执行器一致、remoteStopped；停止证据只认原生终态事件——WorkBuddy 认 end_turn 与队列取消，DSH 认 `turn/end` 或 `agent/inbox/spliced` 的 cancelled 事件——结果文件、进程消失或面板显示停止都不算。Codex 不代领、代写或代交成功报告。
+仅 needs_review、认证报告与绑定本轮的原生停止证据都存在时验收。核对 taskId、attemptId、sessionId、runtimeSource 与契约执行器一致，以及 executionStatus 的 remoteStopped=true。WorkBuddy 的停止证据是 nativeStoppedAt 且 nativeStopSource 为 `native_idle`（原生会话经检查确认空闲后写入）或 `not_dispatched`（从未被原生领取，含领取前取消）；原生失败路径还须有 nativeFailure 到 stopControl 的完整时间链和至少两次空闲观察。worker 报告的 end_turn/blocked/failed/cancelled 只结束本轮租约，队列取消与 cancellationRequested 只是请求，都不能单独证明停止。DSH 要核对绑定原请求的终态事件：requestId 与 attemptId、sessionId、hostId 三者与快照一致，terminal 带 seq 与时间，rawType 为 `turn/end` 或 type=cancelled 且 rawType=`agent/inbox/spliced`，且 nativeStoppedAt 与该事件时间相等、nativeStopSource=`dsh_terminal_event`；只认事件名称不算。结果文件存在、进程消失或面板显示停止都不算。Codex 不代领、代写或代交成功报告。
 
 检查本次实际增量与相关边界，区分源码检查、Mock、本地浏览器样本和真实环境。基线检查不替代改动后验证；核对命令退出码、证据与当前源码。修改后重跑受影响检查，可信且对应当前修改的验证无需整套重跑。网关能检查所引用记录的状态和哈希，验证覆盖是否足够、功能是否正确仍由 Codex 判断。
 

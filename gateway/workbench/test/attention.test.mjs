@@ -1,13 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { attentionItems, attentionReason, offersDeclaration, evidenceFacts } from '../attention.mjs';
+import { attentionItems, attentionReason, offersDeclaration, evidenceFacts, reportAuthentication } from '../attention.mjs';
 
+// The real panel record keeps the report on `presentation.report` (see
+// model.mjs proofs()); an authentication field on `view` does not exist, so
+// fixtures must not invent one where the reader could never find it.
 const record = (view, extra = {}) => ({
     ok: true,
     taskId: 'desktop-1',
-    view: { businessState: 'needs_review', displayState: 'needs_review', remoteStopped: true, revision: 'rev-1', attempt: { id: 'run-1', number: 1, limit: 1 }, timing: { nativeStoppedAt: '2026-11-02T12:00:00.000Z' }, reportAuthentication: 'authenticated', ...view },
+    view: { businessState: 'needs_review', displayState: 'needs_review', remoteStopped: true, revision: 'rev-1', attempt: { id: 'run-1', number: 1, limit: 1 }, timing: { nativeStoppedAt: '2026-11-02T12:00:00.000Z' }, ...view },
     reviews: [],
-    presentation: {},
+    presentation: { report: { text: '已完成', authentication: 'authenticated' } },
     ...extra
 });
 
@@ -133,4 +136,36 @@ test('the declaration entry follows the reason and the stop fact, not a missing 
     assert.equal(offersDeclaration({ code: 'run_orphaned' }, record({})), false);
     assert.equal(offersDeclaration(null, record({})), false);
     assert.equal(offersDeclaration({ code: 'review_pending' }, { taskId: 'desktop-1' }), false);
+});
+
+test('the waiting_stop card reads authentication from the saved presentation', () => {
+    // Regression: the card used to look for view.presentation/view.reportAuthentication,
+    // which the panel never records, so an authenticated report read as 未提供.
+    const authenticated = record({ displayState: 'waiting_stop', businessState: 'needs_review', remoteStopped: false, timing: { nativeStoppedAt: null } });
+    const reason = attentionReason(authenticated);
+    assert.equal(reason.code, 'stop_unconfirmed');
+    assert.match(reason.why, /认证：通过/);
+    assert.doesNotMatch(reason.why, /认证：未提供/);
+});
+
+test('a missing or unauthenticated report is never shown as authenticated', () => {
+    const waiting = { displayState: 'waiting_stop', businessState: 'needs_review', remoteStopped: false, timing: { nativeStoppedAt: null } };
+    const absent = attentionReason(record(waiting, { presentation: {} }));
+    assert.match(absent.why, /认证：未提供/);
+    const textOnly = attentionReason(record(waiting, { presentation: { report: { text: '有正文但没认证字段' } } }));
+    assert.match(textOnly.why, /认证：未提供/);
+    const failed = attentionReason(record(waiting, { presentation: { report: { text: 'x', authentication: 'unauthenticated' } } }));
+    assert.match(failed.why, /认证：未通过/);
+    // A stray field on the view is not evidence, even if an older fixture put it there.
+    const stray = attentionReason(record({ ...waiting, reportAuthentication: 'authenticated' }, { presentation: {} }));
+    assert.match(stray.why, /认证：未提供/);
+});
+
+test('reportAuthentication reads only the recorded presentation shape', () => {
+    assert.equal(reportAuthentication(record({})), '通过');
+    assert.equal(reportAuthentication(record({}, { presentation: { report: { authentication: 'unauthenticated' } } })), '未通过');
+    assert.equal(reportAuthentication(record({}, { presentation: {} })), '未提供');
+    assert.equal(reportAuthentication(record({}, { presentation: { report: { authentication: 'weird' } } })), 'weird');
+    assert.equal(reportAuthentication(null), '未提供');
+    assert.equal(reportAuthentication({ view: { reportAuthentication: 'authenticated' } }), '未提供');
 });
