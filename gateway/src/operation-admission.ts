@@ -47,6 +47,18 @@ export function operationDigest(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(canonical(value))).digest("hex");
 }
 
+/** One SELECT against the single capacity slot, from any read-only connection.
+ *
+ * An absent table is unreadable, not free: a reader that never saw the slot must
+ * report unavailability instead of claiming the workflow is idle. An empty table
+ * is a saved fact and reads as `null`.
+ */
+export function readCapacityOccupant(db: DatabaseSync): { taskId: string; executor: string; operationId: string } | null {
+  if (!db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='workflow_capacity'").get()) throw new Error("resource_storage_missing:workflow_capacity");
+  const row = db.prepare("SELECT * FROM workflow_capacity WHERE slot=1").get();
+  return row ? { taskId: String(row.task_id), executor: String(row.executor), operationId: String(row.operation_id) } : null;
+}
+
 /** SQLite is the arbiter. The local promises only let same-process callers await a receipt. */
 export class OperationAdmission {
   private readonly pending = new Map<string, Promise<unknown>>();
@@ -151,10 +163,7 @@ export class OperationAdmission {
       return evidence.stopped === true && evidence.attemptId === task.attemptId && !!this.db.prepare("SELECT 1 FROM task_events WHERE task_id=? AND attempt_id=? AND type='task_closed'").get(task.taskId, task.attemptId);
     } catch { return false; }
   }
-  occupant(): { taskId: string; executor: string; operationId: string } | null {
-    const row = this.db.prepare("SELECT * FROM workflow_capacity WHERE slot=1").get();
-    return row ? { taskId: String(row.task_id), executor: String(row.executor), operationId: String(row.operation_id) } : null;
-  }
+  occupant(): { taskId: string; executor: string; operationId: string } | null { return readCapacityOccupant(this.db); }
   /** Called under BEGIN IMMEDIATE, also used by compatibility queue/worker gates. */
   claim(taskId: string, executor: string, operationId: string): void {
     this.store.recoveries.assertOpen(taskId);

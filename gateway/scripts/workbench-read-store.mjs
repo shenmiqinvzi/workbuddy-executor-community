@@ -3,7 +3,9 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { TaskStore } from '../dist/task-store.js';
-import { operationDigest } from '../dist/operation-admission.js';
+import { operationDigest, readCapacityOccupant } from '../dist/operation-admission.js';
+import { readQuotaResources } from '../dist/quota-observation.js';
+import { readCreditBalances } from '../dist/credit-balance.js';
 import { settleDispatch } from '../dist/dispatch-settlement.js';
 
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -52,6 +54,14 @@ export function openWorkbenchReadStore(file, options = {}) {
     const store = { file, close: () => db.close() };
     for (const name of ['get', 'listAttempts', 'listTasksByCreatedCursor', 'hasTaskAfterCursor', 'listTaskEvents'])
         store[name] = (...args) => TaskStore.prototype[name].apply(context, args);
+    /** Saved resource views, computed by the same validated queries the gateway
+     * serves. Nothing here constructs a store: no table, salt, connection or
+     * capacity row can be created by opening the window. A table this database
+     * never had throws, so an unreadable resource is never reported as empty or
+     * as a free slot. */
+    store.quotas = Object.freeze({ read: (options = {}) => readQuotaResources(db, options) });
+    store.creditBalances = Object.freeze({ read: connectionId => readCreditBalances(db, connectionId) });
+    store.operations = Object.freeze({ occupant: () => readCapacityOccupant(db) });
     store.getContract = taskId => {
         if (has('task_contracts')) return TaskStore.prototype.getContract.call(context, taskId);
         // Pre-contract deployments have neither contract dispatch nor view

@@ -38,6 +38,37 @@ function decode(raw: string, id: string): CreditBalanceSnapshot {
   } catch { throw new Error("credit_resource_corrupt"); }
 }
 
+/** A resource table that was never created is unreadable, not empty. */
+function present(db: DatabaseSync, table: string): boolean {
+  return Boolean(db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name=?").get(table));
+}
+
+/**
+ * The saved credit balance view, computed from any read-only connection.
+ *
+ * One implementation for the collecting store, the HTTP service and the
+ * desktop read-only facade; a region total is never recomputed elsewhere.
+ */
+export function readCreditBalances(db: DatabaseSync, connectionId?: string) {
+  if (!present(db, "credit_balance_connections")) throw new Error("resource_storage_missing:credit_balance_connections");
+  const rows = (connectionId ? db.prepare("SELECT * FROM credit_balance_connections WHERE id=?").all(connectionId) : db.prepare("SELECT * FROM credit_balance_connections ORDER BY id").all()) as unknown as ConnectionRow[];
+  const connections = rows.map(row => {
+    const snapshot = row.snapshot_json ? decode(row.snapshot_json, row.id) : null;
+    const cacheFreshness = !snapshot ? "unavailable" : row.error_code || Date.parse(snapshot.cacheExpiresAt) <= Date.now() ? "stale" : "fresh";
+    return { connectionId: row.id, status: row.error_code ? "unavailable" : snapshot ? "observed" : "not_observed", errorCode: row.error_code,
+      snapshotId: snapshot?.snapshotId ?? null, collectedAt: snapshot?.collectedAt ?? null, cacheFreshness };
+  });
+  const candidates = rows.flatMap(row => row.snapshot_json ? [{ ...decode(row.snapshot_json, row.id), errorCode: row.error_code }] : [])
+    .sort((a, b) => b.collectedAt.localeCompare(a.collectedAt));
+  const balances = new Map<string, (typeof candidates)[number] & { connectionIds: string[] }>();
+  for (const item of candidates) { const prior = balances.get(item.scopeId); if (prior) prior.connectionIds.push(item.connectionId); else balances.set(item.scopeId, { ...item, connectionIds: [item.connectionId] }); }
+  return { schemaVersion: CREDIT_BALANCE_SCHEMA, readOnly: true as const,
+    connections, balances: [...balances.values()].map(item => ({ ...item, shared: true as const, scopeKind: "gateway_region_pool" as const,
+      balanceFreshness: item.latestMemberObservedAt && Date.parse(item.latestMemberObservedAt) < Date.now() - (Date.parse(item.cacheExpiresAt)-Date.parse(item.collectedAt)) ? "stale" : "unavailable",
+      limitations: ["shared_region_pool", "routing_unverified", "latest_member_timestamp_only", "member_freshness_unavailable", "task_attribution_unavailable"] })),
+    actualTaskCredits: null, attribution: "connection_only" as const };
+}
+
 /** Region summaries have their own table, schema and unit; they never replace
  * token-estimate rows or task usage. Account identities are not accepted. */
 export class CreditBalanceStore {
@@ -81,24 +112,7 @@ export class CreditBalanceStore {
   failed(id: string, epoch: string, generation: number, code: CollectionError): void {
     this.db.prepare("UPDATE credit_balance_connections SET error_code=? WHERE id=? AND epoch=? AND generation=?").run(code, id, epoch, generation);
   }
-  read(connectionId?: string) {
-    const rows = (connectionId ? this.db.prepare("SELECT * FROM credit_balance_connections WHERE id=?").all(connectionId) : this.db.prepare("SELECT * FROM credit_balance_connections ORDER BY id").all()) as unknown as ConnectionRow[];
-    const connections = rows.map(row => {
-      const snapshot = row.snapshot_json ? decode(row.snapshot_json, row.id) : null;
-      const cacheFreshness = !snapshot ? "unavailable" : row.error_code || Date.parse(snapshot.cacheExpiresAt) <= Date.now() ? "stale" : "fresh";
-      return { connectionId: row.id, status: row.error_code ? "unavailable" : snapshot ? "observed" : "not_observed", errorCode: row.error_code,
-        snapshotId: snapshot?.snapshotId ?? null, collectedAt: snapshot?.collectedAt ?? null, cacheFreshness };
-    });
-    const candidates = rows.flatMap(row => row.snapshot_json ? [{ ...decode(row.snapshot_json, row.id), errorCode: row.error_code }] : [])
-      .sort((a, b) => b.collectedAt.localeCompare(a.collectedAt));
-    const balances = new Map<string, (typeof candidates)[number] & { connectionIds: string[] }>();
-    for (const item of candidates) { const prior = balances.get(item.scopeId); if (prior) prior.connectionIds.push(item.connectionId); else balances.set(item.scopeId, { ...item, connectionIds: [item.connectionId] }); }
-    return { schemaVersion: CREDIT_BALANCE_SCHEMA, readOnly: true as const,
-      connections, balances: [...balances.values()].map(item => ({ ...item, shared: true as const, scopeKind: "gateway_region_pool" as const,
-        balanceFreshness: item.latestMemberObservedAt && Date.parse(item.latestMemberObservedAt) < Date.now() - (Date.parse(item.cacheExpiresAt)-Date.parse(item.collectedAt)) ? "stale" : "unavailable",
-        limitations: ["shared_region_pool", "routing_unverified", "latest_member_timestamp_only", "member_freshness_unavailable", "task_attribution_unavailable"] })),
-      actualTaskCredits: null, attribution: "connection_only" as const };
-  }
+  read(connectionId?: string) { return readCreditBalances(this.db, connectionId); }
   private connection(id: string): ConnectionRow | undefined { return this.db.prepare("SELECT * FROM credit_balance_connections WHERE id=?").get(id) as unknown as ConnectionRow | undefined; }
 }
 

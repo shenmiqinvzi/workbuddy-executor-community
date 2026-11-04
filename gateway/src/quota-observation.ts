@@ -46,6 +46,47 @@ function savedSnapshot(raw:string,id:string):QuotaSnapshot {
   }catch{throw new Error("resource_corrupt");}
 }
 
+/** A resource table that was never created is unreadable, not empty: a read-only
+ * caller must not translate it into "no quota configured" or a zero balance. */
+function present(db: DatabaseSync, table: string): boolean {
+  return Boolean(db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name=?").get(table));
+}
+
+/**
+ * The saved quota resource view, computed from any read-only connection.
+ *
+ * This is the one implementation of the resource semantics: the collecting
+ * store, the HTTP service and the desktop read-only facade all call it, so a
+ * desktop reading cannot drift from a gateway reading.
+ */
+export function readQuotaResources(db: DatabaseSync, options: { connectionId?: string; modelId?: string; limit?: number } = {}) {
+  if (!present(db, "quota_connections")) throw new Error("resource_storage_missing:quota_connections");
+  const limit = options.limit ?? 200;
+  if (!Number.isInteger(limit) || limit < 1 || limit > 200) throw new Error("Invalid resource limit");
+  const rows = (options.connectionId ? db.prepare("SELECT * FROM quota_connections WHERE id=?").all(options.connectionId) : db.prepare("SELECT * FROM quota_connections ORDER BY id").all()) as unknown as ConnectionRecord[];
+  const connections = rows.map(row => {
+    const snapshot = row.snapshot_json ? savedSnapshot(row.snapshot_json, row.id) : null;
+    const freshness = !snapshot || !snapshot.sourceObservedAt ? "unavailable" : row.error_code || Date.parse(snapshot.expiresAt) <= Date.now() ? "stale" : "fresh";
+    return { connectionId: row.id, status: row.error_code ? "unavailable" : snapshot ? "observed" : "not_observed", errorCode: row.error_code,
+      snapshotId: snapshot?.snapshotId ?? null, collectedAt: snapshot?.collectedAt ?? null, sourceObservedAt: snapshot?.sourceObservedAt ?? null, expiresAt: snapshot?.expiresAt ?? null, freshness };
+  });
+  const candidates = rows.flatMap(row => {
+    const snapshot = row.snapshot_json ? savedSnapshot(row.snapshot_json, row.id) : null;
+    return (snapshot?.observations ?? []).filter(item => options.modelId === undefined || item.modelId === options.modelId).map(item => ({ ...item, connectionId: row.id, snapshotId: snapshot!.snapshotId, sourceObservedAt: snapshot!.sourceObservedAt, collectedAt: snapshot!.collectedAt }));
+  }).sort((a, b) => {
+    // A local collection time does not establish when the source observed data.
+    if (a.sourceObservedAt && !b.sourceObservedAt) return -1;
+    if (!a.sourceObservedAt && b.sourceObservedAt) return 1;
+    return (b.sourceObservedAt ?? b.collectedAt).localeCompare(a.sourceObservedAt ?? a.collectedAt);
+  });
+  const unique = new Map<string, (typeof candidates)[number] & { connectionIds: string[] }>();
+  for (const item of candidates) { const key = `${item.scopeId}:${item.modelId}`; const prior = unique.get(key); if (prior) prior.connectionIds.push(item.connectionId); else unique.set(key, { ...item, connectionIds: [item.connectionId] }); }
+  const observations = [...unique.values()].sort((a, b) => `${a.scopeId}:${a.modelId}`.localeCompare(`${b.scopeId}:${b.modelId}`));
+  // Explicitly partial; no pool total or spendable balance is inferred.
+  return { schemaVersion: QUOTA_RESOURCE_SCHEMA, readOnly: true as const, connections, observations: observations.slice(0, limit), truncated: observations.length > limit,
+    attribution: "connection_only" as const, actualTaskCredits: null, actualTaskTokens: null };
+}
+
 /** Stored resource observations are independent of task revision and lifecycle. */
 export class QuotaStore {
   private readonly salt: string;
@@ -92,32 +133,7 @@ export class QuotaStore {
   failed(id:string,epoch:string,generation:number,code:QuotaErrorCode):void {
     this.db.prepare("UPDATE quota_connections SET error_code=? WHERE id=? AND epoch=? AND generation=?").run(code,id,epoch,generation);
   }
-  read(options:{connectionId?:string;modelId?:string;limit?:number}={}) {
-    const limit=options.limit??200;
-    if(!Number.isInteger(limit)||limit<1||limit>200)throw new Error("Invalid resource limit");
-    const rows=(options.connectionId ? this.db.prepare("SELECT * FROM quota_connections WHERE id=?").all(options.connectionId) : this.db.prepare("SELECT * FROM quota_connections ORDER BY id").all()) as unknown as ConnectionRecord[];
-    const connections=rows.map(row=>{
-      const snapshot=row.snapshot_json ? savedSnapshot(row.snapshot_json,row.id) : null;
-      const freshness=!snapshot || !snapshot.sourceObservedAt ? "unavailable" : row.error_code || Date.parse(snapshot.expiresAt)<=Date.now() ? "stale" : "fresh";
-      return {connectionId:row.id,status:row.error_code ? "unavailable" : snapshot ? "observed" : "not_observed",errorCode:row.error_code,
-        snapshotId:snapshot?.snapshotId??null,collectedAt:snapshot?.collectedAt??null,sourceObservedAt:snapshot?.sourceObservedAt??null,expiresAt:snapshot?.expiresAt??null,freshness};
-    });
-    const candidates=rows.flatMap(row=>{
-      const snapshot=row.snapshot_json ? savedSnapshot(row.snapshot_json,row.id) : null;
-      return (snapshot?.observations??[]).filter(item=>options.modelId===undefined||item.modelId===options.modelId).map(item=>({...item,connectionId:row.id,snapshotId:snapshot!.snapshotId,sourceObservedAt:snapshot!.sourceObservedAt,collectedAt:snapshot!.collectedAt}));
-    }).sort((a,b)=>{
-      // A local collection time does not establish when the source observed data.
-      if (a.sourceObservedAt && !b.sourceObservedAt) return -1;
-      if (!a.sourceObservedAt && b.sourceObservedAt) return 1;
-      return (b.sourceObservedAt??b.collectedAt).localeCompare(a.sourceObservedAt??a.collectedAt);
-    });
-    const unique=new Map<string,(typeof candidates)[number]&{connectionIds:string[]}>();
-    for(const item of candidates){const key=`${item.scopeId}:${item.modelId}`;const prior=unique.get(key);if(prior)prior.connectionIds.push(item.connectionId);else unique.set(key,{...item,connectionIds:[item.connectionId]});}
-    const observations=[...unique.values()].sort((a,b)=>`${a.scopeId}:${a.modelId}`.localeCompare(`${b.scopeId}:${b.modelId}`));
-    // Explicitly partial; no pool total or spendable balance is inferred.
-    return {schemaVersion:QUOTA_RESOURCE_SCHEMA,readOnly:true as const,connections,observations:observations.slice(0,limit),truncated:observations.length>limit,
-      attribution:"connection_only" as const,actualTaskCredits:null,actualTaskTokens:null};
-  }
+  read(options:{connectionId?:string;modelId?:string;limit?:number}={}) { return readQuotaResources(this.db,options); }
   private connection(id:string):ConnectionRecord|undefined {
     return this.db.prepare("SELECT * FROM quota_connections WHERE id=?").get(id) as unknown as ConnectionRecord|undefined;
   }
