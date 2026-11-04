@@ -13,6 +13,12 @@ description: 将适合的本地开发、修复、测试及资料整理交给桌�
 
 若本机同时保留旧 MCP 任务库和新版独立任务库，应使用已配置的 `scripts/open-workbench-router.mjs --routes-file <本机绝对配置路径>`，并以同一入口附加 `--task-id <taskId>`。它仅在声明的库中只读定位任务；库内复用窗口，跨库分别定位。编号冲突或库不可读时停止定位，不迁移、复制或重新派工。自动打开/定位本身不调用模型，桌面手动派工仍须另行明确选择和原生确认。
 
+## 执行器选择
+
+派工前先确认这台网关能接哪种执行器：`workbuddy_list_executors` 返回 WorkBuddy 的后端类型和 DSH 适配器状态（`adapter_disabled` 表示网关没开 DSH，`native_bridge_not_registered` 表示没有活着的桥）。选择由契约的 `execution.executorId` 决定：`workbuddy` 走桌面队列，`dsh` 走 DeepSeek Harness。用户指定具体执行器时照办；没说时按任务性质默认 WorkBuddy，并在报告里写明实际执行器——面板的列表行、详情和筛选都按这个字段显示，不要凭任务名或会话猜。
+
+选 DSH 时先用 `workbuddy_list_dsh_sessions`（参数为该项目的绝对路径，可带精确 `sessionId`）取实时会话：返回 `matched` 才拿到可用 sessionId，`ambiguous` 要用户指定，`no_matching_live_session` 表示该项目当前没有活着的会话，`registry_missing` 表示这台机器没装 DSH。DSH 只接受 `workbuddy-executor/vnext-2` 契约，且计划必须已经由本机的 `node scripts/plan.mjs` 创建并授权——那是本地操作者的动作，不是工具能力：agent 可以起草 `execution` 与提案，但不能自己授权，也不要绕过它改用非契约派工。契约必须显式带 sessionId，且不能带 constraints/acceptanceCommands/scope/model/timeoutSeconds 或 `sessionMode: "new"`（这些由 DSH 自己管理，带了会被判 TASK_CONFLICT）；模型选择仍要先让用户确认真实可用与费用。发现是只读的：列会话不租约、不激活、不发模型请求，看到可用不等于已经派出去。
+
 ## 1. 判断与准备
 
 按已有需求判断，不为估算交接成本扫描整套代码。目标和位置清楚、低风险的一次局部修改默认直接处理；用户指定 WorkBuddy 或测试协作时照常委派，不重复劝阻。已有 taskId 先恢复原任务，不能因工作量小而重派或直接接管。
@@ -24,7 +30,7 @@ description: 将适合的本地开发、修复、测试及资料整理交给桌�
 ## 2. 派工
 
 - 每个新任务先展示实际可用模型及已知费用，让用户选择精确模型；不得默认某个模型或要求必须免费。费用未知时明示未知，付费或未知费用均须用户了解后确认。用户尚未选择时只查询，不准备模型或派工；明确选定且已授权的同一任务无需重复询问。
-- send_task 显式传用户选定的 model，返工沿用原任务已授权模型。不可用、限流或模型读回不符时阻塞，不擅自换模型；更换选择须重新确认且不能绕过旧任务的停止与预算限制。“只用免费模型”仅在用户主动设置时生效，已有任务或部署的限制不自动取消。
+- WorkBuddy 任务在 send_task 顶层显式传用户选定的 model；DSH 任务的模型只写在契约的 `execution`（`providerId`/`modelId`/`reasoningEffort`），顶层的 model/scope/constraints/acceptanceCommands/timeoutSeconds 一律不传，带了会被判 TASK_CONFLICT。返工沿用原任务已授权模型。不可用、限流或模型读回不符时阻塞，不擅自换模型；更换选择须重新确认且不能绕过旧任务的停止与预算限制。“只用免费模型”仅在用户主动设置时生效，已有任务或部署的限制不自动取消。
 - 新任务使用稳定 taskId，直接向 send_task 提交真实项目目录与已选模型；模型准备在持久操作和共享容量准入之后进行。独立 ensure_workspace/Hub bind 已拒绝原生准备。已有身份先 get_task/wait；OUTCOME_UNKNOWN 用原 operationId 查询 get_operation，不换键、复制项目或换会话重发。
 - 显式操作使用稳定 operationId；新 send 的 expectedRevision/expectedAttemptId 均为 null，返工带当前实际 revision/attemptId。旧参数调用仍经过持久兼容准入；重复相同反馈只重放，需要再执行同一反馈须提供新的操作身份和当前版本。needs_review 仍占用名额，直到真实关闭与停止证明齐备。
 - 约定目标、可改范围、可观察的验收、必要假设及期限，保留用户已有改动。关键歧义以 blocked 回报；常规修错由 WorkBuddy 完成。
@@ -34,7 +40,7 @@ description: 将适合的本地开发、修复、测试及资料整理交给桌�
 
 ## 3. 监督
 
-默认 `detail: brief`，用45–55秒有界 wait；重连可用 sinceEventSeq 延续游标，不以反复 get 和扫文件替代进度。queued 是排队，working 且 runtimeSource=desktop_queue 才是原生接单，needs_review 是待验收，accepted 才是独立验收通过。
+默认 `detail: brief`，用45–55秒有界 wait；重连可用 sinceEventSeq 延续游标，不以反复 get 和扫文件替代进度。queued 是排队，working 且 runtimeSource 与契约执行器一致（WorkBuddy 为 desktop_queue，DSH 为 dsh）才是原生接单，needs_review 是待验收，accepted 才是独立验收通过。runtimeSource 与契约不符说明任务被换到别的执行器，按归属不明处理，不当成同一轮进度。
 
 使用返回的 claimDeadline、reportBy、deadline；休眠和失联不延长绝对期限，不能擅自重试。阶段变化或约60秒有意义进展时由 WorkBuddy 回报，不靠文件修改频率判断挂起。
 
@@ -42,7 +48,7 @@ description: 将适合的本地开发、修复、测试及资料整理交给桌�
 
 ## 4. 验收与返工
 
-仅 needs_review 且有真实报告、原生停止证据时验收。核对 taskId、attemptId、sessionId、runtimeSource=desktop_queue、remoteStopped；end_turn、队列取消或结果文件本身都不证明原生停止。Codex 不代领、代写或代交 WorkBuddy 成功报告。
+仅 needs_review 且有真实报告、原生停止证据时验收。核对 taskId、attemptId、sessionId、runtimeSource 与契约执行器一致、remoteStopped；停止证据只认原生终态事件——WorkBuddy 认 end_turn 与队列取消，DSH 认 `turn/end` 或 `agent/inbox/spliced` 的 cancelled 事件——结果文件、进程消失或面板显示停止都不算。Codex 不代领、代写或代交成功报告。
 
 检查本次实际增量与相关边界，区分源码检查、Mock、本地浏览器样本和真实环境。基线检查不替代改动后验证；核对命令退出码、证据与当前源码。修改后重跑受影响检查，可信且对应当前修改的验证无需整套重跑。网关能检查所引用记录的状态和哈希，验证覆盖是否足够、功能是否正确仍由 Codex 判断。
 

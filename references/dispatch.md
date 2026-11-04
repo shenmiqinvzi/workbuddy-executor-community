@@ -53,7 +53,7 @@ Codex 可以把任务摊派给 DeepSeek Harness，但要走三步，缺一步就
 
 1. 确认能接：`workbuddy_list_executors` 看到 `dsh.reason = "ready"`，再用 `workbuddy_list_dsh_sessions({"workspace":"项目的绝对路径"})` 拿到 `matched` 的真实 sessionId。`ambiguous` 让用户指定，`no_matching_live_session` 就是该项目现在没有活着的会话，不要自己造一个。
 2. 起草 vnext-2 提案并让用户确认模型：`execution` 里 `executorId: "dsh"`、`connectionId` 用 `hosts[].hostId` 的实际值、`providerId`/`modelId`/`reasoningEffort` 必须是该 host 目录里真实存在的组合（`workbuddy_list_executors` 不报费率，费用仍要单独确认）。
-3. 由本机操作者授权计划，再派工：把提案写成文件后运行
+3. 由本机操作者授权计划，再派工：把提案写成文件后运行（`scripts/plan.mjs` 随网关发布包提供，路径是网关安装目录下的 `scripts/plan.mjs`；只安装了技能说明的话，用它指向你实际安装的网关目录）
 
 ```
 node scripts/plan.mjs create --contract @proposal.json --reason "用户在本轮对话里确认的模型与范围"
@@ -96,5 +96,7 @@ node scripts/plan.mjs authorize <返回的 planId> <返回的 revision> --source
 ```
 
 OUTCOME_UNKNOWN 保留原操作与名额，调用 `workbuddy_get_operation` 查询原 operationId，不自动重发。示例中的版本占位符必须替换为任务实际值。
+
+上面的 `model` 只对 WorkBuddy 任务成立。DSH 任务的返工不要带 `model`、`scope`、`constraints` 或 `acceptanceCommands`：模型由原桥接会话与计划决定，改模型等于换执行条件，要重新走授权。DSH 的原生停止证据是 `turn/end` 或 `agent/inbox/spliced` 的 cancelled 事件，不是会话失活或窗口关闭。
 
 返工后重复监督与独立验收；不重发原任务。取消走 cancel_task，并继续确认 remoteStopped。异常处理见 [连接与恢复](setup.md)。

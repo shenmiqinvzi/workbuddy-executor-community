@@ -1,4 +1,4 @@
-# Windows desktop-queue 连接与恢复
+﻿# Windows desktop-queue 连接与恢复
 
 仅接通或异常时读取。本部署使用 desktop-queue，不使用 Agent Hub。
 
@@ -18,7 +18,7 @@ node scripts/doctor.mjs
 
 `WORKBUDDY_REQUIRED_FREE_MODEL` 仅用于用户主动要求的免费限定部署；设置后仍在原生配置与唤醒时检查精确模型及零费率。旧安装或已保存任务的限制保持生效，不为消除阻塞擅自清除。要更改运行部署，先取得该配置变更的授权；仓库源码更新不等于已安装环境更新。
 
-统一服务的新默认政策为 `selectionMode=user_choice, requireFree=false`，vnext-2 方案固定执行器、连接、provider、model、推理档位及任务范围，由可信应用记录用户实际确认后派工。方案不是模型替代策略；仅提供推荐不构成授权。DSH 适配器与选择界面进展见仓库设计文档，本技能当前工具仍为 WorkBuddy desktop-queue，不能假称已具备 DSH MCP 派工或面板选择器。
+统一服务的新默认政策为 `selectionMode=user_choice, requireFree=false`，vnext-2 方案固定执行器、连接、provider、model、推理档位及任务范围，由可信应用记录用户实际确认后派工。方案不是模型替代策略；仅提供推荐不构成授权。DSH 适配器已接通：`workbuddy_list_executors` 报适配器状态与可派工的 host，`workbuddy_list_dsh_sessions` 报实时会话；vnext-2 契约 `execution.executorId="dsh"` 即路由到 Harness，但计划必须先由本机 `node scripts/plan.mjs` 创建并授权，MCP 不开放计划写入。面板按 `binding.runtimeSource` 显示执行器并支持筛选。
 
 网关在原生模型配置确认后授权本轮领取，再发唤醒；立即领取的 helper 不必等唤醒回执。默认未接单窗口180秒、总期限1800秒、最多三轮；以已有配置和返回的 claimDeadline/deadline 为准。技能文字不能修复正在运行的旧网关。
 

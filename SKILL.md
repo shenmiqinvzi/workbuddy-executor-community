@@ -30,7 +30,7 @@ description: 将适合的本地开发、修复、测试及资料整理交给桌�
 ## 2. 派工
 
 - 每个新任务先展示实际可用模型及已知费用，让用户选择精确模型；不得默认某个模型或要求必须免费。费用未知时明示未知，付费或未知费用均须用户了解后确认。用户尚未选择时只查询，不准备模型或派工；明确选定且已授权的同一任务无需重复询问。
-- send_task 显式传用户选定的 model，返工沿用原任务已授权模型。不可用、限流或模型读回不符时阻塞，不擅自换模型；更换选择须重新确认且不能绕过旧任务的停止与预算限制。“只用免费模型”仅在用户主动设置时生效，已有任务或部署的限制不自动取消。
+- WorkBuddy 任务在 send_task 顶层显式传用户选定的 model；DSH 任务的模型只写在契约的 `execution`（`providerId`/`modelId`/`reasoningEffort`），顶层的 model/scope/constraints/acceptanceCommands/timeoutSeconds 一律不传，带了会被判 TASK_CONFLICT。返工沿用原任务已授权模型。不可用、限流或模型读回不符时阻塞，不擅自换模型；更换选择须重新确认且不能绕过旧任务的停止与预算限制。“只用免费模型”仅在用户主动设置时生效，已有任务或部署的限制不自动取消。
 - 新任务使用稳定 taskId，直接向 send_task 提交真实项目目录与已选模型；模型准备在持久操作和共享容量准入之后进行。独立 ensure_workspace/Hub bind 已拒绝原生准备。已有身份先 get_task/wait；OUTCOME_UNKNOWN 用原 operationId 查询 get_operation，不换键、复制项目或换会话重发。
 - 显式操作使用稳定 operationId；新 send 的 expectedRevision/expectedAttemptId 均为 null，返工带当前实际 revision/attemptId。旧参数调用仍经过持久兼容准入；重复相同反馈只重放，需要再执行同一反馈须提供新的操作身份和当前版本。needs_review 仍占用名额，直到真实关闭与停止证明齐备。
 - 约定目标、可改范围、可观察的验收、必要假设及期限，保留用户已有改动。关键歧义以 blocked 回报；常规修错由 WorkBuddy 完成。
@@ -40,7 +40,7 @@ description: 将适合的本地开发、修复、测试及资料整理交给桌�
 
 ## 3. 监督
 
-默认 `detail: brief`，用45–55秒有界 wait；重连可用 sinceEventSeq 延续游标，不以反复 get 和扫文件替代进度。queued 是排队，working 且 runtimeSource=desktop_queue 才是原生接单，needs_review 是待验收，accepted 才是独立验收通过。
+默认 `detail: brief`，用45–55秒有界 wait；重连可用 sinceEventSeq 延续游标，不以反复 get 和扫文件替代进度。queued 是排队，working 且 runtimeSource 与契约执行器一致（WorkBuddy 为 desktop_queue，DSH 为 dsh）才是原生接单，needs_review 是待验收，accepted 才是独立验收通过。runtimeSource 与契约不符说明任务被换到别的执行器，按归属不明处理，不当成同一轮进度。
 
 使用返回的 claimDeadline、reportBy、deadline；休眠和失联不延长绝对期限，不能擅自重试。阶段变化或约60秒有意义进展时由 WorkBuddy 回报，不靠文件修改频率判断挂起。
 
@@ -48,7 +48,7 @@ description: 将适合的本地开发、修复、测试及资料整理交给桌�
 
 ## 4. 验收与返工
 
-仅 needs_review 且有真实报告、原生停止证据时验收。核对 taskId、attemptId、sessionId、runtimeSource=desktop_queue、remoteStopped；end_turn、队列取消或结果文件本身都不证明原生停止。Codex 不代领、代写或代交 WorkBuddy 成功报告。
+仅 needs_review 且有真实报告、原生停止证据时验收。核对 taskId、attemptId、sessionId、runtimeSource 与契约执行器一致、remoteStopped；停止证据只认原生终态事件——WorkBuddy 认 end_turn 与队列取消，DSH 认 `turn/end` 或 `agent/inbox/spliced` 的 cancelled 事件——结果文件、进程消失或面板显示停止都不算。Codex 不代领、代写或代交成功报告。
 
 检查本次实际增量与相关边界，区分源码检查、Mock、本地浏览器样本和真实环境。基线检查不替代改动后验证；核对命令退出码、证据与当前源码。修改后重跑受影响检查，可信且对应当前修改的验证无需整套重跑。网关能检查所引用记录的状态和哈希，验证覆盖是否足够、功能是否正确仍由 Codex 判断。
 

@@ -76,7 +76,8 @@ async function fixture() {
   files["bin/workbuddy-recovery.cmd"] = "@echo off\n"; files["docs/OPERATION_RECOVERY.md"] = "Recovery guide\n";
   files["src/workspace-protection.ts"] = "export {};\n"; files["dist/workspace-protection.js"] = "export {};\n"; files["dist/workspace-protection.d.ts"] = "export {};\n";
   files["scripts/dsh-host-check.mjs"] = "// isolated host verification fixture\n";
-  for (const name of ["dsh-bindings", "dsh-client", "dsh-coordinator", "dsh-runtime", "dsh-rate-verifier", "dsh-inspect"]) { files[`src/${name}.ts`] = "export {};\n"; files[`dist/${name}.js`] = "export {};\n"; files[`dist/${name}.d.ts`] = "export {};\n"; }
+  files["scripts/plan.mjs"] = "// local plan authorization fixture\n";
+  for (const name of ["dsh-bindings", "dsh-client", "dsh-coordinator", "dsh-runtime", "dsh-rate-verifier", "dsh-inspect", "plan"]) { files[`src/${name}.ts`] = "export {};\n"; files[`dist/${name}.js`] = "export {};\n"; files[`dist/${name}.d.ts`] = "export {};\n"; }
   for (const name of ["desktop-dispatch", "desktop-dispatch-journal", "desktop-dispatch-runtime", "desktop-control", "desktop-control-journal", "desktop-control-runtime"]) { files[`src/${name}.ts`] = "export {};\n"; files[`dist/${name}.js`] = "export {};\n"; files[`dist/${name}.d.ts`] = "export {};\n"; }
   for (const name of ["contracts", "store", "workbuddy", "engine", "http", "client", "ui", "cli", "mcp"]) {
     files[`src/platform/${name}.ts`] = "export {};\n";

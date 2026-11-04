@@ -440,8 +440,8 @@
     },
     {
       "path": "scripts/package.mjs",
-      "sha256": "7186616afa77ed452f20ddaa1b5d0ceb86d2019127a4793cce68eb9d56128be9",
-      "bytes": 15496
+      "sha256": "49249c587754e484f45d292c7a5a09fe5e9019670699832e375af6aeede3fba1",
+      "bytes": 15529
     },
     {
       "path": "scripts/plan.mjs",
@@ -525,8 +525,8 @@
     },
     {
       "path": "skills/workbuddy-executor/SKILL.md",
-      "sha256": "108ba73b32a177581c309584883906447650862acf6c3be2bb39467c5343ca4e",
-      "bytes": 7197
+      "sha256": "8f9bec291ea78d2bfc06e2f84e51641ddd792b6cc3e568eeca5986903c19c9a6",
+      "bytes": 9402
     },
     {
       "path": "skills/workbuddy-executor/agents/openai.yaml",
@@ -535,23 +535,23 @@
     },
     {
       "path": "skills/workbuddy-executor/references/agent-hub.md",
-      "sha256": "f62ecd4a92edb77b6fa63d35c64bcd105587de1c3731b1adddf5d6f934bd0bd3",
-      "bytes": 339
+      "sha256": "6f00bad7577d31712f5c988103b325ad88940daed44563b427aa42347d309621",
+      "bytes": 346
     },
     {
       "path": "skills/workbuddy-executor/references/dispatch.md",
-      "sha256": "2c408131d009556ebf897f490a04da3fba3ba5c0639ec8fbd9b92dc19c4be27e",
-      "bytes": 6073
+      "sha256": "3311f075dd63b3829954ea51fd7dfd1fa09b342d5b7c3fc358e8e4fbdbcbe085",
+      "bytes": 8486
     },
     {
       "path": "skills/workbuddy-executor/references/execution.md",
-      "sha256": "e3518e566ca0bacd9f3eff0b504fc9fe6aa6c2a830a87f5d3eac0dcac34e9758",
-      "bytes": 6860
+      "sha256": "7ef40b600a675b29078d5e5d71b0d53a05555333d2114726fef8d4066198fb17",
+      "bytes": 6920
     },
     {
       "path": "skills/workbuddy-executor/references/setup.md",
-      "sha256": "3af0b67d9895f9f1248a510e8e62f90d3028c9f6a0b58f0d45400c2d20dcb22b",
-      "bytes": 8002
+      "sha256": "879dc5ec92937c03219168f02c33245fdd1567c91c1377f11e294674f5eb4693",
+      "bytes": 8282
     },
     {
       "path": "src/acp-live.ts",
@@ -1185,8 +1185,8 @@
     },
     {
       "path": "test/package.test.ts",
-      "sha256": "8120f6746402bfa8613ce096e79c2ad4e28c7c2f0ac9fc151ac8c5135a80d054",
-      "bytes": 20695
+      "sha256": "80e03835ca9061be3472707b9fdc153b187efba8b1d7943af9ed149db2e9f092",
+      "bytes": 20775
     },
     {
       "path": "test/persistent-service.test.ts",
