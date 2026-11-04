@@ -1244,6 +1244,11 @@
       "bytes": 9291
     },
     {
+      "path": "test/skill-copies.test.ts",
+      "sha256": "0f8ab38283c8b33d650914f09a9f5dcf0173d1e7cf3a856235995ce346e25818",
+      "bytes": 1622
+    },
+    {
       "path": "test/support/admission-race-worker.ts",
       "sha256": "88b8395e6491328c9f7836e0a3007b5e765cc0eaf4c06a7b50d4d6ff9d9a7021",
       "bytes": 1040
