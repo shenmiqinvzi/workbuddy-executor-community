@@ -155,3 +155,11 @@ run16（独立账本 `<STATE_DIR>\run16`）：glm-5.3-flash（x0.08，模型读�
 ### D3 资源中心本地集成收尾（2026-11-04）
 
 上段的 503 已在 `c5cf788` 修复，并被 fast-forward 纳入 `integration/resource-center`（连同文档提交 `a8ce8f0`）。`SNAPSHOT_MANIFEST.json` 已用仓库脚本重新生成（316 文件，`capturedAt` 与上游 provenance 保持原值），`verify-snapshot.mjs` 通过。当前集成分支的发布文件集合与已验收包 `60b79f56…`（552 文件）逐文件比对：运行文件全等，仅新增的容量损坏态回归测试使测试文件有 1 处差异，故未重建候选包，浏览器 128/128 与 WebView2 71/71 的证据仍归属该包。容量只读验证补到空闲 / 占用 / 缺表 / 表结构损坏四态；WebView2 与浏览器均为隔离合成数据，未接真实账号，未部署、未合 main、未发布。基线见 [RESOURCE_CENTER_BASELINE.md](RESOURCE_CENTER_BASELINE.md)。
+
+### D3-01/D3-02 真实来源与路由证据（2026-11-04）
+
+在独立分支 `feat/resource-source-routing`（基线 `98a39f2`）完成两件事：一是按真实 `wb_proxy.py` 核对 token `/usage/remaining`（面板路由，需 `POST /panel/login` 换的会话令牌，面板口令不能当令牌；会话纯内存、hub 重启即失效、有效会话还能绕过 API 密钥）与积分 `/v1/balance-summary`（只需 API 密钥）的载荷与网关采集器契约，字段与整数口径逐项吻合；二是新增只读资源 `GET /workbench/v1/resources/routing`（`routing-evidence-1`），把「连接→池→模型」可核验的部分按 `observed/expired/unavailable/unobserved` 分级列出，并把「任务→模型、会话→provider、Key 范围、独占预留」四条结构性未知写成 `unresolved`，`routingVerified` 恒为 false，连接指纹变化、快照过期、采集报错与存储损坏都会降级或失败关闭，不复用旧映射。
+
+验证：真实 hub 代码 + 隔离实例 + 空账号池上 35 项检查全过（工作树构建与包内构建各一轮，GET 期间上游请求日志零增长）；新增 10 项路由证据测试，路由+资源批次 56/56、工作台 100/100、HTTP 与打包批次 34/34、桌面策略 70/70，`npm run build` 与 `typecheck:task-view` 通过，快照 318 文件一致。运行文件已变化，候选包重建为 `532f2b86…`（557 文件，包内 `verify-release` 通过），旧包 `60b79f56…` 的浏览器/实窗结论不迁移。
+
+未完成：本机正式部署没有注入统计连接（缺 `WORKBUDDY_QUOTA_SOURCE_URL`/`API_KEY`/`PANEL_TOKEN` 与积分对应三项），真实账号池的 rows 与余额仍未在正式链路上出现；任务级路由仍不可证，`routing_unverified` 保留。D3-01/D3-02 均不标整体完成。详见 [RESOURCE_SOURCE_ROUTING_ACCEPTANCE.md](RESOURCE_SOURCE_ROUTING_ACCEPTANCE.md)。
