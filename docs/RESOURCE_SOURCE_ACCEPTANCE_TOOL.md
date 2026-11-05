@@ -101,3 +101,5 @@ credit 侧：`credit_collection_reported`、`credit_snapshot_persisted`、`credi
 三处都先写回归、再改实现：旧实现上 **10 pass / 10 fail**（`pre-fix-tests.log`），改后 **20/20**。修复前的必然结果也在日志里直接可见——调用者目录那组是旧实现真的去打开了调用者的 `resources.sqlite`（`exitCode` 1），关闭那组是旧实现把抛错的 `server.close()` 记成通过。
 
 对历史结论的影响：上一轮记录的「35 项全过、`accepted: true`」只在「工具自有临时目录、上游正常、服务正常关闭」这一前提下成立；它不能证明调用者目录安全、不能证明读取窗口内没有写入、也不能证明关闭失败会被发现。新证据是 `outputs/resource-acceptance-boundaries-20261105/` 下的 `pre-fix-tests.log`、`resource-batch.log`、`full-suite.log` 与包级验证报告。
+
+本轮实测（2026-11-05）：`gateway/test/resource-source-acceptance.test.ts` 20/20；资源与路由批次 96/96；正式全量 956 条 / 944 通过 / 0 失败 / 12 跳过、退出码 0；快照 321 文件 `hashesMatch: true`。候选包 `d3a3c621…`（560 文件）解包后 `verify-release` 通过，包级 `verify-package-acceptance.mjs` **16/16**：成功路径 35 项全过且调用者目录、外来数据库、报告脱敏都成立；持续写入使 `database_unchanged_by_reads` 失败（`contentStable:false`、`accepted:false`、退出码 1）；用包内同一文件的注入缝把 `server.close` 换成抛错函数后 `services_closed` 失败、`portClosed:false`、目录以 `kept_after_close_failure` 保留。集成分支与该包 `collectReleaseFiles()` 逐文件比对 560/560 全等。
