@@ -18,6 +18,8 @@ import { WorkBuddyClient } from "./workbuddy-client.js";
 import { runtimeVersion } from "./runtime-version.js";
 import { runsDirectory } from "./run-journal.js";
 import { WorkbenchHttpServer, workbenchHealth, workbenchPortFromEnv } from "./workbench-http.js";
+import { statisticsSources } from "./statistics-http.js";
+import { attributeTaskUsageFromLedger } from "./usage-attribution.js";
 import { WorkBuddyQuotaCollector } from "./quota-observation.js";
 import { WorkBuddyCreditBalanceCollector } from "./credit-balance.js";
 import { configuredDshCoordinator } from "./dsh-runtime.js";
@@ -34,8 +36,14 @@ const coordinator = new TaskCoordinator(config, store, client);
 // R12: the dispatch journal is read-only evidence for the panel; the journal
 // constructor never creates the file, and reads return null while it is absent.
 const service = new TaskApplicationService(coordinator, config.maxTaskAttempts ?? 3, runsDirectory(config), configuredDshCoordinator(store, runsDirectory(config)), taskId => desktopJournal(config).leaseByTask(taskId));
+// The statistics surface reads the same database file through a read-only
+// handle per request: a ledger that was never written reports "unavailable"
+// instead of creating the table, so a GET cannot migrate anything.
+const statistics = statisticsSources(store, (taskId, attemptIds) =>
+  attributeTaskUsageFromLedger({ file: store.file, taskId, attemptIds }));
 const server = new WorkbenchHttpServer({
   service,
+  statistics,
   health: () => workbenchHealth({
     runtime: { release: runtimeVersion.release, packageVersion: runtimeVersion.packageVersion, startedAt: runtimeVersion.startedAt },
   }),

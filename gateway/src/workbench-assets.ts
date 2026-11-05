@@ -20,6 +20,8 @@ const assets: Record<string, [string, string]> = {
   "/workbench/http-source.mjs": ["http-source.mjs", "text/javascript; charset=utf-8"],
   "/workbench/demo-source.mjs": ["demo-source.mjs", "text/javascript; charset=utf-8"],
   "/workbench/style.css": ["style.css", "text/css; charset=utf-8"],
+  "/workbench/statistics.mjs": ["statistics.mjs", "text/javascript; charset=utf-8"],
+  "/workbench/statistics.css": ["statistics.css", "text/css; charset=utf-8"],
   "/workbench/fonts/plex-sans.woff2": ["fonts/plex-sans.woff2", "font/woff2"],
   "/workbench/fonts/plex-mono.woff2": ["fonts/plex-mono.woff2", "font/woff2"],
   "/workbench/fonts/ibmplexsans-OFL.txt": ["fonts/ibmplexsans-OFL.txt", "text/plain; charset=utf-8"],
