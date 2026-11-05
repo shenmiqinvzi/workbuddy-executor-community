@@ -1,5 +1,7 @@
 # 后端开发进度
 
+2026-11-05 最新本地集成见 [A/B 独立验收与统一候选](RESOURCE_PARALLEL_INTEGRATION_20261105.md)；C 线首版 [D0/D1 版本、53 项矩阵及真实闭环条件](D0_D1_DELIVERY_READINESS.md) 已建立。下文带日期的历史结论保留，不代表当前安装已同步。
+
 更新日期：2026-11-04。本页区分源码能力、自动验证和运行部署。
 
 **后续开发任务已建立**：从 `5f8620e` 基线按[开发规划 D0–D7](FUTURE_DEVELOPMENT_PLAN.md)逐项推进。任务总表维护状态，本页按同一编号追加实际提交、验证、部署情况和剩余动作；规划不代表功能已经交付。下一轮从 D0-01 版本核对、D0-02 验收矩阵、D0-03 交付范围与补验判定开始。
@@ -249,3 +251,13 @@ run16（独立账本 `<STATE_DIR>\run16`）：glm-5.3-flash（x0.08，模型读�
 候选包：`outputs/resource-review-20261105/package/codex-workbuddy-gateway-v0.7.1.zip`，568 文件，SHA-256 `8135790747d50ad15031a2743ebc1a995c1659af9e4d5f7b1b1e20754423d1bc`；先 build 后打包，包内 `verify-release.mjs` 568 文件 `hashesMatch: true`，包内网关接口 9/9。上一轮 `package-v2`（567 文件 `c0349d79…`）与更早的包全部保留。
 
 仍未完成：真实账号池接入、任务→模型的真实路由、D3-04 的运行中监督与停止隔离；D3-03 不因本轮两项修复标完成。
+
+## A/B 并行交付的独立验收与 C 线首版（2026-11-05）
+
+A 已在集成分支的 eab7937：关联歧义/区域专项 41/41 独立通过。B 分支末端 f17c417 的双端运行中故障隔离 3/3 独立通过，只有测试和独立记录；由 0c58f40 本地合并，无 A/B 文件冲突、未改生产运行逻辑。集成人补齐 C 线版本核对及 V01–V15、C01–C18、F01–F20 共 53 项矩阵，安装磁盘固定文件与候选有差异、MCP 原生连接 offline；D0/D1 仍进行中，原 P0-1 裁决不变。
+
+集成构建、task-view 类型检查通过，工作台 100/100，快照更新到 327 文件并校验通过。候选包 569 个业务文件与集成树全部匹配，包内 verify-release 通过，SHA256 为 001b242ea6b6de230bb0a9d3d2095561ff14592cfc9dcbaf0f4db74fd03c3480。相对 A 候选仅增加 B 测试文件，运行文件全部一致；旧界面证据沿用其原版本归属。
+
+保留三个独立的全量/环境结论：受限 npm test 在 tsx 用户资料读取 ENOMEM 阶段失败；受限 loader 全量 1000/984 pass/3 fail/1 cancelled/12 skipped；在正常本机上下文用正式 npm test 为 1000/986 pass/1 fail/13 skipped，exit 1。最后一项失败是 DSH 私有传输在注册发现两次枚举结果变化后访问 undefined.socketPath，已以零网络请求夹具稳定复现；实际注册消失/被过滤原因待定位。不能把受限失败与定向重跑合并成全绿，也不以代码未修改认定无关。A/B 专项交付通过，但集成候选全量仍未通过，不作为正式交付。
+
+日志、候选包与脱敏核对在 outputs/resource-parallel-integration-20261105/；详细范围和剩余动作见 RESOURCE_PARALLEL_INTEGRATION_20261105.md 与 D0_D1_DELIVERY_READINESS.md。未推送、未合 main、未部署、未发布；README.md、ROADMAP.md 原有改动不纳入提交。

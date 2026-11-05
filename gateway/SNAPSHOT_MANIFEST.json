@@ -1269,6 +1269,11 @@
       "bytes": 31803
     },
     {
+      "path": "test/resource-fault-isolation.test.ts",
+      "sha256": "de0cdb8bfd6f30eb619b030054d78e7a3a3d0f2593a26cd2409790f858c8ca3c",
+      "bytes": 16783
+    },
+    {
       "path": "test/resource-routing-consistency.test.ts",
       "sha256": "b5864dec768a9c491ad3447be28c91d5726dd0708d3816d620373b49d58c9e51",
       "bytes": 17749
