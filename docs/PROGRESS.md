@@ -207,3 +207,19 @@ run16（独立账本 `<STATE_DIR>\run16`）：glm-5.3-flash（x0.08，模型读�
 候选包：`outputs/resource-acceptance-boundaries-20261105/package/codex-workbuddy-gateway-v0.7.1.zip`，560 文件，SHA-256 `d3a3c6212d224eb485bd92e873ce2130bd2f2311b17e9ae63d0588bacb9c7cbd`；解包后 `verify-release.mjs` → 560 文件 `hashesMatch: true`；包内依赖安装 94 包。包级验证 `scripts/verify-package-acceptance.mjs` **16/16**：成功路径 35 项全过、调用者目录与外来数据库不变、自有目录被清理、报告无凭据；WAL 写入使 `database_unchanged_by_reads` 失败（`contentStable:false`）；用包装内同一文件的注入缝验证 `server.close` 抛错 → `services_closed` 失败、端口仍开、目录保留，读取窗口内写入 → 检查失败。旧包 `5580742b…` 等全部保留未覆盖。
 
 对历史结论的影响：上一轮记的「35 项全过、accepted: true」只在「工具自有临时目录、上游正常、服务正常关闭」前提下成立，不能证明调用者目录安全、读取窗口内无写入、关闭失败会被发现；新证据替代这三项。真实账号池仍未验证，D3-01/D3-02 不标完成。
+
+## D3-03 核对步骤的资源参考（2026-11-05 第五轮）
+
+核对并确认步骤里新增了"资源参考"区域。它先把关联规则写清楚：执行选择（`workbuddy/local-workbuddy/workbuddy-native` 或 DSH 的 host 身份）与统计连接（`WORKBUDDY_QUOTA_SOURCE_ID` 等）不在同一命名空间，仓库里没有既有映射，因此只承认 `WORKBUDDY_RESOURCE_LINKS_FILE` 指向的**只读声明** `execution-links-1`：同时匹配执行器、执行连接、提供方、**精确模型 ID**（可选 realm）才建立关联，其余一律"未建立关联"。
+
+新增 `gateway/src/plan-resource-reference.ts`（只读声明解析、七种关联状态、主证据取值）、`GET /workbench/v1/resources/plan-reference`（400/405/503 边界）、`workbench/plan-reference.mjs`（loader + 视图，绑定执行选择与草稿 `draftId:digest`）；`dispatch.mjs` 在 review 列插入 `#plan-resource-slot`，返回修改与关闭面板都会 `reset()`；`app.mjs` 传 `onResources`，页面可跳网关资源汇总；`workbench-assets.ts` 与 `package.mjs` 已登记新资源文件。
+
+关键约束：读数只取 `observation.connectionId === link.quotaConnectionId` 的主证据，`connectionIds` 里的其他来源不参与数值、时间、有效期，也不提升等级；`sourceObservedAt` 为空是 `source_time_unknown`（`unavailable`），不是 `expired`；null 保持 null，积分不标货币、不与 token 相加；所有分支 `routingVerified:false`。页面只读快照，不触发上游采集、登录或模型请求，失败时保留上一份成功快照并提示。
+
+回归：`test/plan-resource-reference.test.ts` 16/16、`test/plan-reference-loader.test.ts` 6/6、受影响 13 个测试文件 140/140、workbench 100/100、desktop 70/70、typecheck 0；正式全量（隔离 `WORKBUDDY_CLI_ELECTRON`/`WORKBUDDY_CONFIG_DIR`）**978 条 / 966 通过 / 0 失败 / 12 跳过，退出码 0**（358s）。
+
+界面验收：浏览器 19/19（关联读数、核对步骤仍可确认、720/420 无溢出、503 注入保留旧快照、返回重开后重读、键盘焦点与回车、未关联无数字、跳转资源页）；WebView2 实窗 19/19（同一组场景，另加清空声明立即转为未关联、恢复声明回到已关联）。截图见 `outputs/resource-plan-reference-20261105/shots/` 与 `outputs/resource-plan-reference-20261105/webview/shots/`，均标"隔离合成数据"。
+
+候选包：`outputs/resource-plan-reference-20261105/package/codex-workbuddy-gateway-v0.7.1.zip`，567 文件，SHA-256 `74bf2feaa4ceff0fc66a269be3b36b5eeafdf3399f0a1a230b56f7cdb3b4f10b`；解包后 `verify-release.mjs` → 567 文件 `hashesMatch: true`；包内含 `workbench/plan-reference.mjs` 与 `src/plan-resource-reference.ts`。旧包全部保留未覆盖。
+
+仍未完成：真实来源没有声明关联（本机未注入统计连接），真实窗口只能显示"未建立关联"；任务→模型的实际路由仍不可证，`routing_unverified` 保留，D3-02 不因本轮改状态；D3-01 真实账号池与 D3-04 监督隔离维持原状态。

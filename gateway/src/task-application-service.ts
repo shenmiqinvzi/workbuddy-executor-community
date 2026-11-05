@@ -9,6 +9,7 @@ import type { StoredTask, StoredTaskEvent } from "./task-store.js";
 import { readTaskProjection } from "./task-view-reader.js";
 import { capacityResource } from "./capacity-view.js";
 import { buildRoutingEvidence } from "./resource-routing.js";
+import { buildPlanResourceReference, planExecutionFrom, readExecutionLinks, type ExecutionLinkSource, type PlanResourceExecution } from "./plan-resource-reference.js";
 import { PANEL_SCHEMA, readPanelTask } from "./workbench-panel.js";
 import type { DispatchLease } from "./dispatch-settlement.js";
 import { stageTaskViewFromProjection, STAGE_TASK_VIEW_UNAVAILABLE, STAGE_TASK_VIEW_SCHEMA_VERSION, type StageTaskView } from "./task-view-stage.js";
@@ -136,6 +137,26 @@ export class TaskApplicationService {
    * implying a verified mapping.
    */
   readRoutingEvidence() { return buildRoutingEvidence(this.coordinator.store.quotas.read(), this.coordinator.store.creditBalances.read()); }
+
+  /**
+   * Resource reference for one prepared execution selection.
+   *
+   * The selection and the statistics connection live in different id
+   * namespaces; a link only exists when the deployment declares one. The two
+   * saved views are read here so a storage failure answers 503 instead of
+   * looking like "no resources". No upstream call is made and no plan or task
+   * state is written.
+   */
+  readPlanResourceReference(execution: PlanResourceExecution, links: ExecutionLinkSource = readExecutionLinks(process.env)) {
+    return buildPlanResourceReference({
+      execution, links,
+      quota: this.coordinator.store.quotas.read(),
+      credit: this.coordinator.store.creditBalances.read(),
+      now: new Date().toISOString(),
+    });
+  }
+
+  planReferenceExecution(selection: Parameters<typeof planExecutionFrom>[0]) { return planExecutionFrom(selection); }
 
   getOperation(operationId: string) { return this.coordinator.store.operations.get(operationId); }
   reviewChecks(input: ReviewOptions) { return this.coordinator.store.reviews.checks(input, this.runsDir); }

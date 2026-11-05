@@ -12,6 +12,7 @@ const assets: Record<string, [string, string]> = {
   "/workbench/model.mjs": ["model.mjs", "text/javascript; charset=utf-8"],
   "/workbench/task-link.mjs": ["task-link.mjs", "text/javascript; charset=utf-8"],
   "/workbench/dispatch.mjs": ["dispatch.mjs", "text/javascript; charset=utf-8"],
+  "/workbench/plan-reference.mjs": ["plan-reference.mjs", "text/javascript; charset=utf-8"],
   "/workbench/dispatch.css": ["dispatch.css", "text/css; charset=utf-8"],
   "/workbench/attention.mjs": ["attention.mjs", "text/javascript; charset=utf-8"],
   "/workbench/controls.mjs": ["controls.mjs", "text/javascript; charset=utf-8"],

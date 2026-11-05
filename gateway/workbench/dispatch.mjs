@@ -1,3 +1,5 @@
+import { mountPlanReference } from './plan-reference.mjs';
+
 const route = '/workbench/desktop/command';
 const receiptKey = 'workbuddy.desktop.lastRequest';
 function el(tag, properties = {}, ...children) {
@@ -31,11 +33,12 @@ export function recoveryConclusionText(conclusion) { return { outcome_unsettled:
 const option = (value, text, disabled = false) => el('option', { value, disabled }, text);
 const lineValues = value => value.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
 
-export async function mountDesktopDispatch({ onTask }) {
+export async function mountDesktopDispatch({ onTask, onResources = null }) {
     const sheet = document.querySelector('.sheet'), heading = document.querySelector('.heading-tools');
     const open = el('button', { type: 'button', class: 'button dispatch-primary', id: 'new-task', disabled: true, title: '在独立桌面应用中准备任务' }, '新建任务');
     heading.prepend(open);
     let available = false, catalog, draft, busy = false, timer, stage = 'edit', polls = 0, receiptSignature = '';
+    let planReference = null;
     const panel = el('section', { class: 'dispatch-workflow', id: 'task-compose', hidden: true, 'aria-label': '准备新任务' });
     sheet.querySelector('.page-heading').after(panel);
     const notice = el('div', { class: 'dispatch-notice', role: 'status', 'aria-live': 'polite', hidden: true });
@@ -55,7 +58,7 @@ export async function mountDesktopDispatch({ onTask }) {
     }
     function close() {
         if(busy){showNotice('请等待原请求返回。若关闭窗口，重新打开后先查询原派工回执。');return;}
-        clearTimeout(timer); panel.hidden = true; sheet.classList.remove('composing');
+        clearTimeout(timer); planReference?.reset(); panel.hidden = true; sheet.classList.remove('composing');
         document.getElementById('page-title').textContent = '任务工作台';
         document.querySelector('.page-intro').textContent = '执行有记录，交付有依据。';
         open.focus();
@@ -167,15 +170,21 @@ export async function mountDesktopDispatch({ onTask }) {
         const grid = el('div',{class:'dispatch-grid'},el('div',{class:'dispatch-review'},el('h2',{},c.title),el('p',{class:'dispatch-objective'},c.objective),
             el('dl',{class:'dispatch-facts'},el('dt',{},'项目'),el('dd',{},draft.workspace.realPath),el('dt',{},'执行来源'),el('dd',{},`${e.executorId} / ${e.connectionId} / ${e.providerId}`),el('dt',{},'精确模型'),el('dd',{},e.modelId),el('dt',{},'推理档位'),el('dd',{},e.reasoningEffort??'未提供'),...(draft.sessionId?[el('dt',{},'原会话'),el('dd',{},draft.sessionId)]:[])),
             list('允许修改范围',c.scope.allowedChanges,'只读，不授予文件写权限。'),list('允许的元数据',c.scope.permittedMetadata,'无额外元数据写权限。'),list('独立验收要求',c.requiredChecks.map(check=>check.definition),''),
-            el('details', {class:'dispatch-advanced'},el('summary',{},'任务标识'),el('p',{class:'technical'},draft.taskId),el('p',{class:'technical'},draft.operationId),el('p',{class:'technical'},draft.digest))),
+            el('details', {class:'dispatch-advanced'},el('summary',{},'任务标识'),el('p',{class:'technical'},draft.taskId),el('p',{class:'technical'},draft.operationId),el('p',{class:'technical'},draft.digest))),el('div',{class:'dispatch-resource-slot',id:'plan-resource-slot'}),
             el('aside',{class:'dispatch-summary'},el('h2',{},'确认前核对'),el('p',{class:'dispatch-rate'},rateText(draft.quote)),el('p',{},`最多 ${c.maxAttempts} 轮 · 时限 ${c.timeoutSeconds} 秒`),el('p',{class:'dispatch-hint'},'时限不是费用上限。费率为读取时的信息，未知费率可能产生费用。'),el('p',{class:'dispatch-hint'},'将在本机确认窗口显示完整约定。勾选同意并确认后才开始派工。'),el('p',{class:'dispatch-hint'},`本约定有效至 ${new Date(draft.expiresAt).toLocaleTimeString()}`)),
             el('div',{class:'dispatch-actions'},el('button',{class:'button',type:'button',onclick:()=>{
-                const previous=draft;draft=null;renderEditor();
+                const previous=draft;draft=null;planReference?.reset();renderEditor();
                 for(const name of ['title','objective','maxAttempts','timeoutSeconds'])controls[name].value=String(previous.contract[name]);
                 controls.workspace.value=previous.workspace.realPath;controls.allowedChanges.value=previous.contract.scope.allowedChanges.join('\n');controls.permittedMetadata.value=previous.contract.scope.permittedMetadata.join('\n');controls.checks.value=previous.contract.requiredChecks.map(c=>c.definition).join('\n');
                 controls.source.value=sourceKey(previous.contract.execution);updateModels();controls.model.value=previous.contract.execution.modelId;updateEfforts();controls.effort.value=previous.contract.execution.reasoningEffort??'__none__';controls.session.value=previous.sessionId??'';updateChoice();showNotice('修改后需重新核对约定。');
             }},'返回修改'),el('button',{class:'button dispatch-primary',id:'confirm-task',type:'button',disabled:!catalog.dispatchEnabled,onclick:confirm},'打开派工确认')));
         content.replaceChildren(grid); content.querySelector('h2').setAttribute('tabindex','-1');content.querySelector('h2').focus();
+        const slot=document.getElementById('plan-resource-slot');
+        if(slot){
+            if(!planReference)planReference=mountPlanReference(slot,{onOpenResources:onResources?()=>{close();onResources();}:null});
+            else slot.append(planReference.element);
+            planReference.setExecution({executorId:e.executorId,connectionId:e.connectionId,providerId:e.providerId,modelId:e.modelId,reasoningEffort:e.reasoningEffort??null},draft.draftId+':'+draft.digest);
+        }
         if(!catalog.dispatchEnabled)showNotice('当前安装仅支持查看和准备任务，尚未启用派工。');
     }
     async function confirm() {

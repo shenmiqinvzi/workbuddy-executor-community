@@ -525,7 +525,7 @@ async function switchSource(kind, scenario = 'normal') {
 buildShell();
 void loadEmbedConfig();
 void fetch('/workbench/desktop/capabilities',{method:'GET',signal:AbortSignal.timeout(5000)}).then(response=>response.json()).then(result=>{desktopControlsAvailable=result?.ok===true&&result.value?.controls===true;if(state.detail)render();}).catch(()=>{});
-void mountDesktopDispatch({ onTask: async taskId => { if (state.source.kind === 'demo') await switchSource('live'); linkedTask = taskId; location.hash = 'taskId=' + encodeURIComponent(taskId); await refreshTasks(); } });
+void mountDesktopDispatch({ onTask: async taskId => { if (state.source.kind === 'demo') await switchSource('live'); linkedTask = taskId; location.hash = 'taskId=' + encodeURIComponent(taskId); await refreshTasks(); }, onResources: () => setView('resources') });
 window.addEventListener('hashchange', async () => {
     const taskId = taskIdFromHash(location.hash);
     if (!taskId) return;

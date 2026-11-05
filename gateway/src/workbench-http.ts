@@ -299,6 +299,7 @@ export class WorkbenchHttpServer {
           || pathname === "/workbench/v1/resources/credit-balances"
           || pathname === "/workbench/v1/resources/capacity"
         || pathname === "/workbench/v1/resources/routing"
+          || pathname === "/workbench/v1/resources/plan-reference"
           || pathname === TASKS_PREFIX
           || /^\/workbench\/v1\/tasks\/[^/]+(\/(rework|cancel|reviews|accept|events|export))?$/.test(pathname);
         if (isKnownPath) {
@@ -374,6 +375,22 @@ export class WorkbenchHttpServer {
         }
         try {this.send(response,200,this.options.service.readRoutingEvidence());}
         catch {this.refuse(response,503,"RESOURCE_STORE_UNAVAILABLE","The routing evidence could not be read; no mapping is reported as verified.");}
+        return;
+      }
+      if (pathname === "/workbench/v1/resources/plan-reference") {
+        const allowed = ["executorId", "connectionId", "providerId", "modelId", "reasoningEffort"];
+        const value = (name: string) => url.searchParams.get(name) ?? undefined;
+        const executorId = value("executorId"), connectionId = value("connectionId"), providerId = value("providerId"), modelId = value("modelId"), reasoningEffort = value("reasoningEffort");
+        const bounded = (item: string | undefined, max: number) => item === undefined || (item.length > 0 && item.length <= max);
+        if ([...url.searchParams.keys()].some(key => !allowed.includes(key))
+          || (executorId !== "workbuddy" && executorId !== "dsh")
+          || !bounded(connectionId, 200) || !bounded(providerId, 200) || !bounded(modelId, 200) || !bounded(reasoningEffort, 100)
+          || connectionId === undefined || providerId === undefined || modelId === undefined) {
+          this.refuse(response,400,"INVALID_RESOURCE_QUERY","Name the exact executor, connection, provider and model of the prepared plan.");return;
+        }
+        try {
+          this.send(response,200,this.options.service.readPlanResourceReference({executorId,connectionId,providerId,modelId,reasoningEffort:reasoningEffort ?? null}));
+        } catch {this.refuse(response,503,"RESOURCE_STORE_UNAVAILABLE","The saved resource views could not be read; no link is reported as verified.");}
         return;
       }
       if (pathname === TASKS_PREFIX) {

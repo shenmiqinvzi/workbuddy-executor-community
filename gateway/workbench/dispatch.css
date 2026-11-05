@@ -55,3 +55,32 @@
  .dispatch-facts dd {margin-bottom:12px}
  .dispatch-field input,.dispatch-field select,.dispatch-workflow .button {min-height:44px}
 }
+
+/* Resource reference inside the review step: a compact, read-only block that
+   reports what the saved snapshots say about this exact execution choice. */
+.dispatch-resource-slot {margin-top:8px}
+.plan-resource {border-top:1px solid var(--border);padding:20px 0 0;margin-top:8px}
+.plan-resource-head {display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.plan-resource-head h3 {font-size:14px;font-weight:600;margin:0}
+.plan-resource-badge {font-size:12px;line-height:1.6;color:var(--muted);border:1px solid var(--control);border-radius:999px;padding:2px 10px;white-space:nowrap}
+.plan-resource-body {margin-top:12px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.plan-resource-headline {font-size:13px;line-height:1.65;margin:0;color:var(--text);overflow-wrap:anywhere}
+.plan-resource-selection {font-size:12px;line-height:1.7;margin:0;color:var(--muted);overflow-wrap:anywhere;font-family:"IBM Plex Mono",ui-monospace,monospace}
+.plan-resource-empty {font-size:13px;line-height:1.65;margin:0;color:var(--muted)}
+.plan-resource-facts {display:grid;grid-template-columns:112px minmax(0,1fr);gap:6px 16px;margin:0;font-size:12px;line-height:1.6}
+.plan-resource-facts dt {color:var(--muted)}
+.plan-resource-facts dd {margin:0;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.plan-resource-limits {font-size:12px;line-height:1.65;color:var(--muted)}
+.plan-resource-limits summary {cursor:pointer;color:var(--text)}
+.plan-resource-limits[open] summary {margin-bottom:8px}
+.plan-resource-limits ul {margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px}
+.plan-resource-limits li {overflow-wrap:anywhere}
+.plan-resource-error {font-size:12px;line-height:1.65;margin:0;color:var(--negative)}
+.plan-resource-stamp {font-size:12px;line-height:1.6;margin:0;color:var(--muted);font-variant-numeric:tabular-nums}
+.plan-resource-actions {display:flex;gap:16px;flex-wrap:wrap;align-items:center}
+.plan-resource-actions .text-button {font-size:12px}
+@media(max-width:640px) {
+.plan-resource-facts {grid-template-columns:minmax(0,1fr);gap:2px}
+.plan-resource-facts dd {margin-bottom:8px}
+.plan-resource-actions {gap:12px}
+}

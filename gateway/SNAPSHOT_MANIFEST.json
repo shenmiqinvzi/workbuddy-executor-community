@@ -440,8 +440,8 @@
     },
     {
       "path": "scripts/package.mjs",
-      "sha256": "60ce6e1539094fb0fcabb89b3a4d8c161de1ea5b31b50f869c7f80c03fa7ea3b",
-      "bytes": 15700
+      "sha256": "0836e498d6b7960db350afe243535947b1996498379bd1204561a76eaa9036f5",
+      "bytes": 15722
     },
     {
       "path": "scripts/plan.mjs",
@@ -799,6 +799,11 @@
       "bytes": 35133
     },
     {
+      "path": "src/plan-resource-reference.ts",
+      "sha256": "7f84f03fc5409170c67bbb5dc9af4180f7ff4b46eaa652cd2306a18108c91064",
+      "bytes": 15140
+    },
+    {
       "path": "src/plan.ts",
       "sha256": "1c5da9495df7ba7bb12de8ecba9adb35763fc9ed560f401c77808c38a278852e",
       "bytes": 6385
@@ -925,8 +930,8 @@
     },
     {
       "path": "src/task-application-service.ts",
-      "sha256": "986f89d4f4d50c0e38f8e4099e9fd4d59a132545ce530aec3249e833fad20444",
-      "bytes": 27250
+      "sha256": "d3061b046472613be876e925bf6d5db4edbbdda7768d97e0ccfab997f0e6ace7",
+      "bytes": 28292
     },
     {
       "path": "src/task-contract.ts",
@@ -985,8 +990,8 @@
     },
     {
       "path": "src/workbench-assets.ts",
-      "sha256": "e1f2be457d006e23cb73f0ef917d6728ff19ce3b48af0196bb58a305dc02c799",
-      "bytes": 3174
+      "sha256": "a69580f9db481bb747d1c1d3bf5abaf9f2465af9309b03b70e9435982d62e238",
+      "bytes": 3267
     },
     {
       "path": "src/workbench-entry.ts",
@@ -995,8 +1000,8 @@
     },
     {
       "path": "src/workbench-http.ts",
-      "sha256": "7f5135f83a9580bb4c2dc97c9109df3d6a1c33af3d46219056f4da47b80dc8e1",
-      "bytes": 22487
+      "sha256": "d75356e9b29780f56bf00588dd5957f41306427a73a988f4533c9b412c74c8e3",
+      "bytes": 24011
     },
     {
       "path": "src/workbench-panel.ts",
@@ -1200,8 +1205,8 @@
     },
     {
       "path": "test/package.test.ts",
-      "sha256": "1492b3f8d0c84aaae948609c862bc4715d308196ec6ab3c05900d13e9e22b688",
-      "bytes": 21727
+      "sha256": "37e67ca9ff61e60bd0efe0a02c220d1478c20ef83c4b114a757101870123704b",
+      "bytes": 21814
     },
     {
       "path": "test/persistent-service.test.ts",
@@ -1212,6 +1217,16 @@
       "path": "test/plan-cli.test.ts",
       "sha256": "0384be4a9864729f5e87f657a60257cc154b165a4f38bfc0e9be430ba49a84f5",
       "bytes": 4694
+    },
+    {
+      "path": "test/plan-reference-loader.test.ts",
+      "sha256": "98095bef2d7e791a8cef54c6aa03272bf08000354328516720a22ef7cb89af62",
+      "bytes": 6215
+    },
+    {
+      "path": "test/plan-resource-reference.test.ts",
+      "sha256": "75f4efc942f80adf7e26b371ae2dfa1fee8f3dc6a941dad29de7bab70e7d7636",
+      "bytes": 22629
     },
     {
       "path": "test/platform.test.ts",
@@ -1455,8 +1470,8 @@
     },
     {
       "path": "workbench/app.mjs",
-      "sha256": "92ad60e3d662bc9f9d5970042552f701c48eeef7eabaa470c7970eaed4d701a3",
-      "bytes": 45103
+      "sha256": "13e65517f4cdfd41d4c8c1062091ecdeeac1bfe5e454ddac166a96e7c04e236a",
+      "bytes": 45144
     },
     {
       "path": "workbench/attention.mjs",
@@ -1480,13 +1495,13 @@
     },
     {
       "path": "workbench/dispatch.css",
-      "sha256": "071158a5415fda151f99f8cff20d5d857f827f60a0eb6d348766d399bf760b8e",
-      "bytes": 4564
+      "sha256": "72db0c581ccbd4bb7594793c5bb3c4663bff5c293a046dbe59e1d02e9f86cf6f",
+      "bytes": 6748
     },
     {
       "path": "workbench/dispatch.mjs",
-      "sha256": "a588a9262613f8b08af18d190ecc7298d36c535a00315ccab961e6247b89943c",
-      "bytes": 27145
+      "sha256": "7754ecbe6b89b9fdf7b05b15ff2e37561c37c8fef5dfe3311b4c5bd162c8e86d",
+      "bytes": 27858
     },
     {
       "path": "workbench/fonts/ibmplexmono-OFL.txt",
@@ -1522,6 +1537,11 @@
       "path": "workbench/model.mjs",
       "sha256": "e64f498895fc0aeb403225a5f27b1c73f3c41121b993acbaa6334154bc638cd3",
       "bytes": 8545
+    },
+    {
+      "path": "workbench/plan-reference.mjs",
+      "sha256": "50fa2f6f4240794f28609455f02b787291484aacdf001928cc813d04c5b10855",
+      "bytes": 14805
     },
     {
       "path": "workbench/resources-model.mjs",
