@@ -1,0 +1,364 @@
+{
+  "schemaVersion": "workbuddy-executor/integration-gate-1",
+  "gate": "G1",
+  "title": "第一批（L01 项目流程、L02 资源信任、L03 统计归因、L04 安装发行）集成 gate",
+  "recordedAt": "2026-11-05T22:44:27+08:00",
+  "recordedBy": "集成人",
+  "sourceOfTruth": "docs/delivery/STATUS_INDEX.md",
+  "codeBaseCommit": "1f60374a889ae5acb442affff7a59f3e045a1277",
+  "codeBaseTree": "a45970de95336ed79d99b835fc582d467d9e2e7d",
+  "gateRecord": {
+    "commit": null,
+    "note": "本文件随 G1 归档提交入库，自引用哈希不写入自身；归档提交哈希记录在 E:\\javaproject\\outputs\\finish-integration-20261105\\G1\\G1_RECEIPT.md"
+  },
+  "integratedCommits": [
+    {
+      "line": "L01",
+      "branch": "feat/finish-l01-project",
+      "worktree": "E:\\javaproject\\workbuddy-finish\\L01-project",
+      "tip": "226af908e5fd262fb16fac97e968206c6ea31c8b",
+      "mergeCommit": "960ee3a43b6b56879c66c416ac5843eb12ddf2a1",
+      "files": 12,
+      "insertions": 1231,
+      "deletions": 55,
+      "integrationRequests": 0,
+      "notes": "桌面新建任务的项目身份准备/修订/单次消费；根技能 SKILL.md 与 gateway 发布副本同步改动 10 行"
+    },
+    {
+      "line": "L02",
+      "branch": "feat/finish-l02-resources",
+      "worktree": "E:\\javaproject\\workbuddy-finish\\L02-resources",
+      "tip": "35d7e0e54ac80582fdc0ca196f2c416d9c71b95d",
+      "mergeCommit": "6e71c930a0d6b9efe460835c2270fcb60090d54c",
+      "files": 16,
+      "insertions": 2902,
+      "deletions": 17,
+      "integrationRequests": 3,
+      "notes": "连接注册表、信任分层、只读路由与信用余额投影；三项 request 由集成人接线（契约两处 + 分层登记）"
+    },
+    {
+      "line": "L03",
+      "branch": "feat/finish-l03-statistics",
+      "worktree": "E:\\javaproject\\workbuddy-finish\\L03-statistics",
+      "tip": "31d60330cca02ca8560c6bd05c33b99025c26005",
+      "mergeCommit": "b52ce2bc4bf069e29645c62a9b158f09348d939d",
+      "files": 17,
+      "insertions": 3257,
+      "deletions": 8,
+      "integrationRequests": 5,
+      "notes": "只读统计服务与统计视图；五项 request 采纳四项（workbench-http 注入、组合根、资产与包白名单、导航三态），可选 MCP 包装未做"
+    },
+    {
+      "line": "L04",
+      "branch": "feat/finish-l04-installation",
+      "worktree": "E:\\javaproject\\workbuddy-finish\\L04-installation",
+      "tip": "5527850b6406046bae1a031d8887728fe4c4d2fa",
+      "mergeCommit": "0dfe653bcffa62f1e29a93ad24d4b6993ca12989",
+      "files": 10,
+      "insertions": 1680,
+      "deletions": 39,
+      "integrationRequests": 0,
+      "notes": "依赖预检、版本一致性、升级/回退演练与回退计划；候选安装 CLI 重写"
+    }
+  ],
+  "integratedTotals": {
+    "files": 56,
+    "insertions": 9448,
+    "deletions": 119,
+    "desktopFilesChanged": 0
+  },
+  "integrationFixes": [
+    {
+      "file": "gateway/scripts/package.mjs",
+      "reason": "L04 重写后的 scripts/candidate-installation.mjs 动态 import dist/installation-dependencies.js 与 dist/installation-rollback.js，必需文件清单不含它们会产出不可运行的候选包",
+      "change": "REQUIRED_FILES.push(...[\"installation-readiness\", \"installation-dependencies\", \"installation-rollback\"].flatMap(name => [`src/${name}.ts`, `dist/${name}.js`, `dist/${name}.d.ts`]))",
+      "verification": "test/package.test.ts 12/12 通过；候选包 634 文件，包内 verify-release 634 项哈希匹配"
+    },
+    {
+      "file": "gateway/test/package.test.ts",
+      "reason": "包白名单新增必需文件后，该测试的源树夹具未同步会让 5 个用例报 Missing release file",
+      "change": "夹具补 installation-dependencies、installation-rollback 的 src/dist 条目",
+      "verification": "单文件 12/12 通过；全量第二轮 1145 项 0 失败"
+    },
+    {
+      "file": "gateway/test/resource-connections.test.ts",
+      "reason": "L02 的合成凭据字面量命中打包器令牌扫描，打包直接拒绝：Possible access token in release file",
+      "change": "把 \"sk-synthetic-should-never-be-stored\" 改为 \"synthetic-credential-value-must-not-be-echoed\"；不放宽扫描器规则",
+      "verification": "该文件 12/12 通过；打包 exit 0"
+    },
+    {
+      "file": "docs/INTERFACE_CONTRACT.md",
+      "reason": "L02 request ①：三条只读资源接口与 routing 结构化字段必须进契约，否则前端与资源实现各说各话",
+      "change": "登记 /workbench/v1/resources/credit-balances、routing、plan-reference；写明 layers 三层 verified/code、connectionRegistry（resource-connections-1，credentialEnv 只接变量名）、connectionDiagnostics、requestAttribution（恒 unavailable，request-attribution-1），以及全 verified:false 时不得写已核验",
+      "verification": "受控冒烟 routing 200 且 routingVerified:false；契约行与实现字段逐一对照"
+    },
+    {
+      "file": "docs/RESOURCE_SOURCE_ROUTING_ACCEPTANCE.md",
+      "reason": "L02 request ②：两个只读配置入口需要在验收文档里登记边界",
+      "change": "新增「只读配置入口」一节：WORKBUDDY_RESOURCE_LINKS_FILE（execution-links-1）与 WORKBUDDY_RESOURCE_CONNECTIONS_FILE（resource-connections-1），绝对路径、只读、凭据只接环境变量名、sourceUrl 仅回环、未设置报 not_declared",
+      "verification": "文档登记与 scripts/resource-source-acceptance.mjs 的既有校验一致；未改代码"
+    },
+    {
+      "file": "docs/delivery/STATUS_INDEX.md",
+      "reason": "L02 request ③ 与 09 的 gate 要求：需要唯一现状入口记录分层结论",
+      "change": "新增「任务分层登记」表，按任务写本轮可证层级与未满足部分",
+      "verification": "内容与本轮实际执行的检查一一对应，未执行项标注未执行"
+    }
+  ],
+  "checks": [
+    {
+      "id": "build",
+      "command": "npm run build",
+      "exitCode": 0,
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G1\\logs\\build.log"
+    },
+    {
+      "id": "typecheck-task-view",
+      "command": "npm run typecheck:task-view",
+      "exitCode": 0,
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G1\\logs\\typecheck-task-view.log"
+    },
+    {
+      "id": "specials-first-batch",
+      "command": "npx tsx --test --test-concurrency=1 test/desktop-projects.test.ts test/desktop-dispatch-terms.test.ts test/desktop-dispatch.test.ts test/desktop-catalog-diagnostics.test.ts test/desktop-dispatch-e2e.test.ts test/resource-connections.test.ts test/resource-attribution.test.ts test/resource-snapshot-store.test.ts test/resource-trust-http.test.ts test/statistics.test.ts test/statistics-page.test.ts test/installation-dependencies.test.ts test/installation-rollback.test.ts test/candidate-installation.test.ts test/deployment.test.ts test/delivery-baseline.test.ts test/live-acceptance-fixture.test.ts test/package.test.ts",
+      "exitCode": 0,
+      "counts": { "tests": 169, "pass": 169, "fail": 0 },
+      "durationMs": 64820,
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G1\\logs\\specials-g1.log"
+    },
+    {
+      "id": "workbench",
+      "command": "npm run test:workbench",
+      "exitCode": 0,
+      "counts": { "tests": 117, "pass": 117, "fail": 0 },
+      "durationMs": 5340,
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G1\\logs\\workbench-g1.log"
+    },
+    {
+      "id": "package-allowlist",
+      "command": "npx tsx --test test/package.test.ts",
+      "exitCode": 0,
+      "counts": { "tests": 12, "pass": 12, "fail": 0 },
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G1\\logs\\package-test.log"
+    },
+    {
+      "id": "full-test-round1",
+      "command": "npm test",
+      "exitCode": 1,
+      "counts": { "tests": 1145, "pass": 1132, "fail": 1, "skipped": 12 },
+      "durationMs": 384652,
+      "failure": {
+        "test": "test/run-worker.test.ts:94 an actual detached worker survives its launcher exiting and writes its final evidence",
+        "error": "AssertionError: Error: Timed out waiting for the simulated worker; snapshot error=EPERM: operation not permitted, rename '...\\state.json.<pid>.<rand>.tmp' -> '...\\state.json'",
+        "attribution": "未定位根因；与 L01 HANDOFF 记录的同名失败一致（Windows 上高并发负载下的文件重命名 EPERM）；单跑与第二轮全量均通过，不以单跑通过取消该失败记录"
+      },
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G1\\logs\\full-test.log"
+    },
+    {
+      "id": "run-worker-single",
+      "command": "npx tsx --test --test-concurrency=1 test/run-worker.test.ts",
+      "exitCode": 0,
+      "counts": { "tests": 5, "pass": 5, "fail": 0 },
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G1\\logs\\run-worker-single.log"
+    },
+    {
+      "id": "full-test-round2",
+      "command": "npm test",
+      "exitCode": 0,
+      "counts": { "tests": 1145, "pass": 1133, "fail": 0, "skipped": 12 },
+      "durationMs": 383613,
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G1\\logs\\full-test-round2.log"
+    },
+    {
+      "id": "skill-copy-consistency",
+      "command": "git diff --no-index --ignore-cr-at-eol --ignore-all-space --quiet <root副本> <gateway副本>（SKILL.md、agents/openai.yaml、references/{setup,execution,dispatch,agent-hub}.md 六对）",
+      "exitCode": 0,
+      "counts": { "pairs": 6, "differing": 0 },
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G1\\logs\\skill-copy-diff.log"
+    }
+  ],
+  "package": {
+    "command": "node scripts/package.mjs",
+    "exitCode": 0,
+    "gateway": {
+      "file": "gateway/outputs/release/codex-workbuddy-gateway-v0.7.1.zip",
+      "files": 634,
+      "bytes": 1985113,
+      "sha256": "390d54062ca990eab21758293643f8ad7eedc8c5b7ea2d8d4648e6f5bd9f3658"
+    },
+    "skill": {
+      "file": "gateway/outputs/release/workbuddy-executor-v0.7.1.zip",
+      "files": 6,
+      "sha256": "9988ec8b173869234de72daa3794cd186828c05fd66eacc14fa806eb2df3b666"
+    },
+    "harnessSkill": {
+      "file": "gateway/outputs/release/deepseek-executor-v0.7.1.zip",
+      "files": 2,
+      "sha256": "22909e1b0654df6eb13b3ccdcf5767ed78e094d416b891821a072c1004318d13"
+    },
+    "previousPackageArchivedTo": "E:\\javaproject\\outputs\\finish-integration-20261105\\G0\\release\\",
+    "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G1\\logs\\package.log"
+  },
+  "candidateTools": {
+    "unpackedRoot": "E:\\javaproject\\outputs\\finish-integration-20261105\\G1\\candidate\\codex-workbuddy-gateway-v0.7.1",
+    "runs": [
+      {
+        "id": "verify-release",
+        "command": "node scripts/verify-release.mjs",
+        "exitCode": 0,
+        "summary": "{\"version\":\"0.7.1\",\"verifiedFiles\":634,\"hashesMatch\":true}",
+        "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G1\\logs\\verify-release.log"
+      },
+      {
+        "id": "check",
+        "command": "node scripts/candidate-installation.mjs check --package <zip> --expect-sha256 390d54...",
+        "exitCode": 0,
+        "summary": "ok=true, files=634, problems=0",
+        "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G1\\logs\\cand-check.json"
+      },
+      {
+        "id": "preview",
+        "command": "node scripts/candidate-installation.mjs preview --install-root <空目录> --codex-home <自建>",
+        "exitCode": 1,
+        "summary": "safeToApply=false; counts create=634 其余 0; 8 项要求中 runtime_dependencies 与 desktop_application 为 ok:false",
+        "expected": "纯网关包不含 node_modules 与桌面可执行，非零退出为设计行为",
+        "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G1\\logs\\cand-preview.json"
+      },
+      {
+        "id": "version-check",
+        "command": "node scripts/candidate-installation.mjs version-check --install-root <解包根>",
+        "exitCode": 0,
+        "summary": "matches=true; identities 一条 exact=true version=0.7.1",
+        "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G1\\logs\\cand-version-check.json"
+      },
+      {
+        "id": "dependencies",
+        "command": "node scripts/candidate-installation.mjs dependencies --install-root <解包根> --workbuddy-app <合成exe> --workbuddy-config <合成配置>",
+        "exitCode": 1,
+        "summary": "blocksInstall=true; 11 项探针; 非 ok: production_dependencies:missing、workbuddy_data:mismatch、desktop_shell:not_applicable、code_signing:not_applicable",
+        "expected": "未装依赖的纯包与合成宿主下的预期阻断",
+        "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G1\\logs\\cand-dependencies.json"
+      },
+      {
+        "id": "npm-ci-unpacked",
+        "command": "npm ci --omit=dev（包内）",
+        "exitCode": 0,
+        "summary": "added 94 packages in 6s",
+        "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G1\\logs\\npm-ci-unpacked.log"
+      },
+      {
+        "id": "drill",
+        "command": "node scripts/candidate-installation.mjs drill --drill-root <空目录> --apply",
+        "exitCode": 0,
+        "summary": "steps 4/4 ok; checks 5/5 true; negatives.ok=true",
+        "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G1\\logs\\cand-drill.json"
+      },
+      {
+        "id": "upgrade-drill",
+        "command": "node scripts/candidate-installation.mjs upgrade-drill --drill-root <空目录> --apply",
+        "exitCode": 0,
+        "summary": "steps 17/17 ok; checks 17/17 true; negatives.ok=true; rollback_plan_is_read_only counts replace=2 remove=1 keep=632",
+        "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G1\\logs\\cand-upgrade-drill.json"
+      },
+      {
+        "id": "rollback-plan",
+        "command": "node scripts/candidate-installation.mjs rollback-plan --package <新> --to <G0 zip> --install-root <解包根> --codex-home <自建>",
+        "exitCode": 0,
+        "summary": "safeToApply=true; replace=42 remove=53 keep=539 blocked=0",
+        "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G1\\logs\\cand-rollback-plan.json"
+      },
+      {
+        "id": "delivery-baseline",
+        "command": "node scripts/delivery-baseline.mjs --source-root <解包根> --candidate-archive <zip>",
+        "exitCode": 0,
+        "summary": "readOnly=true; authorizesDispatch=false; limitations 5 条",
+        "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G1\\logs\\delivery-baseline.json"
+      },
+      {
+        "id": "live-acceptance-fixture-create",
+        "command": "node scripts/live-acceptance-fixture.mjs create --parent <目录>",
+        "exitCode": 0,
+        "summary": "root=...\\G1\\run\\live-fixtures\\live-acceptance-sWATFB; baselineSha256=1d49ab9c966cbe51be3dc8acd765995210a6ef0568d4d9f2a24c97b48cfcd59a; authorized=false; preparedOnly=true",
+        "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G1\\logs\\live-fixture-create.json"
+      },
+      {
+        "id": "live-acceptance-fixture-verify",
+        "command": "node scripts/live-acceptance-fixture.mjs verify --root <夹具> --baseline-sha256 <外部摘要>",
+        "exitCode": 0,
+        "summary": "ok=true; preparedOnly=true; authorized=false; problems=[]",
+        "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G1\\logs\\live-fixture-verify.json"
+      }
+    ],
+    "smoke": {
+      "command": "node dist/workbench-entry.js（解包候选 + 包内 npm ci --omit=dev；自建 WORKBUDDY_DB_FILE/WORKBUDDY_RUNS_DIR；NO_PROXY=127.0.0.1,localhost）",
+      "listen": "{\"ok\":true,\"event\":\"workbench_http_listening\",\"port\":18493,\"backend\":\"desktop-queue\",\"readOnly\":true}",
+      "requests": [
+        { "request": "GET /workbench/v1/health", "status": 200, "observed": "ready=true; packageVersion 0.7.1; release portability-20261018.1" },
+        { "request": "GET /workbench/v1/statistics", "status": 200, "observed": "schemaVersion workbuddy-executor/statistics-1; readOnly=true; snapshotOnly=true; tasksRead=0" },
+        { "request": "GET /workbench/v1/resources/routing", "status": 200, "observed": "routing-evidence-1; routingVerified=false; basis=gateway_observation_only" },
+        { "request": "GET /workbench/v1/resources/credit-balances", "status": 200, "observed": "credit-balance-1; connections=[]; actualTaskCredits=null; attribution=connection_only" },
+        { "request": "GET /workbench/statistics.mjs", "status": 200, "observed": "资产白名单生效" },
+        { "request": "GET /workbench/statistics.css", "status": 200, "observed": "资产白名单生效" },
+        { "request": "GET /workbench/", "status": 200, "observed": "index 875 字节；/workbench/index.html 为 404，资产键为 /workbench/" },
+        { "request": "POST /workbench/v1/statistics", "status": 405, "observed": "allow: GET, HEAD" }
+      ],
+      "shutdown": "按 PID Stop-Process，未按进程名批量杀",
+      "notes": [
+        "端口由内置默认 18493 决定，WORKBENCH_PORT 不生效",
+        "直接启动未装依赖的包会 ERR_MODULE_NOT_FOUND: zod（dist/task-view-reader.js），必须先 npm ci --omit=dev"
+      ]
+    }
+  },
+  "workspaceLines": [
+    {
+      "line": "L05",
+      "tasks": "推荐下一步（见 05_RECOMMENDATION.md / D5）",
+      "taskFile": "docs/parallel/DELIVERY_FINISH_20261105/05_RECOMMENDATION.md",
+      "worktree": "E:\\javaproject\\workbuddy-finish\\L05-recommendation",
+      "branch": "feat/finish-l05-recommendation",
+      "base": "G1 归档提交",
+      "status": "待开始（G1 归档后由集成人创建）"
+    },
+    {
+      "line": "L06",
+      "tasks": "模板/通知/导出（见 06_TEMPLATES_NOTIFICATIONS_EXPORT.md / D4）",
+      "taskFile": "docs/parallel/DELIVERY_FINISH_20261105/06_TEMPLATES_NOTIFICATIONS_EXPORT.md",
+      "worktree": "E:\\javaproject\\workbuddy-finish\\L06-productivity",
+      "branch": "feat/finish-l06-productivity",
+      "base": "G1 归档提交",
+      "status": "待开始（G1 归档后由集成人创建）"
+    }
+  ],
+  "notPrecreated": ["L07", "L08"],
+  "notPrecreatedReason": "按 COMMON 与 00 第 7 项，第三批工作树在 G2 归档后才创建，不按旧基线预建。",
+  "dependenciesPrepared": "集成分支 node_modules 由原集成树按同一 package-lock.json 复制（SHA256 EC348D2EDA90C843426C4F4C5078BB7C3B5E84922E97565D479AC05841F29E3A，未改版本）；解包候选在包内执行 npm ci --omit=dev 得 94 包",
+  "verificationEnvironment": {
+    "os": "Windows",
+    "node": "24.19.0",
+    "npmTestIsolation": "清空继承的 WORKBUDDY_* 与 NODE_TEST_CONTEXT；WORKBUDDY_CLI_ELECTRON 与 WORKBUDDY_CONFIG_DIR 指向 outputs/finish-integration-20261105/G0/env/ 下合成值；NO_PROXY=127.0.0.1,localhost",
+    "logsRoot": "E:\\javaproject\\outputs\\finish-integration-20261105\\G1\\logs\\"
+  },
+  "externalConditions": [
+    "真实安装、升级、生产切换与回滚实跑：未执行，需用户授权与真实环境（10）",
+    "D1-02 已安装技能 + 真实 MCP 双端真实模型派工：未执行",
+    "真实资源账号池、请求级归因、任务到模型的实际路由、D3-04 运行中监督：需真实来源（10）",
+    "第二台物理 Windows、代码签发与许可位置：由权利人决定",
+    "生产 workflow_capacity(slot=1) 仍有占用；本轮只在自建合成库冒烟，未触碰生产者状态"
+  ],
+  "openUnknowns": [
+    "test/run-worker.test.ts 的 detached worker 在 Windows 上写 state.json 的 EPERM：全量第一轮复现一次，单跑与第二轮未复现，根因未定位，不以单跑通过宣布不存在",
+    "L03 可选 MCP 包装（task-application-service.readTaskStatistics）未实现，留待 G3 评估核心注册面",
+    "引擎的 calls 恒为空、catalogRateLabel 与 activeReasoningSeconds 恒 null、时间窗仅支持 UTC ISO，均为已知限制，写在上游 HANDOFF"
+  ],
+  "sourcePassed": true,
+  "liveReady": false,
+  "boundaries": {
+    "pushed": false,
+    "mergedToMain": false,
+    "released": false,
+    "deployed": false,
+    "productionStateChanged": false,
+    "realModelDispatchTriggered": false
+  },
+  "nextGate": "G2（第二批：L05 推荐、L06 模板通知导出）"
+}

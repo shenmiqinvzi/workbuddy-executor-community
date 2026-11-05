@@ -348,3 +348,14 @@ $env:WORKBUDDY_CREDIT_API_KEY='<受保护进程环境>'
 
 清理：本轮所有 hub / 网关进程均由脚本 `taskkill /PID <自己的 pid> /T /F` 按 PID 结束，未按进程名批量结束；
 生产 hub（PID 12032）与用户浏览器全程未动。
+
+## 13. 只读配置入口（集成人登记，2026-11-05）
+
+D3 的两个声明文件都只被读取、不被网关写出，也不创建缺省文件。两个变量同段登记如下：
+
+| 变量 | 作用 | 值约束 | 缺省与失败 |
+|---|---|---|---|
+| `WORKBUDDY_RESOURCE_LINKS_FILE` | 执行选择与统计连接的关联声明（`execution-links-1`），既有 `plan-resource-reference` 语义 | 本机绝对路径、JSON；只读；匹配需执行器 + 执行连接 + 提供方 + 精确 `modelId`（可选 `realm`） | 未设置或不可读 → 关联状态 `unavailable`，不代建文件、不推断关联 |
+| `WORKBUDDY_RESOURCE_CONNECTIONS_FILE` | 固定连接登记（`workbuddy-executor/resource-connections-1`），供 `/workbench/v1/resources/routing` 读取 | 本机绝对路径、JSON；只读；`credentialEnv` 只接受环境变量名，`sourceUrl` 只接受回环地址 | 未设置 → `not_declared`；不可读或结构不符 → 诊断条目单独失败，不影响任务列表 |
+
+两者都不进入 `.env` 的必填项，也不改变现有 `WORKBUDDY_QUOTA_*` / `WORKBUDDY_CREDIT_*` 的来源语义；声明过的连接只表示"已声明"，不等于已观测或已核验。凭据值只放进程环境，不写进声明文件、日志或验收记录。

@@ -163,3 +163,11 @@ node scripts/delivery-baseline.mjs --source-root <SOURCE_ROOT> --candidate-manif
 两个新脚本用内置模块；专项以Node24原生.ts加载，未装依赖/构建dist。最终19/19（含拒绝源回滚journal），见 [D1方案](D1_LIVE_ACCEPTANCE_PLAN.md) §本轮准备实测。首跑子进程上下文问题、后续SHM断言夹具在测量窗口内自行查询的问题及修正分别留档；源库隔离方案已实际复核，不拼接多次结果或抹去失败。
 
 集成人需先审A→B，再对齐新候选/运行证据；包白名单补 `scripts/delivery-baseline.mjs`、`scripts/live-acceptance-fixture.mjs`，统一更新快照（新增两脚本两测试）与最终包。无新依赖、无workbench-assets/tsconfig变化。本线不编辑共享PROGRESS/FUTURE_DEVELOPMENT_PLAN/SNAPSHOT/package白名单，不自行合入集成分支。
+
+## 5. G1 增量登记（集成人，2026-11-05）
+
+本节只追加、不改写上文 53 项矩阵与 C 线原始结论。
+
+- 上面 §4 的交接要求已全部落实：`scripts/delivery-baseline.mjs`、`scripts/live-acceptance-fixture.mjs`（以及 A 的 `scripts/candidate-installation.mjs`、`installation-readiness`）已进包白名单与必需文件清单，`test/package.test.ts` 夹具同步；G1 候选包 634 文件，包内 verify-release 634 项哈希匹配。
+- 第一批四线合入后，D0 矩阵里由源码与合成证据推进的条目以 [STATUS_INDEX](delivery/STATUS_INDEX.md) 的「任务分层登记」为准：D3-01/02/03/04、D6-01（仅接口面）、D6-02/05 由合成测试与受控启动冒烟支撑；真实账号池、请求级归因、真实运行中监督、真实安装/升级/回退实跑、D1-02 真实派工仍未执行。
+- 本轮不把任何条目改判为「真实可用」或「已交付」：`routingVerified` 在生产候选冒烟中仍为 `false`，`actualTaskCredits` 仍为 `null`，空库统计 `tasksRead` 如实为 0。

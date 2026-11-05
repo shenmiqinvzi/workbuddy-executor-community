@@ -291,3 +291,15 @@ A 已在集成分支的 eab7937：关联歧义/区域专项 41/41 独立通过�
 候选网关包 581 个业务文件，SHA-256 f8a94b78ec0b54056dac0bd3ad91c4f22c55e2f7d508307de1c7bb83662fc8c5；从解包目录实际执行包内 verify-release（581 文件哈希匹配）、candidate-installation check（exit 0）、preview（exit 1、safeToApply=false、8 项要求中 runtime_dependencies 与 desktop_application 为 false）、drill --apply（exit 0、四步与五项检查通过）、delivery-baseline（只读 exit 0）、live-acceptance-fixture create/verify（样例先失败、完整性 ok）。技能六文件按行尾规范化后与根副本无差异。
 
 已在 G0 基线提交上建立 L01–L04 四条独立工作树，未预建 05–08。未推送、未合 main、未发布、未部署；真实安装/升级、真实模型派工、第二台机器与许可决定仍待外部条件，原 P0-1 未知维持不关闭、不重派、不释放。现状入口改为 `docs/delivery/STATUS_INDEX.md` 与 `gates/G0.json`。
+
+## G1 第一批集成（2026-11-05）
+
+四线在 G0 基线 `1f60374` 上各自完成后交付 HANDOFF，按 L01→L02→L03→L04 用 `merge --no-ff` 保留原提交合入 `integration/delivery-finish`：L01 `226af90`→`960ee3a`、L02 `35d7e0e`→`6e71c93`、L03 `31d6033`→`b52ce2b`、L04 `5527850`→`0dfe653`，无冲突、无改写他线分支。四线合计 56 文件 9448+/119-；`desktop/` 变更 0 文件，本轮不触发 C# 策略与桌面构建检查。
+
+集成侧改动 4 处，均为最小加法或保护性修正：`package.mjs` 与 `test/package.test.ts` 补入 L04 新依赖模块（`installation-dependencies`、`installation-rollback`）的必需文件与夹具；`test/resource-connections.test.ts` 的合成凭据字面量命中打包令牌扫描，改夹具值而不放宽扫描器；`docs/INTERFACE_CONTRACT.md` 登记 L02 的三条只读资源接口与 routing 结构化字段语义，`docs/RESOURCE_SOURCE_ROUTING_ACCEPTANCE.md` 登记两个只读配置入口（绝对路径、只读、凭据只接变量名、来源仅回环）；L03 五项 request 采纳四项，可选 MCP 包装未做。
+
+检查在集成分支实跑：构建与 task-view 类型检查 exit 0；四线专项 18 个文件合跑 169/169，工作台 117/117，包白名单 12/12。全量第一轮 1145 项 / 1132 通过 / 1 失败 / 12 平台跳过（exit 1，384.7 秒），失败是 `test/run-worker.test.ts` 的 detached worker 在 Windows 上 `state.json` 重命名的 EPERM，与 L01 交接记录一致；该文件单跑 5/5 通过，第二轮全量 1145 项 / 1133 通过 / 0 失败 / 12 跳过（exit 0，383.6 秒）。归因仍记为未定位根因，不以单跑通过取消该失败记录。技能六文件规范化比对全部无差异，L01 对 `SKILL.md` 的双侧改动保持同步。
+
+候选网关包 634 个业务文件、1 985 113 字节，SHA-256 `390d54062ca990eab21758293643f8ad7eedc8c5b7ea2d8d4648e6f5bd9f3658`；技能包因 `SKILL.md` 变更得 `9988ec8b…`，Harness 技能包未变。解包目录实际执行包内 verify-release（634 文件哈希匹配）、candidate-installation check（exit 0）/preview（exit 1、safeToApply=false、仅 runtime_dependencies 与 desktop_application 未满足）/version-check（matches）/dependencies（blocksInstall=true，纯包未装依赖属预期）/drill（四步五项通过）/upgrade-drill（17 步 17 检查通过，回退计划 replace2 remove1 keep632）/rollback-plan（safeToApply=true，replace42 remove53 keep539）、delivery-baseline（只读）、live-acceptance-fixture create/verify（`authorized=false`、`preparedOnly=true`、problems 空）。包内 `npm ci --omit=dev` 后受控启动，`/workbench/v1/health`、`/v1/statistics`、`/v1/resources/routing`、`/v1/resources/credit-balances` 与两个统计资产均 200，`POST /v1/statistics` 为 405 且 allow 头正确；冒烟使用自建库与 runs 目录，按 PID 结束进程。
+
+未推送、未合 main、未发布、未部署；原集成树 README.md、ROADMAP.md 在途改动保持不变。真实安装/升级/回滚实跑、真实模型派工、第二台机器、签发与许可仍待外部条件，原 P0-1 未知维持不关闭、不重派、不释放。现状入口更新为 `docs/delivery/STATUS_INDEX.md` 与 `gates/G1.json`；下一批 L05/L06 工作树在 G1 归档提交后创建。

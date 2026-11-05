@@ -29,7 +29,7 @@ REQUIRED_FILES.push("scripts/workbench-read-store.mjs", "scripts/open-workbench-
 REQUIRED_FILES.push("scripts/workbench-desktop-commands.mjs", "scripts/workbench-dispatch-worker.mjs", "scripts/workbench-control-worker.mjs");
 REQUIRED_FILES.push("scripts/resource-source-acceptance.mjs");
 REQUIRED_FILES.push("scripts/candidate-installation.mjs", "scripts/delivery-baseline.mjs", "scripts/live-acceptance-fixture.mjs");
-REQUIRED_FILES.push(...["installation-readiness"].flatMap(name => [`src/${name}.ts`, `dist/${name}.js`, `dist/${name}.d.ts`]));
+REQUIRED_FILES.push(...["installation-readiness", "installation-dependencies", "installation-rollback"].flatMap(name => [`src/${name}.ts`, `dist/${name}.js`, `dist/${name}.d.ts`]));
 REQUIRED_FILES.push(...["desktop-dispatch", "desktop-dispatch-journal", "desktop-dispatch-runtime", "desktop-control", "desktop-control-journal", "desktop-control-runtime"].flatMap(name => [`src/${name}.ts`, `dist/${name}.js`, `dist/${name}.d.ts`]));
 REQUIRED_FILES.push(...["workbench-assets", "workbench-panel"].flatMap(name => [`src/${name}.ts`, `dist/${name}.js`]));
 const DIRECTORY_RULES = new Map([

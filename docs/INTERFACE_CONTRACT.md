@@ -231,12 +231,19 @@ vnext-2 保留目标/工作区/范围/检查/期限/轮次字段；把 vnext-1 �
 | GET `/executors` | 已登记执行器、兼容版本、独立能力和最后观测；不激活会话或派工 |
 | GET `/executors/:id/models` | 已采集的来源/模型目录、支持档位、核验级别与新鲜度；不切模型、不探测请求 |
 | GET `/resources/quotas` | 已保存的脱敏额度快照；不直接代理任意网关接口 |
+| GET `/workbench/v1/resources/credit-balances` | 已保存的脱敏积分快照；reported_cache、账号覆盖与新鲜度各自标注，不反推任务用量 |
+| GET `/workbench/v1/resources/routing` | 资源路由证据：声明 / 固定连接 / 已观测快照三层各自报告 `verified`，缺证据为 unavailable |
+| GET `/workbench/v1/resources/plan-reference` | 执行选择与统计连接的只读参照；只在执行器、连接、提供方、精确模型（可选 realm）全匹配时建立关联 |
 | GET `/collaboration-plans/:planId` | 已保存方案，未找到不代建 |
 | POST `/collaboration-plans` | 生成/保存方案；只读本地上下文和缓存元数据，不调用 worker 或额外模型 |
 | POST `/collaboration-plans/:planId/confirm` | 确认指定方案 revision；不立即开始 worker |
 | POST `/tasks`（vnext-2） | 引用方案并完成持久准入；实际模型准备/派工在受控意图后发生 |
 
 以上 POST 依赖 T4 及写操作关口，不随文档发布开放。方案创建/确认也需要鉴权、稳定 operationId、参数摘要和重放规则；并发确认使用 expectedPlanRevision，不能套用不存在的 task attempt。新的只读发现/额度接口以独立资源版本发布，不能假装 stage-2 DTO 已增加字段。
+
+`/workbench/v1/resources/routing` 的响应体在既有分层之上追加四块只读字段：`layers`（声明层 `execution_selection_declaration`、固定连接层 `fixed_connection`、观测层 `observed_snapshot`，每层只报自己的 `verified` 与 `code`）、`connectionRegistry`（`workbuddy-executor/resource-connections-1` 文档键与连接条目，`credentialEnv` 只接受环境变量名，绝不回显令牌值）、`connectionDiagnostics`（缺省 `not_declared`、重复池、realm 失配、来源超时等，逐条独立失败）与 `requestAttribution`（当前恒为 `unavailable`，见 `workbuddy-executor/request-attribution-1`）。
+
+三层证据全部为 `verified:false` 时，页面只能显示「已声明 / 已观测」，不得写成「已核验」；声明文件、环境变量存在性或成功的一次 GET 都不构成路由核验。`restrictions` 的六项固定值随响应返回，用于说明该文档不代表实际路由、计量或费用。
 
 执行器能力分别声明 modelCatalog/selectModel/observeEffectiveModel/cancel/proveStopped/navigateSession/automaticReview/usageAttribution。未知能力为 unavailable，不能根据模型目录推导停止或审查可用。
 

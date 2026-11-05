@@ -123,7 +123,7 @@ test("a valid declaration names its sources by origin and its keys by variable",
 });
 
 test("a credential value in the declaration file invalidates the whole file", (t) => {
-  const secret = "sk-synthetic-should-never-be-stored";
+  const secret = "synthetic-credential-value-must-not-be-echoed";
   const registry = readResourceConnections({
     [RESOURCE_CONNECTIONS_ENV]: workspace(t).writeJson(document([quotaConnection({ apiKey: secret })])),
   } as NodeJS.ProcessEnv);
