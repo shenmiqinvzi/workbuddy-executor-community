@@ -65,6 +65,26 @@ node scripts/candidate-installation.mjs drill --package "D:/pkg/codex-workbuddy-
 
 `drill` 只写入你给出的演练目录（安装目录、假 `CODEX_HOME`、合成桌面配置都建在该目录下），先输出计划；加 `--apply` 才执行 install、重复 install 与 uninstall。这是隔离演练，不是真实安装，也不代表跨机器验收。
 
+### 2.2 依赖自检与版本核对
+
+发布 ZIP 只含网关程序和技能文件，不含 Node.js、.NET Desktop Runtime、WebView2 Runtime，也不含 WorkBuddy 本身。解压后可以先只读确认这台机器是否具备运行条件：
+
+```powershell
+node scripts/candidate-installation.mjs dependencies --install-root "D:/Apps/workbuddy-gateway" --package "D:/pkg/codex-workbuddy-gateway-v0.7.1.zip" --workbuddy-app "D:/Apps/WorkBuddy/WorkBuddyAI.exe" --workbuddy-config "D:/My WorkBuddy Data"
+```
+
+报告逐项给出 observed 与 expected：Node 版本、Windows 平台、x64 架构、网关构建、生产依赖（按 `package-lock.json` 声明版本比对，比较实际安装的包）、桌面壳、.NET Desktop Runtime、WebView2 Runtime、WorkBuddy 可执行文件与数据目录、代码签名状态。诊断只读，不联网、不安装、不写 .env、不启动 WorkBuddy；存在阻塞项时退出码为 1。它不会替使用者猜测 WorkBuddy 位置：未给出 `--workbuddy-app` / `--workbuddy-config` 时如实报告 missing，而不是把探测到的候选当成已确认。
+
+`--platform` 与 `--arch` 只用于在别的机器上复现同一判断，不会让安装程序放宽接受条件。
+
+已安装目录是否与某个发布包同版本，可用 `version-check` 只读比对（逐文件字节数与哈希）：
+
+```powershell
+node scripts/candidate-installation.mjs version-check --package "D:/pkg/codex-workbuddy-gateway-v0.7.1.zip" --install-root "D:/Apps/workbuddy-gateway"
+```
+
+`matches=true` 只说明磁盘上的托管文件与该包一致，不代表任务已执行、原生登录就绪或部署验收完成。
+
 ## 3. 连接 Codex
 
 打开生成的 data/workbuddy-mcp.toml，核对命令和路径。将其中 workbuddy 配置合并进自己的 Codex config.toml；如已有同名项，只替换明确指向这次安装的条目，保留其他设置。安装程序不会替你修改用户配置。
@@ -135,7 +155,25 @@ node scripts/setup.mjs upgrade --apply
 node scripts/doctor.mjs
 ```
 
-重新检查生成片段并连接 MCP。升级不会重放任务。需要回退时先按同样步骤确认停止，恢复之前备份的源码/包后重新构建，再运行 upgrade；不要使用另一份旧任务数据库覆盖现有历史。
+重新检查生成片段并连接 MCP。升级不会重放任务。
+
+升级前可以先在隔离目录把整条链路走一遍，不触碰真实安装：
+
+```powershell
+node scripts/candidate-installation.mjs upgrade-drill --package "D:/pkg/codex-workbuddy-gateway-v0.7.1.zip" --drill-root "D:/drills/upgrade-20261105" --apply
+```
+
+`upgrade-drill` 在演练目录里合成上一版与这一版的发行包，依次执行 install → 重复 install（应保持不变）→ 再用 install 覆盖（应被拒绝并提示用 upgrade）→ upgrade --apply → 改动托管文件（应报本地改动并拒绝）→ 还原 → 回退规划与执行 → 卸载，并复验缺构建、常驻服务、活动任务、停止不明、截断包与摘要不符等负向路径。它是合成夹具上的演练，不是真实升级，也不代表跨机器验收。
+
+回退需要明确指出目标版本，先只读生成差异计划：
+
+```powershell
+node scripts/candidate-installation.mjs rollback-plan --package "D:/pkg/codex-workbuddy-gateway-v0.7.1.zip" --to "D:/pkg/codex-workbuddy-gateway-v0.6.0.zip" --install-root "D:/Apps/workbuddy-gateway" --codex-home "D:/codex-home" --report "D:/reports/rollback-plan.json"
+```
+
+计划列出将被替换、新建、删除、保留与阻挡的文件（含当前和目标哈希）、运行目标（哪些进程需要重启、正在运行的进程不会自动换版本）、配置影响、执行步骤和失败补救顺序。存在本地改动、路径异常或目标包未通过核对时 `safeToApply=false` 且退出码为 1，计划不写盘。
+
+若现有任务库结构比回退目标更新，计划会单独给出 schema 判断（`schema.assessment.decision`）：`compatible` 才可直接回退；`incompatible` 或 `unknown` 时保持原状，先备份整个 data 目录，再按[恢复说明](RESTORE.md)核对。把 `--task-db` 指向 WorkBuddy 原生库（只有 sessions 表）时同样是 `unknown`，并提示该库不像网关任务库。不要用删除任务库或把旧库覆盖到新库的方式“恢复”，也不声称旧程序能读新结构。
 
 ```powershell
 node scripts/setup.mjs uninstall

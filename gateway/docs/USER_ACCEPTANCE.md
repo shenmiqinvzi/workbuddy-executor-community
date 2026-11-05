@@ -43,8 +43,6 @@ macOS / WorkBuddy 5.7.6，本轮全程未使用 Computer Use：
 
 原生会话编号、完整队列记录、真实路径和测试文件只保留本机 `data/verification/multi-workspace-v060` 及原任务库，不随公开包分发。本轮复用了已安装服务并完成升级重载，没有再次实测全新机器首次安装、系统重启或登录恢复，也未扩展到业务搜索或视频任务。
 
----
-
 # v0.7.0 Agent Hub 验收（2026-10-11）
 
 设计方案先于实现保存于 AGENT_HUB_DESIGN.md；使用说明见 AGENT_HUB.md。首期只接 WorkBuddy 桌面执行器，旧 Harness 桥接保持独立。
@@ -58,5 +56,41 @@ macOS / WorkBuddy 5.7.6，本轮全程未使用 Computer Use：
 - 平台独立 LaunchAgent 已安装并运行，现有 WorkBuddy 唤醒服务与默认项目绑定保持原记录。公开打包文件清单包含平台源码、编译代码和 SDK 声明，排除私有 data。
 
 原生编号、输入与成果、哈希、完整事件和核对证据只保存在本机 data/verification/agent-hub-v070、data/platform 和原任务库。本轮没有测量积分扣减、免费额度归属、长期业务吞吐、系统重启、登出恢复和 WorkBuddy 执行中崩溃；没有接入真实的新聚合执行器。版本下载入口见 README 的发布链接。
+
+# v0.7.1 发行准备（安装、升级、回退与依赖）
+
+本节记录发布产物的种类、已知限制与用户安装说明，来自安装与发行准备线的只读工具和合成演练。它不代表真实生产安装、真实升级或物理异机验收已经完成。
+
+## 产物种类
+
+| 产物 | 内容 | 不能做什么 |
+|---|---|---|
+| `codex-workbuddy-gateway-v0.7.1.zip` | 网关源码、已编译 dist、脚本、技能、文档、package.json 与锁文件、`RELEASE_MANIFEST.json` | 不含 Node.js、.NET 运行时、WebView2、WorkBuddy 本体、.env、任务库 |
+| 同名 `.sha256` | 压缩包的 SHA-256 | 校验和本身不证明来源，需与公布值比对 |
+| `RELEASE_MANIFEST.json` | 包内逐文件字节数与哈希 | 只覆盖包内文件，不覆盖安装后产生的 `data/` |
+| `workbuddy-executor` 技能 ZIP | 技能指令与 references | 不含网关与连接，单独解压不能派工 |
+| 桌面工作台预览 ZIP | `WorkBuddy.Workbench.exe` 及固定依赖、`WEBVIEW2-LICENSE.txt` | 未签名；不含系统运行时 |
+
+## 用户安装说明（摘要）
+
+完整步骤见 [Windows 安装指南](INSTALL_WINDOWS.md)。最短路径是：核对发布包 → 依赖自检 → 预览写入面 → `install --apply` → `doctor` → 合并 MCP 片段 → 首次真实连接。升级用 `upgrade --apply`；回退先用 `rollback-plan` 生成差异计划再执行；卸载用 `uninstall`（先看预览，再加 `--apply`）。每一步都先让任务结束并取得停止证明。
+
+## 已知限制
+
+- 未做代码签名（桌面预览包同样未签名），可能出现 SmartScreen 提示；不要求关闭系统保护，也不把关闭保护列为安装前提。
+- 源码 ZIP 不是安装器：不含运行时与 WorkBuddy，也不会自动修改 Codex 配置。
+- 安装器只写 `.env`（仅原本不存在时）、技能文件、`data/workbuddy-mcp.toml` 与 `data/deployment-installation.json`；不开始任务、不重启 WorkBuddy、不注册常驻服务。
+- 本版安装、升级、回退与卸载的验证都在隔离目录和合成夹具上完成；真实生产切换、物理异机与真实模型派工不由本版声明。
+- 任务库结构更新后旧版本可能读不了；回退前必须查看 `rollback-plan` 的 schema 判断，本项目不提供“删库恢复”。
+
+## 第三方依赖与许可声明
+
+项目自身许可由权利人决定；本版没有新增或修改 `LICENSE` 文件，以下清单只用于发行前复核。逐包台账来自 `package-lock.json` 与生产安装实测，保存在本线证据包的 `production-licenses.json`。
+
+- 网关生产依赖 94 个包：MIT 84、ISC 7、BSD-3-Clause 2、BSD-2-Clause 1；直接依赖为 `@modelcontextprotocol/sdk` 与 `zod`。
+- 桌面工作台：.NET 10（MIT）、`Microsoft.Web.WebView2` 1.0.4314.35（微软许可与再分发条款，包内附 `WEBVIEW2-LICENSE.txt`）。
+- 运行时前置（不随包分发，由用户自行安装）：Node.js >= 22.13.0、.NET Desktop Runtime 10、WebView2 Runtime、WorkBuddy 本体。
+
+若发行时需要随包附带许可全文，应先由权利人确认许可文本与归属，不在安装脚本里自动生成。
 
 ---
