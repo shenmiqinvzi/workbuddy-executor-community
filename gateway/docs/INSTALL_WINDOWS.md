@@ -46,6 +46,25 @@ node scripts/setup.mjs install --apply --workbuddy-app "D:/Apps/WorkBuddy/WorkBu
 
 安装写入本机 .env（仅原来不存在时）、技能文件、data/workbuddy-mcp.toml 和 data/deployment-installation.json。旧技能先备份；同样内容重复安装不改变文件。既有 .env 不覆盖；配置冲突或缺少免费政策时明确报错，由使用者核对修改。整个安装不发送任务、不启动或重启 WorkBuddy、不安装常驻服务，也不改变执行策略。
 
+### 2.1 先核对发布包，再决定是否安装
+
+完整发布 ZIP 可以先用只读工具核对，再决定是否解压到目标目录：
+
+```powershell
+node scripts/candidate-installation.mjs check --package "D:/pkg/codex-workbuddy-gateway-v0.7.1.zip" --expect-sha256 "<公布的 SHA256>"
+node scripts/candidate-installation.mjs preview --package "D:/pkg/codex-workbuddy-gateway-v0.7.1.zip" --install-root "D:/Apps/workbuddy-gateway" --codex-home "D:/codex-home"
+```
+
+`check` 逐条核对包内 `RELEASE_MANIFEST.json` 的记录（路径边界、字节数、哈希），并拒绝清单外的多余文件；`preview` 只比较目标目录，列出将新建、变更、保持不变和被阻挡的文件，以及依赖条件、备份与回退步骤。两者都不写 .env、技能、任务库或安装目录。`preview` 不接受缺失的目标路径：没有显式 `--install-root` 与 `--codex-home` 就报错，不会回落到真实安装目录或用户目录。
+
+若只想在一台机器上完整走一遍安装、重复安装、升级与卸载，而不触碰真实安装：
+
+```powershell
+node scripts/candidate-installation.mjs drill --package "D:/pkg/codex-workbuddy-gateway-v0.7.1.zip" --drill-root "D:/drills/candidate-20261105"
+```
+
+`drill` 只写入你给出的演练目录（安装目录、假 `CODEX_HOME`、合成桌面配置都建在该目录下），先输出计划；加 `--apply` 才执行 install、重复 install 与 uninstall。这是隔离演练，不是真实安装，也不代表跨机器验收。
+
 ## 3. 连接 Codex
 
 打开生成的 data/workbuddy-mcp.toml，核对命令和路径。将其中 workbuddy 配置合并进自己的 Codex config.toml；如已有同名项，只替换明确指向这次安装的条目，保留其他设置。安装程序不会替你修改用户配置。
