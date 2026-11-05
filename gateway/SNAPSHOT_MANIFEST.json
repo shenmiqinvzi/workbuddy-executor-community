@@ -610,8 +610,8 @@
     },
     {
       "path": "src/deepseek-client.ts",
-      "sha256": "509095c127ee4e29c175947c4091640031a8ec0a919328d8939ba1224de25e51",
-      "bytes": 7095
+      "sha256": "98dda8f1696d64b9cc20a4cc64ced0a05c035691293e55f1380013d9c1c60beb",
+      "bytes": 8733
     },
     {
       "path": "src/deepseek-coordinator.ts",
@@ -1074,6 +1074,11 @@
       "bytes": 13366
     },
     {
+      "path": "test/deepseek-client-discovery.test.ts",
+      "sha256": "02500b7065f45672a360bca04125623449a74ff39b0288d9e551500007649b81",
+      "bytes": 9627
+    },
+    {
       "path": "test/deepseek-client.test.ts",
       "sha256": "f7221902067d7d87d21d1b72970b5969058664fdf2b718a8c7b845aed34d5b10",
       "bytes": 5722
@@ -1135,8 +1140,8 @@
     },
     {
       "path": "test/dsh-adapter.test.ts",
-      "sha256": "3fcfa6b24d4a0701a49c052967070d8a8159dd97c639deaa481fd64389668fc7",
-      "bytes": 35701
+      "sha256": "a4ec0baf35cb037f11912152366224e5f5ba11332ab8fb9aa274b70338b3205a",
+      "bytes": 37000
     },
     {
       "path": "test/dsh-discovery.test.ts",

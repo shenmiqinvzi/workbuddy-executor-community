@@ -1,5 +1,7 @@
 # 后端开发进度
 
+2026-11-05 后续修复：A/B 集成的最后一项 DSH 注册发现缺陷已修复，新候选正式全量 **1013 项 / 1000 通过 / 0 失败 / 13 跳过**。详见 [DSH 注册发现一致性修复](DSH_REGISTRY_DISCOVERY_FIX.md)；这是源码与本地候选验证，不代表生产安装已更新。
+
 2026-11-05 最新本地集成见 [A/B 独立验收与统一候选](RESOURCE_PARALLEL_INTEGRATION_20261105.md)；C 线首版 [D0/D1 版本、53 项矩阵及真实闭环条件](D0_D1_DELIVERY_READINESS.md) 已建立。下文带日期的历史结论保留，不代表当前安装已同步。
 
 更新日期：2026-11-04。本页区分源码能力、自动验证和运行部署。
@@ -261,3 +263,13 @@ A 已在集成分支的 eab7937：关联歧义/区域专项 41/41 独立通过�
 保留三个独立的全量/环境结论：受限 npm test 在 tsx 用户资料读取 ENOMEM 阶段失败；受限 loader 全量 1000/984 pass/3 fail/1 cancelled/12 skipped；在正常本机上下文用正式 npm test 为 1000/986 pass/1 fail/13 skipped，exit 1。最后一项失败是 DSH 私有传输在注册发现两次枚举结果变化后访问 undefined.socketPath，已以零网络请求夹具稳定复现；实际注册消失/被过滤原因待定位。不能把受限失败与定向重跑合并成全绿，也不以代码未修改认定无关。A/B 专项交付通过，但集成候选全量仍未通过，不作为正式交付。
 
 日志、候选包与脱敏核对在 outputs/resource-parallel-integration-20261105/；详细范围和剩余动作见 RESOURCE_PARALLEL_INTEGRATION_20261105.md 与 D0_D1_DELIVERY_READINESS.md。未推送、未合 main、未部署、未发布；README.md、ROADMAP.md 原有改动不纳入提交。
+
+## DSH 注册发现修复与候选全量通过（2026-11-05）
+
+起点 bd4cdf8。修复 DeepSeekClient.rpc 先 resolveHostId 再 hosts().find 的二次枚举：现在身份、端点和令牌由同一份已校验发现结果选定，每次新 RPC 仍重新发现；宿主缺失、不唯一、私有注册无法核验分别返回 HOST_NOT_FOUND / HOST_AMBIGUOUS / HOST_DISCOVERY_UNAVAILABLE，诊断只含固定原因。未放宽 ACL、未修改 10 秒 ACL 查询期限、未缓存宿主绕过后续核验、未重试或更换宿主。新的本地发现错误不标 admissionRejected，协调器继续保留原任务的不确定状态、停止证据要求与容量。
+
+回归先在旧实现得到 0/11 通过；新增 Windows ACL 失败场景后发现测试 12 项，另有协调器 1 项覆盖三种错误。相关隔离批次 75 项 / 71 通过 / 4 平台跳过；构建、task-view 与修改测试的 strict 类型检查均 exit 0。正常本机上下文的正式 npm test 使用默认并发：1013 项 / 1000 通过 / 0 失败 / 0 取消 / 13 平台跳过，exit 0，332.4 秒。原来失败的 DSH 私有传输用例在完整并发中通过，未以单文件结果替代。
+
+快照 328 文件验证通过；新候选 570 业务文件与源码/构建逐项相同、包内 verify-release 通过；包内自建私有管道夹具验证单次发现及后续失联不重发。包在 outputs/dsh-discovery-fix-20261105/package/codex-workbuddy-gateway-v0.7.1.zip，SHA256 003417bce7b41e4b9bdc3400d3a5d779f80d8dc9fed53437db52f63e964546b8。详细证据见 DSH_REGISTRY_DISCOVERY_FIX.md，旧失败日志与旧包保留。
+
+未推送、未合 main、未部署或重启生产网关；README.md、ROADMAP.md 原有修改保留。真实账号池、安装与运行指纹对齐、D1 双端真实 MCP 代码任务及异机验收继续单列待办。

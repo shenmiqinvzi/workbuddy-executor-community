@@ -26,11 +26,18 @@ export class DeepSeekRpcError extends Error {
   constructor(readonly code: string, message: string, readonly admissionRejected = false) { super(message); this.name = "DeepSeekRpcError"; }
 }
 export class DeepSeekClient implements DeepSeekTransport {
+  private discoveryIssue: "registry_unreadable" | "acl_query_timeout" | "private_path_unverified" | undefined;
   constructor(readonly registryDir = process.env.DEEPSEEK_BRIDGE_REGISTRY_DIR ?? path.join(os.homedir(), ".dsh", "codex-bridge", "hosts"), readonly defaultHostId = process.env.DEEPSEEK_HOST_ID, readonly timeoutMs = 15_000) {}
   hosts(): DeepSeekHost[] {
-    if (!fs.existsSync(this.registryDir)) return [];
+    this.discoveryIssue = undefined;
+    let names: string[];
+    try { names = fs.readdirSync(this.registryDir).filter(name => name.endsWith(".json")); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") this.discoveryIssue = "registry_unreadable";
+      return [];
+    }
     const hosts: DeepSeekHost[] = [];
-    for (const name of fs.readdirSync(this.registryDir).filter((name) => name.endsWith(".json"))) {
+    for (const name of names) {
       try {
         const file = path.join(this.registryDir, name);
         const stat = fs.lstatSync(file);
@@ -42,22 +49,40 @@ export class DeepSeekClient implements DeepSeekTransport {
         const host = value as Partial<DeepSeekHost>;
         if (typeof host.hostId === "string" && typeof host.socketPath === "string" && path.isAbsolute(host.socketPath) &&
           (process.platform !== "win32" || /^\\\\\.\\pipe\\workbuddy-dsh-[a-z0-9-]+$/.test(host.socketPath)) && typeof host.token === "string" && host.token.length >= 16) hosts.push({ ...host, processAlive: processAlive(host.pid) } as DeepSeekHost);
-      } catch { /* Ignore stale or incomplete registration files. */ }
+      } catch (error) {
+        // Unverified files never become candidates. Keep only a bounded reason
+        // so an ACL query failure is not mistaken for an absent installation;
+        // paths, tokens and the subprocess's raw exception are never exposed.
+        const failure = error as { code?: string; reason?: string };
+        if (failure.code === "bridge/insecure-path") {
+          this.discoveryIssue = failure.reason === "query_timeout" ? "acl_query_timeout" : "private_path_unverified";
+        } else if (failure.code === "EACCES" || failure.code === "EPERM") {
+          this.discoveryIssue ??= "registry_unreadable";
+        }
+        // Stale, incomplete and malformed registrations remain excluded.
+      }
     }
     return hosts;
   }
-  resolveHostId(hostId = this.defaultHostId): string {
+  private selectHost(hostId = this.defaultHostId): DeepSeekHost {
     const hosts = this.hosts().filter((host) => host.processAlive !== false);
-    if (hostId) {
-      if (!hosts.some((host) => host.hostId === hostId)) throw new Error(`No registered DeepSeek host: ${hostId}`);
-      return hostId;
+    const candidates = hostId ? hosts.filter(host => host.hostId === hostId) : hosts;
+    if (candidates.length > 1) {
+      throw new DeepSeekRpcError("HOST_AMBIGUOUS", hostId ? "Multiple registrations match the selected Harness host; inspect the private registry." : "Multiple Harness hosts are registered; select hostId explicitly");
     }
-    if (hosts.length !== 1) throw new Error(hosts.length ? "Multiple Harness hosts are registered; select hostId explicitly" : "No Harness bridge is registered. Install/enable the Codex bridge plugin in DeepSeek Harness.");
-    return hosts[0]!.hostId;
+    const selected = candidates[0];
+    if (selected) return selected;
+    if (this.discoveryIssue) {
+      throw new DeepSeekRpcError("HOST_DISCOVERY_UNAVAILABLE", `The private Harness registry could not be verified (${this.discoveryIssue}). Inspect the original task before retrying.`);
+    }
+    throw new DeepSeekRpcError("HOST_NOT_FOUND", hostId ? `No registered DeepSeek host: ${hostId}` : "No Harness bridge is registered. Install/enable the Codex bridge plugin in DeepSeek Harness.");
   }
+  resolveHostId(hostId?: string): string { return this.selectHost(hostId).hostId; }
   async rpc<T>(method: string, params: Record<string, unknown> = {}, hostId?: string): Promise<T> {
-    const selected = this.resolveHostId(hostId);
-    const host = this.hosts().find((candidate) => candidate.hostId === selected)!;
+    // Select the identity, endpoint and credential from the same verified
+    // snapshot. A second scan could drop or replace that registration. Each
+    // new RPC still scans afresh; failures never rescan or resend this request.
+    const host = this.selectHost(hostId);
     const body = JSON.stringify({ method, params });
     return new Promise<T>((resolve, reject) => {
       const request = http.request({ socketPath: host.socketPath, path: "/rpc", method: "POST", headers: { Authorization: `Bearer ${host.token}`, "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) } }, (response) => {

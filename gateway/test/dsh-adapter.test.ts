@@ -135,6 +135,29 @@ test("lost dispatch response holds shared capacity and recovers by original even
   assert.equal(JSON.stringify(f.store.get("dsh-task")).includes("private credential"), false);
 });
 
+test("local discovery errors at the prompt boundary never manufacture native stop or release capacity", async t => {
+  for (const code of ["HOST_NOT_FOUND", "HOST_AMBIGUOUS", "HOST_DISCOVERY_UNAVAILABLE"]) {
+    const f = fixture(t);
+    f.setPromptError(new DeepSeekRpcError(code, "Synthetic discovery failure"));
+    const result = await f.send();
+    assert.equal(result.ok, false);
+    assert.equal("code" in result && result.code, "DISPATCH_UNCONFIRMED");
+    const task = f.store.get("dsh-task")!, binding = f.store.dshBindings.forTask(task.taskId)!;
+    const occupant = f.store.operations.occupant();
+    assert.equal(task.state, "blocked");
+    assert.equal(binding.dispatch, "uncertain");
+    assert.equal(binding.runOpen, true);
+    assert.equal(f.coordinator.executionStatus(task.taskId).remoteStopped, false);
+    assert.equal(new RunJournal(f.runs, task.attemptId!).snapshot()!.nativeStoppedAt, undefined);
+    assert.equal(occupant?.taskId, task.taskId);
+    await f.coordinator.sync(task.taskId);
+    await assert.rejects(f.send("must-not-dispatch"), { code: "CAPACITY_OCCUPIED" });
+    assert.deepEqual(f.store.operations.occupant(), occupant);
+    assert.equal(f.store.listAttempts(task.taskId).length, 1);
+    assert.deepEqual(f.counts(), { prompts: 1, selections: 1 });
+  }
+});
+
 test("T4B: original DSH events reconcile an uncertain prompt and authorize a separate stopped closure", async t => {
   const f = fixture(t); f.setPromptError(new Error("Synthetic lost native receipt")); await f.send();
   const operation = f.store.operations.forTask("dsh-task").find(op => op.kind === "send")!;
