@@ -41,6 +41,64 @@ node scripts/deployment-check.mjs --machine-label second-machine --normal-task "
 
 命令退出码 0 表示本地环境检查通过，不表示整份部署验收完成。检查报告中每个场景以及手工 reconnect/升级/卸载记录，才能给出最终结论。
 
+## 异机可审查部署步骤模板
+
+下列步骤供 10 线在第二台物理机上逐条记录。每步写真实命令、退出码、起止时间和产物路径；没有记录的一步视为未执行，不用“应该可以”代替。
+
+### 1. 部署步骤
+
+```powershell
+# 1.1 记录基线
+git -C <仓库> rev-parse HEAD
+node --version; npm --version
+# 1.2 核对发布包（只读，先看包再解压）
+node scripts/candidate-installation.mjs check --package "<包路径>" --expect-sha256 "<公布 SHA256>" --report "<报告 1>"
+# 1.3 依赖缺口（只读，不安装、不联网）
+node scripts/candidate-installation.mjs dependencies --install-root "<目标安装目录>" --package "<包路径>" --workbuddy-app "<WorkBuddy 可执行文件>" --workbuddy-config "<数据目录>" --report "<报告 2>"
+# 1.4 预览写入面（只读）
+node scripts/candidate-installation.mjs preview --package "<包路径>" --install-root "<目标安装目录>" --codex-home "<CODEX_HOME>" --report "<报告 3>"
+# 1.5 解压、安装、复查
+Expand-Archive "<包路径>" "<解压目录>"
+node scripts/setup.mjs plan
+node scripts/setup.mjs install --apply
+node scripts/doctor.mjs
+```
+
+每一步记录：命令原文（占位符已替换成该机真实路径）、退出码、关键输出摘要、是否触碰过真实 WorkBuddy。`preview` 退出码 1 表示有阻塞项，此时不进入安装；`dependencies` 退出码 1 同理。
+
+### 2. 版本核对
+
+```powershell
+node scripts/candidate-installation.mjs version-check --package "<包路径>" --install-root "<安装目录>" --report "<报告 4>"
+```
+
+`identities[].exact=true` 表示磁盘上的托管文件与该包逐文件一致。若为 `differing`/`missing`，先看差异文件：是本地改动、旧版本残留还是解压不完整，再决定覆盖或回退。比对只覆盖包内文件，不覆盖 `.env`、`data/`、`node_modules/`，也不证明网关进程加载的是新构建；进程侧仍以 health 的 `runtime-version.release` 与 `codeHash` 为准。
+
+### 3. 备份与回退
+
+```powershell
+# 3.1 变更前整目录备份（含 .env 与 data，保留时间戳）
+Copy-Item "<安装目录>" "<备份目录>\gateway-<时间戳>" -Recurse
+# 3.2 只读差异计划：当前版本 → 目标版本
+node scripts/candidate-installation.mjs rollback-plan --package "<当前版本包>" --to "<目标版本包>" --install-root "<安装目录>" --codex-home "<CODEX_HOME>" --task-db "<安装目录>\data\workbuddy.db" --report "<报告 5>"
+```
+
+回退前必须有停止证据；有活动任务、停止不明或常驻服务时安装与回退都不放行，先按安装说明第5节处理。计划的 `schema.decision` 为 `incompatible`/`unknown` 时不做文件替换，保留现有版本与数据，按 [恢复说明](../RESTORE.md) 走相容路线。回退后重跑 `version-check` 与 `doctor`，并把失败补救记录写进报告。
+
+### 4. 异机依赖检查清单
+
+| 项目 | 期望 | 观测方式 |
+|---|---|---|
+| Windows 版本与架构 | x64 | `dependencies` 报告 `platform`/`architecture` |
+| Node.js | >= 22.13.0 | 报告 `node_version` 的 observed |
+| 网关构建 | dist 内四个入口齐全 | 报告 `gateway_build` |
+| 生产依赖 | 与 `package-lock.json` 声明版本一致 | 报告 `production_dependencies` |
+| 桌面壳（可选） | 需要窗口时 .NET Desktop Runtime 10 + WebView2 Runtime | 报告 `desktop_shell`/`dotnet_desktop_runtime`/`webview2_runtime` |
+| WorkBuddy | 已安装并完成一次登录 | 报告 `workbuddy_application`/`workbuddy_data` |
+| 代码签名 | 如实记录为未签名 | 报告 `code_signing`；SmartScreen 提示按原样记录，不要求关闭系统保护 |
+
+缺失项不要用“装个依赖再试”含糊记录：写明缺什么、谁安装、装完重跑哪条命令、报告的 observed 变成什么。
+
 ## 提交反馈
 
 用匿名机器标签（如 win-02）记录实际操作系统、应用版本、提交、操作者类型、各步骤结果及卡点。模板字段不能用“预计通过”替代实测。公开前检查报告、截图和 Git 元数据；完整原始材料留在私有位置，报告中手写补充也须去除账号和真实业务信息。

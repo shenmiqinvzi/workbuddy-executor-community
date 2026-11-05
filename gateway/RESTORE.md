@@ -27,3 +27,20 @@
 2026-10-16已实测功能开发、回报、停止确认、独立验收和正常同任务返工；未执行新机器完整恢复安装、系统重启或重新登录测试。平台502仍属于外部服务故障，不能通过切换收费模型或无限重派掩盖。
 
 可靠性基线为 `reliability-20261018.1`，本分支构建标识为 `portability-20261018.1`；现有运行进程不会自动升级。最新保障清单见 `docs/workbuddy-executor-audit.md`，原生Windows复验见 `docs/windows-job-verification.json`；2026-10-17验收文件保留为历史记录。恢复必须带上 `scripts/bounded-job.ps1`、command-cleanup/bounded-command模块与全部技能参考文件，包括新的 `references/dispatch.md`；使用health的runtime比对实际启动进程，不能只比较磁盘。Windows复验使用 `node --import ./test/support/typescript-loader.mjs --test --test-concurrency=2` 并选择适用测试；Unix socket Harness与POSIX启动器不在本机通过范围。沙箱因策略拒绝PowerShell脚本时，在批准的正常本机上下文运行Job相关测试，不降低系统策略。
+
+## 版本回退与任务库结构
+
+回退不是把旧目录拷回去。先按 [Windows 安装指南](docs/INSTALL_WINDOWS.md) 第5节让任务结束并取得停止证明，再用只读工具生成差异计划：
+
+```powershell
+node scripts/candidate-installation.mjs rollback-plan --package "<当前版本 zip>" --to "<目标版本 zip>" --install-root "<安装目录>" --codex-home "<CODEX_HOME>" --task-db "<任务库 workbuddy.db>" --report "<输出 json>"
+```
+
+计划本身不写盘，只列出文件差异（含当前与目标哈希）、运行目标、配置影响、步骤与失败补救。执行前先自行备份安装目录与 data 目录，保留 .env 和任务历史。
+
+- `schema.assessment.decision = compatible`：回退目标认识的列都存在，可按计划替换文件后重启网关，再用 health 的 `runtime-version`（release、codeHash）与磁盘文件双核对。
+- `schema.assessment.decision = incompatible` 或 `unknown`：保持现有版本与数据原状，先停止继续写入并整目录备份 data；用较新的版本读取已有历史，或以旧库副本在隔离目录核对旧程序行为。旧程序读不了新结构时应如实报错并保留原状态，由使用者确认后续路线。
+- 不删除任务库、不用旧库覆盖新库、不在未验证的情况下让旧程序直接打开新结构的库。“删数据库即可恢复”不是本项目的恢复步骤。
+- 回退不动 .env 与任务历史；技能按发行包内容恢复，用户改过的技能先报错而不是覆盖。
+
+以上为只读计划与文档口径；本工作日线未在真实生产环境执行升级或回退，跨机器重新安装仍待独立验收。
