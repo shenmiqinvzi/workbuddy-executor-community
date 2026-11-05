@@ -191,3 +191,19 @@ run16（独立账本 `<STATE_DIR>\run16`）：glm-5.3-flash（x0.08，模型读�
 真实账号池仍未验证——本机没有把统计连接注入部署，token 侧还缺面板会话令牌，积分侧的既有 Key 使用授权未经确认，工具与操作步骤只到"可审查、可重复运行"这一步。D3-01/D3-02 状态不变，任务级路由仍 `routing_unverified`。详见 [RESOURCE_SOURCE_ACCEPTANCE_TOOL.md](RESOURCE_SOURCE_ACCEPTANCE_TOOL.md)。
 
 本地集成：`git merge --ff-only fix/resource-acceptance-readiness`，`e39a4d4 → 6b169d3`（11 文件、+760/−21），`README.md`、`ROADMAP.md` 的既有未提交修改原样保留。集成后复核：`npm run build` 0、`typecheck:task-view` 0、资源与容量批次 91/91、HTTP/打包批次 63/63、`npm run test:workbench` 100/100、`desktop:test` 70/70、`verify-snapshot.mjs` 321 文件 `hashesMatch:true`、`git diff --check` 0；用 `collectReleaseFiles()` 逐文件比对 `package-v6` 侧车清单 → **560/560 全等**，即该包就是集成分支的构建结果。未推送、未合 main、未部署。未限定条件时 `--check` 输出 `accepted:false`、退出码 2，两条来源分别列出缺失字段。
+
+### D3 验收工具完整性修复（2026-11-05 第四轮）
+
+独立审查用隔离夹具复现了三处「工具说通过、其实没验证」的缺陷（`outputs/resource-review-20261105/acceptance-boundaries-GxhjWv/review-result.json`），本轮只修这三处，不扩功能。
+
+**状态目录归属。** `--state-dir` 原本被当成本轮根目录，`finally` 里直接 `rm -rf`，调用者目录里的 sentinel 与同名 `resources.sqlite` 一起消失，仍报 `accepted: true`。现在 `--state-dir` 只是**父目录**，工具用 `mkdtemp` 在里面建 `resource-source-acceptance-*` 自有子目录，数据库与 runs 只落在这个子目录，清理也只针对它；`realpath` 校验父子关系与 basename 前缀，`lstat` 拒绝符号链接/junction，判断不了就报 `state_root_not_owned`/`state_root_outside_parent` 并停止删除，而不是扩大范围。
+
+**WAL 提交检测。** `database_unchanged_by_reads` 原本只比较 `resources.sqlite` 主文件 SHA-256，而 `TaskStore` 跑在 WAL 模式：GET 期间提交的写入留在 `-wal` 里，主文件哈希不变，检查照样通过。现在改为在读取窗口两端采样 `PRAGMA data_version` 加全表内容摘要（基线放在采集完成之后、GET 之前），`data_version` 对另一连接的提交敏感，摘要兜住同页更新；不用 checkpoint、不重开数据库、不清 WAL。
+
+**关闭失败不再报成功。** 原实现忽略 `server.close()`/`store.close()` 的异常，再读封装类根本不存在的 `listening` 属性，于是注入关闭异常后端口仍在 200、`services_closed` 仍 true。现在逐项记录 collector / server / store 的实际关闭结果（5 秒有界），并用 `net.connect` 探端口；关闭失败保留状态目录（`stateRetention: "kept_after_close_failure"`），继续关闭其余资源，整体不通过。
+
+回归：`test/resource-source-acceptance.test.ts` 从 11 项扩到 **20 项**（调用者目录与既有库不受损、`--keep` 只留自有子目录、失败运行同样不损坏、WAL-only 写入与 store 同连接写入都被检出、`server.close` 抛错、`store.close` 抛错、collector 抛错仍继续关闭其余、部分初始化只清理已创建部分）。旧实现上先跑出 **10 pass / 10 fail**（`outputs/resource-acceptance-boundaries-20261105/pre-fix-tests.log`），改后 20/20；资源与路由批次 96/96；正式全量（隔离 `WORKBUDDY_CLI_ELECTRON`/`WORKBUDDY_CONFIG_DIR`）**956 条 / 944 通过 / 0 失败 / 12 跳过，退出码 0**（309s）。
+
+候选包：`outputs/resource-acceptance-boundaries-20261105/package/codex-workbuddy-gateway-v0.7.1.zip`，560 文件，SHA-256 `d3a3c6212d224eb485bd92e873ce2130bd2f2311b17e9ae63d0588bacb9c7cbd`；解包后 `verify-release.mjs` → 560 文件 `hashesMatch: true`；包内依赖安装 94 包。包级验证 `scripts/verify-package-acceptance.mjs` **16/16**：成功路径 35 项全过、调用者目录与外来数据库不变、自有目录被清理、报告无凭据；WAL 写入使 `database_unchanged_by_reads` 失败（`contentStable:false`）；用包装内同一文件的注入缝验证 `server.close` 抛错 → `services_closed` 失败、端口仍开、目录保留，读取窗口内写入 → 检查失败。旧包 `5580742b…` 等全部保留未覆盖。
+
+对历史结论的影响：上一轮记的「35 项全过、accepted: true」只在「工具自有临时目录、上游正常、服务正常关闭」前提下成立，不能证明调用者目录安全、读取窗口内无写入、关闭失败会被发现；新证据替代这三项。真实账号池仍未验证，D3-01/D3-02 不标完成。

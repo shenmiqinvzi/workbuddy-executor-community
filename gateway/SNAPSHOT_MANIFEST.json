@@ -450,8 +450,8 @@
     },
     {
       "path": "scripts/resource-source-acceptance.mjs",
-      "sha256": "68b3c3dd417015f42e8de1546b7d5ff815f52e03dffe77cead4ed9ca01637cae",
-      "bytes": 21250
+      "sha256": "bfeddf629a6ec46e73655aa9208de768819042fe9a66ede300142ccffe40daef",
+      "bytes": 30120
     },
     {
       "path": "scripts/setup.mjs",
@@ -1260,8 +1260,8 @@
     },
     {
       "path": "test/resource-source-acceptance.test.ts",
-      "sha256": "9e15464656e188d5b43b843bde6176209c6b98d2f4bbd9a9e21c25a82783fc0b",
-      "bytes": 11205
+      "sha256": "aa8d7fb5215e387b4f87b0c910ac211978a3432cf9edf2a796d419d27ec6ebfa",
+      "bytes": 22537
     },
     {
       "path": "test/run-journal.test.ts",

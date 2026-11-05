@@ -17,9 +17,25 @@
  *
  *   --execute  One bounded read per requested source, through the production
  *              collector, the production store and the production HTTP server,
- *              all bound to an isolated state directory and an ephemeral
+ *              all bound to a run-owned state directory and an ephemeral
  *              loopback port. Nothing touches the deployed gateway, task
  *              database or configuration, and no model request is made.
+ *
+ * State ownership: `--state-dir` names a *parent* directory. The tool creates a
+ * unique `resource-source-acceptance-*` directory inside it and removes only
+ * that directory, after checking that it really is the directory this run
+ * created. A caller's own files, including a pre-existing `resources.sqlite`,
+ * are never opened, migrated, overwritten or deleted.
+ *
+ * Database neutrality: reads are compared through a second connection that
+ * samples `PRAGMA data_version` and a content digest of every table, so a
+ * committed write during the read window is detected even when it stays in the
+ * write-ahead log and the database file's own bytes do not change.
+ *
+ * Shutdown: the collectors, the HTTP server and the store are closed one by
+ * one, each result is recorded, and the port is probed afterwards. A resource
+ * that cannot be confirmed closed fails the run; its state directory is then
+ * kept rather than deleted underneath a live service.
  *
  * Exit codes: 0 executed and every check passed; 1 executed and something
  * failed; 2 conditions missing, nothing (or not everything) executed.
@@ -31,13 +47,21 @@
  */
 
 import fs from "node:fs";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
+import { DatabaseSync } from "node:sqlite";
 import { pathToFileURL, fileURLToPath } from "node:url";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const gatewayRoot = path.join(scriptDir, "..");
+
+/** Prefix of the directory this tool creates and owns. */
+const STATE_PREFIX = "resource-source-acceptance-";
+
+/** Upper bound for one close call; the acceptance must never hang on shutdown. */
+const CLOSE_TIMEOUT_MS = 5000;
 
 function distModule(relative) {
   return import(pathToFileURL(path.join(gatewayRoot, "dist", relative)).href);
@@ -109,10 +133,6 @@ export function checkConditions(env = process.env) {
   };
 }
 
-function hashFile(file) {
-  return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
-}
-
 function request(port, requestPath, method = "GET") {
   return fetch(`http://127.0.0.1:${port}${requestPath}`, { method, headers: { host: `127.0.0.1:${port}` } }).then(async response => ({
     status: response.status,
@@ -155,14 +175,138 @@ function errorCode(error) {
   return "acceptance_error";
 }
 
+function failure(code, message) {
+  const error = new Error(message ?? code);
+  error.code = code;
+  return error;
+}
+
+/**
+ * Creates the run-owned directory.
+ *
+ * A caller-provided `stateDir` is a *parent*: the run root is a fresh
+ * `resource-source-acceptance-*` directory created inside it, so nothing the
+ * caller already had is reused. Without `stateDir` the run root is a temporary
+ * directory that is also exclusively this run's.
+ */
+function allocateStateRoot(stateDir) {
+  if (!stateDir) {
+    const root = path.resolve(fs.mkdtempSync(path.join(os.tmpdir(), STATE_PREFIX)));
+    return { root, parent: path.resolve(os.tmpdir()), external: false };
+  }
+  const parent = path.resolve(stateDir);
+  fs.mkdirSync(parent, { recursive: true });
+  const parentStat = fs.lstatSync(parent);
+  if (!parentStat.isDirectory() || parentStat.isSymbolicLink()) throw failure("state_parent_not_a_directory");
+  const root = path.resolve(fs.mkdtempSync(path.join(parent, STATE_PREFIX)));
+  return { root, parent, external: true };
+}
+
+/**
+ * Removes the run-owned directory, and nothing else.
+ *
+ * Ownership is proved from resolved paths: the root must be a real directory
+ * (not a symbolic link or junction), must carry the tool's prefix, and must sit
+ * directly inside the parent recorded when it was created. Any doubt raises
+ * instead of widening the deletion.
+ */
+function removeOwnedRoot(stateRoot) {
+  let realRoot;
+  let realParent;
+  try {
+    realRoot = fs.realpathSync(stateRoot.root);
+    realParent = fs.realpathSync(stateRoot.parent);
+  } catch (error) {
+    if (error && error.code === "ENOENT") return { removed: false, code: "already_absent" };
+    throw failure("state_root_unreadable");
+  }
+  if (path.dirname(realRoot) !== realParent) throw failure("state_root_outside_parent");
+  if (!path.basename(realRoot).startsWith(STATE_PREFIX)) throw failure("state_root_not_owned");
+  const stat = fs.lstatSync(realRoot);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) throw failure("state_root_not_a_directory");
+  fs.rmSync(realRoot, { recursive: true, force: false, maxRetries: 2 });
+  return { removed: true, code: null };
+}
+
+/**
+ * A second connection used only to observe the database.
+ *
+ * `PRAGMA data_version` is per connection and changes when *another* connection
+ * commits, which covers both an independent writer and the store's own
+ * connection (the observer is a different connection either way). On top of
+ * that the sample digests every table's rows, so an in-place update that leaves
+ * `data_version` alone is still visible. The observer never writes.
+ */
+function openDatabaseObserver(dbFile) {
+  let db;
+  let mode = "read_only";
+  try {
+    db = new DatabaseSync(dbFile, { readOnly: true });
+  } catch {
+    // A read-only handle can be refused when the -shm file cannot be opened for
+    // writing; a plain handle still only issues reads here.
+    mode = "plain";
+    db = new DatabaseSync(dbFile);
+  }
+  const sample = () => {
+    const version = Number(db.prepare("PRAGMA data_version").get()?.data_version ?? -1);
+    const userVersion = Number(db.prepare("PRAGMA user_version").get()?.user_version ?? -1);
+    const tables = db.prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all();
+    const digest = crypto.createHash("sha256");
+    digest.update(`version=${version}\u0000user=${userVersion}\u0000`);
+    let rows = 0;
+    for (const table of tables) {
+      const name = String(table.name);
+      const encoded = db.prepare(`SELECT * FROM "${name.replace(/"/g, '""')}"`).all().map(row => JSON.stringify(row)).sort();
+      digest.update(`${name}\u0000${encoded.length}\u0000`);
+      for (const row of encoded) digest.update(row).update("\u0001");
+      rows += encoded.length;
+    }
+    return { version, userVersion, tables: tables.length, rows, digest: digest.digest("hex") };
+  };
+  return { mode, sample, close: () => { try { db.close(); } catch { /* a closed observer leaks nothing */ } } };
+}
+
+/** Resolves once the loopback port refuses connections (or the probe times out). */
+function portIsClosed(port, timeoutMs = 1500) {
+  return new Promise(resolve => {
+    const socket = net.connect({ host: "127.0.0.1", port });
+    const finish = value => { socket.removeAllListeners(); socket.destroy(); resolve(value); };
+    socket.setTimeout(timeoutMs);
+    socket.once("connect", () => finish(false));
+    socket.once("error", () => finish(true));
+    socket.once("timeout", () => finish(false));
+  });
+}
+
+/** Runs one close, bounded, and keeps only a code when it fails. */
+async function closeBounded(resource, action) {
+  let timer;
+  try {
+    await Promise.race([
+      Promise.resolve().then(action),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(failure("close_timeout")), CLOSE_TIMEOUT_MS); }),
+    ]);
+    return { resource, closed: true };
+  } catch (error) {
+    return { resource, closed: false, code: errorCode(error) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * One bounded read through the production chain.
  *
  * `source` is "token", "credit" or "both". A source without conditions is
  * reported as not executed instead of being replaced by synthetic data, so a
  * one-sided pass can never read as both sides passing.
+ *
+ * `instrument` is a test seam only: the callbacks receive the objects this run
+ * created so a regression can inject a failure. Production callers omit it, and
+ * every callback runs before the checks are computed.
  */
-export async function runAcceptance({ source = "both", env = process.env, timeoutMs = 5000, stateDir, keep = false, now = () => Date.now() } = {}) {
+export async function runAcceptance({ source = "both", env = process.env, timeoutMs = 5000, stateDir, keep = false, now = () => Date.now(), instrument = {} } = {}) {
   const conditions = checkConditions(env);
   const wanted = source === "both" ? ["token", "credit"] : [source];
   const selected = wanted.filter(name => (name === "token" ? conditions.sources.token.ready : conditions.sources.credit.ready));
@@ -170,15 +314,30 @@ export async function runAcceptance({ source = "both", env = process.env, timeou
     return { mode: "execute", executed: false, accepted: false, exitCode: 2, sources: [], notExecuted: wanted, conditions, checks: [], note: "no requested source has complete conditions; nothing was read" };
   }
 
-  const root = stateDir ?? fs.mkdtempSync(path.join(os.tmpdir(), "resource-source-acceptance-"));
-  fs.mkdirSync(path.join(root, "runs"), { recursive: true });
-  const dbFile = path.join(root, "resources.sqlite");
+  let stateRoot;
+  try {
+    stateRoot = allocateStateRoot(stateDir);
+  } catch (error) {
+    return {
+      mode: "execute",
+      executed: false,
+      accepted: false,
+      exitCode: 1,
+      sources: [],
+      notExecuted: wanted,
+      checks: [check("state_directory_ready", false, { code: errorCode(error) })],
+      note: "the run-owned state directory could not be created; nothing was read and nothing was deleted",
+    };
+  }
+  fs.mkdirSync(path.join(stateRoot.root, "runs"), { recursive: true });
+  const dbFile = path.join(stateRoot.root, "resources.sqlite");
   const notExecuted = wanted.filter(name => !selected.includes(name));
   const checks = [];
   let server;
   let store;
+  let observer;
   let tracker;
-  let closedOk = false;
+  let port;
   const collectors = [];
   try {
     const { TaskStore } = await distModule("task-store.js");
@@ -188,17 +347,19 @@ export async function runAcceptance({ source = "both", env = process.env, timeou
     const { WorkBuddyCreditBalanceCollector } = await distModule("credit-balance.js");
 
     // A task store is required by the shared service, but this acceptance never
-    // creates a task: the database stays empty and its bytes must stay identical.
+    // creates a task: the database stays empty and its content must stay
+    // identical. It lives inside the run-owned directory only.
     store = new TaskStore(dbFile);
-    const service = new TaskApplicationService({ store }, 3, path.join(root, "runs"));
+    const service = new TaskApplicationService({ store }, 3, path.join(stateRoot.root, "runs"));
     server = new WorkbenchHttpServer({ service, health: () => workbenchHealth({ runtime: { release: "acceptance", packageVersion: "0.0.0", startedAt: new Date().toISOString() } }) });
-    const port = await server.listen(0);
-    checks.push(check("isolated_service_listening", true, { loopback: true, port: Number(port) }));
+    port = Number(await server.listen(0));
+    checks.push(check("isolated_service_listening", true, { loopback: true, port }));
+    observer = openDatabaseObserver(dbFile);
+    await instrument.afterListening?.({ server, store, service, port, dbFile });
 
-    const before = hashFile(dbFile);
     const origins = selected.map(name => new URL(name === "token" ? env.WORKBUDDY_QUOTA_SOURCE_URL : env.WORKBUDDY_CREDIT_SOURCE_URL).origin);
     tracker = trackUpstream(origins);
-    const shared = { port, dbFile, before, tracker, now, service };
+    const shared = { port, dbFile, tracker, now, service, observer, store, instrument };
 
     if (selected.includes("token")) {
       const collector = new WorkBuddyQuotaCollector(store.quotas, {
@@ -210,7 +371,8 @@ export async function runAcceptance({ source = "both", env = process.env, timeou
         timeoutMs,
       });
       collectors.push(collector);
-      checks.push(...(await readSource("token", { collector, store, ...shared })));
+      await instrument.afterCollectors?.({ collectors });
+      checks.push(...(await readSource("token", { collector, ...shared })));
     }
     if (selected.includes("credit")) {
       const collector = new WorkBuddyCreditBalanceCollector(store.creditBalances, {
@@ -221,7 +383,8 @@ export async function runAcceptance({ source = "both", env = process.env, timeou
         timeoutMs,
       });
       collectors.push(collector);
-      checks.push(...(await readSource("credit", { collector, store, ...shared })));
+      await instrument.afterCollectors?.({ collectors });
+      checks.push(...(await readSource("credit", { collector, ...shared })));
     }
 
     tracker.restore();
@@ -235,14 +398,40 @@ export async function runAcceptance({ source = "both", env = process.env, timeou
     checks.push(check("acceptance_completed", false, { code: errorCode(error) }));
   } finally {
     tracker?.restore();
-    for (const collector of collectors) { try { await collector.stop(); } catch { /* stopping a failed collector must not mask the run */ } }
-    try { await server?.close(); } catch { /* recorded below */ }
-    try { store?.close(); } catch { /* recorded below */ }
-    closedOk = Boolean(!server || !server.listening);
-    checks.push(check("services_closed", closedOk, { note: "the acceptance server and store are closed before the report is written" }));
-    if (!keep) fs.rmSync(root, { recursive: true, force: true });
+    const shutdown = [];
+    for (const [index, collector] of collectors.entries()) {
+      shutdown.push(await closeBounded(`collector_${index}`, () => collector.stop()));
+    }
+    if (server) shutdown.push(await closeBounded("server", () => server.close()));
+    // The wrapper exposes no `listening` flag and its `close` can resolve while
+    // the socket is still bound, so the port itself is probed.
+    const portClosed = server && port ? await portIsClosed(port) : null;
+    if (store) shutdown.push(await closeBounded("store", () => store.close()));
+    observer?.close();
+    const closed = shutdown.every(entry => entry.closed) && portClosed !== false;
+    checks.push(check("services_closed", closed, {
+      resources: shutdown.map(entry => ({ resource: entry.resource, closed: entry.closed, code: entry.code ?? null })),
+      portClosed,
+    }));
+
+    let cleanup = { removed: false, code: null };
+    if (!keep) {
+      if (closed) {
+        try {
+          cleanup = removeOwnedRoot(stateRoot);
+        } catch (error) {
+          cleanup = { removed: false, code: errorCode(error) };
+        }
+      } else {
+        // Deleting the directory a live service still uses would fake a cleanup.
+        cleanup = { removed: false, code: "kept_after_close_failure" };
+      }
+    }
+    checks.push(check("state_cleanup", !cleanup.code || cleanup.code === "kept_after_close_failure", { ...cleanup, kept: keep }));
   }
   const failed = checks.filter(entry => !entry.ok);
+  const closeFailed = checks.some(entry => entry.id === "services_closed" && !entry.ok);
+  const retained = keep || closeFailed;
   return {
     mode: "execute",
     executed: true,
@@ -250,7 +439,9 @@ export async function runAcceptance({ source = "both", env = process.env, timeou
     exitCode: failed.length > 0 ? 1 : notExecuted.length > 0 ? 2 : 0,
     sources: selected,
     notExecuted,
-    stateDir: keep ? root : null,
+    stateRoot: stateRoot.root,
+    stateDir: retained ? stateRoot.root : null,
+    stateRetention: keep ? "kept" : closeFailed ? "kept_after_close_failure" : "removed",
     passed: checks.length - failed.length,
     failed: failed.length,
     checks,
@@ -261,11 +452,12 @@ export async function runAcceptance({ source = "both", env = process.env, timeou
  * Verifies one source end to end.
  *
  * The collector runs first, then the store is read, then the HTTP endpoints are
- * read while the upstream call count and the database hash are measured around
- * them. That ordering is what separates "the GET served a saved snapshot" from
- * "the GET caused a collection or a write".
+ * read while the upstream call count and the database sample are measured
+ * around them. The database baseline is taken *after* the collection has
+ * committed, so the collection's own writes are not mistaken for a read-side
+ * write, and the comparison runs after every HTTP read of this source.
  */
-async function readSource(name, { collector, store, port, dbFile, before, tracker, now, service }) {
+async function readSource(name, { collector, store, port, dbFile, tracker, now, service, observer, instrument = {} }) {
   const checks = [];
   const label = name === "token" ? "quota" : "credit";
   const target = name === "token" ? store.quotas : store.creditBalances;
@@ -310,11 +502,14 @@ async function readSource(name, { collector, store, port, dbFile, before, tracke
   }
 
   // --- HTTP reads: they must serve the saved snapshot without collecting or writing.
+  const baseline = observer.sample();
   const upstreamBefore = tracker.calls.length;
   const quotaHttp = name === "token" ? await request(port, "/workbench/v1/resources/quotas") : null;
   const creditHttp = name === "credit" ? await request(port, "/workbench/v1/resources/credit-balances") : null;
   const routingHttp = await request(port, "/workbench/v1/resources/routing");
   const upstreamAfter = tracker.calls.length;
+  await instrument.duringHttpGet?.({ dbFile, source: name, store });
+  const after = observer.sample();
   const served = quotaHttp ?? creditHttp;
   checks.push(check(`${label}_http_serves_snapshot`, observed && served?.status === 200 && served.contentType.includes("application/json"), { status: served?.status ?? 0 }));
   checks.push(check(`${label}_http_matches_store`, observed && JSON.stringify(served?.body?.connections?.[0]?.snapshotId ?? null) === JSON.stringify(connection?.snapshotId ?? null), {}));
@@ -324,7 +519,12 @@ async function readSource(name, { collector, store, port, dbFile, before, tracke
   }));
   checks.push(check("routing_never_claims_verification", routingHttp.body?.routingVerified === false, {}));
   checks.push(check("routing_primary_is_traceable", Array.isArray(routingHttp.body?.mappings) && routingHttp.body.mappings.every(mapping => typeof mapping.primaryConnectionId === "string" && Array.isArray(mapping.sources) && mapping.sources.length > 0), {}));
-  checks.push(check("database_unchanged_by_reads", hashFile(dbFile) === before, {}));
+  checks.push(check("database_unchanged_by_reads", baseline.digest === after.digest && baseline.version === after.version, {
+    dataVersionStable: baseline.version === after.version,
+    contentStable: baseline.digest === after.digest,
+    tables: after.tables,
+    observer: observer.mode,
+  }));
   checks.push(check("unknown_states_are_not_upgraded", Array.isArray(routingHttp.body?.mappings) && routingHttp.body.mappings.every(mapping => mapping.level !== "observed" || mapping.evidenceReason === "snapshot_fresh" || mapping.evidenceReason === "cache_fresh"), {}));
   return checks;
 }
@@ -335,8 +535,10 @@ const USAGE = `Usage: node scripts/resource-source-acceptance.mjs [--check | --e
   --execute            perform a bounded read-only acceptance (needs complete conditions)
   --source <name>      token | credit | both (default: both)
   --timeout-ms <n>     per-request upstream timeout for --execute (default: 5000)
-  --state-dir <path>   reuse a caller-provided isolated state directory
-  --keep               keep the isolated state directory for inspection
+  --state-dir <path>   parent directory for this run's own state; a unique
+                       resource-source-acceptance-* subdirectory is created inside it and
+                       only that subdirectory is removed (never the parent or its files)
+  --keep               keep this run's own state directory; its path is reported as stateDir
 
 Exit codes: 0 complete pass, 1 a check failed, 2 conditions missing or a source was not executed.
 Credentials are read from the process environment only; they are never printed or written.`;
