@@ -125,7 +125,7 @@ layers.requestRouting     code=actual_request_routing       level=unavailable   
 
 浏览器（`browser\shots\`）：`S1-declared-observed-1440.png`、`S1-declared-observed-720.png`、`S2-declaration-conflict-1440.png`、`S3-inline-credential-refused-1440.png`、`S4-not-declared-1440.png`、`S4-not-declared-720.png`、`S5-evidence-failure-1440.png`、`S6-demo-mode-1440.png`。
 
-桌面壳（`browser\shots\`）：`W1-desktop-declared-observed.png`、`W2-desktop-720.png`。
+桌面壳（`browser\shots\`）：`W1-desktop-declared-observed.png`、`W2-desktop-720.png`、`W3-desktop-trust-section.png`（滚到证据分区的定格，三层卡片、声明与观测对比、请求归因缺口同时可见）。
 
 场景与结论：
 
