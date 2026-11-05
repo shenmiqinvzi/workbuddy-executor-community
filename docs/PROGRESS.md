@@ -189,3 +189,5 @@ run16（独立账本 `<STATE_DIR>\run16`）：glm-5.3-flash（x0.08，模型读�
 候选包：`outputs/resource-acceptance-readiness-20261104/package-v6/codex-workbuddy-gateway-v0.7.1.zip`，560 文件，SHA-256 `5580742bddf2e492adc8d700e935fee85261818db08b3c0e83327b728e1a023d`；包内 `verify-release.mjs` → 560 文件 `hashesMatch: true`；用包内 `dist/` 与包内脚本对回环 fixture 跑 `--execute --source both` → 35/35、退出码 0，`--check` 退出码 0。旧包 `84cc070a…`、`da637ece…`、`532f2b86…` 均保留未覆盖。
 
 真实账号池仍未验证——本机没有把统计连接注入部署，token 侧还缺面板会话令牌，积分侧的既有 Key 使用授权未经确认，工具与操作步骤只到"可审查、可重复运行"这一步。D3-01/D3-02 状态不变，任务级路由仍 `routing_unverified`。详见 [RESOURCE_SOURCE_ACCEPTANCE_TOOL.md](RESOURCE_SOURCE_ACCEPTANCE_TOOL.md)。
+
+本地集成：`git merge --ff-only fix/resource-acceptance-readiness`，`e39a4d4 → 6b169d3`（11 文件、+760/−21），`README.md`、`ROADMAP.md` 的既有未提交修改原样保留。集成后复核：`npm run build` 0、`typecheck:task-view` 0、资源与容量批次 91/91、HTTP/打包批次 63/63、`npm run test:workbench` 100/100、`desktop:test` 70/70、`verify-snapshot.mjs` 321 文件 `hashesMatch:true`、`git diff --check` 0；用 `collectReleaseFiles()` 逐文件比对 `package-v6` 侧车清单 → **560/560 全等**，即该包就是集成分支的构建结果。未推送、未合 main、未部署。未限定条件时 `--check` 输出 `accepted:false`、退出码 2，两条来源分别列出缺失字段。
