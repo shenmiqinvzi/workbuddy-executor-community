@@ -220,6 +220,6 @@ run16（独立账本 `<STATE_DIR>\run16`）：glm-5.3-flash（x0.08，模型读�
 
 界面验收：浏览器 19/19（关联读数、核对步骤仍可确认、720/420 无溢出、503 注入保留旧快照、返回重开后重读、键盘焦点与回车、未关联无数字、跳转资源页）；WebView2 实窗 19/19（同一组场景，另加清空声明立即转为未关联、恢复声明回到已关联）。截图见 `outputs/resource-plan-reference-20261105/shots/` 与 `outputs/resource-plan-reference-20261105/webview/shots/`，均标"隔离合成数据"。
 
-候选包：`outputs/resource-plan-reference-20261105/package/codex-workbuddy-gateway-v0.7.1.zip`，567 文件，SHA-256 `74bf2feaa4ceff0fc66a269be3b36b5eeafdf3399f0a1a230b56f7cdb3b4f10b`；解包后 `verify-release.mjs` → 567 文件 `hashesMatch: true`；包内含 `workbench/plan-reference.mjs` 与 `src/plan-resource-reference.ts`。旧包全部保留未覆盖。
+候选包：`outputs/resource-plan-reference-20261105/package-v2/codex-workbuddy-gateway-v0.7.1.zip`，567 文件，SHA-256 `c0349d799048385d3ee44db8a848f8a0904def5209a090e568bf98494dacd5a0`；解包后 `verify-release.mjs` → 567 文件 `hashesMatch: true`；包内含 `workbench/plan-reference.mjs` 与 `src/plan-resource-reference.ts`。旧包全部保留未覆盖。首版 `package`（`74bf2fea…`）的 `dist/plan-resource-reference.js` 是打包前未重建的旧产物，缺 `linked_rows_elsewhere` 分支，与集成树不一致；重建 dist 后重打包，并用 `scripts/compare-runtime.mjs` 对 `package-v2` 逐文件比对 → **567/567 全等**，浏览器 19/19 与 WebView2 19/19 均已在 `package-v2` 上重跑。
 
 仍未完成：真实来源没有声明关联（本机未注入统计连接），真实窗口只能显示"未建立关联"；任务→模型的实际路由仍不可证，`routing_unverified` 保留，D3-02 不因本轮改状态；D3-01 真实账号池与 D3-04 监督隔离维持原状态。

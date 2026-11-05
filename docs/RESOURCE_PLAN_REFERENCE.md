@@ -103,7 +103,9 @@
 
 - 浏览器（headless Chrome + CDP，合成桌面命令 stub）：**19/19**。覆盖关联读数（剩余 380、积分 42.5）、核对步骤仍可确认、720/420 无横向溢出、503 注入后保留旧快照并提示、返回与重开后重读、键盘焦点与回车刷新、未关联状态无数字、点击"查看网关资源汇总"切到资源视图。
 - WebView2 实窗（候选包内 `WorkBuddy.Workbench.exe`，独立 profile 与合成库）：**19/19**。同上场景，另加"清空声明后窗口立即显示未关联、恢复声明后回到已关联"。
-- 截图：`outputs/resource-plan-reference-20261105/shots/`（浏览器 8 张）与 `outputs/resource-plan-reference-20261105/webview/shots/`（6 张），均带"隔离合成数据 · 非真实额度"标记。
+- 截图：`outputs/resource-plan-reference-20261105/shots/`（浏览器 8 张）与 `outputs/resource-plan-reference-20261105/webview/shots/`（8 张），均带"隔离合成数据 · 非真实额度"标记。
+
+候选包：`outputs/resource-plan-reference-20261105/package-v2/codex-workbuddy-gateway-v0.7.1.zip`，567 文件，SHA-256 `c0349d799048385d3ee44db8a848f8a0904def5209a090e568bf98494dacd5a0`。首版 `package`（`74bf2fea…`）的 `dist/plan-resource-reference.js` 是打包前未重建的产物、缺 `linked_rows_elsewhere` 分支，已重建 dist 后重打包；`scripts/compare-runtime.mjs` 对 `package-v2` 逐文件比对 567/567 全等，浏览器与实窗两轮验收都在 `package-v2` 上重跑。
 
 ## 7. 仍未完成的
 
