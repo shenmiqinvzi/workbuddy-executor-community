@@ -202,7 +202,7 @@ export function mountResources(host, { now = () => new Date() } = {}) {
             el('div', { class: 'resource-bar-actions' },
                 modeBadge,
                 refreshButton)),
-        el('p', { class: 'resource-bar-help' }, '手动刷新只重新读取网关缓存（GET 两个只读接口）；本页不自动轮询、不探测上游额度。'),
+        el('p', { class: 'resource-bar-help' }, '手动刷新只重新读取网关缓存（GET 额度、积分、证据分层三个只读接口）；本页不自动轮询、不探测上游额度。'),
         notice,
         summary,
         body,
