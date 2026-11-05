@@ -39,7 +39,11 @@ function writeReport(report, filename) {
 function inspect(packageFile, expectedSha256) {
   const archive = path.resolve(packageFile);
   if (!fs.existsSync(archive)) fail('Candidate package does not exist.', archive);
-  const inspection = inspectCandidatePackage(archive, expectedSha256 ? { expectedSha256 } : {});
+  // A truncated or non-ZIP input is a refused candidate, not a crash: the report
+  // stays machine readable so the caller can record the failure.
+  let inspection;
+  try { inspection = inspectCandidatePackage(archive, expectedSha256 ? { expectedSha256 } : {}); }
+  catch (error) { fail('Candidate package could not be inspected.', String(error?.message ?? error)); }
   return inspection;
 }
 

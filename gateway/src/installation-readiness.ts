@@ -99,6 +99,9 @@ export function assertArchivePath(name: string) {
 }
 
 function readCentralDirectory(zip: Buffer) {
+  // readUInt32LE throws ERR_OUT_OF_RANGE on a short buffer; an empty or truncated
+  // file is a refused input, not an internal error.
+  if (zip.length < 22) throw new Error("Not a ZIP archive: the file is shorter than an end-of-central-directory record.");
   const minimum = Math.max(0, zip.length - 66_000);
   let end = -1;
   for (let offset = zip.length - 22; offset >= minimum; offset -= 1) {
@@ -263,23 +266,31 @@ export function planCandidateInstallation(input: InstallationPlanInput): Install
   }
   const candidatePaths = new Set(input.inspection.entries.map(entry => entry.path));
   const homeLike = [os.homedir(), path.parse(installRoot).root].includes(installRoot);
-  let listed = 0;
+  let listed = 0, listingTruncated = false;
   const walk = (dir: string) => {
     for (const item of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (listed++ > LISTING_LIMIT) return;
+      if (listed++ >= LISTING_LIMIT) { listingTruncated = true; return; }
       const filename = path.join(dir, item.name);
       const relative = path.relative(installRoot, filename).replaceAll("\\", "/");
       if (item.isDirectory()) {
         if (UNMANAGED_TREES.has(item.name)) { unmanaged.push(`${relative}/`); continue; }
         if (item.isSymbolicLink()) { blocked.push({ path: relative, reason: "existing_directory_is_link" }); continue; }
         walk(filename);
+        if (listingTruncated) return;
       } else if (!candidatePaths.has(relative)) unmanaged.push(relative);
     }
   };
   // Never enumerate the user profile or a drive root: those are refused targets,
   // and walking them would be slow and could surface unrelated personal files.
   if (lstatSafe(installRoot)?.isDirectory() && !homeLike) walk(installRoot);
-  const installed = input.installed ?? readExistingManifest(path.join(installRoot, "data", "deployment-installation.json"));
+  // A truncated listing is an incomplete comparison, so it stops the plan instead
+  // of presenting a short unmanaged list as if it were the whole installation.
+  if (listingTruncated) blocked.push({ path: ".", reason: "unmanaged_listing_truncated" });
+  let installed = input.installed;
+  if (installed === undefined) {
+    try { installed = readExistingManifest(path.join(installRoot, "data", "deployment-installation.json")); }
+    catch { blocked.push({ path: "data/deployment-installation.json", reason: "installed_manifest_unreadable" }); }
+  }
   if (installed) {
     const skillDir = path.join(codexHome, "skills", "workbuddy-executor");
     let current: Record<string, string> | undefined;

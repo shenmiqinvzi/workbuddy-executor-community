@@ -316,3 +316,34 @@ test('active tasks, unknown stop evidence and a persistent service block the dri
   assert.throws(() => setup('install', { ...f.options }), /persistent service/);
   assert.equal(fs.existsSync(path.join(f.installRoot, '.env')), false);
 });
+
+test('an empty or truncated candidate is refused with a readable message, never a range error', async t => {
+  const f = fixture(t);
+  const empty = path.join(f.temp, 'empty.zip');
+  fs.writeFileSync(empty, '');
+  assert.throws(() => inspectCandidatePackage(empty), /Not a ZIP archive: the file is shorter/);
+
+  const short = path.join(f.temp, 'short.zip');
+  fs.writeFileSync(short, Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00]));
+  assert.throws(() => inspectCandidatePackage(short), (error: NodeJS.ErrnoException) => {
+    assert.notEqual(error.code, 'ERR_OUT_OF_RANGE');
+    assert.match(String(error.message), /Not a ZIP archive/);
+    return true;
+  });
+});
+
+test('an unreadable installed manifest stops the plan instead of skipping managed drift', async t => {
+  const f = fixture(t);
+  const { archive } = await sealCandidate(f.temp);
+  const inspection = inspectCandidatePackage(archive);
+  fs.mkdirSync(path.join(f.installRoot, 'data'), { recursive: true });
+  fs.writeFileSync(path.join(f.installRoot, 'data/deployment-installation.json'), '{ this is not json');
+  const plan = planCandidateInstallation({ inspection, installRoot: f.installRoot, codexHome: f.codexHome, env: f.env, platform: 'win32' });
+  assert.deepEqual(plan.blocked.map(item => item.reason), ['installed_manifest_unreadable']);
+  assert.equal(plan.safeToApply, false);
+  assert.equal(plan.setupWrites.skill, 'installed', 'an unreadable record cannot be assumed to have drifted');
+
+  fs.writeFileSync(path.join(f.installRoot, 'data/deployment-installation.json'), JSON.stringify({ skillFiles: {}, snippetHash: 'x' }));
+  const readable = planCandidateInstallation({ inspection, installRoot: f.installRoot, codexHome: f.codexHome, env: f.env, platform: 'win32' });
+  assert.equal(readable.blocked.length, 0);
+});
