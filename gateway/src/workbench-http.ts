@@ -45,6 +45,8 @@ import type { AddressInfo } from "node:net";
 import { TaskApplicationService } from "./task-application-service.js";
 import { STAGE_TASK_VIEW_SCHEMA_VERSION, STAGE_TASK_VIEW_UNAVAILABLE, type StageTaskView } from "./task-view-stage.js";
 import type { StageListItem } from "./task-application-service.js";
+import { handleStatisticsRequest } from "./statistics-http.js";
+import type { StatisticsSources } from "./statistics-service.js";
 
 /** Default local port for the workbench HTTP surface (contract section 1). */
 export const WORKBENCH_DEFAULT_PORT = 18493;
@@ -127,6 +129,11 @@ interface WorkbenchAdapterOptions {
   requestAllowed?: (remoteAddress: string | undefined, host: string | undefined, origin: string | undefined) => boolean;
   /** Embedded-panel settings; read from the environment when omitted. */
   embed?: EmbedConfig;
+  /**
+   * Read-only statistics surface. When absent, no statistics route exists and
+   * every other route keeps its current behaviour.
+   */
+  statistics?: StatisticsSources;
 }
 
 /** One {code,message} pair per failure shape, kept stable. */
@@ -301,6 +308,8 @@ export class WorkbenchHttpServer {
         || pathname === "/workbench/v1/resources/routing"
           || pathname === "/workbench/v1/resources/plan-reference"
           || pathname === TASKS_PREFIX
+          || pathname === "/workbench/v1/statistics"
+          || pathname.startsWith("/workbench/v1/statistics/")
           || /^\/workbench\/v1\/tasks\/[^/]+(\/(rework|cancel|reviews|accept|events|export))?$/.test(pathname);
         if (isKnownPath) {
           response.setHeader("allow", "GET, HEAD");
@@ -319,6 +328,12 @@ export class WorkbenchHttpServer {
         this.send(response, 200, { ok: true, value: { panel: this.embed.panel } }); return;
       }
       if (serveWorkbenchAsset(pathname, response, this.embed.origins)) return;
+      if (this.options.statistics) {
+        // The statistics handler answers only its own prefix and returns null
+        // for everything else, so this cannot capture another route.
+        const statistics = handleStatisticsRequest(this.options.statistics, pathname, url.search);
+        if (statistics) { this.send(response, statistics.status, statistics.body); return; }
+      }
       if (pathname === "/workbench/v1/panel/tasks") {
         const parsed = parseListQuery(url.search);
         if (!parsed.ok) { this.refuse(response, 400, parsed.code, parsed.message); return; }
