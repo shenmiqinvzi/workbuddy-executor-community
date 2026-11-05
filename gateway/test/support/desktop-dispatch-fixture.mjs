@@ -14,7 +14,7 @@ import {WorkbenchHttpServer,workbenchHealth} from '../../dist/workbench-http.js'
 import {DesktopDispatchSession} from '../../dist/desktop-dispatch.js';
 import {DesktopDispatchJournal} from '../../dist/desktop-dispatch-journal.js';
 import {defaultModelPolicy} from '../../dist/collaboration.js';
-import {sendDesktopAgreement} from '../../dist/desktop-dispatch-runtime.js';
+import {sendDesktopAgreement,desktopProjects} from '../../dist/desktop-dispatch-runtime.js';
 import {installDesktopCommands} from '../../scripts/workbench-desktop-commands.mjs';
 
 loadDotEnv();
@@ -43,7 +43,7 @@ if(process.argv.includes('--fixture-worker')){
  store.close();
 }else{
  const models=[{execution:{executorId:'workbuddy',connectionId:'local-workbuddy',providerId:'workbuddy-native',modelId:'synthetic-workbuddy-model',reasoningEffort:null},credits:'x0.00',pricingVerified:true},...['low','high'].map(reasoningEffort=>({execution:{executorId:'dsh',connectionId:'synthetic-dsh-host',providerId:'synthetic-provider',modelId:'synthetic-dsh-model',reasoningEffort},credits:null,pricingVerified:false}))];
- const dispatch=new DesktopDispatchSession({catalog:async()=>({models,sessions:[{hostId:'synthetic-dsh-host',...session}],policy:defaultModelPolicy(),requiredFreeModel:null,dispatchEnabled:true,errors:['合成验证：未连接真实执行器，不产生模型调用。']}),receipt:id=>journal.receipt(id),latest:()=>journal.latest(),
+ const dispatch=new DesktopDispatchSession({catalog:async()=>({models,sessions:[{hostId:'synthetic-dsh-host',...session}],policy:defaultModelPolicy(),requiredFreeModel:null,dispatchEnabled:true,errors:['合成验证：未连接真实执行器，不产生模型调用。']}),projects:desktopProjects(config,process.env),receipt:id=>journal.receipt(id),latest:()=>journal.latest(),
  observe:async id=>{const draft=journal.request(id);if(!draft)throw Error('Missing fixture request');await service.sync(draft.taskId);return{taskId:draft.taskId,observedAt:new Date().toISOString()}},
  enqueue:async draft=>{
   if(draft.workspace.realPath!==project)throw Error('Only the marked synthetic project is allowed.');

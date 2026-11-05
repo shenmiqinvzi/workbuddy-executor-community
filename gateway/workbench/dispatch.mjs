@@ -38,6 +38,10 @@ export async function mountDesktopDispatch({ onTask, onResources = null }) {
     const open = el('button', { type: 'button', class: 'button dispatch-primary', id: 'new-task', disabled: true, title: '在独立桌面应用中准备任务' }, '新建任务');
     heading.prepend(open);
     let available = false, catalog, draft, busy = false, timer, stage = 'edit', polls = 0, receiptSignature = '', catalogGeneration = 0, catalogLoading = false, editorGeneration = 0;
+    /** The chosen remembered identity, the agreement being revised and the one
+     * agreement already dispatched. All three survive a catalog refresh so a
+     * late response never rewrites a newer decision. */
+    let selectedProjectId = null, revising = null, consumedDraftId = null;
     let planReference = null;
     const panel = el('section', { class: 'dispatch-workflow', id: 'task-compose', hidden: true, 'aria-label': '准备新任务' });
     sheet.querySelector('.page-heading').after(panel);
@@ -78,7 +82,7 @@ export async function mountDesktopDispatch({ onTask, onResources = null }) {
     open.addEventListener('click', async () => {
         clearTimeout(timer); panel.hidden = false; sheet.classList.add('composing');
         document.getElementById('page-title').textContent = '新建任务'; document.querySelector('.page-intro').textContent = '先明确约定，再启动执行。';
-        draft = null; catalog = null; polls = 0; receiptSignature = ''; showNotice(''); renderEditor();
+        draft = null; catalog = null; polls = 0; receiptSignature = ''; selectedProjectId = null; revising = null; consumedDraftId = null; showNotice(''); renderEditor();
         busy=true;sourceChanged();
         const saved = (() => { try { return localStorage.getItem(receiptKey); } catch { return null; } })();
         try {const latest=await desktopRequest('latest');const receipt=latest??(saved&&/^[a-f0-9-]{36}$/.test(saved)?await desktopRequest('status',{requestId:saved}):null);if(receipt){renderReceipt(receipt);return;}}
@@ -90,13 +94,16 @@ export async function mountDesktopDispatch({ onTask, onResources = null }) {
         const editor=++editorGeneration;
         setStage('edit');
         const workspace = field('workspace', '项目文件夹', el('input', { required: true, autocomplete: 'off', placeholder: '已有项目的绝对路径' }), '任务只作用于此目录；原有改动继续受保护。');
-        controls.workspace.addEventListener('input', () => { controls.session.value=''; if(catalog&&controls.model.value) updateSessions(); });
-        workspace.append(el('button', { type: 'button', class: 'text-button', onclick: async () => { const prior=controls.workspace.value; try { const selected = await desktopRequest('choose_workspace'); if(editor!==editorGeneration||panel.hidden||controls.workspace.value!==prior)return; if (selected.directory) { controls.workspace.value = selected.directory; controls.session.value=''; if(catalog&&controls.model.value) updateSessions(); } } catch (error) { if(editor===editorGeneration&&!panel.hidden)showNotice(error.message, true); } } }, '选择文件夹'));
+        const typedProject = () => { selectedProjectId = null; if (controls.project) controls.project.value = ''; updateProjectNotice(); };
+        controls.workspace.addEventListener('input', () => { typedProject(); controls.session.value=''; if(catalog&&controls.model.value) updateSessions(); });
+        workspace.append(el('button', { type: 'button', class: 'text-button', onclick: async () => { const prior=controls.workspace.value; try { const selected = await desktopRequest('choose_workspace'); if(editor!==editorGeneration||panel.hidden||controls.workspace.value!==prior)return; if (selected.directory) { controls.workspace.value = selected.directory; typedProject(); controls.session.value=''; if(catalog&&controls.model.value) updateSessions(); } } catch (error) { if(editor===editorGeneration&&!panel.hidden)showNotice(error.message, true); } } }, '选择文件夹'));
+        const project = field('project', '已登记项目（可选）', el('select', { onchange: () => selectProject(controls.project.value) }), '从已核验的项目身份中选择；直接填写路径同样有效，预览时会重新核验目录身份。');
+        const projectNotice = el('p', { id: 'project-notice', class: 'dispatch-hint', role: 'status', hidden: true });
         const source = field('source', '执行来源', el('select', { required: true, onchange: updateModels }), '读取可用目录不会准备或切换模型。');
         const model = field('model', '精确模型', el('select', { required: true, onchange: updateEfforts }));
         const effort = field('effort', '推理档位', el('select', { required: true, onchange: updateChoice }));
         const session = field('session', 'DSH 原会话', el('select', { onchange: updateChoice }), '选择属于本项目、已连接且空闲的会话；不会自动创建或续接其他会话。'); session.id = 'compose-session-field'; session.hidden = true;
-        const main = el('div', { class: 'dispatch-fields' }, el('fieldset', {}, el('legend', {}, '项目与目标'), workspace,
+        const main = el('div', { class: 'dispatch-fields' }, el('fieldset', {}, el('legend', {}, '项目与目标'), workspace, project, projectNotice,
             field('title', '任务名称', el('input', { required: true, maxLength: 200, placeholder: '为这次交付起一个明确的名字' })),
             field('objective', '任务目标', el('textarea', { required: true, rows: 4, maxLength: 8000, placeholder: '说明要完成什么，以及完成后应有的行为。' }))),
             el('fieldset', {}, el('legend', {}, '执行选择'), el('div', { class: 'dispatch-inline' }, source, model), effort, session,
@@ -114,13 +121,21 @@ export async function mountDesktopDispatch({ onTask, onResources = null }) {
         const submit = el('button', { type: 'submit', class: 'button dispatch-primary', id: 'preview-task', disabled: true }, '核对任务约定');
         const form = el('form', { class: 'dispatch-grid', onsubmit: async event => {
             event.preventDefault(); if (busy || !catalog || !selectedChoice() || isDemo()) return;
+            const generation = editorGeneration, projectId = selectedProjectId, revisingThis = revising;
             busy = true; sourceChanged(); submit.disabled = true; showNotice('正在核对任务约定…');
             try {
-                draft = await desktopRequest('preview', { catalogId: catalog.catalogId, modelKey: selectedChoice().key, workspace: controls.workspace.value, title: controls.title.value, objective: controls.objective.value,
+                const result = await desktopRequest('preview', { catalogId: catalog.catalogId, modelKey: selectedChoice().key, workspace: projectId ? null : controls.workspace.value.trim(), projectId, title: controls.title.value, objective: controls.objective.value,
                     allowedChanges: lineValues(controls.allowedChanges.value), permittedMetadata: lineValues(controls.permittedMetadata.value), checks: lineValues(controls.checks.value),
-                    maxAttempts: Number(controls.maxAttempts.value), timeoutSeconds: Number(controls.timeoutSeconds.value), sessionId: selectedChoice().execution.executorId === 'dsh' ? controls.session.value || null : null });
-                renderReview(); showNotice('');
-            } catch (error) { showNotice(error.message, true); } finally { busy = false; sourceChanged(); if (stage === 'edit') updateChoice(); }
+                    maxAttempts: Number(controls.maxAttempts.value), timeoutSeconds: Number(controls.timeoutSeconds.value), sessionId: selectedChoice().execution.executorId === 'dsh' ? controls.session.value || null : null,
+                    ...(revisingThis ? { draftId: revisingThis.draftId, digest: revisingThis.digest } : {}) });
+                // A response for a closed or replaced editor never rewrites what
+                // the user is looking at now.
+                if (generation !== editorGeneration || panel.hidden) return;
+                draft = result; revising = null; renderReview(); showNotice('');
+            } catch (error) {
+                if (['DRAFT_CHANGED', 'DRAFT_EXPIRED', 'DRAFT_CONSUMED'].includes(error.code)) revising = null;
+                if (generation === editorGeneration && !panel.hidden) showNotice(error.message, true);
+            } finally { busy = false; sourceChanged(); if (stage === 'edit') updateChoice(); }
         } }, main, aside, el('div', { class: 'dispatch-actions' }, el('span', { class: 'dispatch-hint' }, '任务完成后不会自动标记为已验收。'), submit));
         content.replaceChildren(form); resetSelects(); if (catalog) populateCatalog();
     }
@@ -146,14 +161,54 @@ export async function mountDesktopDispatch({ onTask, onResources = null }) {
         catch {if(generation===catalogGeneration&&!panel.hidden){catalog=null;resetSelects();showNotice('无法读取来源目录，请检查连接后刷新；尚未派工。',true);}}
         finally {if(generation===catalogGeneration){busy = false; catalogLoading=false;sourceChanged(); refresh.disabled = false; updateChoice();}}
     }
+    const sourceStates = { online: '可用', disabled: '未启用', unverified: '未核验', unavailable: '不可用', unknown: '状态未知' };
+    /** Per-source rows keep a failed or disabled source visible instead of
+     * hiding it, so an empty model list is never mistaken for an empty catalog. */
+    function sourceRows() {
+        if (Array.isArray(catalog.sources) && catalog.sources.length) return catalog.sources.map(row => ({ key: row.sourceId, label: row.label, state: row.state, reason: row.stateReason, disabled: !row.dispatchable }));
+        const groups = new Map(catalog.models.map(model => [sourceKey(model.execution), model.execution]));
+        return [...groups].map(([key, e]) => ({ key, label: e.executorId === 'workbuddy' ? 'WorkBuddy · 本机原生来源' : `DSH · ${e.providerId} · ${e.connectionId}`, state: 'online', reason: null, disabled: false }));
+    }
+    function updateProjectNotice(extra = '') {
+        const node = document.getElementById('project-notice'); if (!node) return;
+        const projects = catalog?.projects ?? [], chosen = projects.find(item => item.projectId === selectedProjectId) ?? null;
+        const messages = [...(catalog?.projectIssues ?? [])];
+        if (extra) messages.push(extra);
+        if (selectedProjectId && !chosen) messages.push('所选项目登记已不可用，请重新选择文件夹后再核对。');
+        if (chosen) messages.push(`已核验项目身份：${chosen.displayName}${chosen.state === 'unverified' ? '（旧登记，预览时会重新核验）' : ''}。`);
+        node.replaceChildren(...messages.map(message => el('span', {}, message)));
+        node.hidden = !messages.length;
+    }
+    function populateProjects() {
+        if (!controls.project) return updateProjectNotice();
+        const projects = catalog?.projects ?? [];
+        controls.project.replaceChildren(option('', projects.length ? '选择已登记项目' : '尚无可选项目'), ...projects.map(project => option(project.projectId, `${project.displayName} · ${project.state === 'unverified' ? '待核验' : '已核验'}`)));
+        controls.project.disabled = !projects.length;
+        const lost = !!selectedProjectId && !projects.some(project => project.projectId === selectedProjectId);
+        if (lost) selectedProjectId = null;
+        controls.project.value = selectedProjectId ?? '';
+        updateProjectNotice(lost ? '先前选择的项目登记已不可用，请重新选择。' : '');
+    }
+    function selectProject(projectId) {
+        const project = (catalog?.projects ?? []).find(item => item.projectId === projectId) ?? null;
+        selectedProjectId = project ? project.projectId : null;
+        if (project && controls.workspace.value !== project.realPath) {
+            controls.workspace.value = project.realPath; controls.session.value = '';
+            if (catalog && controls.model.value) updateSessions();
+        }
+        updateProjectNotice(); updateChoice();
+    }
     function populateCatalog() {
-        const sources = new Map(catalog.models.map(model => [sourceKey(model.execution), model.execution]));
-        controls.source.replaceChildren(option('','请选择执行来源'), ...[...sources].map(([key,e]) => option(key, e.executorId === 'workbuddy' ? 'WorkBuddy · 本机原生来源' : `DSH · ${e.providerId} · ${e.connectionId}`)));
-        controls.source.disabled = !sources.size;
+        const rows = sourceRows();
+        controls.source.replaceChildren(option('', '请选择执行来源'), ...rows.map(row => option(row.key, `${row.label} · ${sourceStates[row.state] ?? '状态未知'}`, row.disabled)));
+        controls.source.disabled = !rows.some(row => !row.disabled);
         controls.maxAttempts.max = catalog.policy.maxAttempts; controls.timeoutSeconds.max = catalog.policy.maxTimeoutSeconds;
         document.getElementById('compose-policy').textContent = `当前上限：${catalog.policy.maxAttempts} 轮、${catalog.policy.maxTimeoutSeconds} 秒。原任务的期限不会因重连延长。`;
-        document.getElementById('catalog-notices').replaceChildren(...catalog.errors.map(message=>el('p',{},message)), ...(!catalog.models.length?[el('p',{},'当前没有可选模型，请检查执行器连接后刷新。')]:[]));
-        if (!catalog.dispatchEnabled) document.getElementById('catalog-notices').append(el('p',{},'当前安装仅支持查看和准备任务，派工需先完成网关部署核验。'));
+        document.getElementById('catalog-notices').replaceChildren(...catalog.errors.map(message => el('p', {}, message)),
+            ...rows.filter(row => row.state !== 'online' || row.disabled).map(row => el('p', {}, `${row.label}：${row.reason || sourceStates[row.state] || '状态未知'}${row.disabled ? '；当前不可选择' : ''}`)),
+            ...(!catalog.models.length ? [el('p', {}, '当前没有可选模型，请检查执行器连接后刷新。')] : []));
+        if (!catalog.dispatchEnabled) document.getElementById('catalog-notices').append(el('p', {}, '当前安装仅支持查看和准备任务，派工需先完成网关部署核验。'));
+        populateProjects();
     }
     function updateModels() {
         showNotice('');
@@ -183,9 +238,18 @@ export async function mountDesktopDispatch({ onTask, onResources = null }) {
     function selectedChoice() { return catalog?.models.find(m=>sourceKey(m.execution)===controls.source.value&&m.execution.modelId===controls.model.value&&(m.execution.reasoningEffort??'__none__')===controls.effort.value); }
     function updateChoice() {
         if(stage !== 'edit')return;
-        const choice = selectedChoice(); document.getElementById('compose-rate').textContent = choice ? rateText(choice) : '请选择完整模型'; document.getElementById('choice-rate').textContent = choice ? rateText(choice) : '请选择完整模型';
-        const canPreview = choice && !choice.blockedReason && (choice.execution.executorId !== 'dsh' || controls.session.value);
-        document.getElementById('preview-task').disabled = busy || isDemo() || !canPreview;
+        const choice = selectedChoice(), rate = choice ? rateText(choice) : '请选择完整模型';
+        // A different source, model or effort is a different agreement: the
+        // original was quoted for another selection, so it is not revised.
+        if (revising) {
+            const original = revising.execution;
+            if (!choice || choice.execution.modelId !== original.modelId || (choice.execution.reasoningEffort ?? null) !== (original.reasoningEffort ?? null) || sourceKey(choice.execution) !== sourceKey(original)) revising = null;
+        }
+        document.getElementById('compose-rate').textContent = rate; document.getElementById('choice-rate').textContent = rate;
+        const hasProject = !!(selectedProjectId || controls.workspace.value.trim());
+        const canPreview = choice && !choice.blockedReason && hasProject && (choice.execution.executorId !== 'dsh' || controls.session.value);
+        const submit = document.getElementById('preview-task');
+        if (submit) { submit.disabled = busy || isDemo() || !canPreview; submit.textContent = revising ? `核对第 ${revising.revision + 1} 版` : '核对任务约定'; }
         if (choice?.blockedReason) showNotice(choice.blockedReason,true);
     }
     function renderReview() {
@@ -193,16 +257,23 @@ export async function mountDesktopDispatch({ onTask, onResources = null }) {
         const c = draft.contract, e = c.execution;
         const list = (title, values, empty) => el('section', { class: 'dispatch-review-section' }, el('h3',{},title), values.length?el('ul',{},values.map(value=>el('li',{},value))):el('p',{class:'dispatch-hint'},empty));
         const grid = el('div',{class:'dispatch-grid'},el('div',{class:'dispatch-review'},el('h2',{},c.title),el('p',{class:'dispatch-objective'},c.objective),
+            el('p',{class:'dispatch-hint',id:'revision-note'},`第 ${draft.revision} 版任务约定 · 确认时会重新核验项目身份、费率与政策；失败会明确提示，不会静默替换。`),
             el('dl',{class:'dispatch-facts'},el('dt',{},'项目'),el('dd',{},draft.workspace.realPath),el('dt',{},'执行来源'),el('dd',{},`${e.executorId} / ${e.connectionId} / ${e.providerId}`),el('dt',{},'精确模型'),el('dd',{},e.modelId),el('dt',{},'推理档位'),el('dd',{},e.reasoningEffort??'未提供'),...(draft.sessionId?[el('dt',{},'原会话'),el('dd',{},draft.sessionId)]:[])),
             list('允许修改范围',c.scope.allowedChanges,'只读，不授予文件写权限。'),list('允许的元数据',c.scope.permittedMetadata,'无额外元数据写权限。'),list('独立验收要求',c.requiredChecks.map(check=>check.definition),''),
             el('details', {class:'dispatch-advanced'},el('summary',{},'任务标识'),el('p',{class:'technical'},draft.taskId),el('p',{class:'technical'},draft.operationId),el('p',{class:'technical'},draft.digest))),el('div',{class:'dispatch-resource-slot',id:'plan-resource-slot'}),
             el('aside',{class:'dispatch-summary'},el('h2',{},'确认前核对'),el('p',{class:'dispatch-rate'},rateText(draft.quote)),el('p',{},`最多 ${c.maxAttempts} 轮 · 时限 ${c.timeoutSeconds} 秒`),el('p',{class:'dispatch-hint'},'时限不是费用上限。费率为读取时的信息，未知费率可能产生费用。'),el('p',{class:'dispatch-hint'},'将在本机确认窗口显示完整约定。勾选同意并确认后才开始派工。'),el('p',{class:'dispatch-hint'},`本约定有效至 ${new Date(draft.expiresAt).toLocaleTimeString()}`)),
             el('div',{class:'dispatch-actions'},el('button',{class:'button',type:'button',onclick:()=>{
                 const previous=draft;draft=null;planReference?.reset();renderEditor();
+                selectedProjectId=previous.projectId??null;if(catalog)populateProjects();
                 for(const name of ['title','objective','maxAttempts','timeoutSeconds'])controls[name].value=String(previous.contract[name]);
                 controls.workspace.value=previous.workspace.realPath;controls.allowedChanges.value=previous.contract.scope.allowedChanges.join('\n');controls.permittedMetadata.value=previous.contract.scope.permittedMetadata.join('\n');controls.checks.value=previous.contract.requiredChecks.map(c=>c.definition).join('\n');
-                controls.source.value=sourceKey(previous.contract.execution);updateModels();controls.model.value=previous.contract.execution.modelId;updateEfforts();controls.effort.value=previous.contract.execution.reasoningEffort??'__none__';controls.session.value=previous.sessionId??'';updateChoice();showNotice('修改后需重新核对约定。');
-            }},'返回修改'),el('button',{class:'button dispatch-primary',id:'confirm-task',type:'button',disabled:!catalog.dispatchEnabled,onclick:confirm},'打开派工确认')));
+                controls.source.value=sourceKey(previous.contract.execution);updateModels();controls.model.value=previous.contract.execution.modelId;updateEfforts();controls.effort.value=previous.contract.execution.reasoningEffort??'__none__';controls.session.value=previous.sessionId??'';updateChoice();
+                // The task identity and its revision chain survive going back:
+                // the next review is the same task, quoted again for its new scope.
+                revising={draftId:previous.draftId,digest:previous.digest,revision:previous.revision,execution:previous.contract.execution};
+                const submit=document.getElementById('preview-task');if(submit)submit.textContent=`核对第 ${previous.revision+1} 版`;
+                showNotice(`已保留原任务身份；再次核对会生成第 ${previous.revision+1} 版，确认前会重新核验费率与政策。`);
+            }},'返回修改'),el('button',{class:'button dispatch-primary',id:'confirm-task',type:'button',disabled:!catalog.dispatchEnabled||consumedDraftId===draft.draftId,onclick:confirm},'打开派工确认')));
         content.replaceChildren(grid); content.querySelector('h2').setAttribute('tabindex','-1');content.querySelector('h2').focus();
         const slot=document.getElementById('plan-resource-slot');
         if(slot){
@@ -213,12 +284,22 @@ export async function mountDesktopDispatch({ onTask, onResources = null }) {
         if(!catalog.dispatchEnabled)showNotice('当前安装仅支持查看和准备任务，尚未启用派工。');
     }
     async function confirm() {
-        if(busy||!draft||isDemo())return;busy=true;sourceChanged();const button=document.getElementById('confirm-task');button.disabled=true;showNotice('请在本机确认窗口核对，尚未派工。');
+        if(busy||!draft||isDemo())return;
+        const {draftId,digest}=draft;
+        if(consumedDraftId===draftId){showNotice('本方案已提交派工，不能再次确认。结果不明时请按原编号查询回执，不会重复派工。',true);return;}
+        busy=true;sourceChanged();const button=document.getElementById('confirm-task');button.disabled=true;showNotice('请在本机确认窗口核对，尚未派工。');
         try {
-            try {localStorage.setItem(receiptKey,draft.draftId);}catch{}
-            const receipt=await desktopRequest('dispatch',{draftId:draft.draftId,digest:draft.digest});renderReceipt(receipt);showNotice('');
-        } catch(error){if(error.code==='CONFIRMATION_CANCELLED'){try{localStorage.removeItem(receiptKey);}catch{}}showNotice(error.message,true);}
-        finally{busy=false;sourceChanged();if(stage==='review')button.disabled=!catalog.dispatchEnabled||isDemo();}
+            try {localStorage.setItem(receiptKey,draftId);}catch{}
+            const receipt=await desktopRequest('dispatch',{draftId,digest});
+            // One agreement, one dispatch: the confirmation stays spent even if
+            // the returned receipt is later found to be uncertain.
+            consumedDraftId=draftId;renderReceipt(receipt);showNotice('');
+        } catch(error){
+            if(error.code==='CONFIRMATION_CANCELLED'){try{localStorage.removeItem(receiptKey);}catch{}}
+            if(error.code==='PLAN_ALREADY_CONSUMED')consumedDraftId=draftId;
+            showNotice(error.message,true);
+        }
+        finally{busy=false;sourceChanged();if(stage==='review')button.disabled=!catalog.dispatchEnabled||isDemo()||consumedDraftId===draftId;}
     }
     function renderReceipt(receipt) {
         setStage('receipt');clearTimeout(timer);

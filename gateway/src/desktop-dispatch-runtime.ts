@@ -18,6 +18,7 @@ import { TaskApplicationService } from "./task-application-service.js";
 import { configuredDshCoordinator } from "./dsh-runtime.js";
 import { runsDirectory } from "./run-journal.js";
 import { DesktopDispatchSession, desktopWorkspace, normalizedDesktopCatalog, type DesktopCatalogSource, type DesktopDraft } from "./desktop-dispatch.js";
+import { DesktopProjectStore } from "./desktop-projects.js";
 import { DesktopDispatchJournal } from "./desktop-dispatch-journal.js";
 import { collaborationTermsHash } from "./task-contract.js";
 
@@ -79,15 +80,23 @@ export async function desktopModelCatalog(config: Config, env: NodeJS.ProcessEnv
   observations.forEach((result,index)=>{if(result.status==="rejected")diagnostic(index===0?"workbuddy":"dsh",index===0?"catalog_unavailable":"source_unavailable",index===0?"无法读取 WorkBuddy 模型目录，请检查原应用连接后刷新。":"DSH 来源不可用；请检查已有连接后刷新。");});
   return normalizedDesktopCatalog(source);
 }
-export function desktopJournal(config: Config, env: NodeJS.ProcessEnv = process.env) {
+function desktopStateDir(config: Config, env: NodeJS.ProcessEnv) {
   const configured=env.WORKBUDDY_DESKTOP_STATE_DIR;
   if(configured&&!path.isAbsolute(configured))throw new AdmissionError("INVALID_CONFIGURATION","桌面状态目录必须是绝对路径。");
   const root=configured??path.join(process.platform==="win32"?process.env.LOCALAPPDATA??os.homedir():path.join(os.homedir(),".local","state"),"WorkBuddyWorkbench","dispatch");
-  return new DesktopDispatchJournal(path.join(root,sha([gateway,config.dbFile,runsDirectory(config)]).slice(0,24),"requests.sqlite"));
+  return path.join(root,sha([gateway,config.dbFile,runsDirectory(config)]).slice(0,24));
+}
+export function desktopJournal(config: Config, env: NodeJS.ProcessEnv = process.env) {
+  return new DesktopDispatchJournal(path.join(desktopStateDir(config,env),"requests.sqlite"));
+}
+/** Remembered project identities live next to the dispatch journal, never in
+ * the shared task database: their schema is local to this surface. */
+export function desktopProjects(config: Config, env: NodeJS.ProcessEnv = process.env) {
+  return new DesktopProjectStore({file:path.join(desktopStateDir(config,env),"projects.json")});
 }
 export function createDesktopDispatchSession(config: Config, env: NodeJS.ProcessEnv=process.env) {
-  const journal=desktopJournal(config,env);
-  return new DesktopDispatchSession({catalog:()=>desktopModelCatalog(config,env),receipt:id=>journal.receipt(id),latest:()=>journal.latest(),observe:async id=>{
+  const journal=desktopJournal(config,env),projects=desktopProjects(config,env);
+  return new DesktopDispatchSession({catalog:()=>desktopModelCatalog(config,env),projects,receipt:id=>journal.receipt(id),latest:()=>journal.latest(),observe:async id=>{
     assertDesktopDispatchDatabase(config);
     const draft=journal.request(id);if(!draft||journal.receipt(id)?.state!=="submitted")throw new AdmissionError("OPERATION_PENDING","请先核对原派工回执。");
     const store=new TaskStore(config.dbFile);
