@@ -800,8 +800,8 @@
     },
     {
       "path": "src/plan-resource-reference.ts",
-      "sha256": "7f84f03fc5409170c67bbb5dc9af4180f7ff4b46eaa652cd2306a18108c91064",
-      "bytes": 15140
+      "sha256": "185ed9f00d19b7718c3d9401c999e806261ee33c82879df100a7a2d6bc3ebd05",
+      "bytes": 18597
     },
     {
       "path": "src/plan.ts",
@@ -1224,6 +1224,11 @@
       "bytes": 6215
     },
     {
+      "path": "test/plan-resource-reference-conflicts.test.ts",
+      "sha256": "57a440ab6a57ed43a4c4c786f0996d035ea00555075619b8b41997c2a12809b1",
+      "bytes": 29864
+    },
+    {
       "path": "test/plan-resource-reference.test.ts",
       "sha256": "75f4efc942f80adf7e26b371ae2dfa1fee8f3dc6a941dad29de7bab70e7d7636",
       "bytes": 22629
@@ -1540,8 +1545,8 @@
     },
     {
       "path": "workbench/plan-reference.mjs",
-      "sha256": "50fa2f6f4240794f28609455f02b787291484aacdf001928cc813d04c5b10855",
-      "bytes": 14805
+      "sha256": "9b3de28423b8cb36bb23e7af86321ff97ee3179b3caf813bbebc06ce8c04c583",
+      "bytes": 15880
     },
     {
       "path": "workbench/resources-model.mjs",

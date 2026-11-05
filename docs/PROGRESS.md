@@ -223,3 +223,29 @@ run16（独立账本 `<STATE_DIR>\run16`）：glm-5.3-flash（x0.08，模型读�
 候选包：`outputs/resource-plan-reference-20261105/package-v2/codex-workbuddy-gateway-v0.7.1.zip`，567 文件，SHA-256 `c0349d799048385d3ee44db8a848f8a0904def5209a090e568bf98494dacd5a0`；解包后 `verify-release.mjs` → 567 文件 `hashesMatch: true`；包内含 `workbench/plan-reference.mjs` 与 `src/plan-resource-reference.ts`。旧包全部保留未覆盖。首版 `package`（`74bf2fea…`）的 `dist/plan-resource-reference.js` 是打包前未重建的旧产物，缺 `linked_rows_elsewhere` 分支，与集成树不一致；重建 dist 后重打包，并用 `scripts/compare-runtime.mjs` 对 `package-v2` 逐文件比对 → **567/567 全等**，浏览器 19/19 与 WebView2 19/19 均已在 `package-v2` 上重跑。
 
 仍未完成：真实来源没有声明关联（本机未注入统计连接），真实窗口只能显示"未建立关联"；任务→模型的实际路由仍不可证，`routing_unverified` 保留，D3-02 不因本轮改状态；D3-01 真实账号池与 D3-04 监督隔离维持原状态。
+
+## D3-03 关联歧义与积分区域（2026-11-05 第六轮）
+
+独立验收在 D3-03 上复现出两处缺陷（`outputs/resource-review-20261105/plan-association-NAMZq4/review-result.json`，合成数据 + 真实 TaskStore + 正式读取路径）：
+
+**一、多声明按数组顺序选来源。** `readExecutionLinks()` 的重复检查键是"执行器 + 执行连接 + 提供方 + 统计连接"，因此同一执行选择可以合法地拥有多条分别指向 `stats-a`、`stats-b` 的声明；而 `findLink()` 用 `Array.find()` 取第一条。声明顺序 A、B 时页面显示 `stats-a` 的 80，调换成 B、A 后就显示 180，两次都报 `linked`——来源由数组顺序决定，而不是由证据决定。
+
+**二、积分未校验声明区域。** `reportedElsewhere` 与积分段只按 `connectionId` 查，`quota` 侧用 `link.realm` 过滤而 `credit` 侧没有。声明 `realm=cn`、积分连接实际返回 `intl` 时，接口仍返回 `creditState=available` 并展示 42.5 积分，等于把别区余额当成本方案参考。
+
+修复（`fix/resource-plan-link-ambiguity`，起点 `b89a587`）：
+
+- `findLink` → `findLinks`，返回全部匹配执行身份与**精确模型**的候选；候选 ≥2 时直接返回 `linked_ambiguous` / `multiple_declared_links`（带 `candidates` 计数），不取值、不排序掩盖、不抛错；`quota`/`credit` 均为 `null`，`creditState="ambiguous"`，`attribution="none"`。
+- 选择"只拒绝当前执行选择"而非整份声明文件：冲突是模型级的局部事实，整份拒绝会让无关模型的有效关联一起失效。
+- 唯一声明但该连接对同一模型报告多行无法区分的观测（不同 scope 的同行）→ 同样 `linked_ambiguous` / `ambiguous_quota_observation`，不再由 `.find()` 任意取首行。
+- 区域成为同时约束 token 与积分的条件：`link.realm !== null` 时积分必须 `balance.realm === link.realm`，否则 `creditState="realm_mismatch"` 且不返回积分块；不改写 `realm`、不跨区合并、不说成零或未配置；token 证据照常保留。
+- token 侧新增 `linked_realm_mismatch` / `observation_realm_mismatch`：声明区域内有该连接、有该模型，但读数落在别的区域，与"未观测"「未配置」「无快照」区分开。
+- `reportedElsewhere` 加同一区域过滤，"聚合行属于本连接"的判定不再跨区。`realm=null` 表示声明未限定区域：不施加过滤，且不等于 `cn`。
+- 前端 `plan-reference.mjs` 增两条 headline、`linked_ambiguous` 三条说明（不按声明顺序猜来源、不展示任何一条来源读数、确认流程不变）、`linked_realm_mismatch` 与 `creditState=realm_mismatch|ambiguous` 说明；「查看网关资源汇总」入口不变，确认与准入不变。
+
+先让新用例在旧实现上失败：`test/plan-resource-reference-conflicts.test.ts` 19 项（覆盖 18 项要求），旧实现 **8 pass / 11 fail**（`actual: 'linked', expected: 'linked_ambiguous'`；`actual: {realm:'intl', balance:42.5}, expected: null`；`actual: 'available', expected: 'realm_mismatch'`；旧 headline 与"document must not mention 4242"）。修后 **19/19**；原 `plan-resource-reference` 16 项与 loader 6 项 **22/22**；workbench 100/100；typecheck 0。正式全量（隔离 `WORKBUDDY_CLI_ELECTRON`/`WORKBUDDY_CONFIG_DIR`）**997 条 / 985 通过 / 0 失败 / 12 跳过，退出码 0**（412s）。
+
+界面定向复验（不做完整视觉矩阵）：浏览器 **27/27**（A 唯一声明 380/42.5、B 冲突无读数且颠倒声明顺序结论一致、C token 保留而积分不展示、D 返回修改/重开/503 保留旧快照）；WebView2 实窗 **20/20**（同一组场景，壳以 `--gateway-dir` 指向候选包）。截图在 `outputs/resource-review-20261105/shots/` 与 `outputs/resource-review-20261105/webview/shots/`，均标"隔离合成数据 · 非真实额度"。
+
+候选包：`outputs/resource-review-20261105/package/codex-workbuddy-gateway-v0.7.1.zip`，568 文件，SHA-256 `8135790747d50ad15031a2743ebc1a995c1659af9e4d5f7b1b1e20754423d1bc`；先 build 后打包，包内 `verify-release.mjs` 568 文件 `hashesMatch: true`，包内网关接口 9/9。上一轮 `package-v2`（567 文件 `c0349d79…`）与更早的包全部保留。
+
+仍未完成：真实账号池接入、任务→模型的真实路由、D3-04 的运行中监督与停止隔离；D3-03 不因本轮两项修复标完成。

@@ -33,6 +33,8 @@ const HEADLINES = {
   linked_not_observed: "已声明关联，但尚未观测到该模型的读数。",
   linked_no_snapshot: "已声明关联，但该统计连接还没有已保存的快照。",
   linked_rows_elsewhere: "已声明关联，但这张池的汇总行由其他来源提供，因此不借用其数值。",
+  linked_realm_mismatch: "已声明关联，但该统计来源在声明限定的区域内没有该模型的读数。",
+  linked_ambiguous: "关联声明存在冲突，无法确定该方案对应的统计来源。",
   linked: "已按声明关联到该执行选择的统计来源。",
 };
 
@@ -96,6 +98,14 @@ export function describeReference(document) {
   if (status === "unlinked") caveats.push("没有可核验的执行来源与统计连接关联，因此这里不展示该方案的资源读数。");
   if (status === "link_invalid") caveats.push("关联声明文件不可用或格式不符，无法作为关联依据。");
   if (status === "linked_rows_elsewhere") caveats.push("汇总行由其他连接提供，本次不借用其数值，也不提升证据等级。");
+  if (status === "linked_realm_mismatch") caveats.push("该统计来源在此声明区域内没有该模型的读数，因此不展示读数；这不表示余额为零、未配置或尚未采集。");
+  if (status === "linked_ambiguous") {
+    caveats.push("同一执行选择有多条关联声明；这里不按声明顺序选择来源。");
+    caveats.push("因此不展示任何一条来源的 token 或积分读数。");
+    caveats.push("关联冲突只影响资源参考，核对、确认与准入仍按原流程进行。");
+  }
+  if (document.creditState === "realm_mismatch") caveats.push("积分来源的区域与声明限定的区域不一致，因此不展示该积分余额；这不表示余额为零、未配置或尚未采集。");
+  if (document.creditState === "ambiguous") caveats.push("关联存在冲突，不展示任何积分余额。");
   if (document.creditState === "not_observed") caveats.push("积分连接已配置，但尚未观测到积分数据。");
   if (document.creditState === "no_snapshot") caveats.push("积分连接还没有已保存的积分缓存。");
   caveats.push("这些数据是资源参考，不证明本任务实际可用，不代表任务费用，也不是硬费用上限。");

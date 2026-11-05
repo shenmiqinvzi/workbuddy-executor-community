@@ -59,7 +59,7 @@ export interface PlanResourceReference {
     realm: "cn" | "intl" | null;
     modelsCount: number;
   };
-  association: { status: string; reason: string };
+  association: { status: string; reason: string; candidates?: number };
   quota: {
     connectionId: string;
     scopeId: string;
@@ -190,19 +190,31 @@ export function readExecutionLinks(env: NodeJS.ProcessEnv = process.env): Execut
   return { status: "declared", code: null, links };
 }
 
-function findLink(links: ExecutionLink[], execution: PlanResourceExecution): ExecutionLink | null {
-  return links.find(link => link.executorId === execution.executorId
+/**
+ * Every declaration that covers this exact execution selection. The reader
+ * must see the whole set: the duplicate check keys on the statistics
+ * connection too, so one selection can legitimately be declared twice, and
+ * picking the first entry would make the answer depend on array order.
+ */
+function findLinks(links: ExecutionLink[], execution: PlanResourceExecution): ExecutionLink[] {
+  return links.filter(link => link.executorId === execution.executorId
     && link.executionConnectionId === execution.connectionId
     && link.providerId === execution.providerId
-    && link.models.includes(execution.modelId)) ?? null;
+    && link.models.includes(execution.modelId));
 }
 
 function quotaConnection(document: QuotaDocument, id: string): QuotaConnection | undefined {
   return document.connections.find(connection => connection.connectionId === id);
 }
 
-function pickObservation(document: QuotaDocument, connectionId: string, execution: PlanResourceExecution, realm: "cn" | "intl" | null): QuotaObservation | undefined {
-  return document.observations.find(observation => observation.modelId === execution.modelId
+/**
+ * Rows that the given statistics connection owns for this model, optionally
+ * narrowed to the declared region. One connection can own several rows for one
+ * model when the same pool is observed in more than one region, so the caller
+ * decides what an unindexed set means instead of reading the first entry.
+ */
+function scopedObservations(document: QuotaDocument, connectionId: string, execution: PlanResourceExecution, realm: "cn" | "intl" | null): QuotaObservation[] {
+  return document.observations.filter(observation => observation.modelId === execution.modelId
     && observation.connectionId === connectionId
     && (realm === null || observation.realm === realm));
 }
@@ -220,7 +232,8 @@ export function buildPlanResourceReference(input: {
   now: string;
 }): PlanResourceReference {
   const { execution, links, quota, credit, now } = input;
-  const link = findLink(links.links, execution);
+  const candidateLinks = findLinks(links.links, execution);
+  const link = candidateLinks.length === 1 ? (candidateLinks[0] ?? null) : null;
   const base = {
     schemaVersion: PLAN_REFERENCE_SCHEMA as typeof PLAN_REFERENCE_SCHEMA,
     readOnly: true as const,
@@ -239,6 +252,23 @@ export function buildPlanResourceReference(input: {
       "routing_unverified",
     ],
   };
+  // More than one declaration covers this exact execution selection. The
+  // selection carries no evidence that would order them, so no entry is
+  // "the" source: report the conflict and withhold every read rather than let
+  // the file's array order decide which balance a plan is shown.
+  if (candidateLinks.length > 1) {
+    return {
+      ...base,
+      link: { status: links.status, source: "WORKBUDDY_RESOURCE_LINKS_FILE", code: null, declaredAt: null, realm: null, modelsCount: 0 },
+      association: { status: "linked_ambiguous", reason: "multiple_declared_links", candidates: candidateLinks.length },
+      quota: null,
+      otherQuotaSources: [],
+      credit: null,
+      creditState: "ambiguous",
+      routingVerified: false,
+      attribution: "none",
+    };
+  }
   if (!link) {
     return {
       ...base,
@@ -254,18 +284,47 @@ export function buildPlanResourceReference(input: {
   }
   const linkInfo = { status: links.status, source: "WORKBUDDY_RESOURCE_LINKS_FILE" as const, code: null, declaredAt: link.declaredAt, realm: link.realm, modelsCount: link.models.length };
   const connection = quotaConnection(quota, link.quotaConnectionId);
-  const observation = pickObservation(quota, link.quotaConnectionId, execution, link.realm);
+  // Rows this connection owns for this model, before and after the region
+  // filter. A declared region constrains the evidence; it never relabels it,
+  // and rows from two regions are never merged into one reading.
+  const modelRows = scopedObservations(quota, link.quotaConnectionId, execution, null);
+  const rows = link.realm === null ? modelRows : modelRows.filter(row => row.realm === link.realm);
+  if (rows.length > 1) {
+    // One declaration but several undistinguishable rows, because the
+    // declaration leaves the region open. Preferring one would invent an order.
+    return {
+      ...base,
+      link: linkInfo,
+      association: { status: "linked_ambiguous", reason: "ambiguous_quota_observation", candidates: 1 },
+      quota: null,
+      otherQuotaSources: [],
+      credit: null,
+      creditState: "ambiguous",
+      routingVerified: false,
+      attribution: "none",
+    };
+  }
+  const observation = rows.length === 1 ? (rows[0] ?? null) : null;
+  // The connection does report this model, but not in the declared region.
+  const regionMismatch = observation === null && link.realm !== null && modelRows.length > 0;
   // The aggregated view keeps one row per pool/model and names the connection
   // that supplied it. When another connection won that row this plan's source
   // is still a reporter, but its own numbers are not separately available —
-  // borrow them from the winner would mix evidence from two snapshots.
-  const reportedElsewhere = observation ? undefined : quota.observations.find(item => item.modelId === execution.modelId && item.connectionIds.includes(link.quotaConnectionId));
+  // borrow them from the winner would mix evidence from two snapshots. The
+  // declared region applies here too, so a row from another region is never
+  // offered as this plan's aggregate.
+  const reportedElsewhere = observation ? undefined : quota.observations.find(item => item.modelId === execution.modelId
+    && item.connectionIds.includes(link.quotaConnectionId)
+    && (link.realm === null || item.realm === link.realm));
   let status = "linked";
   let reason = "declared_link";
   let quotaBlock: PlanResourceReference["quota"] = null;
   if (!connection) {
     status = "linked_not_configured";
     reason = "quota_source_missing";
+  } else if (regionMismatch) {
+    status = "linked_realm_mismatch";
+    reason = "observation_realm_mismatch";
   } else if (reportedElsewhere) {
     status = "linked_rows_elsewhere";
     reason = "aggregate_owned_by_other_source";
@@ -303,8 +362,15 @@ export function buildPlanResourceReference(input: {
   let creditState: string | null = link.creditConnectionId ? "not_configured" : null;
   if (link.creditConnectionId) {
     const creditConnection: CreditConnection | undefined = credit.connections.find(item => item.connectionId === link.creditConnectionId);
-    const balance: CreditBalance | undefined = credit.balances.find(item => item.connectionId === link.creditConnectionId);
-    if (balance) {
+    // The declared region constrains credit exactly as it constrains quota. A
+    // balance reported for another region is not this plan's credit; it is
+    // withheld rather than shown, relabelled or merged with anything.
+    const connectionBalances: CreditBalance[] = credit.balances.filter(item => item.connectionId === link.creditConnectionId);
+    const scopedBalances = link.realm === null ? connectionBalances : connectionBalances.filter(item => item.realm === link.realm);
+    const balance: CreditBalance | undefined = scopedBalances[0];
+    if (connectionBalances.length > 0 && scopedBalances.length === 0) {
+      creditState = "realm_mismatch";
+    } else if (balance) {
       creditState = "available";
       creditBlock = {
         connectionId: balance.connectionId,
