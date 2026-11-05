@@ -279,3 +279,15 @@ A 已在集成分支的 eab7937：关联歧义/区域专项 41/41 独立通过�
 按用户确认，以已通过完整测试的 882acc8 为共同代码基线，建立 E:/javaproject/workbuddy-next-round/ 下三个独立工作树：A-installation（feat/candidate-installation-readiness，DSH，可回退安装预览与隔离演练）、B-task-preparation（feat/task-preparation-diagnostics，Codex，来源诊断与精确会话选择）、C-delivery-readiness（docs/d0-d1-delivery-readiness，本对话或第三个 Codex，D0 证据收尾及 D1 样本/验收准备）。详细开工提示词位于 docs/parallel/20261105/，先读 COMMON.md，再读对应工作线文件。
 
 每线只维护自己的业务文件和验收记录；共享进度、快照、打包白名单及最终候选由集成人统一处理。先各线独立验收，再按 A→B→C 证据对齐的顺序集成，最后统一全量和打包。旧的单线推进说明已按此次用户指令更新，真实验收的阶段依赖不变。工作树与提示词已准备，不表示三条线的开发任务已完成；真实模型调用、安装切换和生产配置仍按各自授权边界处理。
+
+## G0 集成分支基线与三线合入（2026-11-05）
+
+按 `docs/parallel/DELIVERY_FINISH_20261105/` 执行 00：以已核对集成 HEAD 6c9787a 建立本地分支 `integration/delivery-finish` 与工作树 `E:\javaproject\workbuddy-finish\I-integration`，原集成树 README.md、ROADMAP.md 的未提交改动只做只读摘要（SHA-256 见 outputs 指纹文件）后原样保留。
+
+三线按 A→B→C 用 merge 保留原提交合入：A `feat/candidate-installation-readiness`（803dc56，可回退安装预览与隔离演练）、B `feat/task-preparation-diagnostics`（972cca5，来源诊断与精确会话选择）、C `docs/d0-d1-delivery-readiness`（a98dfe2，D0 证据收尾与 D1 样本）。集成侧修复 4 处候选检查缺陷（短归档误报 ERR_OUT_OF_RANGE、损坏安装记录硬抛、unmanaged 清单静默截断、CLI 检查异常未收敛），新增 2 条回归；A/B/C 的专项在集成分支独立复跑为 25/25、56/56（工作台 103/103）、19/19。
+
+构建、task-view 类型检查通过；全量 1048 项 / 1036 通过 / 0 失败 / 12 平台跳过，exit 0，363.3 秒。首轮全量因打包白名单新增三个脚本后 `test/package.test.ts` 夹具未同步而 5 项失败，补夹具后该文件 12/12 通过再重跑全量，失败轮不并入通过轮。
+
+候选网关包 581 个业务文件，SHA-256 f8a94b78ec0b54056dac0bd3ad91c4f22c55e2f7d508307de1c7bb83662fc8c5；从解包目录实际执行包内 verify-release（581 文件哈希匹配）、candidate-installation check（exit 0）、preview（exit 1、safeToApply=false、8 项要求中 runtime_dependencies 与 desktop_application 为 false）、drill --apply（exit 0、四步与五项检查通过）、delivery-baseline（只读 exit 0）、live-acceptance-fixture create/verify（样例先失败、完整性 ok）。技能六文件按行尾规范化后与根副本无差异。
+
+已在 G0 基线提交上建立 L01–L04 四条独立工作树，未预建 05–08。未推送、未合 main、未发布、未部署；真实安装/升级、真实模型派工、第二台机器与许可决定仍待外部条件，原 P0-1 未知维持不关闭、不重派、不释放。现状入口改为 `docs/delivery/STATUS_INDEX.md` 与 `gates/G0.json`。

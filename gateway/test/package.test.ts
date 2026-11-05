@@ -78,6 +78,8 @@ async function fixture() {
   files["scripts/dsh-host-check.mjs"] = "// isolated host verification fixture\n";
   files["scripts/plan.mjs"] = "// local plan authorization fixture\n";
   files["scripts/resource-source-acceptance.mjs"] = "// read-only real-source acceptance fixture\n";
+  for (const name of ["candidate-installation", "delivery-baseline", "live-acceptance-fixture"]) files[`scripts/${name}.mjs`] = "// read-only delivery tool fixture\n";
+  for (const [prefix, suffix] of [["src", "ts"], ["dist", "js"], ["dist", "d.ts"]]) files[`${prefix}/installation-readiness.${suffix}`] = "export {};\n";
   for (const name of ["dsh-bindings", "dsh-client", "dsh-coordinator", "dsh-runtime", "dsh-rate-verifier", "dsh-inspect", "plan"]) { files[`src/${name}.ts`] = "export {};\n"; files[`dist/${name}.js`] = "export {};\n"; files[`dist/${name}.d.ts`] = "export {};\n"; }
   for (const name of ["desktop-dispatch", "desktop-dispatch-journal", "desktop-dispatch-runtime", "desktop-control", "desktop-control-journal", "desktop-control-runtime"]) { files[`src/${name}.ts`] = "export {};\n"; files[`dist/${name}.js`] = "export {};\n"; files[`dist/${name}.d.ts`] = "export {};\n"; }
   for (const name of ["contracts", "store", "workbuddy", "engine", "http", "client", "ui", "cli", "mcp"]) {

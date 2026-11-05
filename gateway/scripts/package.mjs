@@ -28,6 +28,8 @@ REQUIRED_FILES.push(...WORKBENCH_FILES, ...DESKTOP_FILES, "scripts/build-desktop
 REQUIRED_FILES.push("scripts/workbench-read-store.mjs", "scripts/open-workbench-router.mjs");
 REQUIRED_FILES.push("scripts/workbench-desktop-commands.mjs", "scripts/workbench-dispatch-worker.mjs", "scripts/workbench-control-worker.mjs");
 REQUIRED_FILES.push("scripts/resource-source-acceptance.mjs");
+REQUIRED_FILES.push("scripts/candidate-installation.mjs", "scripts/delivery-baseline.mjs", "scripts/live-acceptance-fixture.mjs");
+REQUIRED_FILES.push(...["installation-readiness"].flatMap(name => [`src/${name}.ts`, `dist/${name}.js`, `dist/${name}.d.ts`]));
 REQUIRED_FILES.push(...["desktop-dispatch", "desktop-dispatch-journal", "desktop-dispatch-runtime", "desktop-control", "desktop-control-journal", "desktop-control-runtime"].flatMap(name => [`src/${name}.ts`, `dist/${name}.js`, `dist/${name}.d.ts`]));
 REQUIRED_FILES.push(...["workbench-assets", "workbench-panel"].flatMap(name => [`src/${name}.ts`, `dist/${name}.js`]));
 const DIRECTORY_RULES = new Map([
@@ -36,7 +38,7 @@ const DIRECTORY_RULES = new Map([
   ["src", /\.ts$/],
   ["test", /\.test\.ts$/],
   ["docs", /^(?:INSTALL_WINDOWS|DEPLOYMENT_ACCEPTANCE|OPERATION_RECOVERY|video-explanation|FAILURE_REVIEW|USER_ACCEPTANCE|CODEX_WORKFLOW|QUEUE_WORKER|DEEPSEEK|AGENT_HUB_DESIGN|AGENT_HUB|RELEASE_NOTES|WORKBENCH)\.md$/],
-  ["scripts", /^(?:bounded-job\.ps1$|(?:build-desktop|open-workbench|workbench-desktop-host|package-desktop|zip|verify-release|setup|doctor|deployment-check|package|install-skill|install-deepseek-skill|install-deepseek-plugin|dsh-host-check|plan|deepseek-call|workbuddy-call|workbuddy-inspect|agent-hub-call|resource-source-acceptance)\.mjs$)/],
+  ["scripts", /^(?:bounded-job\.ps1$|(?:build-desktop|open-workbench|workbench-desktop-host|package-desktop|zip|verify-release|setup|doctor|deployment-check|package|install-skill|install-deepseek-skill|install-deepseek-plugin|dsh-host-check|plan|deepseek-call|workbuddy-call|workbuddy-inspect|agent-hub-call|resource-source-acceptance|candidate-installation|delivery-baseline|live-acceptance-fixture)\.mjs$)/],
   ["bin", /^(?:workbuddy-(?:gateway|cli|doctor|worker|service|recovery)(?:\.cmd)?|deepseek-gateway|agent-hub(?:-mcp)?)$/],
   ["dist", /\.(?:js|js\.map|d\.ts)$/],
   ["skills", /^(?:SKILL\.md|openai\.yaml|setup\.md)$/],
