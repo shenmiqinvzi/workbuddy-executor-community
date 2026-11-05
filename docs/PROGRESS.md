@@ -273,3 +273,9 @@ A 已在集成分支的 eab7937：关联歧义/区域专项 41/41 独立通过�
 快照 328 文件验证通过；新候选 570 业务文件与源码/构建逐项相同、包内 verify-release 通过；包内自建私有管道夹具验证单次发现及后续失联不重发。包在 outputs/dsh-discovery-fix-20261105/package/codex-workbuddy-gateway-v0.7.1.zip，SHA256 003417bce7b41e4b9bdc3400d3a5d779f80d8dc9fed53437db52f63e964546b8。详细证据见 DSH_REGISTRY_DISCOVERY_FIX.md，旧失败日志与旧包保留。
 
 未推送、未合 main、未部署或重启生产网关；README.md、ROADMAP.md 原有修改保留。真实账号池、安装与运行指纹对齐、D1 双端真实 MCP 代码任务及异机验收继续单列待办。
+
+## 下一轮三线并行分工（2026-11-05）
+
+按用户确认，以已通过完整测试的 882acc8 为共同代码基线，建立 E:/javaproject/workbuddy-next-round/ 下三个独立工作树：A-installation（feat/candidate-installation-readiness，DSH，可回退安装预览与隔离演练）、B-task-preparation（feat/task-preparation-diagnostics，Codex，来源诊断与精确会话选择）、C-delivery-readiness（docs/d0-d1-delivery-readiness，本对话或第三个 Codex，D0 证据收尾及 D1 样本/验收准备）。详细开工提示词位于 docs/parallel/20261105/，先读 COMMON.md，再读对应工作线文件。
+
+每线只维护自己的业务文件和验收记录；共享进度、快照、打包白名单及最终候选由集成人统一处理。先各线独立验收，再按 A→B→C 证据对齐的顺序集成，最后统一全量和打包。旧的单线推进说明已按此次用户指令更新，真实验收的阶段依赖不变。工作树与提示词已准备，不表示三条线的开发任务已完成；真实模型调用、安装切换和生产配置仍按各自授权边界处理。
