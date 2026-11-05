@@ -1,0 +1,378 @@
+{
+  "schemaVersion": "workbuddy-executor/integration-gate-1",
+  "gate": "G0",
+  "title": "统一开发基线：合入 A/B/C 三线、补公共清单、构建与候选实测、建立 L01–L04 工作树",
+  "recordedAt": "2026-11-05T20:22:00+08:00",
+  "recordedBy": "integration",
+  "sourceOfTruth": {
+    "integrationWorktree": "E:\\javaproject\\workbuddy-finish\\I-integration",
+    "branch": "integration/delivery-finish",
+    "originalTree": "E:\\javaproject\\workbuddy-resource-integration",
+    "originalBranch": "integration/resource-center",
+    "originalHead": "6c9787a8a5b7a3832ffdb32365c8564b26829b15",
+    "originalHeadUnchanged": true,
+    "originalStatusUnchanged": ["M README.md", "M ROADMAP.md", "?? docs/parallel/DELIVERY_FINISH_20261105/"],
+    "originalUserFileSha256": {
+      "README.md": "540b4bbf16a25a8d3af003e92d8f1bab7dd802ea6aa7eb8cfe07e6b451720800",
+      "ROADMAP.md": "912d4184653721a627e09e9dae3e0866c342be51d357d9535df14a963e36cec0"
+    },
+    "originalUserFilesRewritten": false
+  },
+  "codeBaseCommit": "1f60374a889ae5acb442affff7a59f3e045a1277",
+  "codeBaseTree": "a45970de95336ed79d99b835fc582d467d9e2e7d",
+  "gateRecord": {
+    "file": "gates/G0.json",
+    "commit": null,
+    "commitNullReason": "本文件记录自身所在提交会产生自引用；归档提交哈希写在 outputs/finish-integration-20261105/G0/G0_RECEIPT.md，仓库内以 codeBaseCommit 作为四线共同基线。",
+    "containedInCodeBaseCommit": false
+  },
+  "integratedCommits": [
+    {
+      "line": "A",
+      "subject": "候选安装只读预览与隔离演练",
+      "branch": "feat/candidate-installation-readiness",
+      "worktree": "E:\\javaproject\\workbuddy-next-round\\A-installation",
+      "tip": "803dc56eb60915075e983b8cf27d3b3b567af1ba",
+      "mergeCommit": "0ba7c3025d1912971c1d11ad15f115c4c096cfcd",
+      "strategy": "merge --no-ff",
+      "conflicts": 0,
+      "files": 6,
+      "insertions": 1035,
+      "deletions": 2
+    },
+    {
+      "line": "B",
+      "subject": "来源诊断与精确会话选择",
+      "branch": "feat/task-preparation-diagnostics",
+      "worktree": "E:\\javaproject\\workbuddy-next-round\\B-task-preparation",
+      "tip": "972cca58e5d8b6218fb1377de6fd6ee7eca9a4e6",
+      "mergeCommit": "490f4f117c02dc8d47bc7c1d90698fb9bd556090",
+      "strategy": "merge --no-ff",
+      "conflicts": 0,
+      "files": 6,
+      "insertions": 191,
+      "deletions": 23
+    },
+    {
+      "line": "C",
+      "subject": "D0 证据矩阵收尾与 D1 验收夹具",
+      "branch": "docs/d0-d1-delivery-readiness",
+      "worktree": "E:\\javaproject\\workbuddy-next-round\\C-delivery-readiness",
+      "tip": "a98dfe2bf99c10e3fb3709e4918d57346383a150",
+      "mergeCommit": "2819c287becfb9e45501c383c2e016a4a96f9d55",
+      "strategy": "merge --no-ff",
+      "conflicts": 0,
+      "files": 6,
+      "insertions": 1041,
+      "deletions": 93
+    }
+  ],
+  "integrationFixes": [
+    {
+      "commit": "b4fae7f20d37cb3a5f02e6e560482603f48b5f07",
+      "subject": "加固候选安装检查对截断、损坏与超大目录的处理",
+      "files": [
+        "gateway/src/installation-readiness.ts",
+        "gateway/scripts/candidate-installation.mjs",
+        "gateway/test/candidate-installation.test.ts"
+      ],
+      "changes": [
+        "<22 字节归档返回可读的 Not a ZIP archive 拒绝，不再泄漏 ERR_OUT_OF_RANGE",
+        "已安装记录不可解析时记入 blocked(installed_manifest_unreadable)，不硬抛也不当作无漂移",
+        "unmanaged 清单超过 20000 项时记录 blocked(unmanaged_listing_truncated) 并停止放行",
+        "CLI check/preview/drill 将检查异常收敛为结构化失败输出"
+      ],
+      "addedRegressions": 2,
+      "notAutomated": "20001 文件截断夹具创建需约 30 秒，只在 G0 一次性实测，不入自动套件"
+    },
+    {
+      "commit": "1f60374a889ae5acb442affff7a59f3e045a1277",
+      "subject": "G0 基线提交中的公共清单与文档",
+      "files": [
+        "gateway/scripts/package.mjs",
+        "gateway/test/package.test.ts",
+        "docs/delivery/STATUS_INDEX.md",
+        "docs/PROGRESS.md",
+        "docs/parallel/DELIVERY_FINISH_20261105/*"
+      ],
+      "packageWhitelistAdded": [
+        "scripts/candidate-installation.mjs",
+        "scripts/delivery-baseline.mjs",
+        "scripts/live-acceptance-fixture.mjs",
+        "src/installation-readiness.ts",
+        "dist/installation-readiness.js",
+        "dist/installation-readiness.d.ts"
+      ],
+      "docsNotPackaged": [
+        "docs/CANDIDATE_INSTALLATION_READINESS.md",
+        "docs/TASK_PREPARATION_DIAGNOSTICS.md",
+        "docs/D0_D1_DELIVERY_READINESS.md",
+        "docs/D1_LIVE_ACCEPTANCE_PLAN.md"
+      ],
+      "docsNotPackagedReason": "docs 目录规则为显式白名单，这四份交付文档不在其中；随源码提交以保留证据，不进入候选包。"
+    }
+  ],
+  "checks": [
+    {
+      "id": "build",
+      "command": "npm run build",
+      "exitCode": 0,
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G0\\logs\\build.log"
+    },
+    {
+      "id": "typecheck:task-view",
+      "command": "npm run typecheck:task-view",
+      "exitCode": 0,
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G0\\logs\\typecheck-task-view.log"
+    },
+    {
+      "id": "special-a",
+      "command": "npx tsx --test test/candidate-installation.test.ts test/deployment.test.ts",
+      "exitCode": 0,
+      "counts": { "tests": 25, "pass": 25, "fail": 0, "skipped": 0 },
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G0\\logs\\special-a.log"
+    },
+    {
+      "id": "special-b",
+      "command": "npx tsx --test test/desktop-catalog-diagnostics.test.ts test/desktop-dispatch.test.ts test/desktop-dispatch-runtime.test.ts test/dsh-discovery.test.ts test/dsh-adapter.test.ts",
+      "exitCode": 0,
+      "counts": { "tests": 56, "pass": 56, "fail": 0, "skipped": 0 },
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G0\\logs\\special-b.log"
+    },
+    {
+      "id": "special-c",
+      "command": "npx tsx --test test/delivery-baseline.test.ts test/live-acceptance-fixture.test.ts",
+      "exitCode": 0,
+      "counts": { "tests": 19, "pass": 19, "fail": 0, "skipped": 0 },
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G0\\logs\\special-c.log"
+    },
+    {
+      "id": "test:workbench",
+      "command": "npm run test:workbench",
+      "exitCode": 0,
+      "counts": { "tests": 103, "pass": 103, "fail": 0, "skipped": 0 },
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G0\\logs\\workbench.log"
+    },
+    {
+      "id": "package.test",
+      "command": "npx tsx --test test/package.test.ts",
+      "exitCode": 0,
+      "counts": { "tests": 12, "pass": 12, "fail": 0 },
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G0\\logs\\package-test.log"
+    },
+    {
+      "id": "full-suite",
+      "command": "npm test",
+      "exitCode": 0,
+      "counts": { "tests": 1048, "pass": 1036, "fail": 0, "cancelled": 0, "skipped": 12 },
+      "durationSeconds": 363.3,
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G0\\logs\\full-test.log"
+    },
+    {
+      "id": "full-suite-first-run",
+      "command": "npm test",
+      "exitCode": 1,
+      "counts": { "tests": 1048, "pass": 1031, "fail": 5, "skipped": 12 },
+      "failureScope": "全部在 test/package.test.ts：白名单新增三个脚本后源树夹具未同步，collectReleaseFiles 报 Missing release file scripts/candidate-installation.mjs",
+      "resolution": "补 test/package.test.ts 夹具后 12/12 通过，再重跑全量得到 full-suite",
+      "logOverwrittenBy": "同名的第二轮通过日志；失败结论以上述计数为准"
+    },
+    {
+      "id": "skill-copy-consistency",
+      "command": "git diff --no-index --ignore-cr-at-eol --ignore-all-space（根 SKILL.md / agents/openai.yaml vs gateway/skills/workbuddy-executor/ 同名文件）",
+      "exitCode": 0,
+      "note": "规范化后无差异；未规范化时 57/57 行不同仅由行尾造成",
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G0\\logs\\skill-copy-diff.log"
+    }
+  ],
+  "package": {
+    "command": "node scripts/package.mjs",
+    "exitCode": 0,
+    "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G0\\logs\\package.log",
+    "gateway": {
+      "archive": "E:\\javaproject\\workbuddy-finish\\I-integration\\gateway\\outputs\\release\\codex-workbuddy-gateway-v0.7.1.zip",
+      "manifest": "E:\\javaproject\\workbuddy-finish\\I-integration\\gateway\\outputs\\release\\codex-workbuddy-gateway-v0.7.1.manifest.json",
+      "checksumFile": "E:\\javaproject\\workbuddy-finish\\I-integration\\gateway\\outputs\\release\\codex-workbuddy-gateway-v0.7.1.zip.sha256",
+      "files": 581,
+      "bytes": 1749851,
+      "sha256": "f8a94b78ec0b54056dac0bd3ad91c4f22c55e2f7d508307de1c7bb83662fc8c5"
+    },
+    "skill": {
+      "archive": "workbuddy-executor-v0.7.1.zip",
+      "files": 6,
+      "sha256": "2e5dcba6493f2efb64949a00c8571a1df51366ec012083eddb7b573fafebb4a6"
+    },
+    "harnessSkill": {
+      "archive": "deepseek-executor-v0.7.1.zip",
+      "files": 2,
+      "sha256": "22909e1b0654df6eb13b3ccdcf5767ed78e094d416b891821a072c1004318d13"
+    },
+    "distTrackedInGit": false,
+    "distNote": "git ls-files gateway/dist 为空，dist 为构建产物，不入库；包内 dist 由构建生成"
+  },
+  "candidateTools": {
+    "unpackedRoot": "E:\\javaproject\\outputs\\finish-integration-20261105\\G0\\candidate\\codex-workbuddy-gateway-v0.7.1",
+    "unpackedFiles": 582,
+    "runs": [
+      {
+        "tool": "scripts/verify-release.mjs",
+        "exitCode": 0,
+        "result": { "version": "0.7.1", "verifiedFiles": 581, "hashesMatch": true },
+        "log": "logs/candidate-verify-release.log"
+      },
+      {
+        "tool": "scripts/candidate-installation.mjs check",
+        "exitCode": 0,
+        "result": { "files": 581, "declaredSha256Matches": true },
+        "report": "candidate-check.json",
+        "log": "logs/candidate-check.log"
+      },
+      {
+        "tool": "scripts/candidate-installation.mjs preview",
+        "exitCode": 1,
+        "exitCodeNote": "管道中曾被 PowerShell 记作 -1，Start-Process -PassThru 复核为 1",
+        "result": {
+          "safeToApply": false,
+          "counts": { "create": 581, "update": 0, "unchanged": 0, "blocked": 0, "unmanaged": 0, "managedDrift": 0 },
+          "requirementsOk": 6,
+          "requirementsFailed": ["runtime_dependencies", "desktop_application"],
+          "requirementsFailedReason": "包内不含 node_modules 与桌面可执行，属候选网关包的预期缺口"
+        },
+        "report": "candidate-preview.json",
+        "log": "logs/candidate-preview.log"
+      },
+      {
+        "tool": "scripts/candidate-installation.mjs drill --apply",
+        "exitCode": 0,
+        "result": {
+          "unpacked": 581,
+          "steps": { "plan": true, "install": true, "install_repeat": true, "uninstall": true },
+          "checks": { "installed": true, "idempotent": true, "uninstalled": true, "envPreservedAfterUninstall": true, "skillRemovedAfterUninstall": true }
+        },
+        "report": "candidate-drill.json",
+        "log": "logs/candidate-drill.log"
+      },
+      {
+        "tool": "scripts/delivery-baseline.mjs --source-root <解包根> --candidate-archive <zip>",
+        "exitCode": 0,
+        "result": { "schemaVersion": "workbuddy-executor/delivery-baseline-1", "readOnly": true, "authorizesDispatch": false },
+        "log": "logs/candidate-baseline.log"
+      },
+      {
+        "tool": "scripts/live-acceptance-fixture.mjs create",
+        "exitCode": 0,
+        "result": {
+          "root": "E:\\javaproject\\outputs\\finish-integration-20261105\\G0\\live-fixtures\\live-acceptance-I4r4az",
+          "baselineSha256": "88f0f4dffc94e40a4b056ead8c1742d37e2a8aacbf12798f3ae36e6e95e916cf",
+          "authorized": false,
+          "preparedOnly": true
+        },
+        "log": "logs/candidate-live-fixture.log"
+      },
+      {
+        "tool": "scripts/live-acceptance-fixture.mjs verify",
+        "exitCode": 0,
+        "result": { "ok": true, "problems": [] },
+        "log": "logs/candidate-live-verify.log"
+      },
+      {
+        "tool": "未修复样本检查（node --test）",
+        "exitCode": 1,
+        "result": { "workbuddy": "7 项中 5 项失败", "dsh": "7 项中 2 项失败" },
+        "note": "样本按设计在修复前应失败，exit 1 为预期"
+      }
+    ],
+    "truncationManualCheck": {
+      "fixtureFiles": 20001,
+      "fixtureCreateSeconds": 30.2,
+      "result": { "unmanagedListed": 20000, "blocked": "unmanaged_listing_truncated", "safeToApply": false },
+      "cleanedUp": true
+    }
+  },
+  "workspaceLines": [
+    {
+      "line": "L01",
+      "tasks": "D2-01–04；V02/V06/V10/V11；C01–05/C14/C16/C17",
+      "taskFile": "docs/parallel/DELIVERY_FINISH_20261105/01_PROJECT_WORKFLOW.md",
+      "worktree": "E:\\javaproject\\workbuddy-finish\\L01-project",
+      "branch": "feat/finish-l01-project",
+      "head": "1f60374a889ae5acb442affff7a59f3e045a1277",
+      "tree": "a45970de95336ed79d99b835fc582d467d9e2e7d",
+      "status": "待开始"
+    },
+    {
+      "line": "L02",
+      "tasks": "D3-01–04；C08–C11/C15",
+      "taskFile": "docs/parallel/DELIVERY_FINISH_20261105/02_RESOURCE_TRUST.md",
+      "worktree": "E:\\javaproject\\workbuddy-finish\\L02-resources",
+      "branch": "feat/finish-l02-resources",
+      "head": "1f60374a889ae5acb442affff7a59f3e045a1277",
+      "tree": "a45970de95336ed79d99b835fc582d467d9e2e7d",
+      "status": "待开始"
+    },
+    {
+      "line": "L03",
+      "tasks": "D6-01/02/05；V12；C12/C18 统计子项",
+      "taskFile": "docs/parallel/DELIVERY_FINISH_20261105/03_USAGE_STATISTICS.md",
+      "worktree": "E:\\javaproject\\workbuddy-finish\\L03-statistics",
+      "branch": "feat/finish-l03-statistics",
+      "head": "1f60374a889ae5acb442affff7a59f3e045a1277",
+      "tree": "a45970de95336ed79d99b835fc582d467d9e2e7d",
+      "status": "待开始"
+    },
+    {
+      "line": "L04",
+      "tasks": "D7-01/03；D1-01 准备",
+      "taskFile": "docs/parallel/DELIVERY_FINISH_20261105/04_INSTALLATION_RELEASE_PREP.md",
+      "worktree": "E:\\javaproject\\workbuddy-finish\\L04-installation",
+      "branch": "feat/finish-l04-installation",
+      "head": "1f60374a889ae5acb442affff7a59f3e045a1277",
+      "tree": "a45970de95336ed79d99b835fc582d467d9e2e7d",
+      "status": "待开始"
+    }
+  ],
+  "notPrecreated": ["L05", "L06", "L07", "L08"],
+  "notPrecreatedReason": "05–08 应在 G1/G2 之后按当时基线创建，不预建旧基线树",
+  "dependenciesPrepared": {
+    "integrationTree": "已按现有 package-lock.json 从原集成树复制 node_modules（99 目录 3709 文件 50.8MB），未改版本",
+    "lineTrees": "未复制依赖；各线按自身 lockfile 准备",
+    "lockfileSha256": "EC348D2EDA90C843426C4F4C5078BB7C3B5E84922E97565D479AC05841F29E3A"
+  },
+  "verificationEnvironment": {
+    "os": "Windows",
+    "node": "24.19.0",
+    "git": "2.54.0.windows.1",
+    "isolatedEnv": {
+      "WORKBUDDY_CLI_ELECTRON": "E:\\javaproject\\outputs\\finish-integration-20261105\\G0\\env\\WorkBuddy.exe（合成占位）",
+      "WORKBUDDY_CONFIG_DIR": "E:\\javaproject\\outputs\\finish-integration-20261105\\G0\\env\\workbuddy-config",
+      "NO_PROXY": "127.0.0.1,localhost"
+    },
+    "inheritedWorkbuddyEnvClearedBeforeTests": true
+  },
+  "externalConditions": [
+    "真实安装、升级、生产切换与跨机器验收未执行，需用户授权与真实环境（10）",
+    "D1-02 已安装技能 + 真实 MCP 双端真实模型派工未执行；提前补验结果只归 G1",
+    "第二台物理 Windows、签发与发布未开始（D7-02/D7-04/D7-05）",
+    "许可与第三方声明决定权在权利人，不代为授权（D7-03）",
+    "真实资源账号池与任务→模型实际路由、D3-04 运行中监督需真实来源（10）"
+  ],
+  "openUnknowns": [
+    "原 P0-1 未知按 T7D 决定不关闭、不重派、不释放；不以 TTL、换库、taskId、operationId 或替代会话绕过",
+    "生产 workflow_capacity(slot=1) 仍存在占用，本轮未触碰生产者状态，共享容量维持 1",
+    "A 线历史上报的全量并发失败（quota-entry）本轮未复现，保留为历史记录而非已定位结论"
+  ],
+  "boundaries": {
+    "pushed": false,
+    "mergedToMain": false,
+    "released": false,
+    "deployed": false,
+    "productionStateChanged": false,
+    "realModelDispatchTriggered": false
+  },
+  "nextGate": {
+    "gate": "G1",
+    "requires": ["L01", "L02", "L03", "L04 的 HANDOFF.json 与 docs/delivery/Lxx_ACCEPTANCE.md"],
+    "order": ["L01", "L02", "L03", "L04"],
+    "pendingIntegrationRequests": "合入后由集成人完成各线 integration-request 并逐项关闭"
+  }
+}
