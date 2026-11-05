@@ -17,6 +17,7 @@ import { DshTaskCoordinator } from "../src/dsh-coordinator.js";
 import type { DshTransport, DshSelection } from "../src/dsh-client.js";
 import type { DeepSeekEvent } from "../src/deepseek-client.js";
 import { legacyFreeModelPolicy } from "../src/collaboration.js";
+import { RunJournal } from "../src/run-journal.js";
 
 function fixture(t: test.TestContext) {
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),"resource-isolation-")), runs=path.join(dir,"runs");
@@ -65,6 +66,7 @@ test("in-flight resource collection cannot block original WorkBuddy supervision,
     assert.equal(f.service.executionStatus(task.taskId).remoteStopped,false);assert.deepEqual(f.store.operations.occupant(),occupant);
     f.queue.report({...claim,status:"cancelled",text:"synthetic worker report",artifacts:[]});assert.equal(f.service.executionStatus(task.taskId).remoteStopped,false,"worker report is not native stop evidence");assert.deepEqual(f.store.operations.occupant(),occupant);
     f.queue.observeNative(claim.attemptId,{state:"idle",workspace:f.dir});assert.equal(f.service.executionStatus(task.taskId).remoteStopped,true);
+    const nativeStop=new RunJournal(f.config.runsDir!,claim.attemptId).snapshot()!;assert.equal(nativeStop.nativeStopSource,"native_idle");assert.ok(nativeStop.nativeStoppedAt);assert.equal(nativeStop.sessionId,claim.sessionId);
     const stopped=await bounded(f.service.sync(task.taskId));assert.equal(stopped.state,"cancelled");assert.notEqual(stopped.state,"accepted");assert.equal(f.store.listAttempts(task.taskId).length,1);assert.deepEqual(identity(stopped),original);
     assert.equal(f.store.operations.isClosed(stopped),true,"closure requires the persisted native stop and task_closed evidence");
     assert.deepEqual(f.store.operations.occupant(),occupant,"the saved slot is retained until the next admission checks closure");
@@ -91,7 +93,7 @@ test("resource failures and corrupt cache preserve a working task, its operation
 
 test("DSH cancellation requires the original terminal event while resource collection is held",async t=>{
   const f=fixture(t),dir=fs.realpathSync.native(f.dir),execution={executorId:"dsh" as const,connectionId:"synthetic-host",providerId:"synthetic-provider",modelId:"synthetic-model",reasoningEffort:null};
-  let selected:DshSelection|null=null,prompts=0,selections=0,cancels=0;const events:DeepSeekEvent[]=[];
+  let selected:DshSelection|null=null,prompts=0,selections=0,cancels=0;let cancelInput:unknown;const events:DeepSeekEvent[]=[];
   const client:DshTransport={
     resolveHostId:()=>execution.connectionId,async health(){return {capabilities:{automaticReview:false}};},
     async sessions(){return {sessions:[{sessionId:"dsh-session",workspace:dir,busy:false,attached:true}]};},
@@ -100,7 +102,7 @@ test("DSH cancellation requires the original terminal event while resource colle
     async selectModel(input){selections++;selected={providerId:input.providerId,modelId:input.modelId,reasoningEffort:input.reasoningEffort};return {sessionId:input.sessionId,workspace:dir,attached:true,selectedModel:selected};},
     async prompt(input){prompts++;return {requestId:input.requestId,accepted:true};},
     async events(input){const page=events.filter(e=>e.seq>input.afterSeq).slice(0,input.limit);return {events:page,cursor:page.at(-1)?.seq??input.afterSeq};},
-    async cancel(){cancels++;return {requested:true,stopped:true};},
+    async cancel(input){cancels++;cancelInput=input;return {requested:true,stopped:true};},
   };
   const dsh=new DshTaskCoordinator(f.store,client,f.config.runsDir!,async()=>({credits:"x0.00",observedAt:new Date().toISOString()}));
   f.store.collaboration.registerWorkspace("synthetic-project",dir,"Synthetic project");f.store.collaboration.setPolicy({...legacyFreeModelPolicy(),allowed:[...legacyFreeModelPolicy().allowed,execution]});
@@ -117,10 +119,11 @@ test("DSH cancellation requires the original terminal event while resource colle
   try{
     await bounded(entered);const response=await fetch(`${http.base}/workbench/v1/tasks`);assert.equal(response.status,200);
     const supervised=await bounded(service.sync(contract.taskId));assert.equal(supervised.attemptId,active.attemptId);assert.equal(supervised.sessionId,active.sessionId);
-    const stopped=await bounded((async()=>await service.cancel(contract.taskId,"synthetic stop"))());assert.equal(stopped.remoteStopped,false);assert.equal(cancels,1);assert.deepEqual(f.store.operations.occupant(),occupant);
+    const stopped=await bounded((async()=>await service.cancel(contract.taskId,"synthetic stop"))());assert.equal(stopped.remoteStopped,false);assert.equal(cancels,1);assert.deepEqual(cancelInput,{hostId:binding.hostId,sessionId:binding.sessionId,requestId:binding.requestId});assert.deepEqual(f.store.operations.occupant(),occupant);
     assert.equal(service.executionStatus(contract.taskId).remoteStopped,false,"native cancel acknowledgement is not a terminal event");
     events.push({seq:1,requestId:binding.requestId,type:"cancelled",timestamp:new Date().toISOString(),turnId:`${binding.sessionId}:turn:1`,rawType:"turn/end"});
     const final=await bounded(service.sync(contract.taskId));assert.equal(final.state,"cancelled");assert.equal(service.executionStatus(contract.taskId).remoteStopped,true);assert.equal(f.store.operations.isClosed(final),true);assert.deepEqual(f.store.operations.occupant(),occupant);
+    const snapshot=new RunJournal(f.config.runsDir!,final.attemptId!).snapshot()!;assert.equal(snapshot.nativeStopSource,"dsh_terminal_event");assert.equal(snapshot.nativeStoppedAt,events[1]!.timestamp);
     assert.equal(prompts,1);assert.equal(selections,1);assert.equal(f.store.listAttempts(contract.taskId).length,1);assert.equal(f.store.dshBindings.forTask(contract.taskId)!.requestId,binding.requestId);
   }finally{await collector.stop();await poll;await http.server.close();await upstream.close();}
   await assert.rejects(fetch(`${http.base}/workbench/`,{signal:AbortSignal.timeout(1500)}));
