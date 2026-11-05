@@ -1,5 +1,7 @@
 import type { readQuotaResources } from "./quota-observation.js";
 import type { readCreditBalances } from "./credit-balance.js";
+import { diagnoseResourceConnections, readResourceConnections, type ResourceConnectionDocument } from "./resource-connections.js";
+import { buildRequestAttribution, type RequestAttributionGap } from "./resource-attribution.js";
 
 /**
  * Routing evidence is its own versioned document.
@@ -162,11 +164,24 @@ function sourceOf(entry: RoutingConnection | undefined, connectionId: string): R
 }
 
 /**
+ * Inputs that are not part of the stored resource views.
+ *
+ * They are optional so a caller that only has the two documents keeps the exact
+ * behaviour it had; when omitted, the declaration file named by the environment
+ * is read (the same read-path precedent as the execution-link file) and the
+ * request-attribution gap is stated from the contract.
+ */
+export interface RoutingEvidenceContext {
+  connections?: ResourceConnectionDocument;
+  attribution?: RequestAttributionGap;
+}
+
+/**
  * Reads exactly the two saved resource views. It adds no probe, no upstream
  * call and no second copy of the resource arithmetic: every fact here is
  * derived from what the collectors already stored.
  */
-export function buildRoutingEvidence(quota: QuotaView, credit: CreditView, now: Date = new Date()) {
+export function buildRoutingEvidence(quota: QuotaView, credit: CreditView, now: Date = new Date(), context: RoutingEvidenceContext = {}) {
   const connections: RoutingConnection[] = [];
   const byKey = new Map<string, RoutingConnection>();
   const mappings = new Map<string, RoutingMapping>();
@@ -246,6 +261,10 @@ export function buildRoutingEvidence(quota: QuotaView, credit: CreditView, now: 
   const ordered = [...mappings.values()].sort((a, b) =>
     `${a.scopeId}|${a.unit}|${a.modelId ?? ""}`.localeCompare(`${b.scopeId}|${b.unit}|${b.modelId ?? ""}`));
 
+  const registry = context.connections ?? readResourceConnections(process.env);
+  const attribution = context.attribution ?? buildRequestAttribution();
+  const diagnostics = diagnoseResourceConnections(registry, quota, credit);
+
   return {
     schemaVersion: ROUTING_EVIDENCE_SCHEMA,
     readOnly: true as const,
@@ -261,5 +280,31 @@ export function buildRoutingEvidence(quota: QuotaView, credit: CreditView, now: 
     // An evidence entry is only as good as the snapshot it came from.
     invalidatesOn: ["connection_fingerprint_change", "snapshot_expiry", "source_error", "configuration_change"],
     limitations: ["routing_unverified", "shared_region_pool", "task_attribution_unavailable", "model_scope_unverified"],
+    // Three statements that stay apart: what was configured, what an execution
+    // declared, and what an upstream call actually did. Only the first two can
+    // be read here, and neither one is evidence for the third.
+    layers: {
+      configuration: {
+        code: "connection_pool_model" as const, source: "WORKBUDDY_RESOURCE_CONNECTIONS_FILE" as const,
+        status: registry.status, verified: false as const, level: "gateway_observation_only" as const,
+      },
+      executionSelection: {
+        code: "execution_selection_declaration" as const, source: "WORKBUDDY_RESOURCE_LINKS_FILE" as const,
+        verified: false as const, level: "declaration_only" as const,
+      },
+      requestRouting: {
+        code: "actual_request_routing" as const, source: "upstream_usage_payload" as const,
+        verified: false as const, level: "unavailable" as const, reason: "upstream_payload_lacks_request_identity" as const,
+      },
+    },
+    // The declaration itself, so a reader can tell "not declared" from
+    // "declared but not observed" without a second request.
+    connectionRegistry: {
+      schemaVersion: registry.schemaVersion, status: registry.status, source: registry.source, declaredVia: registry.declaredVia,
+      connections: registry.connections, conflicts: registry.conflicts, fileDiagnostics: registry.fileDiagnostics,
+      restrictions: registry.restrictions, limitations: registry.limitations,
+    },
+    connectionDiagnostics: diagnostics,
+    requestAttribution: attribution,
   };
 }

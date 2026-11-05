@@ -523,3 +523,129 @@
         padding: 14px;
     }
 }
+
+/* 证据分层：三层证据并排，层与层之间用边框分开，避免被读成一条链。 */
+.resource-trust .resource-layers {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 12px;
+    margin: 12px 0 4px;
+}
+
+.resource-layer {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 12px 14px;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    background: var(--surface);
+}
+
+.resource-layer-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.resource-layer-head h3 {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.resource-layer-flag {
+    margin-left: auto;
+    font-size: 11px;
+    letter-spacing: .04em;
+    color: var(--muted);
+    border: 1px dashed var(--rule);
+    border-radius: 999px;
+    padding: 1px 8px;
+}
+
+.resource-layer-summary {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text);
+}
+
+.resource-block {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 14px;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    background: var(--surface);
+    margin-top: 12px;
+}
+
+.resource-block h3 {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.resource-kv-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.resource-kv {
+    display: grid;
+    grid-template-columns: minmax(120px, 200px) minmax(0, 1fr);
+    gap: 8px;
+    padding: 6px 0;
+    border-top: 1px solid var(--rule);
+    font-size: 12px;
+}
+
+.resource-kv:first-child {
+    border-top: 0;
+}
+
+.resource-kv-key {
+    overflow-wrap: anywhere;
+    color: var(--muted);
+}
+
+.resource-kv-value {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.resource-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.resource-todo {
+    margin: 0;
+    padding-left: 20px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--text);
+}
+
+.resource-alert-inline {
+    margin: 0;
+    padding: 8px 10px;
+    border-left: 3px solid var(--warning);
+    background: var(--raised);
+    border-radius: var(--radius);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+@media (max-width: 720px) {
+    .resource-kv {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}

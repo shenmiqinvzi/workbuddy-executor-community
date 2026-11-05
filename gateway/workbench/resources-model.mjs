@@ -50,6 +50,17 @@ export const LIMITATION_LABELS = {
     shared_region_pool: '区域共享池，余额不归属单个账号或任务',
     latest_member_timestamp_only: '仅有成员最新观测时间，不代表整池同步时间',
     member_freshness_unavailable: '成员级新鲜度不可用',
+    // 路由证据（routing-evidence-1）随附的限制码：逐条说明证据的边界。
+    model_scope_unverified: '模型作用域未核验：无法确认某个模型只由一个 Key 提供',
+    declaration_only: '只是本机声明，未与上游核对',
+    no_key_verification: '未验证凭据是否有效，也不读取账号里已有的密钥',
+    no_upstream_probe: '不探测上游：页面读取不会触发任何真实请求',
+    declaration_does_not_verify_routing: '声明不构成对实际请求路由的证明',
+    diagnostics_do_not_probe_upstream: '诊断只比对已存快照，不发起上游探测',
+    request_attribution_unavailable: '上游载荷没有请求标识，无法按请求归因',
+    task_to_model_unverified: '任务 → 模型未核验，保持未知',
+    unit_mixing_forbidden: 'token 与积分单位不同，不换算也不相加',
+    no_estimate_substituted: '缺值保持 null，不用估算值顶替',
 };
 
 export const STATUS_LABELS = {
@@ -607,4 +618,309 @@ export function compareSnapshots(quotaDocument, creditDocument) {
         maxDriftMs = Math.max(maxDriftMs, delta);
     }
     return { consistent: drifted.length === 0, drifted, maxDriftMs };
+}
+
+/* ------------------------------------------------------------------ *
+ * 路由证据（routing-evidence-1）
+ *
+ * 三层证据各说各话，页面只做转写：
+ *   1. 配置层：哪个连接声明了哪些池和模型 —— 来自本机声明文件，仅声明；
+ *   2. 执行选择层：某次执行选了哪个连接/池/模型 —— 来自本机关联文件，仅声明；
+ *   3. 实际请求路由：上游到底把哪次请求送到哪个账号 —— 上游载荷没有请求标识，
+ *      这一层恒为不可用。
+ * 任何一层都不得升级成“已验证”，也不得因为声明互相匹配就宣称实际命中。
+ * ------------------------------------------------------------------ */
+
+export const ROUTING_SCHEMA = 'workbuddy-executor/routing-evidence-1';
+
+export const TRUST_LAYER_IDS = ['configuration', 'executionSelection', 'requestRouting'];
+
+export const TRUST_LEVEL_LABELS = {
+    observed: '观测到快照',
+    expired: '快照已过期',
+    unavailable: '不可用',
+    unobserved: '尚未观测',
+    gateway_observation_only: '仅网关观测',
+    declaration_only: '仅声明',
+};
+
+export const TRUST_LEVEL_TONES = {
+    observed: 'ok',
+    expired: 'warn',
+    unavailable: 'warn',
+    unobserved: 'neutral',
+    gateway_observation_only: 'info',
+    declaration_only: 'info',
+};
+
+export const TRUST_LAYER_TITLES = {
+    configuration: '配置：连接 → 池 → 模型',
+    executionSelection: '执行选择（声明）',
+    requestRouting: '实际请求路由',
+};
+
+export const TRUST_LAYER_SOURCES = {
+    configuration: 'WORKBUDDY_RESOURCE_CONNECTIONS_FILE',
+    executionSelection: 'WORKBUDDY_RESOURCE_LINKS_FILE',
+    requestRouting: 'upstream_usage_payload',
+};
+
+export const REGISTRY_STATUS_LABELS = {
+    not_declared: '尚未声明固定连接',
+    declared: '已声明固定连接',
+    invalid_file: '声明文件不可用',
+};
+
+export const DECLARATION_STATUS_LABELS = {
+    declared: '声明有效',
+    ambiguous: '声明有歧义',
+    invalid: '声明无效',
+};
+
+export const CONFLICT_LABELS = {
+    duplicate_connection: '同一 connectionId 被声明多次',
+    duplicate_pool_declaration: '同一个池被多个连接重复声明',
+    realm_conflict: '同一个池被声明到不同区域',
+    shared_flag_conflict: '同一个池的共享标记互相矛盾',
+};
+
+export const DIAGNOSTIC_LABELS = {
+    declaration_invalid: '声明无效，不能据此推断可用',
+    declaration_ambiguous: '声明有歧义，不代为择一',
+    credential_absent: '声明引用的凭据变量在当前进程里未设置',
+    declared_not_configured: '已声明，但本进程未配置对应采集连接',
+    declared_and_observed: '声明与观测一致（只说明两边对上了，不代表请求命中）',
+    declared_no_snapshot: '已声明，但还没有任何快照',
+    observed_pool_outside_declaration: '观测到的池不在声明里',
+    declared_pool_not_observed: '声明的池没有观测到',
+    realm_mismatch: '声明区域与观测区域不同',
+    declared_model_not_observed: '声明的模型没有观测到',
+    // 声明文件解析期诊断：这些码来自网关，页面必须逐条给出中文说明，不能落到“未识别的诊断码”。
+    credential_reference_missing: '声明缺少凭据引用，只登记连接但无法采集',
+    credential_reference_invalid: '凭据引用必须写成环境变量名，不能内联凭据值',
+    credential_presence_only: '只知道凭据变量是否已设置，不知道它是否有效',
+    models_not_supported: '这类连接不支持模型限制，声明里的 models 被忽略',
+    models_not_array: 'models 必须是数组',
+    pools_not_array: 'pools 必须是数组',
+    pool_id_invalid: '池标识必须形如 pool-<32 位小写十六进制>',
+    model_id_invalid: '模型标识不可用',
+    connection_id_invalid: '连接标识不可用',
+    resource_invalid: 'resource 必须是 quota 或 credit',
+    connection_not_object: '连接条目必须是对象',
+    source_url_invalid: '来源地址必须是本机回环 HTTP 源',
+    realm_invalid: '区域必须是 cn 或 intl',
+    shared_invalid: 'shared 必须是布尔值',
+    declared_at_invalid: '声明时间不可解析',
+    duplicate_connection: '同一 connectionId 被声明多次',
+    duplicate_pool_declaration: '同一个池被多个连接重复声明',
+    realm_conflict: '同一个池被声明到不同区域',
+    shared_flag_conflict: '同一个池的共享标记互相矛盾',
+};
+
+export const ATTRIBUTION_STATUS_LABELS = {
+    unavailable: '上游未提供请求归因',
+};
+
+export const ATTRIBUTION_FIELD_LABELS = {
+    requestId: '请求编号',
+    taskId: '任务编号',
+    sessionId: '会话编号',
+    role: '角色',
+    unit: '单位',
+    usageLevel: '用量层级',
+    value: '用量数值',
+    taskToModel: '任务 → 模型',
+    sessionToProvider: '会话 → 提供方',
+    requestToAccount: '请求 → 账号',
+};
+
+export const KNOWN_AT_LABELS = {
+    connection: '连接',
+    pool: '池',
+    modelAggregate: '账号×模型汇总',
+    task: '任务',
+    session: '会话',
+    request: '单次请求',
+};
+
+export function trustLevelLabel(level) {
+    return TRUST_LEVEL_LABELS[level] ?? '未识别的证据层级（' + level + '）';
+}
+
+export function trustLevelTone(level) {
+    return TRUST_LEVEL_TONES[level] ?? 'neutral';
+}
+
+/** 诊断码带参数时拆成 “基础码 + 参数”，保证新增上游错误码不会退化成未知。 */
+export function diagnosticLabel(code) {
+    if (Object.hasOwn(DIAGNOSTIC_LABELS, code)) return DIAGNOSTIC_LABELS[code];
+    const [head, ...rest] = String(code).split(':');
+    if (head === 'observed_source_error') return '观测侧采集报错：' + (rest.join(':') || '未提供错误码');
+    return '未识别的诊断码（' + code + '）';
+}
+
+function requireObject(value, path) {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new ResourceSchemaError(path, '必须是对象');
+    return value;
+}
+
+function requireArray(value, path) {
+    if (!Array.isArray(value)) throw new ResourceSchemaError(path, '必须是数组');
+    return value;
+}
+
+function requireBoolean(value, path) {
+    if (typeof value !== 'boolean') throw new ResourceSchemaError(path, '必须是布尔值');
+    return value;
+}
+
+/** 只校验本页真正会读的字段；缺失即整份文档不受支持，绝不补默认值。 */
+export function parseRoutingDocument(raw) {
+    const document = requireObject(raw, 'routing');
+    if (document.schemaVersion !== ROUTING_SCHEMA) throw new ResourceSchemaError('routing.schemaVersion', '期望 ' + ROUTING_SCHEMA);
+    requireBoolean(document.readOnly, 'routing.readOnly');
+    if (document.readOnly !== true) throw new ResourceSchemaError('routing.readOnly', '只读视图不应为 false');
+    requireBoolean(document.routingVerified, 'routing.routingVerified');
+    if (document.routingVerified !== false) throw new ResourceSchemaError('routing.routingVerified', '本页不支持已核验的路由声明');
+    if (typeof document.generatedAt !== 'string' || !Number.isFinite(Date.parse(document.generatedAt))) {
+        throw new ResourceSchemaError('routing.generatedAt', '必须是可解析的时间');
+    }
+    requireArray(document.connections, 'routing.connections');
+    requireArray(document.mappings, 'routing.mappings');
+    requireArray(document.limitations, 'routing.limitations');
+    const layers = requireObject(document.layers, 'routing.layers');
+    for (const id of TRUST_LAYER_IDS) {
+        const layer = requireObject(layers[id], 'routing.layers.' + id);
+        if (layer.code !== undefined && typeof layer.code !== 'string') throw new ResourceSchemaError('routing.layers.' + id + '.code', '必须是字符串');
+        if (!Object.hasOwn(TRUST_LEVEL_LABELS, layer.level)) throw new ResourceSchemaError('routing.layers.' + id + '.level', '未知层级 ' + String(layer.level));
+        requireBoolean(layer.verified, 'routing.layers.' + id + '.verified');
+        if (layer.verified !== false) throw new ResourceSchemaError('routing.layers.' + id + '.verified', '三层证据都不允许标记为已验证');
+    }
+    const registry = requireObject(document.connectionRegistry, 'routing.connectionRegistry');
+    if (!Object.hasOwn(REGISTRY_STATUS_LABELS, registry.status)) throw new ResourceSchemaError('routing.connectionRegistry.status', '未知状态 ' + String(registry.status));
+    requireArray(registry.connections, 'routing.connectionRegistry.connections');
+    requireArray(registry.conflicts, 'routing.connectionRegistry.conflicts');
+    const diagnostics = requireObject(document.connectionDiagnostics, 'routing.connectionDiagnostics');
+    requireArray(diagnostics.connections, 'routing.connectionDiagnostics.connections');
+    requireObject(diagnostics.summary, 'routing.connectionDiagnostics.summary');
+    const attribution = requireObject(document.requestAttribution, 'routing.requestAttribution');
+    if (!Object.hasOwn(ATTRIBUTION_STATUS_LABELS, attribution.status)) throw new ResourceSchemaError('routing.requestAttribution.status', '未知状态 ' + String(attribution.status));
+    requireArray(attribution.integrationTodo, 'routing.requestAttribution.integrationTodo');
+    return document;
+}
+
+function layerFact(id, layer) {
+    const fact = {
+        id,
+        title: TRUST_LAYER_TITLES[id],
+        source: layer.source ?? TRUST_LAYER_SOURCES[id],
+        level: layer.level,
+        levelLabel: trustLevelLabel(layer.level),
+        tone: trustLevelTone(layer.level),
+        verified: false,
+        verifiedText: '未核验',
+    };
+    if (id === 'configuration') {
+        fact.summary = '声明文件只说明“想怎么连”，不说明请求实际走了哪条路。';
+    }
+    else if (id === 'executionSelection') {
+        fact.summary = '执行选择来自本机关联文件；关联匹配不等于请求命中，也不给出额度保证。';
+    }
+    else {
+        fact.summary = '上游用量载荷没有请求标识，无法把任何一次调用归因到任务、会话或具体模型。';
+        fact.reasonLabel = layer.reason ? '原因：' + layer.reason : null;
+    }
+    if (typeof layer.status === 'string') fact.statusText = layer.status;
+    return fact;
+}
+
+/**
+ * 把路由证据整理成页面可渲染的事实。所有 “已核验” 字样都不出现；
+ * 声明、观测、实际路由分三块，互不推导。
+ */
+export function buildTrustView(document) {
+    const layers = TRUST_LAYER_IDS.map(id => layerFact(id, document.layers[id]));
+    const registry = document.connectionRegistry;
+    const connections = registry.connections.map(item => ({
+        connectionId: item.connectionId,
+        resource: item.resource,
+        resourceLabel: item.resource === 'quota' ? 'token 用量' : item.resource === 'credit' ? '积分余额' : String(item.resource),
+        declaration: item.status,
+        declarationLabel: DECLARATION_STATUS_LABELS[item.status] ?? String(item.status),
+        realm: item.realm,
+        realmLabel: realmLabel(item.realm),
+        pools: Array.isArray(item.pools) ? item.pools : [],
+        models: Array.isArray(item.models) ? item.models : [],
+        shared: item.shared === true,
+        credentials: (Array.isArray(item.credentials) ? item.credentials : []).map(credential => ({
+            purpose: credential.purpose === 'panel_token' ? '面板令牌' : credential.purpose === 'api_key' ? 'API Key' : String(credential.purpose),
+            envVar: credential.envVar,
+            present: credential.present === true,
+            presentLabel: credential.present === true ? '进程中已设置' : '进程中未设置',
+        })),
+        diagnostics: (Array.isArray(item.diagnostics) ? item.diagnostics : []).map(diagnostic => diagnosticLabel(diagnostic.code)),
+    }));
+    const conflicts = registry.conflicts.map(conflict => ({
+        code: conflict.code,
+        label: CONFLICT_LABELS[conflict.code] ?? '未识别的冲突（' + conflict.code + '）',
+        connectionIds: Array.isArray(conflict.connectionIds) ? conflict.connectionIds : [],
+        scopeId: conflict.scopeId ?? null,
+        detail: conflict.detail ?? null,
+    }));
+    const summary = document.connectionDiagnostics.summary;
+    const rows = document.connectionDiagnostics.connections.map(row => ({
+        connectionId: row.connectionId,
+        resource: row.resource,
+        declaration: row.declaration,
+        codes: (Array.isArray(row.codes) ? row.codes : []).map(code => ({ code, label: diagnosticLabel(code) })),
+        notes: Array.isArray(row.notes) ? row.notes : [],
+    }));
+    const undeclaredIds = (Array.isArray(document.connectionDiagnostics.undeclaredObserved) ? document.connectionDiagnostics.undeclaredObserved : [])
+        .map(item => (item && typeof item === 'object' ? item.connectionId : item))
+        .filter(item => typeof item === 'string' && item.length > 0);
+    const attribution = document.requestAttribution;
+    const attributionFields = attribution.fields && typeof attribution.fields === 'object' ? attribution.fields : {};
+    const knownAt = attribution.knownAt && typeof attribution.knownAt === 'object' ? attribution.knownAt : {};
+    return {
+        schemaVersion: document.schemaVersion,
+        generatedAt: document.generatedAt,
+        readOnly: true,
+        routingVerified: false,
+        basis: document.basis ?? null,
+        layers,
+        configuration: {
+            status: registry.status,
+            statusLabel: REGISTRY_STATUS_LABELS[registry.status],
+            declaredVia: registry.source === 'file' ? (registry.declaredVia ?? 'WORKBUDDY_RESOURCE_CONNECTIONS_FILE') : registry.status === 'not_declared' ? '未提供声明文件' : (registry.declaredVia ?? 'WORKBUDDY_RESOURCE_CONNECTIONS_FILE'),
+            connections,
+            conflicts,
+            restrictions: registry.restrictions ?? null,
+            fileDiagnostics: Array.isArray(registry.fileDiagnostics) ? registry.fileDiagnostics.map(item => diagnosticLabel(item.code)) : [],
+        },
+        diagnostics: {
+            summary: {
+                declared: summary.declared ?? 0,
+                usable: summary.usable ?? 0,
+                flagged: summary.flagged ?? 0,
+                observed: summary.observed ?? 0,
+                undeclaredObserved: summary.undeclaredObserved ?? 0,
+                conflicts: summary.conflicts ?? 0,
+            },
+            rows,
+            // 网关这一项是连接诊断对象列表；页面只需要可读的连接标识，不能把对象直接拼进文案。
+            undeclaredObserved: undeclaredIds,
+        },
+        attribution: {
+            status: attribution.status,
+            statusLabel: ATTRIBUTION_STATUS_LABELS[attribution.status],
+            reason: attribution.reason ?? null,
+            fields: Object.entries(ATTRIBUTION_FIELD_LABELS)
+                .filter(([key]) => Object.hasOwn(attributionFields, key) || ['requestId', 'taskId', 'sessionId', 'role', 'unit', 'usageLevel'].includes(key))
+                .map(([key, label]) => ({ key, label, value: attributionFields[key] ?? null })),
+            knownAt: Object.entries(KNOWN_AT_LABELS).map(([key, label]) => ({ key, label, known: knownAt[key] === true })),
+            todo: attribution.integrationTodo.map(item => String(item)),
+            doesNotProve: Array.isArray(attribution.doesNotProve) ? attribution.doesNotProve.map(item => String(item)) : [],
+        },
+        limitations: describeLimitations(document.limitations),
+    };
 }
