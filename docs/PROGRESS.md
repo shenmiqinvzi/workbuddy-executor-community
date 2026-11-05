@@ -171,3 +171,21 @@ run16（独立账本 `<STATE_DIR>\run16`）：glm-5.3-flash（x0.08，模型读�
 回归：新增 14 项一致性测试（真实 `TaskStore` + 真实 service），修复前 4 pass / 10 fail，修复后 14/14；路由+资源批次 76/76、工作台 100/100、HTTP 与打包批次 61/61、桌面策略 70/70、`build` 与 `typecheck:task-view` 通过、快照 319 文件一致。新候选包 `da637ece…`（558 文件，包内 `verify-release` 通过，与上一包 `532f2b86…` 的文件级差异为 4 改 1 增）。新接口在包内构建上由 `verify-package-routing.mjs` 验 34 项（含成功 / 时间未知 / 过期 / 失败 / 多连接冲突 / HTTP 参数与方法 / 容量路径 / 数据库不变），正式 desktop host 由 `desktop-routing-host-check.mjs` 验 16 项（routing 200、primary=B、level=unavailable、五个前端资源 200、数据库 sha256 前后一致、host 退出 0）。全量 `npm test` 为 935/922 pass/1 fail，唯一失败是并行负载下的挂起类计时用例，单文件复跑 6/6 通过并另做基线对照，未把全量写成通过。
 
 真实来源条件本轮重新核对：本机 hub 在跑（`127.0.0.1:8788`，realm `cn`，8 个账号），但仍无 `WORKBUDDY_*` 注入；`/usage/remaining` 必须面板会话令牌，而本机面板口令为默认值、本轮禁止自行登录，故 token 侧保持阻塞；积分侧技术上可用已有 API Key，但使用授权无法从文件确认，本轮未使用其值。真实账号池联调仍需用户在本机注入令牌/密钥后重跑。D3-01 不标完成；D3-02 只多了"证据一致性已修并可回溯"，任务级路由仍保留 `routing_unverified`。
+
+### D3 测试稳定性与真实来源验收工具（2026-11-04 第三轮）
+
+独立分支 `fix/resource-acceptance-readiness`（基线 `e39a4d4`）。本轮只做两件事，不重做已通过的能力。
+
+**测试稳定性。** 上一轮全量两次失败都指向 `bounded-command` 的"挂起命令 + 脱离后代的超时清理"用例，报错是读 `child.pid` 时 `ENOENT`。定位结论是夹具预算假设错误，不是产品缺陷：`bounded-job.ps1` 用 `Add-Type` 编译监督器并挂起目标进程，`Stopwatch` 在 `ResumeThread` 之后才起算——也就是说 1 秒预算全部落在目标自己的启动上，而生成该 pid 的 Node 目标在整机并行下启动开销会超过 1 秒。实测 spawn→pid 文件出现的中位耗时：单进程 367ms，8 并发 519ms，24 并发 1351ms，48 并发 2753ms（最大 5317ms）。因此把该用例预算改成 10 秒（约两倍最坏值）并补 `elapsed >= 9000` 断言，逼它证明"守住 deadline 而不是提前放弃"；另加一个用 `ping.exe`（几十毫秒即可运行）作真挂起目标的 1 秒 deadline 用例，保留对短期限与清理的直接验证。没有删断言、没有在目标被杀后补等 pid、没有关并发。
+
+`run-worker` 的 detached 用例另有一处独立竞态：worker 先写 `state.json` 的终态、再追加对应的 `result` 事件，测试原来"等状态后直接读最后一条消息"，会偶尔读到还没被覆盖的 `turn_end`（`status: completed`）。本轮把等待条件改成等**证据本身**（最后一条消息的 `status` 为 `needs_review`，10 秒上限），断言内容不变；产品写入顺序作为已知的瞬时窗口记录在案，本轮不改监督器行为。夹具的 `timeoutSeconds` 试过的 5→60 与轮询 5s→30s 已还原，因为放预算既不解这个竞态、又拖长全量。
+
+整机并行还暴露了第三处时间假设：`credit-balance.test.ts` 的「unsupported and unauthorized endpoints…」用共享夹具的 `intervalMs: 1000` 连打两次 `collect()`，再断言"第二次被采集窗口挡住、上游只收到 1 次"。全量里这条一直跑到 3.4 秒时失败（`2 !== 1`），单独跑 5 次、4 路并发 24 轮都不复现——原因是第一次失败请求本身就可能超过 1 秒，第二个 `collect()` 于是**合法地**落在新窗口里。修法是只把这条用例的窗口放宽到 60 秒（`connection(url,{intervalMs:60000})`），断言仍是"上游只被请求一次"，改的是"紧邻"这个词是否成立的前提，不是结论。
+
+**真实来源验收工具。** 新增 `gateway/scripts/resource-source-acceptance.mjs`，把上一轮散在 `outputs/` 里的临时思路变成仓库内可维护的两段式工具：`--check` 只做离线条件核对（回环 origin、凭据字段是否存在、构建是否存在），绝不报通过；`--execute` 在条件具备时用**正式** `TaskStore` + `TaskApplicationService` + `WorkbenchHttpServer` + 正式采集器完成一次有界的只读验收，隔离临时库与端口，token 与积分可分别执行、分别记录，缺条件的一侧写进 `notExecuted` 而不是算通过。检查项覆盖采集结果、快照落库、官方 HTTP 与库一致、routing 证据归属、时间与单位、null 与零与部分覆盖的区分、GET 不触发上游、GET 不改库、无模型请求、以及自建服务已关闭；报告只保留布尔、状态码、schema、coverage、时间与计数，凭据与余额数值不进输出。退出码 0 / 1 / 2 分别是全过 / 有失败 / 缺条件或部分未执行。数据类检查要求样本非空，空上游不会被 `every()` 判成通过。
+
+验证：`test/resource-source-acceptance.test.ts` 11 项（缺条件、单侧执行、双源全通、脱敏、401、超时、坏载荷、空上游不冒充通过、服务与状态目录清理、命令行退出码）通过；`bounded-command` 7/7；`run-worker` 顺序复跑 8 次与 4 路并发各 5/5；`credit-balance` 修复后 6 波 × 4 路并发 24 次全过；资源与 HTTP 批次 81/81；工作台 100/100；`typecheck:task-view` 通过。全量 `npm test`（隔离 `WORKBUDDY_CLI_ELECTRON`/`WORKBUDDY_CONFIG_DIR`）：**947 条 / 935 通过 / 0 失败 / 12 跳过，退出码 0**（`logs/full-suite-final5.log`，286s）。此前四次全量各出现过一次机器负载型失败（`spawnSync git ETIMEDOUT`、detached launcher 未启动、`bounded-command` 读 pid 时 `ENOENT`、`credit-balance` 的 `2 !== 1`），本轮已按上面三段分别定位并修复前两类夹具假设，第四类改为放宽采集窗口。
+
+候选包：`outputs/resource-acceptance-readiness-20261104/package-v6/codex-workbuddy-gateway-v0.7.1.zip`，560 文件，SHA-256 `5580742bddf2e492adc8d700e935fee85261818db08b3c0e83327b728e1a023d`；包内 `verify-release.mjs` → 560 文件 `hashesMatch: true`；用包内 `dist/` 与包内脚本对回环 fixture 跑 `--execute --source both` → 35/35、退出码 0，`--check` 退出码 0。旧包 `84cc070a…`、`da637ece…`、`532f2b86…` 均保留未覆盖。
+
+真实账号池仍未验证——本机没有把统计连接注入部署，token 侧还缺面板会话令牌，积分侧的既有 Key 使用授权未经确认，工具与操作步骤只到"可审查、可重复运行"这一步。D3-01/D3-02 状态不变，任务级路由仍 `routing_unverified`。详见 [RESOURCE_SOURCE_ACCEPTANCE_TOOL.md](RESOURCE_SOURCE_ACCEPTANCE_TOOL.md)。
