@@ -62,7 +62,10 @@ test("same-region providers share one balance while different regions remain sep
 test("unsupported and unauthorized endpoints stay explicit without fallback or login",async t=>{
   for(const status of [401,403,404,501]){
     const f=fixture(t);let calls=0;const url=await source(t,(req,res)=>{calls++;assert.equal(req.url,"/v1/balance-summary");res.statusCode=status;res.end("private error response");});
-    const collector=new WorkBuddyCreditBalanceCollector(f.store.creditBalances,connection(url));await collector.collect();await collector.collect();await collector.stop();
+    // "collect twice in a row" only means "inside one collection window" if the window outlasts the first request.
+    // The shared fixture uses a 1s interval; under full-suite load a single failed collection can take longer than
+    // that, which made the second call legitimately due and flaked this assertion. Widen the window, not the intent.
+    const collector=new WorkBuddyCreditBalanceCollector(f.store.creditBalances,connection(url,{intervalMs:60000}));await collector.collect();await collector.collect();await collector.stop();
     const view=f.store.creditBalances.read();assert.equal(calls,1);assert.equal(view.balances.length,0);assert.equal(view.connections[0]!.errorCode,status<404?"source_unauthorized":"source_unsupported");assert.equal(JSON.stringify(view).includes("private error response"),false);
   }
 });

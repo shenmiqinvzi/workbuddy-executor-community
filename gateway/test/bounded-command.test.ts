@@ -11,11 +11,36 @@ test("arguments including whitespace, quotes, backslashes and Unicode survive ex
  assert.equal(r.exitCode,0,JSON.stringify(r));assert.equal(r.cleanupConfirmed,true);assert.deepEqual(JSON.parse(fs.readFileSync(r.stdout,'utf8')),args);
  assert.equal(r.processStarted,true,"a started command must leave a durable start marker");assert.ok(fs.existsSync(r.startedMarker!),"the marker path must be reported");
 });
+test("a one-second deadline stops a command that is already running",{skip:process.platform!=="win32"},async t=>{
+ // The deadline is measured from resuming the target, so it also covers the
+ // target's own startup. A Node target needs hundreds of milliseconds to boot
+ // before it can even hang, which makes a one-second bound a race against that
+ // boot (see the next test). ping.exe is a real Windows program that starts in
+ // tens of milliseconds and then blocks for its full count, so this case proves
+ // a short deadline fires promptly instead of only proving that a slow start
+ // was interrupted.
+ const dir=fixture(t);
+ const ping=path.join(process.env.SystemRoot??"C:\\Windows","System32","ping.exe");
+ const start=Date.now(),r=await runBounded({executable:ping,args:["-n","12","127.0.0.1"],cwd:dir,timeoutSeconds:1},dir);
+ assert.equal(r.reason,"timeout",JSON.stringify(r));assert.equal(r.exitCode,124);assert.equal(r.cleanupConfirmed,true);
+ const elapsed=Date.now()-start;
+ assert.ok(elapsed<15000,`the bound must not wait for the 12 second ping: ${elapsed}ms`);
+ assert.throws(()=>process.kill(r.pid!,0),{code:"ESRCH"});
+});
 test("intentional hang and its detached child end within bound with owned tree cleanup",async t=>{
+ // The bound has to cover this target's startup as well, because the deadline
+ // runs from process resume. Measurements on a 20-core machine under load:
+ // writing the pid file took a median of 1.35s and at most 5.3s when 24-48
+ // Node processes started at once, so a one-second budget killed the fixture
+ // before it wrote the file (the previous full-suite ENOENT). Ten seconds is
+ // twice the worst measured start; the elapsed assertion below still proves the
+ // deadline fired rather than the child being waited for.
  const dir=fixture(t),pidFile=path.join(dir,"child.pid");
  const script=`const {spawn}=require('child_process');const fs=require('fs');const c=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore'});fs.writeFileSync(process.argv[1],String(c.pid));setInterval(()=>{},1000);`;
- const start=Date.now(),r=await runBounded({executable:process.execPath,args:['-e',script,pidFile],cwd:dir,timeoutSeconds:1},dir);
- assert.equal(r.reason,"timeout",JSON.stringify(r));assert.equal(r.exitCode,124);assert.equal(r.cleanupConfirmed,true);assert.ok(Date.now()-start<15000);
+ const start=Date.now(),r=await runBounded({executable:process.execPath,args:['-e',script,pidFile],cwd:dir,timeoutSeconds:10},dir);
+ assert.equal(r.reason,"timeout",JSON.stringify(r));assert.equal(r.exitCode,124);assert.equal(r.cleanupConfirmed,true);
+ const elapsed=Date.now()-start;
+ assert.ok(elapsed>=9000,`the run must wait for its own bound instead of giving up early: ${elapsed}ms`);assert.ok(elapsed<25000);
  const pid=Number(fs.readFileSync(pidFile,'utf8'));assert.throws(()=>process.kill(pid,0),{code:"ESRCH"});assert.throws(()=>process.kill(r.pid!,0),{code:"ESRCH"});
 });
 test("cancellation file cleans a running command without affecting other processes",async t=>{

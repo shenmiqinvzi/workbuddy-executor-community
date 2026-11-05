@@ -77,6 +77,7 @@ async function fixture() {
   files["src/workspace-protection.ts"] = "export {};\n"; files["dist/workspace-protection.js"] = "export {};\n"; files["dist/workspace-protection.d.ts"] = "export {};\n";
   files["scripts/dsh-host-check.mjs"] = "// isolated host verification fixture\n";
   files["scripts/plan.mjs"] = "// local plan authorization fixture\n";
+  files["scripts/resource-source-acceptance.mjs"] = "// read-only real-source acceptance fixture\n";
   for (const name of ["dsh-bindings", "dsh-client", "dsh-coordinator", "dsh-runtime", "dsh-rate-verifier", "dsh-inspect", "plan"]) { files[`src/${name}.ts`] = "export {};\n"; files[`dist/${name}.js`] = "export {};\n"; files[`dist/${name}.d.ts`] = "export {};\n"; }
   for (const name of ["desktop-dispatch", "desktop-dispatch-journal", "desktop-dispatch-runtime", "desktop-control", "desktop-control-journal", "desktop-control-runtime"]) { files[`src/${name}.ts`] = "export {};\n"; files[`dist/${name}.js`] = "export {};\n"; files[`dist/${name}.d.ts`] = "export {};\n"; }
   for (const name of ["contracts", "store", "workbuddy", "engine", "http", "client", "ui", "cli", "mcp"]) {
@@ -114,6 +115,7 @@ test("release archive uses a file allowlist and hashes every included file", asy
     for(const name of ["WINDOWS_ENV.example","scripts/setup.mjs","scripts/doctor.mjs","scripts/deployment-check.mjs","scripts/zip.mjs","bin/workbuddy-gateway.cmd","docs/INSTALL_WINDOWS.md","docs/DEPLOYMENT_ACCEPTANCE.md"])assert.ok(selected.includes(name),name);
     assert.ok(selected.includes(".env.example"));
     assert.ok(selected.includes("docs/CODEX_WORKFLOW.md"));
+    assert.ok(selected.includes("scripts/resource-source-acceptance.mjs"), "the read-only real-source acceptance tool must ship with the gateway");
     assert.ok(selected.includes("bin/workbuddy-worker"));
     assert.ok(selected.includes("dist/desktop-worker-cli.js"));
     for (const filename of ["bin/workbuddy-service", "dist/persistent-service.js", "dist/service-cli.js", "dist/native-desktop-trigger.js"]) assert.ok(selected.includes(filename));

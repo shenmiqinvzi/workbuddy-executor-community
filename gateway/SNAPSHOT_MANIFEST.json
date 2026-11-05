@@ -440,13 +440,18 @@
     },
     {
       "path": "scripts/package.mjs",
-      "sha256": "fdc083a5d42cafd76f45070cc94cebb9556b339398f2e05e71ad4edf24fa0505",
-      "bytes": 15610
+      "sha256": "60ce6e1539094fb0fcabb89b3a4d8c161de1ea5b31b50f869c7f80c03fa7ea3b",
+      "bytes": 15700
     },
     {
       "path": "scripts/plan.mjs",
       "sha256": "31350b8753d3f6385fd68ecfff0028ac0643a07867926ae02dcd42a86b331e18",
       "bytes": 443
+    },
+    {
+      "path": "scripts/resource-source-acceptance.mjs",
+      "sha256": "68b3c3dd417015f42e8de1546b7d5ff815f52e03dffe77cead4ed9ca01637cae",
+      "bytes": 21250
     },
     {
       "path": "scripts/setup.mjs",
@@ -1035,8 +1040,8 @@
     },
     {
       "path": "test/bounded-command.test.ts",
-      "sha256": "061a67fdc4353cd297ebb17f0bea103bc70e03962aae8e59d8d9383e312684d6",
-      "bytes": 5617
+      "sha256": "16e0102976e7c20e9ced2e86e50c8fab35ab9a8307b7aa194d53029bd17233dd",
+      "bytes": 7416
     },
     {
       "path": "test/brief-result.test.ts",
@@ -1060,8 +1065,8 @@
     },
     {
       "path": "test/credit-balance.test.ts",
-      "sha256": "9092ded7a31b8a0ab8a0c2e6c029b2f0b1f93821569dd8824f1b06dd366c039a",
-      "bytes": 12997
+      "sha256": "a869496646e8d284b2e16da35d2fc95cdd6d1dbb25b46089d26b0854a643f645",
+      "bytes": 13366
     },
     {
       "path": "test/deepseek-client.test.ts",
@@ -1195,8 +1200,8 @@
     },
     {
       "path": "test/package.test.ts",
-      "sha256": "01b68117e3e50e353db9abdee08dd86e16d959a37cb9ad7165f2f451bdd5df3c",
-      "bytes": 21476
+      "sha256": "1492b3f8d0c84aaae948609c862bc4715d308196ec6ab3c05900d13e9e22b688",
+      "bytes": 21727
     },
     {
       "path": "test/persistent-service.test.ts",
@@ -1254,14 +1259,19 @@
       "bytes": 13974
     },
     {
+      "path": "test/resource-source-acceptance.test.ts",
+      "sha256": "9e15464656e188d5b43b843bde6176209c6b98d2f4bbd9a9e21c25a82783fc0b",
+      "bytes": 11205
+    },
+    {
       "path": "test/run-journal.test.ts",
       "sha256": "c3fd611e6d3ed4710ee236275eda22ac1019f826a93d9c0bc1698d60c3f850b9",
       "bytes": 8859
     },
     {
       "path": "test/run-worker.test.ts",
-      "sha256": "ebc6e934801ed56c209fa9124242f24cc53db18b0b700f6c4513d184d5783979",
-      "bytes": 9291
+      "sha256": "81800c2b82aa2f8d70630da4822f38b7535a07620aea1df3bed189be6bb51da0",
+      "bytes": 9626
     },
     {
       "path": "test/skill-copies.test.ts",

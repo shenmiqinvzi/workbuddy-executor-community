@@ -132,7 +132,11 @@ test("an actual detached worker survives its launcher exiting and writes its fin
   assert.equal(promptCount, 1);
   assert.notEqual(journal.snapshot()?.pid, process.pid);
   assert.equal(journal.snapshot()?.sessionId, "desktop-test");
-  const messages = reconnected.messages(id);
-  assert.equal(messages.at(-1)?.metadata?.status, "needs_review");
-  assert.equal(messages.at(-1)?.content[0], "Fixture artifact complete");
+  // The worker publishes its terminal status just before it appends the result
+  // event for that status, so wait for the evidence itself instead of assuming
+  // the last event is already written when the status flips.
+  const last = () => reconnected.messages(id).at(-1);
+  try { await until(() => last()?.metadata?.status === "needs_review", 10000); }
+  catch (error) { assert.fail(`${String(error)}; last=${JSON.stringify(last()?.metadata)}`); }
+  assert.equal(last()?.content[0], "Fixture artifact complete");
 });
