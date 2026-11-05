@@ -5,7 +5,7 @@
 ## 版本与文件归属
 
 - 核实的起始基线：`b89a587963d295fcf00858c7fbb4e5b47425841c`；独立分支 `feat/resource-fault-isolation`，工作树 `E:\javaproject\workbuddy-resource-fault-isolation`。
-- 测试提交：`3ad105fd898fbce3535b51e946d5e85e46bbf4cd`；本验收记录是其后的独立文档提交，最终 HEAD 可用 `git log -1 --format=%H` 读取，避免提交哈希自引用。
+- 测试提交：`3ad105fd898fbce3535b51e946d5e85e46bbf4cd`、`c10b896e1bcc8b92a0775d6c6a7de142486f75ab`；文档提交随分支历史一并集成，最终 HEAD 可用 `git log -1 --format=%H` 读取，避免提交哈希自引用。
 - 本线文件：`gateway/test/resource-fault-isolation.test.ts`、`docs/RESOURCE_FAULT_ISOLATION_ACCEPTANCE.md`。没有修改公共运行模块，也没有修改 A 线的 plan-resource-reference、plan-reference、关联/loader 测试；没有改 README、ROADMAP、PROGRESS、开发总表、版本号或清单。集成时需重新生成快照清单，并在 A/B/C 合入后执行最终完整回归。
 
 ## 场景矩阵
