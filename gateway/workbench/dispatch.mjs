@@ -37,7 +37,7 @@ export async function mountDesktopDispatch({ onTask, onResources = null }) {
     const sheet = document.querySelector('.sheet'), heading = document.querySelector('.heading-tools');
     const open = el('button', { type: 'button', class: 'button dispatch-primary', id: 'new-task', disabled: true, title: '在独立桌面应用中准备任务' }, '新建任务');
     heading.prepend(open);
-    let available = false, catalog, draft, busy = false, timer, stage = 'edit', polls = 0, receiptSignature = '';
+    let available = false, catalog, draft, busy = false, timer, stage = 'edit', polls = 0, receiptSignature = '', catalogGeneration = 0, catalogLoading = false, editorGeneration = 0;
     let planReference = null;
     const panel = el('section', { class: 'dispatch-workflow', id: 'task-compose', hidden: true, 'aria-label': '准备新任务' });
     sheet.querySelector('.page-heading').after(panel);
@@ -57,8 +57,9 @@ export async function mountDesktopDispatch({ onTask, onResources = null }) {
         stage = next; steps.replaceChildren(...[['edit','填写约定'],['review','核对并确认'],['receipt','请求回执']].map(([value,label]) => el('span', { ...(value === next ? { 'aria-current': 'step' } : {}) }, label)));
     }
     function close() {
-        if(busy){showNotice('请等待原请求返回。若关闭窗口，重新打开后先查询原派工回执。');return;}
-        clearTimeout(timer); planReference?.reset(); panel.hidden = true; sheet.classList.remove('composing');
+        if(busy&&!catalogLoading){showNotice('请等待原请求返回。若关闭窗口，重新打开后先查询原派工回执。');return;}
+        if(catalogLoading){catalogGeneration++;catalogLoading=false;busy=false;sourceChanged();}
+        editorGeneration++; clearTimeout(timer); planReference?.reset(); panel.hidden = true; sheet.classList.remove('composing');
         document.getElementById('page-title').textContent = '任务工作台';
         document.querySelector('.page-intro').textContent = '执行有记录，交付有依据。';
         open.focus();
@@ -66,7 +67,7 @@ export async function mountDesktopDispatch({ onTask, onResources = null }) {
     const isDemo=()=>document.getElementById('data-source')?.value==='demo';
     function sourceChanged() {
         open.disabled=busy||!available||isDemo();open.title=!available||isDemo()?'演示和浏览器模式不能派工；请使用桌面应用的已保存任务':'准备任务约定，核对后在本机确认';
-        panel.querySelector('.dispatch-back').disabled=busy;
+        panel.querySelector('.dispatch-back').disabled=busy&&!catalogLoading;
         const preview=document.getElementById('preview-task'),confirm=document.getElementById('confirm-task');
         if(isDemo()&&!panel.hidden&&stage!=='receipt')showNotice('演示模式不支持派工，请切换回已保存任务。');
         else if(notice.textContent==='演示模式不支持派工，请切换回已保存任务。')showNotice('');
@@ -86,9 +87,11 @@ export async function mountDesktopDispatch({ onTask, onResources = null }) {
         await loadCatalog(); controls.workspace.focus();
     });
     function renderEditor() {
+        const editor=++editorGeneration;
         setStage('edit');
         const workspace = field('workspace', '项目文件夹', el('input', { required: true, autocomplete: 'off', placeholder: '已有项目的绝对路径' }), '任务只作用于此目录；原有改动继续受保护。');
-        workspace.append(el('button', { type: 'button', class: 'text-button', onclick: async () => { try { const selected = await desktopRequest('choose_workspace'); if (selected.directory) controls.workspace.value = selected.directory; } catch (error) { showNotice(error.message, true); } } }, '选择文件夹'));
+        controls.workspace.addEventListener('input', () => { controls.session.value=''; if(catalog&&controls.model.value) updateSessions(); });
+        workspace.append(el('button', { type: 'button', class: 'text-button', onclick: async () => { const prior=controls.workspace.value; try { const selected = await desktopRequest('choose_workspace'); if(editor!==editorGeneration||panel.hidden||controls.workspace.value!==prior)return; if (selected.directory) { controls.workspace.value = selected.directory; controls.session.value=''; if(catalog&&controls.model.value) updateSessions(); } } catch (error) { if(editor===editorGeneration&&!panel.hidden)showNotice(error.message, true); } } }, '选择文件夹'));
         const source = field('source', '执行来源', el('select', { required: true, onchange: updateModels }), '读取可用目录不会准备或切换模型。');
         const model = field('model', '精确模型', el('select', { required: true, onchange: updateEfforts }));
         const effort = field('effort', '推理档位', el('select', { required: true, onchange: updateChoice }));
@@ -123,11 +126,25 @@ export async function mountDesktopDispatch({ onTask, onResources = null }) {
     }
     function resetSelects() { for (const [name, label] of [['source','请选择执行来源'],['model','请先选择来源'],['effort','请先选择模型'],['session','请选择已有会话']]) { controls[name].replaceChildren(option('',label)); controls[name].disabled = true; } }
     async function loadCatalog() {
-        if (busy) return; busy = true; sourceChanged(); catalog = null; resetSelects(); document.getElementById('preview-task').disabled = true;
+        if (busy) return;
+        const generation=++catalogGeneration; busy = true; catalogLoading=true; sourceChanged(); document.getElementById('preview-task').disabled = true;
         const refresh = document.getElementById('refresh-models'); refresh.disabled = true; showNotice('正在读取可用来源与费率…');
-        try { catalog = await desktopRequest('catalog'); populateCatalog(); showNotice(''); }
-        catch (error) { showNotice(error.message + ' 可以刷新后重试；尚未派工。',true); }
-        finally {busy = false; sourceChanged(); refresh.disabled = false; updateChoice();}
+        try {
+            const result = await desktopRequest('catalog'); if(generation!==catalogGeneration||panel.hidden)return;
+            const previous={source:controls.source.value,model:controls.model.value,effort:controls.effort.value,session:controls.session.value,workspace:controls.workspace.value};
+            catalog=result;populateCatalog();
+            const exists=(control,value)=>value&&[...control.options].some(item=>item.value===value&&!item.disabled);
+            let invalid=false;
+            if(exists(controls.source,previous.source)){controls.source.value=previous.source;updateModels();
+                if(exists(controls.model,previous.model)){controls.model.value=previous.model;updateEfforts();
+                    if(exists(controls.effort,previous.effort))controls.effort.value=previous.effort;else if(previous.effort)invalid=true;
+                    if(previous.workspace===controls.workspace.value&&exists(controls.session,previous.session))controls.session.value=previous.session;else if(previous.session)invalid=true;
+                }else if(previous.model)invalid=true;
+            }else if(previous.source)invalid=true;
+            updateChoice(); if(invalid)showNotice('先前选择已失效，请检查来源、模型、档位或会话后重新选择。',true);else if(!selectedChoice()?.blockedReason)showNotice('');
+        }
+        catch {if(generation===catalogGeneration&&!panel.hidden){catalog=null;resetSelects();showNotice('无法读取来源目录，请检查连接后刷新；尚未派工。',true);}}
+        finally {if(generation===catalogGeneration){busy = false; catalogLoading=false;sourceChanged(); refresh.disabled = false; updateChoice();}}
     }
     function populateCatalog() {
         const sources = new Map(catalog.models.map(model => [sourceKey(model.execution), model.execution]));
@@ -150,9 +167,17 @@ export async function mountDesktopDispatch({ onTask, onResources = null }) {
         controls.effort.replaceChildren(option('','请选择推理档位'));
         const models = catalog.models.filter(m=>sourceKey(m.execution)===controls.source.value&&m.execution.modelId===controls.model.value);
         controls.effort.append(...models.map(model=>option(model.execution.reasoningEffort??'__none__',model.execution.reasoningEffort??'未提供'))); controls.effort.disabled = !models.length;
+        updateSessions();
+    }
+    function updateSessions() {
+        const models = catalog.models.filter(m=>sourceKey(m.execution)===controls.source.value&&m.execution.modelId===controls.model.value);
         const executor = models[0]?.execution.executorId;
         const sessions = catalog.sessions.filter(s=>s.hostId===models[0]?.execution.connectionId);
-        controls.session.replaceChildren(option('','请选择已有会话'),...sessions.map(s=>option(s.sessionId,`${s.sessionId} · ${s.workspace}${s.attached&&!s.busy?' · 空闲':' · 不可用'}`,!s.attached||s.busy)));
+        const project=controls.workspace.value.trim().replace(/[\\/]+$/,'').replaceAll('\\','/').toLowerCase();
+        controls.session.replaceChildren(option('','请选择已有会话'),...sessions.map(s=>{const same=project&&s.workspace.replace(/[\\/]+$/,'').replaceAll('\\','/').toLowerCase()===project;const duplicate=sessions.filter(item=>item.sessionId===s.sessionId).length!==1;const state=s.availability??(!s.attached?'disconnected':s.busy?'busy':'idle');const label=duplicate?'身份不唯一':state==='disconnected'?'未连接':state==='busy'?'忙碌':state==='unknown'?'状态未知':same?'当前项目，空闲':project?'目录不同，预览时核验':'请先填写项目';return option(s.sessionId,`${s.sessionId} · ${label}`,duplicate||state!=='idle');}));
+        document.getElementById('session-notice')?.remove();
+        if(executor==='dsh'&&!sessions.length) document.getElementById('catalog-notices').append(el('p',{id:'session-notice'},'当前宿主没有可选择的会话，请在原应用检查当前项目后刷新。'));
+        else if(executor==='dsh'&&project&&!sessions.some(s=>s.workspace.replace(/[\\/]+$/,'').replaceAll('\\','/').toLowerCase()===project)) document.getElementById('catalog-notices').append(el('p',{id:'session-notice'},'没有与输入路径直接一致的会话；请核对项目。目录别名会在预览时核验。'));
         controls.session.disabled = executor !== 'dsh'; document.getElementById('compose-session-field').hidden = executor !== 'dsh'; updateChoice();
     }
     function selectedChoice() { return catalog?.models.find(m=>sourceKey(m.execution)===controls.source.value&&m.execution.modelId===controls.model.value&&(m.execution.reasoningEffort??'__none__')===controls.effort.value); }

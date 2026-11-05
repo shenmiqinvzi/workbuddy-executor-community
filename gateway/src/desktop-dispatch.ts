@@ -11,7 +11,8 @@ export interface DesktopModel {
   pricingVerified: boolean;
   blockedReason: string | null;
 }
-export interface DesktopSession { hostId: string; sessionId: string; workspace: string; attached: boolean; busy: boolean }
+export interface DesktopSession { hostId: string; sessionId: string; workspace: string; attached: boolean; busy: boolean; availability?: "idle" | "busy" | "disconnected" | "unknown" }
+export interface DesktopCatalogDiagnostic { source: "workbuddy" | "dsh"; code: string; message: string }
 export interface DesktopCatalogSource {
   models: Omit<DesktopModel, "key" | "blockedReason">[];
   sessions: DesktopSession[];
@@ -21,6 +22,7 @@ export interface DesktopCatalogSource {
   requireZeroRate?: boolean;
   dispatchEnabled: boolean;
   errors: string[];
+  diagnostics?: DesktopCatalogDiagnostic[];
 }
 export interface DesktopCatalog extends DesktopCatalogSource { catalogId: string; observedAt: string; expiresAt: string; models: DesktopModel[] }
 export interface DesktopDraft {
@@ -164,7 +166,11 @@ export class DesktopDispatchSession {
   }
   private checkSession(source: DesktopCatalogSource, execution: ExecutionSelection, workspace: string, sessionId: string | null) {
     if (execution.executorId === "workbuddy") { if (sessionId !== null) fail("INVALID_REQUEST", "WorkBuddy 使用本任务独立的执行身份，无需指定 DSH 会话。"); return; }
-    const selected = source.sessions.find(s => s.hostId === execution.connectionId && s.sessionId === sessionId);
-    if (!selected || !selected.attached || selected.busy || desktopWorkspace(selected.workspace).realPath !== workspace) fail("SESSION_REQUIRED", "请选择属于当前项目、已连接且空闲的 DSH 原会话。");
+    const candidates = source.sessions.filter(s => s.hostId === execution.connectionId && s.sessionId === sessionId);
+    if (candidates.length !== 1 || !candidates[0]!.attached || candidates[0]!.busy) fail("SESSION_REQUIRED", "请选择属于当前项目、已连接且空闲的 DSH 原会话。");
+    let candidateWorkspace:string;
+    try { candidateWorkspace=desktopWorkspace(candidates[0]!.workspace).realPath; }
+    catch { return fail("SESSION_REQUIRED", "无法核验该会话的项目，请检查原会话后刷新。"); }
+    if (candidateWorkspace !== workspace) fail("SESSION_REQUIRED", "该会话不属于当前项目，请选择匹配的原会话。");
   }
 }

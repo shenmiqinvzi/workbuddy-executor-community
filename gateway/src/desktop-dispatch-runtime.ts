@@ -42,25 +42,41 @@ function policy(config: Config): ModelPolicy {
     return value;
   } finally { db.close(); }
 }
-export async function desktopModelCatalog(config: Config, env: NodeJS.ProcessEnv = process.env): Promise<DesktopCatalogSource> {
+type CatalogReaders = { workbuddy: typeof listModels; dsh: (registry?: string, host?: string) => Pick<DshClient, "resolveHostId" | "models" | "sessions"> };
+const catalogReaders: CatalogReaders = { workbuddy: listModels, dsh: (registry, host) => new DshClient(registry, host) };
+export async function desktopModelCatalog(config: Config, env: NodeJS.ProcessEnv = process.env, readers: CatalogReaders = catalogReaders): Promise<DesktopCatalogSource> {
   const pinned = nativeModelPolicy(env);
-  const source: DesktopCatalogSource = {models:[],sessions:[],policy:policy(config),requiredFreeModel:pinned.model||null,requireZeroRate:pinned.requireZeroRate,dispatchEnabled:env.WORKBUDDY_DESKTOP_DISPATCH_ENABLED==="1",errors:[]};
+  const source: DesktopCatalogSource = {models:[],sessions:[],policy:policy(config),requiredFreeModel:pinned.model||null,requireZeroRate:pinned.requireZeroRate,dispatchEnabled:env.WORKBUDDY_DESKTOP_DISPATCH_ENABLED==="1",errors:[],diagnostics:[]};
+  const diagnostic=(origin:"workbuddy"|"dsh",code:string,message:string)=>{source.diagnostics!.push({source:origin,code,message});source.errors.push(message);};
   if (source.dispatchEnabled) try { assertDesktopDispatchDatabase(config); } catch { source.dispatchEnabled=false;source.errors.push("现有网关需先完成部署核验；当前仅可准备任务。"); }
   const observations = await Promise.allSettled([
     (async()=>{
-      const result = await listModels(config) as unknown as {models?:Array<{id:string;credits?:unknown}>};
-      for(const model of result.models??[]) if(typeof model.id==="string") source.models.push({execution:{executorId:"workbuddy",connectionId:"local-workbuddy",providerId:"workbuddy-native",modelId:model.id,reasoningEffort:null},credits:typeof model.credits==="string"?model.credits:null,pricingVerified:typeof model.credits==="string"});
+      const result = await readers.workbuddy(config) as unknown as {models?:Array<{id:string;credits?:unknown}>};
+      if (!Array.isArray(result?.models)) throw new Error("invalid catalog");
+      for(const model of result.models) if(model&&typeof model.id==="string") source.models.push({execution:{executorId:"workbuddy",connectionId:"local-workbuddy",providerId:"workbuddy-native",modelId:model.id,reasoningEffort:null},credits:typeof model.credits==="string"?model.credits:null,pricingVerified:typeof model.credits==="string"});
     })(),
     (async()=>{
-      if(env.WORKBUDDY_DSH_ENABLED!=="1")return;
-      const client=new DshClient(env.WORKBUDDY_DSH_REGISTRY_DIR,env.WORKBUDDY_DSH_HOST_ID),hostId=client.resolveHostId(env.WORKBUDDY_DSH_HOST_ID);
-      const catalog=await client.models(hostId);
+      if(env.WORKBUDDY_DSH_ENABLED!=="1"){diagnostic("dsh","source_disabled","DSH 来源未启用；如需使用，请检查现有连接配置。");return;}
+      const client=readers.dsh(env.WORKBUDDY_DSH_REGISTRY_DIR,env.WORKBUDDY_DSH_HOST_ID);
+      let hostId:string;
+      try {hostId=client.resolveHostId(env.WORKBUDDY_DSH_HOST_ID);} catch(error) {
+        const code=typeof error==="object"&&error!==null&&"code" in error?String(error.code):"";
+        if(code==="HOST_AMBIGUOUS")diagnostic("dsh","host_ambiguous","DSH 宿主不唯一；请明确选择已有宿主后刷新。");
+        else if(code==="HOST_NOT_FOUND")diagnostic("dsh","host_missing","没有发现可用的 DSH 宿主；请检查已有桥接连接。");
+        else if(code==="HOST_DISCOVERY_UNAVAILABLE")diagnostic("dsh","registry_unverified","无法核验 DSH 私有注册；请检查注册状态后刷新。");
+        else diagnostic("dsh","source_unavailable","DSH 连接不可用；请检查已有桥接连接后刷新。");
+        return;
+      }
+      let catalog:Awaited<ReturnType<DshClient["models"]>>;
+      try {catalog=await client.models(hostId);if(!Array.isArray(catalog?.models)||catalog.models.some(model=>!model||typeof model.providerId!=="string"||typeof model.modelId!=="string"||!Array.isArray(model.reasoningEfforts)||model.reasoningEfforts.some(effort=>typeof effort!=="string")))throw new Error("invalid catalog");} catch {diagnostic("dsh","catalog_unavailable","无法读取 DSH 模型目录；请检查连接后刷新。");return;}
       for(const model of catalog.models) for(const effort of model.reasoningEfforts.length?model.reasoningEfforts:[null]) source.models.push({execution:{executorId:"dsh",connectionId:hostId,providerId:model.providerId,modelId:model.modelId,reasoningEffort:effort},credits:catalog.pricingVerified?model.credits:null,pricingVerified:catalog.pricingVerified&&typeof model.credits==="string"});
-      const {sessions}=await client.sessions(hostId);
-      source.sessions=sessions.filter(s=>typeof s.workspace==="string").map(s=>({hostId,sessionId:s.sessionId,workspace:s.workspace!,attached:s.attached===true,busy:s.busy!==false}));
+      try {const {sessions}=await client.sessions(hostId);
+        source.sessions=sessions.filter(s=>typeof s.workspace==="string").map(s=>({hostId,sessionId:s.sessionId,workspace:s.workspace!,attached:s.attached===true,busy:s.busy!==false,
+          availability:s.attached===false?"disconnected":s.busy===true?"busy":s.attached===true&&s.busy===false?"idle":"unknown"}));
+      } catch {diagnostic("dsh","sessions_unavailable","无法读取 DSH 会话；请检查当前宿主连接后刷新。");}
     })(),
   ]);
-  observations.forEach((result,index)=>{if(result.status==="rejected"){if(process.env.WORKBUDDY_WORKBENCH_DIAGNOSTICS==="1")console.error("[desktop-catalog] source "+index+" failed: "+(result.reason instanceof Error?result.reason.message:String(result.reason)));source.errors.push(index===0?"无法读取 WorkBuddy 模型，请检查原应用连接后刷新。":"无法读取已配置的 DSH 来源，不会自动换用其他来源。");}});
+  observations.forEach((result,index)=>{if(result.status==="rejected")diagnostic(index===0?"workbuddy":"dsh",index===0?"catalog_unavailable":"source_unavailable",index===0?"无法读取 WorkBuddy 模型目录，请检查原应用连接后刷新。":"DSH 来源不可用；请检查已有连接后刷新。");});
   return normalizedDesktopCatalog(source);
 }
 export function desktopJournal(config: Config, env: NodeJS.ProcessEnv = process.env) {
