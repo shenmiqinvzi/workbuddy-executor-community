@@ -303,3 +303,26 @@ RC 冻结对象：归档提交（`gates/G3.json` 记录的集成树 HEAD）、�
 RC2 影响表：与 RC1 只差上面两个错误码与两处测试文本。RC1 已覆盖的真实结论（真实安装、技能安装位、两单真实派工与验收、五张卡的事件链）在 RC2 上仍然成立（未改这些路径）；但「R6/R8 的无码现象已修」必须在 RC2 上重验才算数。建议的重验方式：在库副本上重放 R6（准备阶段即失败、不派工、无模型费用），确认 `blocking_reason` 带 `WORKSPACE_CONFLICT`、操作错误码带 `WORKSPACE_CONFLICT`；R8 可用预算 1 的任务直接复跑。
 
 仍未修（登记，不在本轮关闭）：R6 准备期失败落 `outcome_unknown` 并占容量；`continueAdmitted` 里其余无码 `Error`（已取消任务、无会话、活跃 worker、缺 provider 返回值）保持原样；L08 的 O1/O3/O4；L07 四表未并入统一 migration；gitIndex 5 秒超时错误码（`workspace-protection.ts`）。
+
+## 10 证据修复与 RC2 拒绝重放（2026-11-06）
+
+两件事都只发生在合成环境，没有打开真实库、没有派工、没有改真实配置。
+
+**一、RC2 解包产物上的两处拒绝重放**（探针 `outputs\finish-integration-20261105\G3-fix\probe\probe-rc2-replay.mjs`，跑的是解包候选的 `dist`，不是源码树）：
+
+| 场景 | 构造 | 结果 |
+| --- | --- | --- |
+| R6 | `WorkspaceWorkers` 在临时 runs 目录里把一个会话绑到项目 A，再用项目 B 调 `select` | exit 0；抛 `AdmissionError` / `WORKSPACE_CONFLICT` / 原文案；`failureCause()` 返回 `WORKSPACE_CONFLICT`；注册表仍 1 条 |
+| R8 | 合成库写入 attempt=1 的任务，`maxTaskAttempts=1`，调 `coordinator.continue` 并带 `expectedRevision` 与 `expectedAttemptId:null` | 抛 `AdmissionError` / `ATTEMPT_LIMIT` / 原文案；`failureCause()` 返回 `ATTEMPT_LIMIT` |
+
+结论：**两个稳定码在 RC2 的发布产物里成立**。这不等于「RC2 已真实验收」——真实安装与派工仍只在 RC1 上做过；要那一步得另装 RC2。
+
+**二、三份坏证据的修复**（详见 `docs/delivery/LIVE_EVIDENCE_REPAIR.md`，产物在 `outputs\finish-integration-20261105\G3-fix\evidence-repair\`）：
+
+| 文件 | 处理 | 结果 |
+| --- | --- | --- |
+| `cards/r6/recovery-view.json` | 用 RC2 的 `dist/recovery-cli.js` 对库副本跑 `show`/`observe` | 两份各 4667B 的合法 JSON，`available:[]`，sha `5a4feca1…`；报告的说法这次有文件支撑 |
+| `workbuddy-models.json` | UTF-16LE → UTF-8 转码，内容未改 | 23 条模型 + runtime 指纹，sha `2ebda8f8…`；未重查真实客户端 |
+| `get-task-1.json` | 无法按原路重采：`workbuddy_get_task` 对 DSH 任务报「The original DSH adapter is unavailable」，`deepseek_get_task` 报「Unknown DeepSeek task」（本沙箱无其运行库） | 给库副本投影 `task-projection-1`（51 事件/10 操作），sha `92b4e999…`；**10 报告中该单「任务详情」应改述为库内投影，不宣称是 `get` 捕获** |
+
+两处修正同时说明：原三份文件都是 PowerShell 重定向 + 参数未加引号造成的（UTF-16 与转录），不是判断错误，但「有文件」不等于「文件成立」。

@@ -205,6 +205,40 @@
     { "change": "两个错误码与两处测试断言", "mustRerun": "build、受影响专项、全量、打包与解包候选检查（已做）", "mustReverifyInLive": "R6 与 R8 的拒绝必须显示 WORKSPACE_CONFLICT / ATTEMPT_LIMIT" },
     { "change": "安装、技能、派工路径", "mustRerun": "无（未改动）", "mustReverifyInLive": "RC1 的安装与会话证据在 RC2 上仍成立，但若要宣称 RC2 已验收，需在 RC2 上重跑一次装与一单" }
   ],
+  "rc2Replay": {
+    "artifact": "G3-fix/candidate/codex-workbuddy-gateway-v0.7.1/dist (release files, not the source tree)",
+    "probe": "E:\\javaproject\\outputs\\finish-integration-20261105\\G3-fix\\probe\\probe-rc2-replay.mjs",
+    "exitCode": 0,
+    "r6": { "refused": true, "name": "AdmissionError", "code": "WORKSPACE_CONFLICT", "failureCause": "WORKSPACE_CONFLICT", "registryUnchanged": true },
+    "r8": { "refused": true, "name": "AdmissionError", "code": "ATTEMPT_LIMIT", "failureCause": "ATTEMPT_LIMIT" },
+    "scope": "synthetic runs directory and synthetic task store under the probe folder; no real database, no native adapter, no model call",
+    "conclusion": "both stable codes hold in the RC2 release artifact; RC2 is still not live-accepted"
+  },
+  "evidenceRepair": {
+    "record": "docs/delivery/LIVE_EVIDENCE_REPAIR.md",
+    "root": "E:\\javaproject\\outputs\\finish-integration-20261105\\G3-fix\\evidence-repair",
+    "items": [
+      {
+        "file": "evidence/cards/r6/recovery-view.json",
+        "action": "recaptured with RC2 dist/recovery-cli.js show and observe against a read-only copy of data/tasks.sqlite",
+        "result": "valid JSON, available: []",
+        "sha256": "5a4feca14c6aad3552fde37da4767b17ad59713486f813a1027a75949c6c607d"
+      },
+      {
+        "file": "evidence/workbuddy-models.json",
+        "action": "transcoded UTF-16LE to UTF-8, content unchanged, no re-query",
+        "result": "23 models plus runtime fingerprint",
+        "sha256": "2ebda8f827dfbcbe5b351332015d9104197a6f79ff3633a6908cbfa1ec8a8f18"
+      },
+      {
+        "file": "evidence/get-task-1.json",
+        "action": "not recapturable: workbuddy_get_task refuses a DSH task, deepseek_get_task has no Harness store here",
+        "result": "database projection only, schema workbuddy-executor/task-projection-1",
+        "sha256": "92b4e999c178f8ae4c6aa579201a03e9866b0366ece0338e88ec3a5e5e2c8cc2",
+        "correction": "the 10 report must describe this card's task detail as a database projection, not a get capture"
+      }
+    ]
+  },
   "openItems": [
     "R6 准备期失败仍落 outcome_unknown 并占容量（operation-admission 在准备前进入 effect_started），是否改为 rejected 需 10 决定",
     "continueAdmitted 里其余无码 Error（已取消任务、无会话、活跃 worker、缺 provider 返回值）未改",
