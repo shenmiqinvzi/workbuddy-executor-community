@@ -382,3 +382,8 @@ ativeOverlapProven\ 两个字段，独立库为空不算不重叠证明；RC2 �
 eeds_review\ 是可核对的历史任务而非「无法处理」；WorkBuddy 启动改按既有 \start-workbuddy-debug.ps1\ 与环境变量方式复核，客户端退出的直接线索是 \pp.asar\ 路径被错误编码（\rchive.cc:196 FILE_ERROR_FAILED\）；WebView2 分七阶段记录，第 7 次在预建 profile 加 \--disable-gpu --disable-software-rasterizer\ 后渲染成功（三张窗口截图入 \outputs\rc6-live-readiness-20261106\ui-shots\），但壳自起的网关宿主未连上；\RC6_READY_INDEX\ 的相对 \cd\ 改为绝对路径。
 
 用户选择表收缩为四组（安装/回退、每任务派工、人工动作、发行外部）；技能六文件与已装逐字节相同，替换项从表中移除。RC6 包未动，未安装、未派工、未改政策、未动旧占用。
+## 启动链路诊断（只读，2026-11-06 夜）
+
+- 桌面壳：host_ready → webview 卡点（33 s 无异常）、HTTP 200 已证；`%LOCALAPPDATA%` 建目录被拒属上下文；网页是否加载未证（原生 Label 不是页面）。
+- 客户端：`exit 0` 且无日志、userData 空；asar 告警为历史；ASCII 复制方案仅成文。
+- 证据与三分结论：`docs/delivery/STARTUP_DIAGNOSIS.md`；口径修正同步进 `FINAL_REVIEW_INDEX.md` 与 `UI_AND_SECOND_MACHINE_PLAN.md`。

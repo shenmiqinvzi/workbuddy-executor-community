@@ -50,3 +50,11 @@
 3. 更新 `FINAL_REVIEW_INDEX.md` 顶部（当前对象）、`STATUS_INDEX.md`、`PROGRESS.md`、31 任务/53 项增量。
 4. 提交 + 外部回执 + `EXTERNAL_DECISIONS.md` 定稿。
 5. 真实验收与安装/派工/异机/许可/发行：等用户在 `EXTERNAL_DECISIONS.md` 里逐项选择后再做。
+
+## 启动链路续查（2026-11-06 夜，只读）
+
+- 新增 `docs/delivery/STARTUP_DIAGNOSIS.md`：attempt-06 时间序阶段表（17 ms host_ready → 5.1 s 起 webview，HTTP 200，`ready=false`、`failureCode=null`、stderr 空，持续到 33.2 s）；attempt-07（40 个 `msedgewebview2` 与空 profile）；attempt-08（`%LOCALAPPDATA%` 下 `CreateDirectory` 被拒，而同会话 pwsh/cmd 可写 → 指向执行上下文）。
+- 修正四处越界表述：PowerShell 版本、页面渲染、宿主先退出、ASCII 移动即修法。
+- 客户端：`exit 0`、无子进程、无端口、`debug.log` 未追加、userData 为空；asar 告警是历史（13:03–18:11）。
+- RC6 包字节未变；未安装、未派工、未改政策、未清旧占用。
+- 下一步（需授权或人工一次）：普通桌面会话复跑壳一次；再决定 profile 根；客户端只在普通会话双击观测日志。

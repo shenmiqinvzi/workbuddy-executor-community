@@ -32,15 +32,18 @@
 | 三套库的占用、`databaseSlotFree` 与 `nativeOverlapProven` 两字段、为何不能自动清 | `CAPACITY_AND_IDENTITY.md` | 已按纠偏重写 |
 | 两端样本：**草稿 vs 正式契约**、`validateSupportedTaskContract` 不得让 `null` 通过、六步验收顺序 | `LIVE_TASK_PROPOSALS.md` | 已按纠偏重写 |
 | 收缩后的可执行选择（A 安装/回退、B 每任务派工、C 人工、D 发行） | `USER_CHOICES.md` | 已收缩 |
-| 桌面壳分阶段结果（1–7 次各归属）、窗口截图证据、客户端 asar 编码线索、第二台机 | `UI_AND_SECOND_MACHINE_PLAN.md` | 已按纠偏重写 |
+| 桌面壳与客户端的**时间序阶段表**、三分结论（已观察/可复现/假设）、纯 ASCII 复制对照方案 | `STARTUP_DIAGNOSIS.md` | 本轮新增，取代此前分阶段叙述 |
+| 桌面壳待办与验收口径（`ready=true` 之前不写通过） | `UI_AND_SECOND_MACHINE_PLAN.md` | 已按本轮证据改写 |
 
-**UI 的准确口径**（此前写「本机无法创建 WebView2 用户数据目录」不准确，已更正）：
+**桌面壳的当前口径**（依据 `STARTUP_DIAGNOSIS.md` 的阶段表）：
 
-- 第 1–3 次失败是参数缺失、配置歧义、数据库未初始化；第 4–5 次是 `Directory.CreateDirectory(profile)` 访问拒绝；第 6 次预建 profile 后过 CreateDirectory，改在 `CreateCoreWebView2ControllerAsync` 抛 `COMException 0x8000FFFF`；**第 7 次加 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--disable-gpu --disable-software-rasterizer` 后渲染成功**（34 个 `msedgewebview2` 进程）。
-- 三张窗口截图在 `E:\javaproject\outputs\rc6-live-readiness-20261106\ui-shots\`：`wb-1280x720.png`（错误页「工作台暂时无法连接…」+「重新连接」）、`wb-connected-1280x720.png`（「正在连接本地任务记录…」）、`wb-connected2-1280x720.png`（回到错误页）。即**页面能渲染、WebView2 可用**，卡点是壳自起的网关宿主没连上（同期无 `workbench-desktop-host` 进程）。
-- 仍未取得：**四尺寸**、**键盘/焦点**、**200% 缩放**、**读屏**（需人工作业）、以及壳与宿主衔接的修复。
+- 壳能自起宿主、解析 `desktop_host_ready`、拿到 origin；同一时刻 `GET /workbench/` 返回 **200**（attempt-06，端口 62997）。
+- 之后 `startupStage` 停在 `webview` 33 秒以上，`ready=false`、`failureCode=null`、诊断开启时 stderr 仍为空 → 卡在 WebView 环境/控制器创建，不是抛异常。
+- 在 `%LOCALAPPDATA%` 下建 profile 目录抛 `UnauthorizedAccessException`，而同会话 PowerShell/cmd 可写同一路径 → 更可能是执行上下文（沙箱令牌），需要普通桌面会话复跑一次才能定论。
+- 窗口里的「工作台暂时无法连接」「重新连接」是 `Program.cs` 的原生 Label/Button，**不是网页内容**；`msedgewebview2` 进程数不是验收证据。此前写「页面能渲染、WebView2 可用」超出证据范围，已撤回。
+- 四尺寸、键盘/焦点、200% 缩放、读屏：前置条件（`ready=true`）未满足，**未开始**，不写通过。
 
-**WorkBuddy 客户端**（派工前置，仍未解决）：`F:\新建文件夹 (2)\WorkBuddy\WorkBuddyAI.exe`（204,590,360 B，sha256 `15880ca7…`，5.9.4）进程立即 `exit 0`、18491 无监听；`debug.log` 显示 `app.asar` 路径被错误编码解析（中文目录变 mojibake，`archive.cc:196 FILE_ERROR_FAILED`）。既有 `start-workbuddy-debug.ps1` 需 PowerShell 7，本机只有 5.1 且执行策略 Restricted。因此 `workbuddy_list_models` 120s 超时，**本轮报价与实时目录取不到**，只有 RC1 时代 23 条快照（仅供参考，不等于本轮报价）。
+**WorkBuddy 客户端**（派工前置，仍未解决）：`F:\新建文件夹 (2)\WorkBuddy\WorkBuddyAI.exe`（204,590,360 B，sha256 `15880ca7…`，5.9.4）以仅设 `WORKBUDDY_REMOTE_DEBUGGING_PORT=18491` 的方式启动后立即 `exit 0`，无子进程、18491 无监听、`debug.log` 未追加、userData 目录为空。`app.asar` 在本上下文可读；`debug.log` 里的 asar 路径损坏告警时间戳为 13:03–18:11，**早于本轮启动**，不能归因当前运行。Codex 执行上下文是 PowerShell 7.6.9（DSH 上下文为 5.1）。因此「asar 编码导致退出」仍是假设，不是修法；纯 ASCII 复制对照方案见 `STARTUP_DIAGNOSIS.md` §7，未获授权未执行。`workbuddy_list_models` 因此 120s 超时，**本轮报价与实时目录取不到**，只有 RC1 时代 23 条快照（仅供参考，不等于本轮报价）。
 
 本轮**未**安装 RC6、**未**真实派工、**未**改生产政策、**未**释放 RC1/RC2 的任何占用、**未**推送/合 main/发布。
 
