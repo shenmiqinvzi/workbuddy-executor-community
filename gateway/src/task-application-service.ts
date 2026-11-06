@@ -4,6 +4,7 @@ import type { OperationOptions } from "./operation-admission.js";
 import type { RecoveryInput } from "./operation-recovery.js";
 import type { ReviewOptions, ReviewInput } from "./task-reviews.js";
 import { AdmissionError, defaultModelPolicy } from "./collaboration.js";
+import { AutomationService, type AutomationServiceOptions } from "./automation.js";
 import { contractExecution } from "./task-contract.js";
 import type { StoredTask, StoredTaskEvent } from "./task-store.js";
 import { readTaskProjection } from "./task-view-reader.js";
@@ -89,14 +90,30 @@ export type StageListItem =
 export class TaskApplicationService {
   /** R12: optional read-side dispatch-lease reader, wired at composition roots. */
   readonly leaseReader?: (taskId: string) => DispatchLease | null;
-  constructor(private readonly coordinator: TaskCoordinator, private readonly maxAttempts: number, private readonly runsDir: string, readonly dsh?: DshTaskCoordinator, leaseReader?: (taskId: string) => DispatchLease | null) {
+  /**
+   * D5-01..03 saved automation policy. Usually unwired (no dispatcher, not armed); the local CLI
+   * arms it for one process at a time. No MCP tool or HTTP route can reach its write methods.
+   *
+   * Built on first use: a read-only composition root hands in a store facade with no raw database,
+   * and opening the window must not try to create tables.
+   */
+  get automation(): AutomationService {
+    if (!this.automationService) this.automationService = new AutomationService(this.coordinator.store, this.automationOptions);
+    return this.automationService;
+  }
+  private automationService?: AutomationService;
+  private readonly automationOptions?: AutomationServiceOptions;
+  constructor(private readonly coordinator: TaskCoordinator, private readonly maxAttempts: number, private readonly runsDir: string, readonly dsh?: DshTaskCoordinator, leaseReader?: (taskId: string) => DispatchLease | null, automation?: AutomationServiceOptions) {
     if (dsh && dsh.store !== coordinator.store) throw new Error("DSH and WorkBuddy must share the same TaskStore");
     this.leaseReader = leaseReader;
+    this.automationOptions = automation;
   }
 
   /** Trusted local setup and authorization seams; no HTTP write routes. */
   registerWorkspace(id: string, directory: string, displayName: string) { return this.coordinator.store.collaboration.registerWorkspace(id, directory, displayName); }
   createCollaborationPlan(contract: unknown, options: { mode: "manual" | "recommend"; reason: string; ttlSeconds?: number } & Pick<OperationOptions, "operationId">) {
+    // An automatic plan must come from the automation policy path, never from this manual seam.
+    if ((options as { mode?: string }).mode === "automatic") throw new AdmissionError("PLAN_CONFIRMATION_REQUIRED", "Automatic plans are created only by the saved automation policy service.");
     const { operationId, ...parameters } = options;
     return this.coordinator.store.operations.metadata("plan_create", (contract as { taskId?: string })?.taskId ?? "", { contract, ...parameters }, { operationId },
       () => this.coordinator.store.collaboration.createPlan(contract, this.planPolicy(contract), parameters));

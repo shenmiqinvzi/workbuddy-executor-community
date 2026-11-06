@@ -24,6 +24,8 @@ const assets: Record<string, [string, string]> = {
   "/workbench/statistics.css": ["statistics.css", "text/css; charset=utf-8"],
   "/workbench/productivity.mjs": ["productivity.mjs", "text/javascript; charset=utf-8"],
   "/workbench/productivity.css": ["productivity.css", "text/css; charset=utf-8"],
+  "/workbench/automation.mjs": ["automation.mjs", "text/javascript; charset=utf-8"],
+  "/workbench/automation.css": ["automation.css", "text/css; charset=utf-8"],
   "/workbench/fonts/plex-sans.woff2": ["fonts/plex-sans.woff2", "font/woff2"],
   "/workbench/fonts/plex-mono.woff2": ["fonts/plex-mono.woff2", "font/woff2"],
   "/workbench/fonts/ibmplexsans-OFL.txt": ["fonts/ibmplexsans-OFL.txt", "text/plain; charset=utf-8"],

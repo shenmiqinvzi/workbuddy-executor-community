@@ -164,6 +164,13 @@ export class TaskStore {
   readonly reviews: TaskReviews;
   readonly stopDeclarations: NativeStopDeclarations;
 
+  /**
+   * The shared connection, for modules that own their own tables (automation policies and
+   * decisions). Schema changes stay in this file; callers only use it to share the WAL write lock
+   * so their writes join the same transaction boundary.
+   */
+  get database(): DatabaseSync { return this.db; }
+
   constructor(readonly file: string) {
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
     this.db = new DatabaseSync(file);

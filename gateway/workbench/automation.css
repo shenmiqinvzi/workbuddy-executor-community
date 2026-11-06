@@ -1,0 +1,25 @@
+/* Automation view (L07): saved policy, its revisions, recorded decisions, audit. */
+.automation { display: grid; gap: 18px; }
+.automation-section { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: grid; gap: 10px; }
+.automation-heading { margin: 0; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.automation-subheading { margin: 6px 0 0; font-size: 13px; }
+.automation-note { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+.automation-issue { margin: 0; font-size: 12.5px; color: var(--danger, #b3261e); min-height: 0; }
+.automation-issue:empty { display: none; }
+.automation-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.automation-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.automation-item { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; justify-content: space-between; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+.automation-item-text { font-size: 13px; overflow-wrap: anywhere; }
+.automation-meta { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.automation-empty { font-size: 12.5px; color: var(--muted); }
+.automation-button { font: inherit; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: inherit; cursor: pointer; }
+.automation-button:disabled { opacity: .55; cursor: progress; }
+.automation-button:focus-visible, .automation-link:focus-visible { outline: 2px solid var(--accent, #3b6cf0); outline-offset: 1px; }
+.automation-link { font: inherit; font-size: 12.5px; padding: 2px 4px; border: 0; background: none; color: var(--accent, #3b6cf0); cursor: pointer; text-decoration: underline; }
+.automation-config { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0; font-size: 12.5px; }
+.automation-config dt { color: var(--muted); }
+.automation-config dd { margin: 0; overflow-wrap: anywhere; }
+.automation-detail { display: grid; gap: 8px; }
+.automation-detail:empty { display: none; }
+.automation-block { font-size: 12.5px; color: var(--danger, #b3261e); overflow-wrap: anywhere; }
+.automation-limit { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
