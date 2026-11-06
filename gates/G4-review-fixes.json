@@ -1,0 +1,289 @@
+{
+  "schema": "workbuddy-executor/integration-gate-1",
+  "gate": "G4-review-fixes",
+  "recordedAt": "2026-11-06T20:10:00+08:00",
+  "branch": "fix/delivery-review-r1-r4",
+  "worktree": "E:\\javaproject\\workbuddy-finish\\R-review-fixes",
+  "codeBaseCommit": "218dfe99bc8f4ccf5cfbb6e387779a8bd07e040c",
+  "codeBaseTree": "d62e186eed3a1ef5b99087fd9b1ed5c848100254",
+  "gateRecord": {
+    "commit": null,
+    "reason": "The fix commit hash cannot be embedded in a file that the same commit contains; the external receipt records it."
+  },
+  "source": {
+    "review": "E:\\javaproject\\outputs\\codex-finish-review-20261106\\REVIEW.md",
+    "reviewedCandidate": "RC3",
+    "reviewedPackageSha256": "4021310ca255497a4bf276f030dc656f24c3e7216ee094220a95766a49562632"
+  },
+  "fixes": [
+    {
+      "id": "R1",
+      "severity": "P0",
+      "summary": "A refusal that was later continued into a native claim was still treated as undelivered, so cancelling it released shared capacity and skipped the original cancellation request.",
+      "files": [
+        "gateway/src/operation-admission.ts",
+        "gateway/src/coordinator.ts"
+      ],
+      "approach": "neverDispatched() now requires the capacity occupant to belong to the task, the task's current attempt to match, every durable operation of that task to stay short of reserved/effect_started/outcome_unknown and to carry no effectStartedAt/dispatchEnteredAt/preparationEnteredAt, a send operation plus an attempt_queued event for the current attempt as positive evidence, and the absence of native_claimed, rework_requested and task_closed. requestCancellation() adds a journal gate: claim.json, request.json, model-ready.json or worker-context.json denies closure, and state.json must be blocked without a pid.",
+      "behaviourKept": "A clean first refusal can still be cancelled and frees capacity; a real native claim still produces the original cancellation request, remoteStopped:false and executionState stop_unconfirmed, and capacity stays until the native stop is provable."
+    },
+    {
+      "id": "R2",
+      "severity": "P1",
+      "summary": "The export scrubber only matched a credential at the start of a string, so prose, HTTP headers and inline pairs leaked secrets into the delivery export.",
+      "files": [
+        "gateway/src/delivery-export.ts"
+      ],
+      "approach": "Eleven patterns match anywhere (authorization and proxy-authorization headers including multi-line values, bare bearer/basic, PEM blocks and headers, sk-/gh*/xox*/AKIA prefixes, JWT, URL userinfo, inline secret/token/password keys). Only the credential is replaced and the surrounding sentence survives; clip() scrubs before truncating and never cuts a [redacted] placeholder in half.",
+      "behaviourKept": "Exports stay readable, and redactions.fields still names every section that was touched."
+    },
+    {
+      "id": "R3",
+      "severity": "P1",
+      "summary": "The local CLI composition root injected only {armed, probe}, so an armed and enabled execution stopped at 'No guarded dispatcher is wired' before reading the saved decision.",
+      "files": [
+        "gateway/src/automation-cli.ts"
+      ],
+      "approach": "The CLI now injects send: input => service.send(input), so automatic dispatch passes through the same admission layer as manual dispatch. Defaults are unchanged: the process still needs --enable-dispatch, the installation still needs enable, and no MCP tool or HTTP route can write.",
+      "behaviourKept": "describe() now reports dispatcherWired:true for the real CLI; an unarmed process still returns AUTOMATION_NOT_ARMED and a disabled installation still returns AUTOMATION_NOT_ENABLED."
+    },
+    {
+      "id": "R4",
+      "severity": "P2",
+      "summary": "The final review index still described 06d52b1 and RC2.",
+      "files": [
+        "docs/delivery/FINAL_REVIEW_INDEX.md"
+      ],
+      "approach": "Section 14 records this review round, the fixes, the new baseline and the RC4 identity; sections 0-13 stay as the historical record of the 11 line."
+    }
+  ],
+  "regressions": [
+    {
+      "id": "R1-a",
+      "file": "gateway/test/desktop-queue.test.ts",
+      "name": "a refusal continued into a native claim is cancelled for real, never closed as undelivered",
+      "asserts": "The queue claim leaves effect and dispatch marks, neverDispatched is false, cancel is not closed, executionState is stop_unconfirmed, capacity stays 1, no task_closed event, cancel.json exists."
+    },
+    {
+      "id": "R1-b",
+      "file": "gateway/test/desktop-queue.test.ts",
+      "name": "missing durable records or an uncertain operation never prove a task was undelivered",
+      "asserts": "Deleting the event history denies closure and capacity stays held."
+    },
+    {
+      "id": "R1-c",
+      "file": "gateway/test/desktop-queue.test.ts",
+      "name": "an operation whose outcome is unknown keeps the workflow on the recovery path",
+      "asserts": "An outcome_unknown operation and its body state deny closure."
+    },
+    {
+      "id": "R1-d",
+      "file": "gateway/test/desktop-queue.test.ts",
+      "name": "a journal that already recorded a claim blocks the undelivered closure even when the database looks idle",
+      "asserts": "The database alone allows closure, but claim.json on disk denies it."
+    },
+    {
+      "id": "R2-a",
+      "file": "gateway/test/delivery-export.test.ts",
+      "name": "a credential inside review prose is redacted wherever it sits",
+      "asserts": "Header, proxy header, URL userinfo and inline token are gone from the export bytes while ordinary prose stays readable."
+    },
+    {
+      "id": "R2-b",
+      "file": "gateway/test/delivery-export.test.ts",
+      "name": "clipping never splits a credential in half",
+      "asserts": "A credential straddling the clip boundary leaves no prefix and keeps a complete placeholder."
+    },
+    {
+      "id": "R2-c",
+      "file": "gateway/test/delivery-export.test.ts",
+      "name": "inline pairs and header values are scrubbed inside sentences, not only at the start",
+      "asserts": "redactSecrets scrubs mid-sentence values and still reports the field."
+    },
+    {
+      "id": "R3-a",
+      "file": "gateway/test/automation-cli.test.ts",
+      "name": "the CLI composition root wires the guarded dispatcher and still defaults to unarmed",
+      "asserts": "status reports dispatcherWired:true, armed:false, httpWrites:false, writeEntry local_cli_only; --enable-dispatch arms the process."
+    },
+    {
+      "id": "R3-b",
+      "file": "gateway/test/automation-cli.test.ts",
+      "name": "an armed CLI reaches the guarded service instead of stopping at the unwired check",
+      "asserts": "Unarmed returns AUTOMATION_NOT_ARMED, armed-but-disabled returns AUTOMATION_NOT_ENABLED, enabled returns DECISION_NOT_FOUND without the not-wired message."
+    }
+  ],
+  "checks": [
+    {
+      "command": "npm run build",
+      "exitCode": 0,
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G4-review-fixes\\logs\\build.log"
+    },
+    {
+      "command": "npm run typecheck:task-view",
+      "exitCode": 0,
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G4-review-fixes\\logs\\typecheck.log"
+    },
+    {
+      "command": "npx tsx --test test/desktop-queue.test.ts",
+      "exitCode": 0,
+      "counts": { "tests": 22, "pass": 22, "fail": 0, "skipped": 0 },
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G4-review-fixes\\logs\\r1-desktop-queue.log"
+    },
+    {
+      "command": "npx tsx --test test/delivery-export.test.ts",
+      "exitCode": 0,
+      "counts": { "tests": 16, "pass": 16, "fail": 0, "skipped": 0 },
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G4-review-fixes\\logs\\r2-delivery-export.log"
+    },
+    {
+      "command": "npx tsx --test test/automation-cli.test.ts",
+      "exitCode": 0,
+      "counts": { "tests": 2, "pass": 2, "fail": 0, "skipped": 0 },
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G4-review-fixes\\logs\\r3-automation-cli.log"
+    },
+    {
+      "command": "npx tsx --test test/desktop-queue.test.ts test/delivery-export.test.ts test/automation-cli.test.ts test/automation-dispatch.test.ts test/automation-http.test.ts test/automation-policy.test.ts test/finish-acceptance-admission-anomalies.test.ts test/productivity-service.test.ts test/package.test.ts",
+      "exitCode": 0,
+      "counts": { "tests": 104, "pass": 104, "fail": 0, "skipped": 0 },
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G4-review-fixes\\logs\\specials-r1-r3.log"
+    },
+    {
+      "command": "npm run test:workbench",
+      "exitCode": 0,
+      "counts": { "tests": 139, "pass": 139, "fail": 0, "skipped": 0 },
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G4-review-fixes\\logs\\workbench.log"
+    },
+    {
+      "command": "npm run desktop:test",
+      "exitCode": 0,
+      "counts": { "passed": 92, "failed": 0 },
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G4-review-fixes\\logs\\desktop-test.log"
+    },
+    {
+      "command": "npm test",
+      "exitCode": 0,
+      "counts": { "tests": 1293, "pass": 1281, "fail": 0, "cancelled": 0, "skipped": 12 },
+      "note": "Two runs on the same tree: the first before the fixture literal was reworked, the second after; both 1293/1281/0/12 exit 0.",
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G4-review-fixes\\logs\\full-test-final.log"
+    },
+    {
+      "command": "node scripts/generate-snapshot-manifest.mjs && node verify-snapshot.mjs",
+      "exitCode": 0,
+      "counts": { "snapshotFiles": 398, "hashesMatch": true },
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G4-review-fixes\\logs\\snapshot.log"
+    },
+    {
+      "command": "git diff --no-index --ignore-cr-at-eol --ignore-all-space --quiet <root file> <gateway/skills copy> (six files)",
+      "exitCode": 0,
+      "counts": { "files": 6, "differences": 0 },
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G4-review-fixes\\logs\\skill-copy-diff.log"
+    }
+  ],
+  "package": {
+    "gateway": {
+      "archive": "E:\\javaproject\\workbuddy-finish\\R-review-fixes\\gateway\\outputs\\release\\codex-workbuddy-gateway-v0.7.1.zip",
+      "files": 695,
+      "bytes": 2248287,
+      "sha256": "c5981c09933342e9581cb336db95dfaac75d575e0f136d83fb0b9d26838cc816",
+      "manifestBytes": 112086
+    },
+    "skill": {
+      "files": 6,
+      "sha256": "e61be9ba03f48e555ed1a8441eb8d56f0013eb818cfdceb610015d26e0839db8"
+    },
+    "deepseekSkill": {
+      "files": 2,
+      "sha256": "22909e1b0654df6eb13b3ccdcf5767ed78e094d416b891821a072c1004318d13"
+    },
+    "previousCandidate": {
+      "rc3Files": 694,
+      "rc3Bytes": 2239631,
+      "rc3Sha256": "4021310ca255497a4bf276f030dc656f24c3e7216ee094220a95766a49562632"
+    }
+  },
+  "candidateTools": [
+    {
+      "command": "node scripts/verify-release.mjs",
+      "exitCode": 0,
+      "result": { "version": "0.7.1", "verifiedFiles": 695, "hashesMatch": true }
+    },
+    {
+      "command": "candidate-installation.mjs check --package <zip> --expect-sha256 c5981c09... --report",
+      "exitCode": 0,
+      "result": { "ok": true, "files": 695, "problems": [], "totalBytes": 7321768 }
+    },
+    {
+      "command": "candidate-installation.mjs version-check --install-root <unpacked> --package <zip>",
+      "exitCode": 0,
+      "result": { "matches": true, "exact": true, "matched": 695 }
+    },
+    {
+      "command": "candidate-installation.mjs drill --package <zip> --drill-root <fresh> --apply",
+      "exitCode": 0,
+      "result": { "ok": true, "steps": "plan/install/install_repeat/uninstall all true", "checksAllTrue": true }
+    },
+    {
+      "command": "candidate-installation.mjs upgrade-drill --package <zip> --drill-root <fresh> --apply",
+      "exitCode": 0,
+      "result": { "ok": true, "steps": 17, "checksAllTrue": true }
+    }
+  ],
+  "runtimeProbes": [
+    {
+      "probe": "E:\\javaproject\\outputs\\finish-integration-20261105\\G4-review-fixes\\probe\\r1-rc4.mjs",
+      "target": "unpacked RC4 candidate dist",
+      "exitCode": 0,
+      "verdict": "R1 gates hold on the unpacked candidate",
+      "steps": [
+        "a clean refusal is still undelivered",
+        "a boundary operation denies closure",
+        "cancel does not close after boundary",
+        "capacity is held after boundary",
+        "database alone would allow closure",
+        "journal claim denies closure",
+        "capacity survives the journal gate"
+      ]
+    },
+    {
+      "probe": "E:\\javaproject\\outputs\\finish-integration-20261105\\G4-review-fixes\\probe\\r2-r3-rc4.mjs",
+      "target": "unpacked RC4 candidate dist + scripts/automation.mjs",
+      "exitCode": 0,
+      "verdict": "packaged scrubber and CLI composition root behave",
+      "result": { "redacted": true, "keepsProse": true, "namesField": true, "dispatcherWired": true, "armed": false, "httpWrites": false, "writeEntry": "local_cli_only" }
+    }
+  ],
+  "rcImpact": [
+    { "surface": "gateway/src (operation-admission, coordinator, delivery-export, automation-cli)", "redo": "build, typecheck, desktop-queue/delivery-export/automation-cli suites, full test, package", "cannotClaim": "真实领取后取消、真实自动派工、真实交付导出" },
+    { "surface": "gateway/test (3 files)", "redo": "the three suites plus the package gate", "cannotClaim": "无" },
+    { "surface": "gateway/SNAPSHOT_MANIFEST.json", "redo": "regenerate and verify in the integration tree before release", "cannotClaim": "无" },
+    { "surface": "已安装网关与技能", "redo": "next authorized install must use RC4 and repeat the live checks", "cannotClaim": "RC1/RC2/RC3 的实机证据、任何「RC4 已真实验收」" }
+  ],
+  "verificationEnvironment": {
+    "node": "v24.19.0",
+    "workbuddyCliElectron": "E:\\javaproject\\outputs\\finish-integration-20261105\\G3\\env\\WorkBuddy.exe",
+    "workbuddyConfigDir": "E:\\javaproject\\outputs\\finish-integration-20261105\\G3\\env\\workbuddy-config",
+    "noProxy": "127.0.0.1,localhost",
+    "inheritedWorkbuddyVariablesCleared": true,
+    "note": "Every suite ran from the fix worktree with its own dist, database, runs directory and temp files; no installed gateway was touched."
+  },
+  "status": {
+    "sourcePassed": true,
+    "syntheticCandidatePassed": true,
+    "runtimeProbePassed": true,
+    "rc4Installed": false,
+    "rc4Dispatched": false,
+    "liveVerifiedForRc1Only": true,
+    "releaseReady": false
+  },
+  "boundaries": {
+    "pushed": false,
+    "mergedToMain": false,
+    "published": false,
+    "deployed": false,
+    "installedAnywhere": false,
+    "realDispatch": false,
+    "originalIntegrationTreeModified": false
+  },
+  "nextGate": "RC4 真实验收需用户授权（独立安装根重装 + 一单派工）；F-CONTRACT-1 仍需语义决定；第二台机与五张异常卡未做；推送/合 main/发布仍需显式指令"
+}

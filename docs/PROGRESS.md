@@ -339,3 +339,24 @@ RC 候选包 694 个业务文件、2 235 102 字节，SHA-256 `658a20b196051fa25
 检查（日志在 `outputs\finish-integration-20261105\G3-fix\logs\`）：构建 exit 0；受影响两文件 23/23；全量 1282 项 / 1269 通过 / 1 失败 / 12 跳过——失败是 `test/command-cleanup.test.ts:24` 的真实嵌套 Job 清理用例（`recovered.length` 期望 1 得 0），单文件复跑两次均 4/4 通过，属高负载下的时序问题，根因未定位。RC2 包 694 文件、2 236 003 字节、SHA-256 `9e146b93fe40ff3b7086e4117c89dd0e2b81f81c61a585cfba4b003ef4411eee`；解包 verify-release 694/694、check `ok=true`、version-check `exact=true`、drill 4 步 5 检查 + 6 条负例、upgrade-drill 17 步 17 检查 + 6 条负例，全部 exit 0。
 
 RC1 的真实证据只属于 RC1。RC2 与 RC1 的差异只有这两个错误码与两处测试文本，安装、技能、派工路径未动，但「无码现象已修」必须在 RC2 上重验才算数；建议在库副本上重放 R6（准备阶段失败、不派工、无模型费用）并复跑一次预算 1 的返工。仍未修：R6 准备期失败落 `outcome_unknown` 并占容量（`effect_started` 语义的设计取舍）、`continueAdmitted` 里其余无码 `Error`、L08 的 O1/O3/O4、L07 四表未并入统一 migration、gitIndex 超时错误码。
+
+## 复核轮 R1–R4 与 RC4（2026-11-06，集成人）
+
+Codex 独立复核在 RC3 上复现了三条缺陷并指出索引过期（`outputs\codex-finish-review-20261106\REVIEW.md`）。集成分支之外新建
+`R-review-fixes`（`fix/delivery-review-r1-r4`，基线 `218dfe9`）做最小修复，未推送、未合 main、未安装、未真实派工。
+
+- **R1（P0 容量）**：`neverDispatched` 改为「整条原任务 + 当前 attempt + journal」三重判定。拒绝后被 continue 到原生领取的
+  任务不再被当成未投递而直接释放容量；真实领取后的取消仍生成原取消请求，容量保留到原生停止可证。5 条组合回归。
+- **R2（P1 脱敏）**：导出凭据扫描改为任意位置匹配（头、句子、多行、URL、内联键值、JWT、PEM），只替换凭据本身；
+  截断前先脱敏，且不切断 `[redacted]` 占位符。3 条回归。
+- **R3（P1 接线）**：本地 CLI 组合根把自动派工接到共享 `TaskApplicationService.send`，与手工派工同一准入；默认仍不 arm、
+  安装级仍默认关闭，MCP/HTTP 仍无写入口。2 条 CLI 级回归（`dispatcherWired:true`，未 arm/未 enable 各自的真实错误码）。
+- **R4（P2）**：`FINAL_REVIEW_INDEX.md` 增第 14 节；索引、31 任务、53 项各增本轮增量，不改历史口径。
+
+检查：build/typecheck exit 0；受影响专项 104/104；workbench 139/139；`desktop:test` 92/92；全量 1293 tests / 1281 pass /
+0 fail / 12 skipped / exit 0（两轮同数）；快照 398 文件 `hashesMatch:true`；技能六文件 6/6。打包含两次失败教训：假凭据字面量
+被发布扫描器拦下（按「不放宽扫描器」改夹具拼接）、CRLF 文件按行定位。
+
+RC4：695 文件 / 2 248 287 B / sha256 `c5981c09933342e9581cb336db95dfaac75d575e0f136d83fb0b9d26838cc816`；
+解包 `verify-release` 695 hashesMatch、`check` problems 0、`version-check` matches、`drill`/`upgrade-drill` exit 0；
+运行时探针 `r1-rc4`（7/7 门控）与 `r2-r3-rc4`（脱敏 + CLI 接线）均 exit 0。**RC4 未安装、未派工；RC1 的真实证据仍只属 RC1。**

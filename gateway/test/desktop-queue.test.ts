@@ -314,6 +314,76 @@ test("a cancellation before native dispatch closes the workflow and frees shared
 
 
 
+test("a refusal continued into a native claim is cancelled for real, never closed as undelivered", async (t) => {
+  const f = fixture(t);
+  const refused = await f.coordinator.send({ model: "synthetic-user-choice", taskId: "continued-refusal", objective: "Fixture task", workspace: f.dir, sessionId: "unit-session", sessionMode: "new" });
+  assert.equal(refused.ok, false);
+  assert.equal((await f.coordinator.sync("continued-refusal")).state, "blocked");
+  // R1: the same task can be continued after the refusal. The rework and queue
+  // operations then cross the native boundary even though the occupying send
+  // still looks untouched.
+  await f.coordinator.continue({ taskId: "continued-refusal", feedback: "Use the native desktop model already selected" });
+  assert.equal((await f.queue.claim("unit-session", 0)).status, "task");
+  const current = f.store.get("continued-refusal");
+  assert.ok(f.store.operations.forTask("continued-refusal").some(operation => operation.effectStartedAt || operation.dispatchEnteredAt), "the continued attempt crossed the native boundary");
+  assert.equal(f.store.operations.neverDispatched("continued-refusal", current.attemptId), false, "a dispatched rework is never an undelivered refusal");
+  const cancelled = await f.coordinator.cancel("continued-refusal", "Stop the native turn");
+  assert.equal("closed" in cancelled, false, "a claimed task needs a real cancellation, not a closure");
+  assert.equal(cancelled.executionState, "stop_unconfirmed");
+  assert.equal(cancelled.remoteStopped, false);
+  assert.equal(cancelled.cancellationRequested, true);
+  const db = new DatabaseSync(f.config.dbFile, { readOnly: true });
+  assert.equal((db.prepare("SELECT count(*) AS n FROM workflow_capacity").get() as { n: number }).n, 1, "capacity stays with the unstopped native turn");
+  assert.equal((db.prepare("SELECT count(*) AS n FROM task_events WHERE type='task_closed'").get() as { n: number }).n, 0);
+  db.close();
+  assert.equal(fs.existsSync(path.join(f.config.runsDir, current.attemptId!, "cancel.json")), true, "the original cancellation request is persisted");
+});
+
+test("missing durable records or an uncertain operation never prove a task was undelivered", async (t) => {
+  const f = fixture(t);
+  await f.coordinator.send({ model: "synthetic-user-choice", taskId: "missing-records", objective: "Fixture task", workspace: f.dir, sessionId: "unit-session", sessionMode: "new" });
+  const attemptId = (await f.coordinator.sync("missing-records")).attemptId!;
+  const db = new DatabaseSync(f.config.dbFile);
+  db.prepare("DELETE FROM task_events WHERE task_id=?").run("missing-records");
+  db.close();
+  assert.equal(f.store.operations.neverDispatched("missing-records", attemptId), false, "absent records can never prove that nothing ran");
+  const cancelled = await f.coordinator.cancel("missing-records", "Records are missing");
+  assert.equal("closed" in cancelled, false);
+  const after = new DatabaseSync(f.config.dbFile, { readOnly: true });
+  assert.equal((after.prepare("SELECT count(*) AS n FROM workflow_capacity").get() as { n: number }).n, 1, "an unproven refusal keeps the shared slot");
+  after.close();
+});
+
+test("an operation whose outcome is unknown keeps the workflow on the recovery path", async (t) => {
+  const f = fixture(t);
+  await f.coordinator.send({ model: "synthetic-user-choice", taskId: "uncertain-operation", objective: "Fixture task", workspace: f.dir, sessionId: "unit-session", sessionMode: "new" });
+  const attemptId = (await f.coordinator.sync("uncertain-operation")).attemptId!;
+  const db = new DatabaseSync(f.config.dbFile);
+  const record = db.prepare("SELECT operation_id, body_json FROM task_operations WHERE task_id=?").get("uncertain-operation") as { operation_id: string; body_json: string };
+  const body = JSON.parse(record.body_json) as { state: string; effectStartedAt: string | null };
+  body.state = "outcome_unknown";
+  body.effectStartedAt = new Date().toISOString();
+  db.prepare("UPDATE task_operations SET state='outcome_unknown', body_json=? WHERE operation_id=?").run(JSON.stringify(body), record.operation_id);
+  db.close();
+  assert.equal(f.store.operations.neverDispatched("uncertain-operation", attemptId), false, "an uncertain operation may already have run");
+  const cancelled = await f.coordinator.cancel("uncertain-operation", "Outcome unknown");
+  assert.equal("closed" in cancelled, false);
+  assert.equal((await f.coordinator.sync("uncertain-operation")).state, "blocked");
+});
+
+test("a journal that already recorded a claim blocks the undelivered closure even when the database looks idle", async (t) => {
+  const f = fixture(t);
+  await f.coordinator.send({ model: "synthetic-user-choice", taskId: "journal-claim", objective: "Fixture task", workspace: f.dir, sessionId: "unit-session", sessionMode: "new" });
+  const attemptId = (await f.coordinator.sync("journal-claim")).attemptId!;
+  assert.equal(f.store.operations.neverDispatched("journal-claim", attemptId), true, "the database alone still reads as undelivered");
+  fs.writeFileSync(path.join(f.config.runsDir, attemptId, "claim.json"), JSON.stringify({ claimedAt: new Date().toISOString() }));
+  const cancelled = await f.coordinator.cancel("journal-claim", "Journal shows a claim");
+  assert.equal("closed" in cancelled, false, "the attempt journal overrides an idle-looking database");
+  const db = new DatabaseSync(f.config.dbFile, { readOnly: true });
+  assert.equal((db.prepare("SELECT count(*) AS n FROM workflow_capacity").get() as { n: number }).n, 1);
+  db.close();
+});
+
 test("a supervisor that never started a process cannot block a native stop", () => {
   // D-4: a blocked supervisor script (execution policy) or an unlaunchable executable leaves no
   // process tree, so its missing cleanup evidence must not masquerade as an unconfirmed stop.

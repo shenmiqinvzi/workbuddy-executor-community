@@ -60,9 +60,39 @@ export const EXPORT_KEY_WHITELIST: ReadonlySet<string> = new Set([
 ]);
 
 const SECRET_KEY = /(secret|token|passwd|password|credential|cookie|authorization|api[-_]?key|private[-_]?key|access[-_]?key|session[-_]?key)/i;
-// Bearer tokens, provider key prefixes, PEM headers, and inline `name=value`
-// pairs (`token=…`, `password: …`) that reached a free-text field.
-const SECRET_VALUE = /^(?:bearer\s|basic\s|sk-[A-Za-z0-9]|ghp_|xox[baprs]-|-----BEGIN )|(?:^|[\s,;])(?:secret|token|passwd|password|api[-_]?key)\s*[:=]\s*\S+/i;
+// R2: a secret can sit anywhere inside free text — a sentence, an HTTP header
+// line, a command line, a URL, several lines — so the scanner looks for the
+// value itself instead of trusting the start of the string. Each pattern keeps
+// the surrounding words and replaces only the credential, so a note that
+// mentions `Authorization: Bearer …` stays readable without the token.
+const SECRET_PATTERNS: RegExp[] = [
+  /\b(authorization|proxy-authorization)\b(\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\r\n]+)/gi,
+  /\b(bearer|basic|token|digest)\s+[A-Za-z0-9._~+/=-]{6,}/gi,
+  /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY-----/g,
+  /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/g,
+  /(?:sk|rk|pk)-[A-Za-z0-9_-]{8,}/g,
+  /(?:gh[pousr]_[A-Za-z0-9]{10,}|github_pat_[A-Za-z0-9_]{10,})/g,
+  /xox[baprs]-[A-Za-z0-9-]{8,}/g,
+  /AKIA[0-9A-Z]{12,}/g,
+  /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{6,}/g,
+  /(\bhttps?:\/\/)[^\s:/@]+:[^\s@/]+@/gi,
+  /\b(secret|token|passwd|password|api[-_]?key|access[-_]?key|client[-_]?secret|private[-_]?key)\b("?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;&]+)/gi,
+];
+
+/** Replace credential values wherever they appear, keeping the sentence around them. */
+export function scrubText(input: string): { text: string; redacted: boolean } {
+  let text = input;
+  for (const pattern of SECRET_PATTERNS) {
+    text = text.replace(pattern, (match, prefix: string | undefined, separator?: string) => {
+      if (typeof prefix === "string" && match.toLowerCase().startsWith(prefix.toLowerCase())) {
+        if (prefix.endsWith("//")) return `${prefix}[redacted]@`;
+        return separator === undefined ? `${prefix} [redacted]` : `${prefix}${separator}[redacted]`;
+      }
+      return "[redacted]";
+    });
+  }
+  return { text, redacted: text !== input };
+}
 
 export interface RedactionResult { value: unknown; fields: string[] }
 
@@ -80,7 +110,10 @@ export function redactSecrets(value: unknown, at = ""): RedactionResult {
       }
       return out;
     }
-    if (typeof input === "string" && SECRET_VALUE.test(input.trim())) { fields.push(where); return "[redacted]"; }
+    if (typeof input === "string") {
+      const scrubbed = scrubText(input);
+      if (scrubbed.redacted) { fields.push(where); return scrubbed.text; }
+    }
     return input;
   };
   return { value: walk(value, at), fields };
@@ -161,8 +194,20 @@ export type DeliveryExportResult =
 
 const TASK_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 
-function clip(value: string, max: number): { text: string; truncated: boolean } {
-  return value.length <= max ? { text: value, truncated: false } : { text: `${value.slice(0, max - 1)}…`, truncated: true };
+/** R2: scrub before clipping so a credential is never cut in half by the limit. */
+function clip(value: string, max: number): { text: string; truncated: boolean; redacted: boolean } {
+  const scrubbed = scrubText(value);
+  const body = scrubbed.text;
+  if (body.length <= max) return { text: body, truncated: false, redacted: scrubbed.redacted };
+  let cut = body.slice(0, max - 1);
+  // The clipping point can fall inside the placeholder itself; keep the whole
+  // marker instead of leaking a half-written "[redacte".
+  const marker = "[redacted]";
+  const start = cut.lastIndexOf("[");
+  if (start >= 0 && !cut.slice(start).includes("]") && marker.startsWith(cut.slice(start))) {
+    cut = `${cut.slice(0, Math.max(0, start)).slice(0, Math.max(0, max - 1 - marker.length))}${marker}`;
+  }
+  return { text: `${cut}…`, truncated: true, redacted: scrubbed.redacted };
 }
 
 function reviewChecks(record: ReviewRecord): ReviewCheck[] {
@@ -201,6 +246,7 @@ export function buildDeliveryExport(
   const statistics = options.statistics ?? null;
   if (!statistics) limitations.push("未提供统计 coverage；这份导出不包含汇总数字，也不把缺失当作零。");
 
+  const redactionFields: string[] = [];
   const contractSection: DeliveryExportDocument["contract"] = contract.state === "found"
     ? {
       present: true,
@@ -212,6 +258,7 @@ export function buildDeliveryExport(
       scope: { allowedChanges: [...contract.record.contract.scope.allowedChanges], permittedMetadata: [...contract.record.contract.scope.permittedMetadata] },
       requiredChecks: contract.record.contract.requiredChecks.map(check => {
         const definition = clip(check.definition, DELIVERY_EXPORT_LIMITS.definitionCharacters);
+        if (definition.redacted) redactionFields.push("contract.requiredChecks[].definition");
         return { id: check.id, kind: check.kind, definition: definition.text, definitionTruncated: definition.truncated };
       }),
     }
@@ -249,6 +296,7 @@ export function buildDeliveryExport(
         machineCheckIds: [...review.machineCheckIds],
         checks: reviewChecks(review).map(check => {
           const note = clip(check.note, DELIVERY_EXPORT_LIMITS.noteCharacters);
+      if (note.redacted) redactionFields.push("evidence.reviews[].checks[].note");
           return { checkId: check.checkId, kind: check.kind, status: check.status, actor: check.actor, checkedAt: check.checkedAt, note: note.text, noteTruncated: note.truncated };
         }),
       })),
@@ -270,7 +318,8 @@ export function buildDeliveryExport(
 
   const redacted = redactSecrets(document);
   const redactedDocument = redacted.value as DeliveryExportDocument;
-  const finalDocument: DeliveryExportDocument = { ...redactedDocument, redactions: { count: redacted.fields.length, fields: redacted.fields } };
+  const redactionFieldList = [...new Set([...redacted.fields, ...redactionFields])];
+  const finalDocument: DeliveryExportDocument = { ...redactedDocument, redactions: { count: redactionFieldList.length, fields: redactionFieldList } };
   const unlisted = findUnlistedExportKey(redacted.value);
   if (unlisted) return { ok: false, code: "export_not_whitelisted", message: `The export builder produced a field outside its whitelist: ${unlisted}.` };
   const bytes = Buffer.from(`${JSON.stringify(finalDocument, null, 2)}\n`, "utf8");

@@ -299,3 +299,47 @@ test("export: a stale preview digest cancels the save and leaves the folder unto
   if (!saved.ok) assert.equal(saved.code, "export_stale");
   assert.deepEqual(fs.readdirSync(dir), []);
 });
+
+test("export: a credential inside review prose is redacted wherever it sits", () => {
+  const bearerToken = ["sk", "live", "9f8e7d6c5b4a321055"].join("-");
+  const note = [
+    `Ran the smoke test; the header sent was Authorization: Bearer ${bearerToken}`,
+    "Proxy line: proxy-authorization: Basic dXNlcjpwYXNzd29yZA==",
+    "Then POST https://user:passw0rd@example.invalid/api with token=abc123def456ghi789",
+    "Keep this sentence: the retry budget is three attempts.",
+  ].join("\n");
+  const built = buildDeliveryExport(fakeStore({ reviews: [reviewFixture(1, note)] }), "task-1", { now: NOW });
+  assert.equal(built.ok, true);
+  if (!built.ok) return;
+  const bytes = JSON.stringify(built.document);
+  for (const secret of [bearerToken, "dXNlcjpwYXNzd29yZA==", "passw0rd", "abc123def456ghi789"]) {
+    assert.equal(bytes.includes(secret), false, `the export must not keep ${secret}`);
+  }
+  assert.match(bytes, /the header sent was Authorization: \[redacted\]/);
+  assert.match(bytes, /the retry budget is three attempts/, "ordinary prose stays readable");
+  assert.ok(built.document.redactions.fields.length >= 1, "the export names what it redacted");
+});
+
+test("export: clipping never splits a credential in half", () => {
+  const secret = ["sk", "live", "0123456789abcdef0123456789abcdef"].join("-");
+  const limit = DELIVERY_EXPORT_LIMITS.definitionCharacters;
+  const contract = contractRecord("clip-boundary");
+  const record = (contract as unknown as { record: { contract: { requiredChecks: unknown[] } } }).record.contract;
+  record.requiredChecks = [{ id: "c1", kind: "command", definition: `${"a".repeat(limit - 8)}${secret}` }];
+  const built = buildDeliveryExport(fakeStore({ contract }), "task-1", { now: NOW });
+  assert.equal(built.ok, true);
+  if (!built.ok) return;
+  const bytes = JSON.stringify(built.document);
+  assert.equal(bytes.includes("sk-live"), false, "no prefix of the credential survives the boundary");
+  assert.equal(bytes.includes(secret.slice(0, 8)), false);
+  assert.match(bytes, /\[redacted\]/);
+});
+
+test("redact: inline pairs and header values are scrubbed inside sentences, not only at the start", () => {
+  const result = redactSecrets({ note: "first line\nAuthorization: Bearer abc.def.ghi\npassword=hunter2 and api_key: 0123456789abcdef" });
+  const note = String((result.value as { note: string }).note);
+  assert.equal(note.includes("hunter2"), false);
+  assert.equal(note.includes("0123456789abcdef"), false);
+  assert.equal(note.includes("first line"), true);
+  assert.ok(result.fields.includes("note"));
+});

@@ -20,6 +20,7 @@
 | RC2 真实验收（集成人执行） | 用户授权后在 RC2 上真实重装并用 WorkBuddy 桌面通道派一单 | 已完成（2026-11-06T08:23Z 安装、08:26Z 派工、08:28Z 结果为 `needs_review`；独立核验通过；未走完 review/accept，见 `RC2_LIVE_RUN.md`） |
 | 11 | 交付检查 | 已完成（`265234a`，仅文档；`FINAL_REVIEW_INDEX.md` 648 行/八节 + K1–K8 矛盾） |
 | RC3 修复（F-CAP-1 / F-ACC-1） | 未派工任务取消即关闭并释放单槽；`$scope` 指出未授权变更、批次入口可发现 | 已完成（源码 + 合成 + 运行探针；**未在 RC3 上重装或派工**） |
+| 复核轮 R1–R4 与 RC4 | Codex 复核的容量判定、自由文本脱敏、CLI 组合根接线、索引过期 | 已完成（源码 + 合成 + 解包探针；**RC4 未重装、未派工**，真实证据仍只属 RC1） |
 
 `sourcePassed=true`、`liveReady` 分两层：RC1 完成过一次真实安装 + 两单真实派工（DSH 与 WorkBuddy 各一单，均 accepted），但 10 的验收同时暴露三处缺陷（见「真实验收（10）归档与集成人核验」）。G3 后修复把这些缺陷中属代码的两处修掉并另出 RC2，**RC2 只做过源码与合成候选检查，未再进真实环境**。
 
@@ -363,3 +364,72 @@ RC2 影响表：与 RC1 只差上面两个错误码与两处测试文本。RC1 �
 - RC3 只有合成与探针证据；未重装、未派工，`liveReady` 仍为 false。
 - RC2 安装根里那条 `needs_review` 任务仍在占槽；要关闭它需在真实安装根上操作，属用户授权范围。
 - 未推送、未合 main、未发布、未部署。
+
+## 复核轮 R1–R4 修复与 RC4（2026-11-06，集成人）
+
+Codex 独立复核（`outputs\codex-finish-review-20261106\REVIEW.md`）对 RC3 提出四条结论。本轮在独立工作树
+`E:\javaproject\workbuddy-finish\R-review-fixes`（分支 `fix/delivery-review-r1-r4`，基线 `218dfe99…`、tree `d62e186e…`）
+修复，未推送、未合 main、未安装、未登录、未真实派工。
+
+### 复核结论与处置
+
+| 编号 | 原结论 | 处置 | 位置 |
+| --- | --- | --- | --- |
+| R1（P0 容量） | 拒绝后被 continue 的任务，rework/queue 已跨原生边界，`neverDispatched` 仍为真 → 取消直接释放容量并跳过原取消请求 | 已修：判定改为「整条原任务 + 当前 attempt + journal」双门 | `gateway/src/operation-admission.ts`、`gateway/src/coordinator.ts` |
+| R2（P1 脱敏） | `SECRET_VALUE` 只匹配字符串开头；note/definition 自由文本可绕过 | 已修：任意位置扫描 + 先脱敏再截断 | `gateway/src/delivery-export.ts` |
+| R3（P1 接线） | CLI 组合根没有 `send`，`execute` 在读取决策前即报「No guarded dispatcher is wired」 | 已修：CLI 接共享派工服务 | `gateway/src/automation-cli.ts` |
+| R4（P2 索引） | 最终索引仍以 `06d52b1`/RC2 为对象 | 已修：索引第 14 节 + 本索引 | `docs/delivery/FINAL_REVIEW_INDEX.md` |
+
+### 修法与回归
+
+- **R1**：`neverDispatched` 现在要求容量占用者属于该任务、任务的当前 attempt 与传入一致、该任务全部持久操作都不在
+  `reserved/effect_started/outcome_unknown` 且没有 `effectStartedAt`/`dispatchEnteredAt`/`preparationEnteredAt`、
+  至少存在 `send` 与当前 attempt 的 `attempt_queued`、且没有 `native_claimed`/`rework_requested`/`task_closed`；
+  `coordinator.requestCancellation` 另加 journal 门（`claim.json`/`request.json`/`model-ready.json`/`worker-context.json`
+  任一存在即否决；`state.json` 必须 `blocked` 且无 `pid`）。真实领取后的取消仍生成原取消请求、`remoteStopped:false`、
+  `executionState:"stop_unconfirmed"`，容量保留到原生停止可证。
+  回归 5 例：拒绝→continue→claim 不得关闭；缺记录不得关闭；`outcome_unknown` 不得关闭；journal 已记 claim 不得关闭；
+  合法首次拒绝仍可关闭。
+- **R2**：凭据扫描改为任意位置匹配（Authorization/Proxy-Authorization 头、裸 Bearer/Basic、PEM 块、`sk-`/`gh*_`/`xox*`/`AKIA`、
+  JWT、URL `user:password@`、内联 `token=`/`password:`），命中只替换凭据本身；`clip()` 先脱敏再截断，截断点落在占位符
+  中间时保留完整 `[redacted]`。回归 3 例（多行混合凭据出现在审查 note、截断边界、内联键值）。
+- **R3**：`runAutomationCli` 构造 `TaskApplicationService` 时注入 `send → service.send`，自动派工因此与手工派工共用同一
+  受信入口（方案/政策/容量/原生身份/范围/费用重校验都在原服务内）；默认仍不 arm、安装级 `enabled` 仍默认关闭，MCP/HTTP
+  仍无自动写入口。CLI 级测试 2 例：`status` → `dispatcherWired:true`、`armed:false`、`httpWrites:false`；
+  未 arm → `AUTOMATION_NOT_ARMED`；已 arm 未 enable → `AUTOMATION_NOT_ENABLED`；enable + arm → `DECISION_NOT_FOUND`
+  （说明进入共享服务而非停在「未接线」）。
+- 打包器在 RC4 首次打包时拦下 `test/delivery-export.test.ts` 的假凭据字面量（`Possible access token`）。按「不放宽扫描器」
+  处理：夹具改为运行时拼接（`["sk","live",…].join("-")`），断言不变，`delivery-export` 16/16 复跑通过。
+
+### 本轮回执用检查（本树实跑）
+
+| 检查 | 结果 |
+| --- | --- |
+| `npm run build` / `npm run typecheck:task-view` | exit 0 / exit 0 |
+| 受影响专项 9 套件 | 104 tests / 104 pass / 0 fail / exit 0 |
+| `desktop-queue` 单元 | 22/22 pass exit 0（含 5 条新回归） |
+| `delivery-export` 单元 | 16/16 pass exit 0（含 3 条新回归） |
+| `automation-cli` 单元 | 2/2 pass exit 0（CLI 真实入口） |
+| `npm run test:workbench` | 139/139 pass exit 0 |
+| `npm run desktop:test` | `{"passed":92,"failed":0}` exit 0 |
+| `npm test`（首轮） | 1293 tests / 1281 pass / 0 fail / 12 skipped / exit 0 |
+| 技能六文件一致性 | 6/6 exit 0 |
+| `SNAPSHOT_MANIFEST.json` 重生成 + 校验 | 398 文件、`hashesMatch:true` |
+
+### RC4 候选（源码 + 合成）
+
+| 项 | 值 |
+| --- | --- |
+| 网关包 | `codex-workbuddy-gateway-v0.7.1.zip`，695 文件 / 2 248 287 B / sha256 `c5981c09933342e9581cb336db95dfaac75d575e0f136d83fb0b9d26838cc816` |
+| manifest | 112 086 B |
+| 技能包 / Harness 技能包 | `e61be9ba…`（未变） / `22909e1b…`（未变） |
+| 解包自检 | `verify-release` 695 hashesMatch；`check` `ok:true`、problems 0、totalBytes 7 321 768；`version-check` matches/exact 695 |
+| 安装演练 | `drill --apply` exit 0；`upgrade-drill --apply` exit 0 |
+| 运行时探针（解包候选 + 自带依赖） | `r1-rc4`：7/7 门控为真（干净拒绝仍可关闭；跨边界/有 claim 均不得关闭，容量保留）；`r2-r3-rc4`：脱敏保留句子、CLI `dispatcherWired:true/armed:false/httpWrites:false` |
+
+### 影响与仍然开着的项
+
+- RC4 相对 RC3 只改 4 个源文件、3 个测试文件与快照；**RC1 的真实证据只属于 RC1，RC2/RC3/RC4 都没有被重新安装或派工**。
+- F-CONTRACT-1（任务正文允许新增文件 vs legacy 只读说明冲突）本轮未处理；第二台机、R1/R2/R5/R9/R10 五张卡、
+  真实窗口/读屏验收未做；P0-1 继续按 T7D 原样保留（不关闭、不重派、不释放）。
+- 若要把 RC4 变成「真实验收通过」，仍需用户授权在独立安装根重装并派一单，且要等 `$scope` 之类的语义阻塞被真实检查确认。

@@ -185,19 +185,35 @@ export class OperationAdmission {
     this.db.prepare("INSERT OR IGNORE INTO workflow_capacity VALUES (1,?,?,?)").run(taskId, executor, operationId);
   }
   /**
-   * True only when the capacity owner never crossed a native boundary
-   * (F-CAP-1). A refusal recorded before `nativeBoundary` leaves no
-   * effectStartedAt/dispatchEnteredAt, so there is no native work to stop and
-   * no stop proof to wait for.
+   * True only when the whole original task, not just the occupying send, never
+   * crossed a native boundary (R1). The first refusal really does leave no
+   * native work, but the same task can be continued afterwards: rework, queue
+   * or prepare operations may already have entered the native adapter while the
+   * occupying send still looks untouched. Every durable operation and event of
+   * the task therefore has to agree that nothing was dispatched; missing
+   * records, an in-flight admission or any boundary mark means "unproven" and
+   * keeps the workflow on the recovery path.
    */
   neverDispatched(taskId: string, attemptId?: string | null): boolean {
     const owner = this.occupant();
     if (!owner || owner.taskId !== taskId) return false;
-    if (attemptId && this.store.get(taskId)?.attemptId !== attemptId) return false;
-    const operation = this.get(owner.operationId);
-    if (!operation) return false;
-    if (operation.state === "effect_started" || operation.state === "outcome_unknown") return false;
-    if (operation.effectStartedAt || operation.dispatchEnteredAt) return false;
+    const task = this.store.get(taskId);
+    if (!task || !task.attemptId) return false;
+    if (attemptId && task.attemptId !== attemptId) return false;
+    const operations = this.forTask(taskId);
+    if (operations.length === 0) return false;
+    for (const operation of operations) {
+      if (operation.state === "effect_started" || operation.state === "outcome_unknown" || operation.state === "reserved") return false;
+      if (operation.effectStartedAt || operation.dispatchEnteredAt || operation.preparationEnteredAt) return false;
+    }
+    // Positive evidence is required as well: a refusal always records its own
+    // admission (`send`) and queues the attempt. Missing records stay unproven
+    // instead of reading as a clean refusal, and any native claim or rework says
+    // the task went further than that first refusal.
+    if (!operations.some(operation => operation.kind === "send")) return false;
+    const events = this.db.prepare("SELECT type FROM task_events WHERE task_id=? AND (attempt_id IS NULL OR attempt_id=?)").all(taskId, task.attemptId).map(row => String(row.type));
+    if (!events.includes("attempt_queued")) return false;
+    if (events.includes("native_claimed") || events.includes("rework_requested")) return false;
     return !this.db.prepare("SELECT 1 FROM task_events WHERE task_id=? AND type='task_closed'").get(taskId);
   }
   /**

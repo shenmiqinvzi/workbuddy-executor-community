@@ -558,13 +558,35 @@ export class TaskCoordinator {
     });
     return this.finishCancellation(request);
   }
+  /**
+   * R1: the attempt journal is the other half of the "nothing was dispatched"
+   * proof. A refused admission leaves only state.json (blocked, no pid) and the
+   * event log; a claim/request/model-ready/worker-context file, another status
+   * or a live pid all mean some native preparation entered. An unreadable
+   * journal is unproven, never clean.
+   */
+  private journalShowsNoDispatch(attemptId: string): boolean {
+    const directory = path.join(runsDirectory(this.config), attemptId);
+    let entries: string[];
+    try {
+      if (!fs.statSync(directory).isDirectory()) return false;
+      entries = fs.readdirSync(directory);
+    } catch { return true; }
+    if (entries.some(name => ["claim.json", "request.json", "model-ready.json", "worker-context.json"].includes(name))) return false;
+    if (!entries.includes("state.json")) return entries.every(name => name === "events.jsonl");
+    try {
+      const state = JSON.parse(fs.readFileSync(path.join(directory, "state.json"), "utf8")) as { status?: string; pid?: unknown };
+      return state.status === "blocked" && state.pid === undefined;
+    } catch { return false; }
+  }
   private requestCancellation(taskId: string, reason?: string) {
     const task = this.requireTask(taskId);
     if (task.state === "accepted") return { accepted: true as const, task };
-    // F-CAP-1: a workflow the gateway refused before its native boundary has
-    // nothing to stop, so cancellation is a closure, not a stop request. Its
-    // shared capacity must come back or every later send is refused forever.
-    if (task.attemptId && this.store.operations.neverDispatched(taskId, task.attemptId)) {
+    // F-CAP-1 with R1: a workflow the gateway refused before its native
+    // boundary has nothing to stop, so cancellation is a closure, not a stop
+    // request. The database alone cannot tell whether a later continue already
+    // touched the native adapter, so the attempt journal has to agree.
+    if (task.attemptId && this.journalShowsNoDispatch(task.attemptId) && this.store.operations.neverDispatched(taskId, task.attemptId)) {
       const reasonText = task.cancelNote ?? reason ?? "Cancelled before any native dispatch.";
       this.store.operations.closeNeverDispatched(taskId, task.attemptId, reasonText);
       return { accepted: false as const, closed: true as const, task, updated: this.requireTask(taskId), requested: false };

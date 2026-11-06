@@ -8,6 +8,7 @@ import { WorkBuddyClient } from "./workbuddy-client.js";
 import { configuredDshCoordinator } from "./dsh-runtime.js";
 import { runsDirectory } from "./run-journal.js";
 import { AdmissionError } from "./collaboration.js";
+import type { SendTaskInput } from "./coordinator.js";
 import type { AutomationPolicyInput, AutomationProbeResult, CostMode } from "./automation.js";
 
 // Trusted local seam for the saved automation policy (D5-01/D5-02).
@@ -137,14 +138,28 @@ export async function runAutomationCli(argv: string[] = process.argv.slice(2)): 
   const probeFile = parsed.values.get("probe");
   const probe = probeFile ? (): AutomationProbeResult => readJson(probeFile) as AutomationProbeResult : undefined;
   const armed = parsed.switches.has("enable-dispatch");
+  // R3: this trusted local CLI is a real composition root. Automated dispatch
+  // must enter the same guarded service a manual dispatch uses, so the same
+  // plan/policy/capacity/native-identity/scope/fee rechecks apply. Wiring the
+  // seam does not arm anything: `--enable-dispatch` still has to be passed and
+  // the saved policy still has to be enabled.
+  let sharedDispatch: ((input: SendTaskInput) => Promise<unknown>) | undefined;
   const service = new TaskApplicationService(
     new TaskCoordinator(config, store, new WorkBuddyClient(config)),
     config.maxTaskAttempts ?? 3,
     runs,
     configuredDshCoordinator(store, runs),
     undefined,
-    { armed, probe },
+    {
+      armed,
+      probe,
+      send: input => {
+        if (!sharedDispatch) throw new AdmissionError("AUTOMATION_NOT_ARMED", "The guarded dispatcher is not available in this process.");
+        return sharedDispatch(input);
+      },
+    },
   );
+  sharedDispatch = input => service.send(input);
   const automation = service.automation;
   try {
     let result: Record<string, unknown>;

@@ -646,3 +646,61 @@ HEAD 树对象:     f2f6553d2bfdb0b49466b8c90d9989f1720fe399
 ```
 
 **为什么提交哈希不写进文件**：本文件一旦写入自身 SHA，SHA 就会改变（自引用悖论）。仓库既有做法相同（`gates/G3-fix.json` 的 `gateRecord.commit` 为 `null` 并注明哈希存放在 `G3_FIX_RECEIPT.md`）。本文件的 SHA 由本次提交记录在 Git 历史中，并用上面的 `git log -1` 命令取回。
+
+---
+
+## 14. 复核轮 R1–R4 的修复登记（2026-11-06，集成人）
+
+§0–§13 描述的是 `06d52b1` 时的状态。此后 Codex 独立复核给出 R1–R4 四条结论，本轮在独立工作树
+`E:\javaproject\workbuddy-finish\R-review-fixes`（分支 `fix/delivery-review-r1-r4`，基线 `218dfe9`）修复。
+本文件只登记「改了什么、验证到什么程度」，不改写 §0–§13 的历史结论，也不把 RC1 的真实证据移挂到新候选。
+
+### 14.1 四条结论与处置
+
+| 编号 | 原结论 | 处置 | 证据 |
+| --- | --- | --- | --- |
+| R1（P0） | 拒绝后被 continue 的任务，rework/queue 已跨原生边界，`neverDispatched` 仍为真，取消直接释放容量并跳过原取消请求 | 已修：判定改为整任务 | `gateway/src/operation-admission.ts`、`gateway/src/coordinator.ts`；`gateway/test/desktop-queue.test.ts` 5 例 |
+| R2（P1） | `SECRET_VALUE` 只匹配字符串开头，句子/HTTP 头上下文绕过；note/definition 自由文本仍可能带凭据 | 已修：任意位置扫描 + 先脱敏再截断 | `gateway/src/delivery-export.ts`；`gateway/test/delivery-export.test.ts` 3 例 |
+| R3（P1） | CLI 组合根只注入 `{armed, probe}`，没有 `send`，`execute` 在读决策前就报「No guarded dispatcher is wired」 | 已修：CLI 接到共享派工服务 | `gateway/src/automation-cli.ts`；`gateway/test/automation-cli.test.ts` 2 例 |
+| R4（P2） | 本索引仍以 `06d52b1`/RC2 为对象，SHA 与安装状态过期 | 已修：本节 + §0 的时效声明 | 本文件 |
+
+### 14.2 R1：容量判定看整条原任务
+
+- `neverDispatched(taskId, attemptId)` 现在要求：容量占用者属于该任务；任务的当前 attempt 与传入一致；
+  **该任务的全部持久操作**都不在 `reserved/effect_started/outcome_unknown`，且都没有
+  `effectStartedAt`/`dispatchEnteredAt`/`preparationEnteredAt`；至少存在一条 `send` 操作与当前 attempt 的
+  `attempt_queued` 事件（缺记录按「未证明」处理，不按「干净」处理）；没有 `native_claimed`、`rework_requested`，
+  也没有任何 `task_closed`。
+- `coordinator.requestCancellation` 在数据库判定之外再加一次 journal 判定
+  （`claim.json`/`request.json`/`model-ready.json`/`worker-context.json` 任一存在即否决；`state.json` 必须是
+  `blocked` 且无 `pid`；解析失败即否决）。
+- 未派工且证据完整的首次拒绝，取消仍是关闭并释放容量；真实领取之后，取消走原路径：写 `cancel.json`、
+  `remoteStopped:false`、`executionState:"stop_unconfirmed"`，容量保留到原生停止可证。
+- 组合回归覆盖：拒绝→continue→claim（不得关闭）；缺记录（不得关闭）；`outcome_unknown`（不得关闭）；
+  journal 已有 claim（不得关闭）；合法首次拒绝（仍可关闭）。
+
+### 14.3 R2：自由文本里的凭据
+
+- 扫描器改为在字符串任意位置匹配：Authorization / Proxy-Authorization 头（含多行）、裸 `Bearer|Basic`、
+  PEM 私钥块、`sk-`/`gh*_`/`xox*`/`AKIA` 前缀、JWT、URL 里的 `user:password@`、以及 `token=`/`password:` 这类内联键值。
+  命中时只替换凭据本身，句子其余部分保留，便于复核读懂上下文。
+- `clip()` 先脱敏再截断，避免凭据被截断成前缀漏出；截断点落在占位符中间时保留完整 `[redacted]`。
+- 回归覆盖：审查 note 里的多行混合凭据（导出字节不含假凭据、普通句子仍可读）；截断边界（不残留 `sk-live`
+  等前缀）；`redactSecrets` 对内联键值与头的处理。
+
+### 14.4 R3：CLI 是真实组合根
+
+- `runAutomationCli` 构造 `TaskApplicationService` 时注入 `send: input => service.send(input)`，自动派工因此进入
+  与手工派工同一个受信入口（方案/政策/容量/原生身份/范围/费用重校验都在原服务内）。
+- 语义不变：默认不 arm（需要 `--enable-dispatch`），安装级 `enabled` 默认关闭（需要 `enable`）；MCP/HTTP 仍没有
+  自动写入口。`describe()` 现在如实报告 `dispatcherWired:true`（此前 CLI 恒为 false）。
+- CLI 级测试（`test/automation-cli.test.ts`）用合成安装跑真实入口：未 arm 时 `AUTOMATION_NOT_ARMED`；arm 但未
+  enable 时 `AUTOMATION_NOT_ENABLED`；enable 且 arm 后读到 `DECISION_NOT_FOUND` —— 说明它确实进入共享服务，
+  而不是停在「没有接线」的拒绝上。
+
+### 14.5 仍然开着的项
+
+- F-CONTRACT-1（任务正文允许新增文件与随后 legacy 说明的冲突）本轮未处理。
+- 第二台机、R1/R2/R5/R9/R10 五张异常卡、真实窗口/读屏验收未做。
+- P0-1 仍按 T7D 原样保留（不关闭、不重派、不释放）。
+- RC4 只有在真实重装并派工后才能宣称真实验收；本轮交付的是源码 + 合成候选。
