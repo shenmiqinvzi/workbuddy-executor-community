@@ -35,11 +35,11 @@
 | 1 | `npm ci`（`gateway/`，本树 `package-lock.json`） | 0 | 依赖按锁文件安装；`npx tsx --version` = 4.23.15 | `logs\npm-ci.log` |
 | 2 | `npm run build` | 0 | `tsc -p tsconfig.json` | `logs\build.log` |
 | 3 | `npm run typecheck:task-view` | 0 | `tsc -p tsconfig.task-view.json` | 终端 |
-| 4 | `npx tsx --test test/finish-acceptance-review-layers.test.ts` | 0 | 10 tests / 10 pass / 0 fail（124.5s） | 终端 |
-| 5 | `npx tsx --test test/finish-acceptance-admission-anomalies.test.ts` | 0 | 10 tests / 10 pass / 0 fail | 终端 |
-| 6 | `node --test workbench/test/finish-acceptance-task-panel.test.mjs` | 0 | 8 tests / 8 pass / 0 fail（163ms） | 终端 |
-| 7 | `npx tsx --test test/finish-acceptance-resources-credentials.test.ts` | 0 | 6 tests / 6 pass / 0 fail | 终端 |
-| 8 | `npx tsx --test test/finish-acceptance-resource-independence.test.ts` | 0 | 1 test / 1 pass / 0 fail | 终端 |
+| 4 | `npx tsx --test test/finish-acceptance-review-layers.test.ts` | 0 | 10 tests / 10 pass / 0 fail（末次 50.5s；负载高峰时曾 1 例 git 超时，见 §4 O6） | `logs\finish-acceptance-review-layers.log` |
+| 5 | `npx tsx --test test/finish-acceptance-admission-anomalies.test.ts` | 0 | 10 tests / 10 pass / 0 fail（44.3s） | `logs\finish-acceptance-admission-anomalies.log` |
+| 6 | `node --test workbench/test/finish-acceptance-task-panel.test.mjs` | 0 | 8 tests / 8 pass / 0 fail（181ms） | `logs\finish-acceptance-task-panel.log` |
+| 7 | `npx tsx --test test/finish-acceptance-resources-credentials.test.ts` | 0 | 6 tests / 6 pass / 0 fail（222ms） | `logs\finish-acceptance-resources-credentials.log` |
+| 8 | `npx tsx --test test/finish-acceptance-resource-independence.test.ts` | 0 | 1 test / 1 pass / 0 fail（4.3s） | `logs\finish-acceptance-resource-independence.log` |
 | 9 | `npm run test:workbench` | 0 | 131 tests / 131 pass / 0 fail | `logs\workbench-test.log` |
 | 10 | `npm run desktop:test` | 0 | `{"passed":92,"failed":0}` | `logs\desktop-test.log` |
 | 11 | `npx tsx --test "test/**/*.test.ts"`（全量） | 0 | 1244 tests / 1232 pass / 0 fail / 12 skipped（348.9s） | `logs\gateway-full-test.log` |
@@ -83,8 +83,9 @@ npx tsx --test "test/**/*.test.ts"
 | O3 | `model.formatTime(0)` 返回「未提供」：数值 0 被当作缺失时间 | `formatTime(0)` | 与 F11「null 不显示成 0」方向一致，但把 0 归为缺失是格式化层选择 | `finish-acceptance-task-panel.test.mjs` | 保留；若真实来源可能出现 epoch 0，应显式渲染为时间而不是「未提供」 |
 | O4 | `runs/` 下除 `run-*` attempt 目录外还有其它条目（同一 attempt 时共 3 项） | `readdirSync(runsDir)` | 只影响断言写法；不代表多派发 | 同一文件用例 10 与 `finish-acceptance-admission-anomalies.test.ts` 用例 10（按 `run-` 前缀过滤） | 文档说明 runs 目录布局；不改成「目录数=派发数」 |
 | O5 | 一次 `send` 会调用准备 1 次、模型观察 1 次 | 夹具计数：`preparations=1, inspections=1` | 初版夹具把两者累加，曾得出「准备两次」的错误结论 | `test/support/finish-acceptance-fixture.ts` 计数拆分 | 已修正夹具；保留拆分后的断言作为「一次派发只准备一次」的证据 |
+| O6 | 机器高负载时，独立复跑 `finish-acceptance-review-layers.test.ts` 出现 1 例失败：`Error: spawnSync git ETIMEDOUT`，抛出点为 `src/workspace-protection.ts:75` 的 `execFileSync("git", ["ls-files","--stage","-z"], {timeout:5000})`；该例耗时 458.7s | 同一命令在同一机器、负载高时复跑；负载回落后复跑 10/10 通过（50.5s） | 断言本身没有错；风险是 `assertGuard` 在 git 超时时抛的是未归一化的 `Error`，不是 `AdmissionError`，调用方拿不到稳定错误码 | `logs\finish-acceptance-review-layers.log`（失败版与通过版同名覆盖，失败堆栈已摘录于本行）；全量回归同一文件 0 fail | 建议负责线把 git 索引读取的失败包成稳定错误码（或允许配置超时）；本线不改产品代码，判为环境/健壮性观察而非通过与否的改判 |
 
-**复测**：以上 5 条在修正断言后全部重跑通过（第 2 节 #4–#8）；没有一条以「改了产品代码」的方式变绿。
+**复测**：O1–O5 在修正断言后全部重跑通过（第 2 节 #4–#8）；O6 是环境负载导致的抖动，负载回落后同一文件 10/10 通过，全量回归该文件 0 fail。没有一条以「改了产品代码」的方式变绿。
 
 ## 5. 53 项建议更新稿
 
@@ -254,6 +255,7 @@ npx tsx --test "test/**/*.test.ts"
 2. O3 把数值 0 当缺失时间是否符合预期；若真实来源可能出现 epoch 0，需要显式渲染。
 3. F17/F18/读屏没有任何窗口证据，需在真实浏览器里补齐后才能动 F 的状态。
 4. `runs/` 目录除 `run-*` 外还有其它条目（O4），若面板或导出按目录数推断派发次数会误判。
+5. 工作区指纹里的 `git ls-files` 固定 5s 超时且失败时抛未归一化的 `Error`（O6）；高负载机器上会让一次审查中断，错误码不稳定。建议由负责线决定是否提高/可配置超时并把失败包成稳定错误码。
 
 
 
