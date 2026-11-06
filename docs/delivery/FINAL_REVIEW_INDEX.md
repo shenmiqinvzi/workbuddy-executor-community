@@ -26,15 +26,21 @@
 
 入口：`docs/delivery/RC6_READY_INDEX.md`。
 
-| 已准备 | 文档 |
-| --- | --- |
-| 安装目标、影响面、六步核对、回退边界 | `INSTALL_AND_ROLLBACK_PLAN.md` |
-| 三套库的占用、为何不能自动清、三种不重叠方案 | `CAPACITY_AND_IDENTITY.md` |
-| 两端真实样本的完整契约（精确 CommandSpec）、判定标准、串行顺序 | `LIVE_TASK_PROPOSALS.md` |
-| 需要你拍板的 A1–A3 / B1–B4 / C1–C4 / D1–D4 / E1–E4 | `USER_CHOICES.md` |
-| 桌面壳五次实测、窗口证据缺什么、第二台机步骤 | `UI_AND_SECOND_MACHINE_PLAN.md` |
+| 已准备 | 文档 | 状态 |
+| --- | --- | --- |
+| 安装目标、影响面、六步核对、回退边界 | `INSTALL_AND_ROLLBACK_PLAN.md` | 可用 |
+| 三套库的占用、`databaseSlotFree` 与 `nativeOverlapProven` 两字段、为何不能自动清 | `CAPACITY_AND_IDENTITY.md` | 已按纠偏重写 |
+| 两端样本：**草稿 vs 正式契约**、`validateSupportedTaskContract` 不得让 `null` 通过、六步验收顺序 | `LIVE_TASK_PROPOSALS.md` | 已按纠偏重写 |
+| 收缩后的可执行选择（A 安装/回退、B 每任务派工、C 人工、D 发行） | `USER_CHOICES.md` | 已收缩 |
+| 桌面壳分阶段结果（1–7 次各归属）、窗口截图证据、客户端 asar 编码线索、第二台机 | `UI_AND_SECOND_MACHINE_PLAN.md` | 已按纠偏重写 |
 
-**仍未取得**（不得写成已通过）：窗口可见性、四尺寸、键盘/焦点、200% 缩放、读屏（本机创建 WebView2 用户数据目录被拒，`UnauthorizedAccessException`，CDP 19491 不通）；WorkBuddy 侧模型目录与本轮报价（客户端 `WorkBuddyAI.exe` 起不来，只有 RC1 时代 23 条快照）；第二台机（未授权、无机器）。
+**UI 的准确口径**（此前写「本机无法创建 WebView2 用户数据目录」不准确，已更正）：
+
+- 第 1–3 次失败是参数缺失、配置歧义、数据库未初始化；第 4–5 次是 `Directory.CreateDirectory(profile)` 访问拒绝；第 6 次预建 profile 后过 CreateDirectory，改在 `CreateCoreWebView2ControllerAsync` 抛 `COMException 0x8000FFFF`；**第 7 次加 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--disable-gpu --disable-software-rasterizer` 后渲染成功**（34 个 `msedgewebview2` 进程）。
+- 三张窗口截图在 `E:\javaproject\outputs\rc6-live-readiness-20261106\ui-shots\`：`wb-1280x720.png`（错误页「工作台暂时无法连接…」+「重新连接」）、`wb-connected-1280x720.png`（「正在连接本地任务记录…」）、`wb-connected2-1280x720.png`（回到错误页）。即**页面能渲染、WebView2 可用**，卡点是壳自起的网关宿主没连上（同期无 `workbench-desktop-host` 进程）。
+- 仍未取得：**四尺寸**、**键盘/焦点**、**200% 缩放**、**读屏**（需人工作业）、以及壳与宿主衔接的修复。
+
+**WorkBuddy 客户端**（派工前置，仍未解决）：`F:\新建文件夹 (2)\WorkBuddy\WorkBuddyAI.exe`（204,590,360 B，sha256 `15880ca7…`，5.9.4）进程立即 `exit 0`、18491 无监听；`debug.log` 显示 `app.asar` 路径被错误编码解析（中文目录变 mojibake，`archive.cc:196 FILE_ERROR_FAILED`）。既有 `start-workbuddy-debug.ps1` 需 PowerShell 7，本机只有 5.1 且执行策略 Restricted。因此 `workbuddy_list_models` 120s 超时，**本轮报价与实时目录取不到**，只有 RC1 时代 23 条快照（仅供参考，不等于本轮报价）。
 
 本轮**未**安装 RC6、**未**真实派工、**未**改生产政策、**未**释放 RC1/RC2 的任何占用、**未**推送/合 main/发布。
 

@@ -1,47 +1,48 @@
-# 容量、占用与身份（RC6，只读核对）
+# 容量与身份（RC6 准备，含纠偏）
 
-一句话：**这台机器上有三套库、三个占用，只有一套真正被卡死；谁都不能自动清。**
+## 1. 两个字段必须分开
 
-## 1. 三套库的现状
+上一版把「独立库是空的」当成「原生侧没有重叠」，这是错的。下面两个判断独立成立、独立取证：
 
-| 库 | 大小 | 任务 | 容量行 | 是否可自动释放 |
-| --- | --- | --- | --- | --- |
-| RC1 `gateway-v0.7.1-rc1\data\tasks.sqlite` | 933,888 B / 25 表 | 6 条（2 accepted、2 cancelled、1 accepted、1 blocked） | 指向 `d1-workbuddy-2cc8e262-54f5-43a0-8511-b3febf0d4101`，operation `card-r6-foreign-session-1793948211334` | **不能**。该任务是 `blocked` 且 `attempt_id=null`、没有 `task_closed`、`run_evidence_digest.stopped=null`，`isClosed()` 永远为假 |
-| RC2 `gateway-v0.7.1-rc2\data\tasks.sqlite` | 258,048 B | 1 条 `rc2-live-20261106b`，`needs_review`，attempt `run-de1afbd3-571a-4533-885e-3819146f0882` | 指向它 | **不能**。`stopped=true` 但没有 `task_closed`，`isClosed()` 为假 |
-| 当前聊天 MCP `outputs\t7b-live-acceptance-20261031\state\tasks.sqlite` | 237,568 B | 2 条，均 `accepted`，均有 `task_closed` 且 `stopped=true` | 指向已关闭任务 | **会自然清掉**：下一次 `claim()` 发现前一个占用者已关闭就删行。也就是说聊天 MCP 侧并不是被卡死的那一个 |
-
-结论：被卡死的是 **RC1 的 R6 任务**与 **RC2 的 needs_review 任务**。它们分别属于两套独立安装与两个独立库，互不影响；RC6 是新安装，默认会带自己的空库，因此**不存在「RC6 装上去就能解开 R6」这回事**。
-
-## 2. 为什么不能「顺手清掉」
-
-- 清容量等于对原任务下结论。R6 是「外来会话被拒」后的 `blocked`，原生侧是否真的没有残留我们**没有证据**；RC2 的是「已停在窗口、等待 review」，它连 review 都还没做完。
-- `recovery-cli show` 对这两条的 `available` 都是空，`proof.reconcile`/`close` 都是 null。这表示「当前没有可核对的原生证据」，**不表示**「可以安全关闭」。
-- 一旦关闭，`task_closed` 会被写死，之后任何「那台机器上到底跑没跑过」的追问都无法再回答。
-
-## 3. 可以做的不重叠方案（选一个）
-
-| 方案 | 做法 | 结果 | 需要谁 |
+| 字段 | 含义 | 怎么取 | 当前状态 |
 | --- | --- | --- | --- |
-| N1（推荐） | RC6 装到新根 + 新库，本轮真实派工全在 RC6 上跑；RC1/RC2 原样保留 | 能拿到 RC6 的真实证据；R6 与 RC2 的占用继续挂着，报告里如实标「未解除」 | 你授权安装与派工即可 |
-| N2 | 先只读核对 R6 的原始请求、会话、事件，找出「原生侧到底做过什么」的正面证据 | 若有证据，按既有恢复流程补证后再决定；若没有，回到 N1 并标注 | 你确认可以读取该任务详情 |
-| N3 | 对 RC2 的 needs_review 任务补完 review 后关闭 | 释放 RC2 的槽；但会改变 RC2 这套安装的结论（从「未 accepted」变成「已处理」） | 你要单独同意，因为这是对历史任务下结论 |
+| `databaseSlotFree` | 该库 `workflow_capacity` 无占用行，或占用行指向已关闭任务 | 只读复制 `tasks.sqlite(+wal,+shm)` 查表 | 可证（见 §3） |
+| `nativeOverlapProven` | 原生宿主/会话侧确认无同一工作区、同一任务的未结束执行 | **需原生侧可观测证据**；库内为空不能推出这一条 | **不可证**（客户端当前起不来，见 `UI_AND_SECOND_MACHINE_PLAN.md`） |
 
-明确不做：换库、换身份、用第二台机来「绕开」原占用；把「新库没有占用」写成「原占用已解除」。
+独立库只能证明前者。任何「新库天然为空 ⇒ 可以派」的推断都缺后者，写文档时必须两行都写，不能合并成一句「容量空闲」。
 
-## 4. 身份与选择规则（每条真实任务都要满足）
+## 2. 关于 RC2 那条 `needs_review`
 
-- **执行器**：`workbuddy`（桌面原生）或 `dsh`（Harness），一条任务只属于一个执行器；同一个 `operationId` 不能换执行器重发（会 `OPERATION_CONFLICT`）。
-- **来源**：`runtimeSource` 如实写，不得把网关本地观察写成原生确认；三档「已声明 / 已观测 / 已核验」不混用。
-- **模型**：必须精确到 modelId 与推理档位；本轮 WorkBuddy 侧的实际可选目录**当前查不到**（客户端起不来，见 `UI_AND_SECOND_MACHINE_PLAN.md` §3），只能引用 RC1 时代的 23 条快照并标注「非本轮实测」。
-- **费用**：WorkBuddy 的 `credits` 是相对倍率（如 `x0.11`），不是金额；DSH 侧 `x0.00` 是观测值，不等于免费承诺。两项都必须原样写进任务确认。
-- **会话**：一条任务绑定一个已存在的原生会话与一个工作目录；跨目录会话直接在准入被拒（`WORKSPACE_CONFLICT`）。
-- **范围**：写权限只来自结构化 `scope.allowedChanges`；正文里写「请新建文件」不构成授权（见 `F_CONTRACT_1.md` 方案 A）。
+`rc2-live-20261106b` 不是「永远无法处理」的任务。它的实际状态是：`state=needs_review`、`attempt=1`、`attemptId=run-de1afbd3-…`、`run_evidence_digest.stopped=true`、**没有** `task_closed`、容量行指向它。这意味着：
 
-## 5. 复核命令（只读）
+- 原生侧已停止（`stopped=true` 是原生停止证据），**不是** `outcome_unknown`；
+- 它缺的是验收链的后半段：服务端命令复跑 → 程序批次 → 不可变 reviewId → accept；
+- 按原约定（`docs/delivery/RC2_LIVE_RUN.md` 记录的范围、`allowedChanges`、停止时间、审查证据）可以核对，也可以走既有 `check_task`/`review_task` 补完；能否补由**那份契约当时的字段**决定，不由我改判。
+- 上一版写「容量被历史任务占死、无法处理」属口径错误，已删。
 
-```powershell
-# 三套库的容量行与任务状态（只读副本，不动原件）
-node E:\javaproject\outputs\rc6-live-readiness-20261106\read-capacity.mjs
-```
+## 3. 三个库的实测（只读复制后查询，`read-capacity.mjs`）
 
-该脚本把三个库连同 `-wal`/`-shm` 复制到临时目录再查，输出 `capacity-detail.md`。原件从未以写方式打开。
+| 库 | 大小 | 任务数 | 占用行指向 | 该任务状态 | 能否 `isClosed` |
+| --- | --- | --- | --- | --- | --- |
+| RC1 `gateway-v0.7.1-rc1\data\tasks.sqlite` | 933,888 B / 25 表 | 6 | `d1-workbuddy-2cc8e262-54f5-43a0-8511-b3febf0d4101` | `blocked`、`attempt_id=null`、无 `task_closed`、`stopped=null` | 否（缺 attempt 与关闭证据） |
+| RC2 `gateway-v0.7.1-rc2\data\tasks.sqlite` | 258,048 B | 1 | `rc2-live-20261106b` | `needs_review`、`attemptId=run-de1afbd3-…`、`stopped=true`、无 `task_closed` | 否（缺 `task_closed`） |
+| 当前聊天 MCP `outputs\t7b-live-acceptance-20261031\state\tasks.sqlite` | 237,568 B | 2 | 指向已 `accepted` 且有 `task_closed` 的任务 | 已关闭 | 是（`claim()` 会自行清行） |
+
+结论：
+1. RC1 库、RC2 库各有一行真实占用，且都缺关闭证据；不能靠时间、TTL、换库、换身份或第二台机消除。
+2. 聊天 MCP 侧的库并没有被历史占死。
+
+## 4. 身份与不重叠的取证要求
+
+要宣称「独立样本已验收且不解除旧占用」，至少要能给出：
+
+1. 该次派工使用的 `taskId`、`sessionId`、`attemptId`、`operationId` 四件，且能回读；
+2. 该次派工落在**哪个库、哪个 runs 目录、哪个原生会话**（三者都要有可读记录）；
+3. 与旧占用任务在 `workspace`、`sessionId`、`attemptId`、原生进程上的**逐项不等**证明，而不是「它们在另一个库」；
+4. 若原生侧不可观测，评估结论只能写 `nativeOverlapProven=false`，并在索引与回执里保留这一行。
+
+## 5. 处置边界（本轮不变）
+
+- 不关闭、不重派、不释放 P0-1 的原未知任务（T7D 决定继续有效）。
+- 不用新安装根、新数据库、第二台机、替代会话消除旧占用。
+- `recovery-cli reconcile/close` 只允许在**副本**上演练；真实库不动。

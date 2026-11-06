@@ -1,75 +1,60 @@
 # 双执行器真实样本与验收约定（RC6）
 
-两条样本都来自 `live-acceptance-fixture` 生成器，故意带有真实缺陷：**修复前必失败，修复后必通过**。因此它们既能证明「派工链路通」，也能证明「验收不是走过场」。
+**先纠正一处错**：上一版把 `execution: null` / `collaboration: null` 解释成「单执行器、无协作」，这是错的。它们是 `live-acceptance-fixture` 生成器**未授权草稿**的占位状态；`null` 字段过不了正式校验，不能拿去派工。
 
-夹具根：`E:\javaproject\outputs\rc6-live-readiness-20261106\fixtures\live-acceptance-KcShpd`
-基线摘要：`baselineSha256 = 316fb2431b6424d1e677326e411ac8823fb5447451a0d8cb849eb47d9aadb0a7`
-`authorized:false`、`dispatchPrepared:false` —— 只准备，不授权。
+## 1. 草稿与正式约定是两份东西
 
-## 1. WorkBuddy 侧样本
+| | 草稿（现在有的） | 正式约定（派工前才能生成） |
+| --- | --- | --- |
+| 位置 | `fixtures\live-acceptance-KcShpd\contracts\{workbuddy,dsh}.json` | 另存为新文件，例如 `contracts\workbuddy.formal.json` |
+| `authorized` | `false` | 由你的实际选择决定 |
+| `execution` | `null` | 精确 `{executor, connection, provider, model, reasoningEffort}`，来源必须是本轮真实可读的目录 |
+| `collaboration` | `null` | 带 `planId` 与 `expectedPlanRevision`，且这两个值只能来自可信入口（`createCollaborationPlan` 等），不能手填 |
+| 用途 | 历史参考、候选提案 | 只能这一份能提交 |
 
-| 项 | 值 |
-| --- | --- |
-| 工作区 | `...\fixtures\live-acceptance-KcShpd\workbuddy` |
-| 缺陷文件 | `src/clamp.mjs`（`clamp` 的上下界夹取写反，任何越界值都返回上界） |
-| 验收命令 | `F:\node.exe --test --test-reporter=tap checks/acceptance.test.mjs`（cwd = 上面的工作区，timeout 30s） |
-| 输入 | `src/clamp.mjs`、`checks/acceptance.test.mjs` |
-| 允许改动 | `src/clamp.mjs`（仅此一个文件） |
-| 失败表现（修复前） | `低于区间返回下端点` 期望 0 得 10；`负数和小数` 期望 -1.25 得 -1 |
+规则：
 
-契约草案已生成：`contracts\workbuddy.json`，其中 `requiredChecks` 三项目前齐备：
+1. **保留草稿与基线**：`baseline.json` 的 `baselineSha256 = 316fb243…` 与九个条目的哈希不动，草稿原样保留，作为「派工前长什么样」的证据。
+2. **正式约定另复制**：复制草稿 → 填 `execution` → 走可信入口拿到 `planId`/`expectedPlanRevision` → 写进 `collaboration`。
+3. **提交前用现行校验**：`validateSupportedTaskContract`（`gateway/src/task-contract.ts`）必须通过；`null` 的 `execution`/`collaboration` **不得通过**。校验失败就停在原地，不许改成 legacy 路径、不许删检查、不许为了过校验去缩 `scope`。
+4. 用户确认按原计划执行：展示执行器、来源、精确模型、推理档、范围与费用（含未知披露），取得确认后才派。
 
-```json
-{"id":"independent-command","kind":"command",
- "definition":"{\"executable\":\"F:\\\\node.exe\",\"args\":[\"--test\",\"--test-reporter=tap\",\"checks/acceptance.test.mjs\"],\"cwd\":\"...\\\\workbuddy\",\"timeoutSeconds\":30,\"inputs\":[\"src/clamp.mjs\",\"checks/acceptance.test.mjs\"]}"}
-```
+## 2. 两端样本
 
-`definition` 必须是这个**精确 JSON 字符串**（CommandSpec），不是散文字符串——这是 L08 之后契约的要求。
+| 项 | WorkBuddy | DSH |
+| --- | --- | --- |
+| 工作区 | `...\fixtures\live-acceptance-KcShpd\workbuddy` | `...\fixtures\live-acceptance-KcShpd\dsh` |
+| 缺陷文件 | `src/clamp.mjs`（上下界夹取写反） | `src/paid-summary.mjs`（把 pending 计入已支付） |
+| 允许改动 | 仅该源文件 | 仅该源文件 |
+| 验收命令 | `F:\node.exe --test --test-reporter=tap checks/acceptance.test.mjs`（cwd 上述工作区，30s） | 同左，cwd 为 `dsh` |
+| 修复前 | 必失败（越界返回上界） | 必失败（pending 被计入） |
 
-## 2. DSH 侧样本
+`requiredChecks[].definition` 是**精确 JSON 字符串**（CommandSpec），不是散文。三项目前齐备：`independent-command`（命令）+ `behavior`（语义）+ `protected-checks`（检查文件未改）。
 
-| 项 | 值 |
-| --- | --- |
-| 工作区 | `...\fixtures\live-acceptance-KcShpd\dsh` |
-| 缺陷文件 | `src/paid-summary.mjs`（把 `pending` 也计入已支付） |
-| 验收命令 | `F:\node.exe --test --test-reporter=tap checks/acceptance.test.mjs`（cwd = `...\dsh`，timeout 30s） |
-| 允许改动 | `src/paid-summary.mjs` |
-| 失败表现（修复前） | `pending 不计入` 期望 1 得 2；`混合状态` 金额多算 |
+## 3. 真正的验收顺序（上一版漏了两步）
 
-契约草案：`contracts\dsh.json`，结构同上，`cwd` 指向 `dsh` 目录。
+worker 自己跑测试只是**自报**，不能当验收。完整链路必须是：
 
-## 3. 每条任务要带的字段（两端一致）
+1. worker 执行并自报结果 → 只算线索。
+2. **服务端执行命令**：`run_review_command` 按原 JSON CommandSpec 在服务端跑一遍，拿到真实 TAP 输出与退出码。
+3. **服务端程序批次**：`check_task` 生成当前程序检查批次，得到 `machineCheckIds`（一次一个批次）。
+4. **独立语义审查**：`behavior` / `protected-checks` 由服务端语义检查判定，不采信 worker 自述。
+5. **不可变 reviewId**：`review_task` 用上面的 `machineCheckIds` + 原始语义要求生成 `reviewId`。
+6. **最新 revision 下 accept**：在最新 `revision` 上 `accept_task`，随后 `task_closed` 落盘、容量行消失。
 
-- `schemaVersion: "workbuddy-executor/vnext-2"`
-- `taskId` / `workspaceId`：用草案里已生成的值，不要重置成新值（重置会破坏夹具身份）
-- `title` / `objective`：草案里的中文（夹具文件是 UTF-8；控制台若显示乱码是 PowerShell 编码问题，不影响内容）
-- `execution` / `collaboration`：本轮为 `null`（单执行器、无协作）
-- `timeoutSeconds: 600`、`maxAttempts: 1`（待你确认的默认值）
-- `scope.allowedChanges`：只有那一个源文件
-- `requiredChecks`：`independent-command`（精确 CommandSpec）+ `behavior`（语义）+ `protected-checks`（检查文件未被改）
-- `operationId`：一次派工一个，落在草案的 `proposedOperationId` 上；重试要复用同一个，换键会被判 `OPERATION_CONFLICT`
+`record_inspection` 只是「独立复算记录」，**不能替代**第 2–5 步的服务端命令与完整程序批次。上一版把 inspection 写成验收节点，属于口径错误，已在此更正。
 
-## 4. 判定标准（不符合就不算通过）
+## 4. 判定标准
 
-1. 任务先进入 `queued`，再出现原生领取事件；`attemptId` 由系统生成并回读得到。
-2. 派工后 `get_task` 的 `artifacts` 含两端各自的修复文件；`src` 之外的检查文件哈希未变（用 `baseline.json` 的 `mutable:false` 条目逐条比对）。
-3. 验收命令在原生侧真实执行，退出码 0，TAP 全绿；证据里保存原始 TAP 输出，不写「看起来通过」。
-4. `record_inspection` 记录独立复算结果；`review` 通过后才 `accept`。
-5. 全链结束后：`task_closed` 存在、`workflow_capacity` 该行消失、任务 `state=accepted`、`run_evidence_digest.stopped=true`。
-6. 失败样本要留证：故意先不修，跑一次，把失败输出存下来，证明「这条检查真的会红」。
+1. `queued` → 原生领取事件 → 系统生成 `attemptId` 并回读。
+2. 派工后 `artifacts` 含修复文件；`baseline.json` 里 `mutable:false` 的条目哈希逐条不变。
+3. 服务端 `run_review_command` 的真实退出码 0，TAP 全绿；原始输出入证据。
+4. `reviewId` 不可变，`accept` 发生在最新 revision。
+5. 收尾：`task_closed` 存在、`workflow_capacity` 该行消失、`state=accepted`、`run_evidence_digest.stopped=true`。
+6. 保留失败样本：修复前先跑一次，把红色输出存档，证明检查真的会红。
 
-## 5. 顺序与容量
+## 5. 顺序与前置
 
-- 两端**严格串行**：WorkBuddy 一条走完（含 review/accept/关闭）再做 DSH。共享容量只有 1，并行会互相顶掉。
-- 每条任务开工前核对：`workflow_capacity` 为空，或占用的正是本轮要跑的那条。
-- RC6 用新库时，容量天然为空；RC1/RC2 的占用仍然挂着（见 `CAPACITY_AND_IDENTITY.md`），不影响 RC6，但也**不能**写成「已解除」。
-
-## 6. 前置依赖（缺一项就不能开工）
-
-| 依赖 | 当前状态 |
-| --- | --- |
-| RC6 安装 | 未安装（`USER_CHOICES.md` D1） |
-| 执行器与模型的实际选择 | WorkBuddy 侧目录查不到（客户端起不来）；DSH 侧需你指定模型与推理档位 |
-| 费用确认 | WorkBuddy `credits` 为倍率、DSH 为观测值，均需你原样确认 |
-| 空闲原生会话 | WorkBuddy 会话需客户端可用；DSH 会话需 Harness 侧在线 |
-| 技能与 MCP 核验 | 安装后按 `INSTALL_AND_ROLLBACK_PLAN.md` 第 4 节六项核对 |
+- 两端**严格串行**（共享容量 1）。
+- 前置：RC6 安装（未授权）、执行器/模型/推理/费用（待选）、空闲原生会话（WorkBuddy 客户端当前起不来，见 `UI_AND_SECOND_MACHINE_PLAN.md`）、技能与 MCP 核验（技能六文件已与包内逐字节相同，见 `USER_CHOICES.md`）。
+- 库内容量空闲 ≠ 原生不重叠：详见 `CAPACITY_AND_IDENTITY.md` §2。

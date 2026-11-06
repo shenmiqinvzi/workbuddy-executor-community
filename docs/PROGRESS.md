@@ -374,3 +374,11 @@ RC4：695 文件 / 2 248 287 B / sha256 `c5981c09933342e9581cb336db95dfaac75d575
 - 源码变动后重出候选 RC6：2,257,997 B、696 个受管文件、sha256 `c9f724d4888da5ed2566b464c4b85745693d7dd3b600fed1f622b8f3a10338ff`；解包 verify/check/version/drill/upgrade/rollback 全过，三个缺陷探针与交叉验证全过。
 - 完整后端套件 1301 测试 / 1289 通过 / 0 失败 / 12 跳过，workbench 139/139，桌面策略 92/92。第一轮全量失败在本轮自写的新鲜度回归上，属夹具只刷新了部分 dist 文件，修正夹具后复跑全绿。
 - 边界不变：未安装、未推送、未合 main、未发布；RC6 无真实派工。
+
+## 材料纠偏与桌面壳分阶段诊断（2026-11-06，集成人）
+
+按 READY_MATERIAL_CORRECTIONS.md 纠正六处口径：\execution/collaboration=null\ 是未授权草稿、不能当单执行器；容量拆成 \databaseSlotFree\ 与 \
+ativeOverlapProven\ 两个字段，独立库为空不算不重叠证明；RC2 的 \
+eeds_review\ 是可核对的历史任务而非「无法处理」；WorkBuddy 启动改按既有 \start-workbuddy-debug.ps1\ 与环境变量方式复核，客户端退出的直接线索是 \pp.asar\ 路径被错误编码（\rchive.cc:196 FILE_ERROR_FAILED\）；WebView2 分七阶段记录，第 7 次在预建 profile 加 \--disable-gpu --disable-software-rasterizer\ 后渲染成功（三张窗口截图入 \outputs\rc6-live-readiness-20261106\ui-shots\），但壳自起的网关宿主未连上；\RC6_READY_INDEX\ 的相对 \cd\ 改为绝对路径。
+
+用户选择表收缩为四组（安装/回退、每任务派工、人工动作、发行外部）；技能六文件与已装逐字节相同，替换项从表中移除。RC6 包未动，未安装、未派工、未改政策、未动旧占用。

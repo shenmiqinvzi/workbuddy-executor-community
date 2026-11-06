@@ -1,81 +1,62 @@
-# 桌面窗口证据与第二台机（RC6，实测记录）
+# UI、桌面壳与第二台机（RC6 准备，分阶段诊断）
 
-## 1. 正式桌面壳能不能在本机构建
+上一版写「五次尝试都证明本机无法运行桌面壳」，这个结论不成立：那些失败点各不相同，其中两次是参数/配置，两次是目录权限，最后一次真正跑起来了。下面按阶段记录，失败与成功分别归属。
 
-能。
+## 1. WebView2 分阶段结果（本机实测）
 
-```
-cd gateway
-dotnet build desktop\WorkBuddy.Workbench.csproj -c Release
-→ 已成功生成。0 个警告 0 个错误，16.28 s
-→ desktop\bin\Release\net10.0-windows\WorkBuddy.Workbench.exe
-```
+环境：身份 `神秘奇女子\lenovo`（非管理员）、WebView2 Runtime `156.0.4314.58`、Defender 实时保护关闭、可用 PowerShell 5.1.26100.7019。
 
-## 2. 能不能在本机跑出一个可用窗口
+| # | 条件 | 结果 | 归属 |
+| --- | --- | --- | --- |
+| 1 | 只给 exe | `Missing desktop option: --node` | 参数缺失，非环境问题 |
+| 2 | 补 `--gateway-dir/--node/--database/--runs-dir` | 窗口起，网关 `dist/config.js:26` 抛「Multiple WorkBuddy installations…」 | 配置歧义（缺 `WORKBUDDY_CLI_ELECTRON`/`WORKBUDDY_CONFIG_DIR`） |
+| 3 | 父进程补两个 WORKBUDDY 变量 | 网关 `ENOENT … stat '…\tasks.sqlite'` | 数据库未初始化 |
+| 4 | 补一个空库文件 | `UnauthorizedAccessException` 于 `Directory.CreateDirectory(profile)` | 目录创建权限 |
+| 5 | 换到 `%TEMP%` 新 profile | 同样拒绝 | 同上 |
+| 6 | 预先建好 `<root>\<InstanceKey>\WebView2` | 过 CreateDirectory，`COMException 0x8000FFFF (E_UNEXPECTED)` 于 `CreateCoreWebView2ControllerAsync` | 首次控制器初始化 |
+| 7 | 第 6 步 + `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--disable-gpu --disable-software-rasterizer` | **渲染成功**：34 个 `msedgewebview2` 进程，窗口出画面 | 成功 |
 
-**不能。** 五次尝试都止步在 WebView2 用户数据目录。每一轮都按 PID 收尾，没有留下进程。
+壳的 profile 规则来自源码：`gateway/desktop/DesktopPolicy.cs:55` 用 `SHA256(gatewayDir + "\n" + db + "\n" + runs)` 大写后取前 24 位作 `InstanceKey`，`:57-64` 拼 `ProfileDirectory`（可用 `WORKBUDDY_WORKBENCH_PROFILE_ROOT` 覆盖）；`gateway/desktop/Program.cs:150` 直接 `Directory.CreateDirectory(profile)`、`:156` 才创建 WebView2 环境。
 
-| # | 启动方式 | 结果 |
-| --- | --- | --- |
-| 1 | 只给 exe | `Missing desktop option: --node`，进程退出 |
-| 2 | `--gateway-dir <RC6 解包根> --node F:\node.exe --database … --runs-dir …` | 窗口起来（标题「WorkBuddy · 任务工作台」），但内置网关 `dist/config.js:26` 抛 `Multiple WorkBuddy installations or data directories found; set WORKBUDDY_CLI_ELECTRON and WORKBUDDY_CONFIG_DIR explicitly.`，随后 `WorkbenchWindow.StartAsync` 抛 `System.InvalidOperationException: 本地记录服务启动失败…` |
-| 3 | 第 2 步 + 父进程设 `WORKBUDDY_CLI_ELECTRON` / `WORKBUDDY_CONFIG_DIR` | 网关改报 `ENOENT: … stat '…\ui-profile\tasks.sqlite'`（host 要求库文件已存在） |
-| 4 | 第 3 步 + 先建空库文件（profile 放在 `E:\javaproject\outputs\…`） | 网关进程启动成功（stderr 出现 `[host] PATH=…`），但下一步 `System.UnauthorizedAccessException: Access to the path '…\ui-profile\6EB75B8B7E836A3284532B10\WebView2' is denied` → `StartAsync` 失败 |
-| 5 | 同上，profile 改到 `%TEMP%\wb-ui-c593fc97` | 同样 `UnauthorizedAccessException`（新哈希目录 `38B457BC9D2AD523F6B1F99F\WebView2`）；`http://127.0.0.1:19491/json/version` 始终不通；`tasks.sqlite` 保持 0 字节 |
+**结论**：WebView2 可用，渲染链路通；卡点在「profile 目录需预建 + 无 GPU 参数」与「壳自起的网关宿主没连上」。
 
-历史对照：2026-11-04 的 L02 轮在同一台机器上也撞过同类错误（`UnauthorizedAccessException` / `COMException 0x8000FFFF`），当时改用「已打包壳 + 本树网关」绕过。这次连打包壳的内置网关都在同一处失败，说明卡点不是网关，而是**本会话创建 WebView2 用户数据目录被拒**。
+## 2. 窗口已经出画面，但页面报连接失败
 
-结论：**窗口、UIA、四尺寸、键盘、200% 缩放、读屏，这六项在本机一条都拿不到真实证据。** 现有的 UI 证据只有两类，都必须在报告里如实分开写：
+用 `PrintWindow`（`PW_RENDERFULLCONTENT`）只抓目标窗口本身，得到三张证据（`outputs\rc6-live-readiness-20261106\ui-shots\`）：
 
-- 页面级：`npm run test:workbench` 139/139（含 `automation-view`、`statistics-page`、`productivity-page` 等），证明页面模块在 DOM 桩上的行为；
-- HTTP 级：解包候选起 `workbench-entry`，`/workbench/` 200、`automation.mjs` 200、`POST /automation/policies` 405（`allow: GET, HEAD`）。
+| 文件 | 画面内容 |
+| --- | --- |
+| `wb-1280x720.png` | 标题「WorkBuddy · 任务工作台」；正文「工作台暂时无法连接。请检查 Node.js、数据目录、网关依赖及 WebView2 Runt…」；「重新连接」按钮 |
+| `wb-connected-1280x720.png` | 「正在连接本地任务记录…」 |
+| `wb-connected2-1280x720.png` | 又落回同一错误页 |
 
-这两类**不等于**窗口可见、可点、可读屏。
+同一时刻检查进程：`workbench-desktop-host` 的 node 进程不存在，即壳没有把宿主留住。宿主 stderr 为空（开启 `WORKBUDDY_WORKBENCH_DIAGNOSTICS=1` 后仍无输出）。因此这是**壳与宿主之间的启动衔接问题**，不是页面/WebView2 的问题，也不是「本机不能跑 UI」。
 
-## 3. 要补窗口证据，缺什么
+已按 PID 停止该壳进程；未改任何全局 ACL、未写系统策略。
 
-1. 一个能创建 WebView2 用户数据目录的会话或机器（当前报 `UnauthorizedAccessException`，需要能确认是 ACL、受控文件夹访问还是 WebView2 Runtime 的安装状态）。
-2. WebView2 Runtime 已安装（本机 `dependencies` 探针读到 `webview2_runtime 156.0.4314.58`，版本满足，故更可能是目录权限）。
-3. 一个非 0 字节的库文件（host 会 stat 它；空文件只够过 stat，真正连接后需要 TaskStore 初始化 schema）。
+## 3. 还差什么才能宣称「UI 已验收」
 
-补齐后的步骤（可直接照做）：
+1. 让壳自起的宿主存活并连上（观察 `workbench-desktop-host` 是否被 spawn、端口/管道是否建立、宿主 stderr 为何为空）。
+2. 连接成功后依次取：1280×720、1600×900、1920×1080、2560×1440 四尺寸截图。
+3. 键盘路径：Tab 顺序、Esc、回车提交，逐项记录焦点落点。
+4. 200% 缩放下同样四尺寸复测。
+5. 读屏：本机无可脚本驱动的读屏宿主，只能登记为「需人工在桌面会话执行」并给出实际命令。
+6. 与正式壳（用户日常使用的宿主）差异单独一节，不把合成壳的结论外推。
 
-```powershell
-$prof = "$env:LOCALAPPDATA\WorkBuddy\wb-ui"        # 换到用户可写、非受控的目录
-New-Item -ItemType Directory -Force -Path $prof
-# 用网关先建库，避免空库
-$env:WORKBUDDY_DB_FILE = "$prof\tasks.sqlite"
-F:\node.exe dist\workbench-entry.js                 # 起一次再停，让 schema 落盘
-# 再起壳
-WorkBuddy.Workbench.exe --gateway-dir <RC6 解包根> --node F:\node.exe --database "$prof\tasks.sqlite" --runs-dir "$prof\runs"
-```
+在完成 1 之前，所有 UI 结论只能写「页面可渲染、连接未通过」，不能写「UI 不可用」。
 
-窗口起来后要采集的六项：
+## 4. WorkBuddy 客户端（派工前置）诊断
 
-| 项 | 采什么 | 判定 |
-| --- | --- | --- |
-| 四尺寸 | 1280×720、1440×900、1920×1080、2560×1440 截图 | 侧栏不折行、任务表不横向溢出、按钮不被裁 |
-| 键盘 | Tab 顺序、Esc 关对话框、Enter 提交 | 焦点可见、顺序符合视觉、无焦点陷阱 |
-| 200% 缩放 | 系统缩放 200% 下重截四尺寸之一 | 无重叠、无截断 |
-| 读屏 | 用 Narrator/Inspect 读主要控件 | 有可读名称与角色 |
-| 主路径 | 新建任务 → 预览 → 确认 → 完成 → 复核 | 每步有可见反馈，失败有可读错误 |
-| 控制台 | WebView2 控制台无未捕获错误 | 0 条 uncaught |
+- 启动脚本 `E:\javaproject\workbuddy-install\start-workbuddy-debug.ps1`（3031 B）`#requires -Version 7.0`；本机只有 PowerShell 5.1 且执行策略 Restricted，脚本不能直接跑（先报未签名、再报 requires 7.0）。
+- 脚本做的事：在**当前进程**设 `WORKBUDDY_REMOTE_DEBUGGING_PORT` 再 `Start-Process` 客户端，轮询 18491；发现已有 `WorkBuddyAI` 进程会提示单实例锁。
+- 客户端：`F:\新建文件夹 (2)\WorkBuddy\WorkBuddyAI.exe`，204,590,360 B，sha256 `15880ca7859f417bf8a6a639bacd1da6b63ced83fbead710317dad38b8f6fcc8`，5.9.4（Tencent）。
+- 用环境变量方式（等价脚本核心、不追加 Chromium 参数）启动：进程立即 `exit 0`，无窗口、无子进程、18491 无监听。
+- 同目录 `open-debug-18491.cmd` 把 `--remote-debugging-port=18491` 当**应用参数**追加，实测 `bad option: --remote-debugging-port=18491` / `exit 9`——这只证明「该参数不被接受」，不等于客户端不能用参数调试。
+- `debug.log` 的关键行：`WARNING:electron\shell\common\asar\archive.cc:196] Opening \\?\F:\鏂板缓鏂囦欢锟?(2)\WorkBuddy\resources\app.asar: FILE_ERROR_FAILED`。asar 路径被按错误编码解析（`新建文件夹 (2)` 变 mojibake），Electron 打不开 `app.asar` 就退出。**这是宿主退出的直接线索，与调试端口无关。**
+- 可能的恢复路径：把安装目录移到纯 ASCII 路径后启动（属安装/迁移动作，需你决定，不在本轮自行执行）。
+- 影响：`workbuddy_list_models` 经包内入口调用 120s 超时（`McpError -32001`），因此本轮拿不到实时的来源/模型/推理档/报价，只有 RC1 时代的 23 条快照（`G3-fix\evidence-repair\transcoded\workbuddy-models.json`）。快照只能当参考，不能当本轮报价。
 
-采不到就写「未执行 + 上述具体报错」，不写「界面正常」。
+## 5. 第二台机
 
-## 4. 第二台机
-
-目的不是绕开 RC1 的旧占用（那是不允许的），而是验证「换机器后安装、技能、MCP、会话发现是否一致」。
-
-前置：一台干净的 Windows（Node ≥ 22.13、WebView2 Runtime、无既有 WorkBuddy 安装），以及你对「在第二台机上装一次」的明确授权。
-
-步骤草案：
-
-1. 拷 `codex-workbuddy-gateway-v0.7.1.zip` 与 `.sha256`，先 `Get-FileHash` 对 `c9f724d4…`。
-2. `Expand-Archive` → `npm ci --omit=dev --ignore-scripts` → `check` → `preview` → `drill --apply`。
-3. `install --apply`，记录 `installedAt` / `snippetHash` / 六文件哈希（应与本机同包一致）。
-4. `doctor`、`deployment:check`、`npm run desktop:test`。
-5. 只读 `recovery show` 一个不存在 id，确认拒绝信息可读。
-6. 若授权派工：跑一条 DSH 样本（不碰 WorkBuddy 原生目录），并在报告里写「异机样本，未解除任何旧占用」。
-
-产出：异机差异表（版本、路径、权限、发现到的安装数、会话数），以及「哪些结论可以跨机、哪些只能本机」。
+- 仍缺第二台 Windows 机器与可用客户端；不能把「另一台机器」当成解除旧占用的手段（见 `CAPACITY_AND_IDENTITY.md` §5）。
+- 若你提供机器，最小动作序列已写在 `INSTALL_AND_ROLLBACK_PLAN.md`，其中安装、样本、证据目录都按独立路径设计，不与本机共享库与 runs。

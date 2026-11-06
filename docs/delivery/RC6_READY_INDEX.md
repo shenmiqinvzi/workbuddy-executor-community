@@ -1,6 +1,6 @@
 # RC6 真实验收入口（只读准备，2026-11-06）
 
-本文件是真实验收这一轮的入口：先读它，再按需打开下面五份准备文档。它不改变任何既有结论，也不把「已准备」写成「已验收」。
+本文件是真实验收这一轮的入口：先读它，再按需打开下面七份准备文档。它不改变任何既有结论，也不把「已准备」写成「已验收」。
 
 ## 1. 基线与对象
 
@@ -25,12 +25,14 @@ git rev-parse HEAD                  # 应为本轮文档增量提交（基线 8a
 git status --porcelain              # 应为 0 行
 Get-FileHash gateway\outputs\release\codex-workbuddy-gateway-v0.7.1.zip -Algorithm SHA256
 Get-FileHash gateway\outputs\release\codex-workbuddy-gateway-v0.7.1.manifest.json -Algorithm SHA256
-cd gateway; npx tsc --noEmit -p tsconfig.json
-cd ..\outputs\finish-integration-20261105\closeout\candidate-rc6\codex-workbuddy-gateway-v0.7.1
+cd E:\javaproject\workbuddy-finish\R-review-fixes\gateway; npx tsc --noEmit -p tsconfig.json
+cd E:\javaproject\outputs\finish-integration-20261105\closeout\candidate-rc6\codex-workbuddy-gateway-v0.7.1
 node scripts\verify-release.mjs     # 预期 {"verifiedFiles":696,"hashesMatch":true}
 ```
 
 预期值：zip `c9f724d4…`、manifest `49a0656c…`、`hashesMatch:true`。上面五条都不会重写 `gateway/dist` 或 `outputs/release`。
+
+> 纠偏（2026-11-06）：上一版这里写的是 `cd ..\outputs\...`，从 `gateway` 往上只会到 `R-review-fixes\outputs`，该目录不存在。所有涉及 external outputs 的路径一律写绝对路径，不要用相对跳转。
 
 ## 3. 重建（会覆盖 dist 与发布目录，属于新对象）
 
