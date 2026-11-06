@@ -171,3 +171,12 @@ node scripts/delivery-baseline.mjs --source-root <SOURCE_ROOT> --candidate-manif
 - 上面 §4 的交接要求已全部落实：`scripts/delivery-baseline.mjs`、`scripts/live-acceptance-fixture.mjs`（以及 A 的 `scripts/candidate-installation.mjs`、`installation-readiness`）已进包白名单与必需文件清单，`test/package.test.ts` 夹具同步；G1 候选包 634 文件，包内 verify-release 634 项哈希匹配。
 - 第一批四线合入后，D0 矩阵里由源码与合成证据推进的条目以 [STATUS_INDEX](delivery/STATUS_INDEX.md) 的「任务分层登记」为准：D3-01/02/03/04、D6-01（仅接口面）、D6-02/05 由合成测试与受控启动冒烟支撑；真实账号池、请求级归因、真实运行中监督、真实安装/升级/回退实跑、D1-02 真实派工仍未执行。
 - 本轮不把任何条目改判为「真实可用」或「已交付」：`routingVerified` 在生产候选冒烟中仍为 `false`，`actualTaskCredits` 仍为 `null`，空库统计 `tasksRead` 如实为 0。
+
+## 6. G2 增量登记（集成人，2026-11-06）
+
+本节只追加，不改写上文 53 项矩阵与 C 线原始结论。
+
+- 第二批 L05/L06 合入后候选包为 672 文件、SHA-256 `44a75c82…2ac9de`；包内 verify-release 672 项哈希匹配，`check` exit 0、`preview` exit 1 且仅 `runtime_dependencies` 与 `desktop_application` 未满足（纯包未装依赖、无桌面壳，属预期）。
+- 桌面命令通道新增只读 `recommend`，并有 5 条 C# 策略正负例与一次真实宿主探针（`catalog`→`recommend`→`catalog`）支撑：返回 `recommendation-1`、`decision:"direct"`、`authorization` 仅要求 preview 与 confirmation、`attempt:null`，不建任务、不写库。
+- L06 的三个只读路由在候选冒烟中实际可达：`/workbench/v1/templates` 200、`/workbench/v1/notifications` 200、`/workbench/v1/export-preview/<不存在>` 404 `TASK_NOT_FOUND`，`POST` 为 405 且 `allow: GET, HEAD`；两个前端资产 200。
+- 仍未执行、也不在本轮改判的项：真实账号池与请求级归因（`request-attribution-1` 缺口仍在）、真实运行中监督、真实安装/升级/回退实跑、D1-02 真实派工、政策建议模板激活（等 07）、真实通知宿主与跨机验证。

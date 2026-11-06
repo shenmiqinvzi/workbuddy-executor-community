@@ -1,9 +1,15 @@
 import {desktopExact} from '../dist/desktop-dispatch.js';
+import {recommendTask} from '../dist/recommendation.js';
 
 // Private parent/child transport only. Nothing is registered on the HTTP server.
 export function desktopCommandHandler(session, controls = null, recovery = null, attention = null, declarations = null, productivity = null) {
     return async (method, parameters) => {
         if (method === 'catalog') { desktopExact(parameters, []); return session.catalog(); }
+        if (method === 'recommend') {
+            // An explanation of the catalog the page can already read: no model
+            // call, no attempt, and no write to the task store.
+            return recommendTask(parameters, await session.catalog(), Date.now());
+        }
         if (method === 'latest') { desktopExact(parameters, []); return session.latest(); }
         if (method === 'preview') return session.preview(parameters);
         if (method === 'review' || method === 'commit') {

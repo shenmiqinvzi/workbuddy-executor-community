@@ -1,0 +1,236 @@
+{
+  "schemaVersion": "workbuddy-executor/integration-gate-1",
+  "gate": "G2",
+  "title": "第二批（L05 推荐解释、L06 模板/通知/导出）集成 gate",
+  "recordedAt": "2026-11-06T08:45:00+08:00",
+  "recordedBy": "集成人",
+  "sourceOfTruth": "docs/delivery/STATUS_INDEX.md",
+  "codeBaseCommit": "af9bab6f095c19b1ff98b12450e493544a75138d",
+  "codeBaseTree": "d919434fe8d84a6e5a7ff242b8fdafcb0f2f0abd",
+  "gateRecord": {
+    "commit": null,
+    "note": "本文件随 G2 归档提交入库，自引用哈希不写入自身；归档提交哈希记录在 E:\\javaproject\\outputs\\finish-integration-20261105\\G2\\G2_RECEIPT.md"
+  },
+  "integratedCommits": [
+    {
+      "line": "L05",
+      "branch": "feat/finish-l05-recommendation",
+      "worktree": "E:\\javaproject\\workbuddy-finish\\L05-recommendation",
+      "tip": "fd56b132a8c2f2ec4c77f12142c74626153a527c",
+      "commits": [
+        "0ea8a49fd56c3eef3eea2ace4f5b38173cfd1c3f",
+        "fd56b132a8c2f2ec4c77f12142c74626153a527c"
+      ],
+      "mergeCommit": "dbb9b2fa95ddb35c5bf2e43496f9eeee4f6b3b32",
+      "files": 12,
+      "insertions": 1467,
+      "deletions": 4,
+      "integrationRequests": 2,
+      "notes": "只读推荐解释（recommendation-1）、跳过派工前的决策说明与面板视图；两条 request 由集成人接线（桌面命令 recommend 分支 + DesktopControlPolicy 白名单与形状校验）"
+    },
+    {
+      "line": "L06",
+      "branch": "feat/finish-l06-productivity",
+      "worktree": "E:\\javaproject\\workbuddy-finish\\L06-productivity",
+      "tip": "5b31cb3980d943c7f2008345b3c3fbb85749343c",
+      "commits": [
+        "ac606e0392160bd1e9c5d5c45ca30c091106209e",
+        "5b31cb3980d943c7f2008345b3c3fbb85749343c"
+      ],
+      "mergeCommit": "4a3c9b46acf968ec668e2abd60bd3c9d7e451e4f",
+      "files": 29,
+      "insertions": 4621,
+      "deletions": 13,
+      "integrationRequests": 7,
+      "notes": "版本化项目模板、去重桌面通知、脱敏交付导出；七条 request 已由 L06 在本树应用，集成人逐条复核后采纳（包白名单/资产表/入口注入/只读路由/桌面通道/C# 三文件/契约对齐 07）"
+    }
+  ],
+  "integratedTotals": {
+    "files": 41,
+    "insertions": 6088,
+    "deletions": 17,
+    "desktopFilesChanged": 5,
+    "desktopCheckRequired": true
+  },
+  "integrationFixes": [
+    {
+      "file": "gateway/scripts/workbench-desktop-commands.mjs",
+      "reason": "L05 request ①：桌面命令通道没有 recommend 分支，正式壳无法取得推荐解释",
+      "change": "顶部 import recommendTask，并在 catalog 分支后加入 if (method === 'recommend') return recommendTask(parameters, await session.catalog(), Date.now());",
+      "verification": "C# PolicyTests 92/92 exit 0；解包候选宿主探针 catalog→recommend→catalog exit 0"
+    },
+    {
+      "file": "gateway/desktop/DesktopControlPolicy.cs",
+      "reason": "L05 request ②：动作白名单缺 recommend，且参数形状无校验",
+      "change": "白名单追加 or \"recommend\"；在 dispatch 分支前加形状校验（必需 intent 且为对象；root 仅允许 intent/constraints/statistics/resources/previous；constraints/statistics/previous 须对象或 null；resources 须数组或 null）",
+      "verification": "desktop:test 92 通过 0 失败；dotnet build 0 警告 0 错误"
+    },
+    {
+      "file": "gateway/desktop/test/Program.cs",
+      "reason": "新增动作需要正负例，否则白名单与形状校验无回归保护",
+      "change": "在 DesktopCommandChannel 断言前插入 5 例：有界推荐请求正例；缺 intent、越界字段 selection、resources 非数组、intent 非对象四条负例",
+      "verification": "npm run desktop:test → {\"passed\":92,\"failed\":0} exit 0"
+    },
+    {
+      "file": "gateway/test/package.test.ts",
+      "reason": "首轮专项 exit 1：Missing release file workbench/productivity.mjs（L06 改了白名单但测试夹具未同步）",
+      "change": "workbench 夹具名单在 statistics 两项后补 productivity.mjs、productivity.css",
+      "verification": "同组 11 文件 100/100 exit 0；全量 1217/1205/0 exit 0"
+    },
+    {
+      "file": "gateway/test/project-template.test.ts",
+      "reason": "打包器私有路径扫描拒绝字面量 C:\\Users\\someone，首次 package.mjs exit 1",
+      "change": "workspacePath 改为 C:\\Users\\example\\project（扫描器允许的占位名，断言 includes(\"C:\\\\Users\") 不变）",
+      "verification": "该文件 10/10 exit 0；重新打包 exit 0，672 文件"
+    }
+  ],
+  "checks": [
+    {
+      "command": "npm run build",
+      "exitCode": 0,
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G2\\logs\\build.log"
+    },
+    {
+      "command": "npm run typecheck:task-view",
+      "exitCode": 0,
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G2\\logs\\typecheck-task-view.log"
+    },
+    {
+      "command": "npx tsx --test test/recommendation.test.ts test/project-template.test.ts test/notification-center.test.ts test/delivery-export.test.ts test/productivity-service.test.ts test/productivity-http.test.ts test/productivity-page.test.ts test/desktop-productivity.test.ts test/workbench-http.test.ts test/workbench-assets.test.ts test/package.test.ts",
+      "exitCode": 0,
+      "counts": { "tests": 100, "pass": 100, "fail": 0 },
+      "durationMs": 18664,
+      "note": "首轮 exit 1：Missing release file workbench/productivity.mjs，补齐 package.test.ts 夹具后通过",
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G2\\logs\\specials-g2.log"
+    },
+    {
+      "command": "npm run test:workbench",
+      "exitCode": 0,
+      "counts": { "tests": 117, "pass": 117, "fail": 0 },
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G2\\logs\\workbench-g2.log"
+    },
+    {
+      "command": "npm run desktop:test",
+      "exitCode": 0,
+      "counts": { "passed": 92, "failed": 0 },
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G2\\logs\\desktop-test.log"
+    },
+    {
+      "command": "dotnet build desktop\\WorkBuddy.Workbench.csproj -c Release",
+      "exitCode": 0,
+      "counts": { "warnings": 0, "errors": 0 },
+      "durationMs": 5500,
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G2\\logs\\dotnet-build.log"
+    },
+    {
+      "command": "npm test",
+      "exitCode": 0,
+      "counts": { "tests": 1217, "pass": 1205, "fail": 0, "cancelled": 0, "skipped": 12 },
+      "durationMs": 374101,
+      "note": "G1 记录的 run-worker detached EPERM 本轮未复现；该失败仍在 G1 记录中按未定位保留",
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G2\\logs\\full-test.log"
+    },
+    {
+      "command": "npm test",
+      "exitCode": 0,
+      "counts": { "tests": 1217, "pass": 1205, "fail": 0, "cancelled": 0, "skipped": 12 },
+      "durationMs": 307572,
+      "note": "改完测试字面量后的最终树复跑",
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G2\\logs\\full-test-final.log"
+    },
+    {
+      "command": "git diff --no-index --ignore-cr-at-eol --ignore-all-space --quiet <root skill six files> <gateway copies>",
+      "exitCode": 0,
+      "counts": { "files": 6, "identical": 6 },
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G2\\logs\\skill-copy-diff.log"
+    }
+  ],
+  "package": {
+    "gatewayArchive": "gateway/outputs/release/codex-workbuddy-gateway-v0.7.1.zip",
+    "gatewayFiles": 672,
+    "gatewayBytes": 2145509,
+    "gatewaySha256": "44a75c822823d19fbe8efe11cbbb4664ef725aa6fa9e676acbb6187e4a2ac9de",
+    "skillArchiveSha256": "376714f35e960ac63b79a9c1e1d594909af425fc76fd7628035a444a7adfb952",
+    "deepseekSkillArchiveSha256": "22909e1b0654df6eb13b3ccdcf5767ed78e094d416b891821a072c1004318d13",
+    "manifestFiles": 672,
+    "unpackedRoot": "E:\\javaproject\\outputs\\finish-integration-20261105\\G2\\candidate\\codex-workbuddy-gateway-v0.7.1",
+    "note": "打包前把 G1 的 7 个发布文件移到 G1/release/，打包器拒绝覆盖既有产物"
+  },
+  "candidateTools": [
+    { "tool": "scripts/verify-release.mjs", "exitCode": 0, "result": { "version": "0.7.1", "verifiedFiles": 672, "hashesMatch": true }, "log": "G2/logs/verify-release.log" },
+    { "tool": "candidate-installation.mjs check", "exitCode": 0, "result": { "ok": true, "files": 672, "problems": 0, "totalBytes": 6940300 }, "log": "G2/logs/cand-check.json" },
+    { "tool": "candidate-installation.mjs preview", "exitCode": 1, "expected": true, "result": { "safeToApply": false, "create": 672, "blocked": 0, "failedRequirements": ["runtime_dependencies", "desktop_application"] }, "log": "G2/logs/cand-preview.json" },
+    { "tool": "candidate-installation.mjs version-check", "exitCode": 0, "result": { "matches": true, "exact": true, "version": "0.7.1", "matched": 672 }, "note": "首次漏 --package 报 --package is required. exit 1，属参数缺失" },
+    { "tool": "candidate-installation.mjs dependencies", "exitCode": 1, "expected": true, "result": { "blocksInstall": true, "notOk": ["production_dependencies", "workbuddy_data", "desktop_shell", "code_signing"], "dotnetDesktopRuntime": "10.0.12", "webview2Runtime": "156.0.4314.58" } },
+    { "tool": "npm ci --omit=dev (unpacked)", "exitCode": 0, "result": { "packages": 94 }, "note": "Windows 下需经 cmd /c 调用 npm" },
+    { "tool": "candidate-installation.mjs drill --apply", "exitCode": 0, "result": { "steps": 4, "checks": 5, "allOk": true } },
+    { "tool": "candidate-installation.mjs upgrade-drill --apply", "exitCode": 0, "result": { "steps": 17, "checks": 17, "negativesOk": true, "previousVersion": "0.7.1-drillprev" } },
+    { "tool": "candidate-installation.mjs rollback-plan", "exitCode": 0, "result": { "safeToApply": true, "replace": 49, "create": 0, "remove": 91, "keep": 532, "blocked": 0 } },
+    { "tool": "scripts/delivery-baseline.mjs", "exitCode": 0, "result": { "readOnly": true, "authorizesDispatch": false } },
+    { "tool": "scripts/live-acceptance-fixture.mjs create", "exitCode": 0, "result": { "root": "G2/run/live-fixtures/live-acceptance-QU6D5a", "baselineSha256": "26518bb1d9d51d5902e23c41706a475344ca70c71f7541ea96d55f3269fc5aa2", "authorized": false, "preparedOnly": true } },
+    { "tool": "scripts/live-acceptance-fixture.mjs verify", "exitCode": 0, "result": { "ok": true, "preparedOnly": true, "authorized": false, "problems": 0 } },
+    { "tool": "G2/probe/host-recommend.mjs", "exitCode": 0, "result": { "ready": { "desktopCommands": true, "productivity": true, "readOnly": true }, "recommend": { "schemaVersion": "workbuddy-executor/recommendation-1", "decision": "direct", "readOnly": true, "authorizationState": "none", "attempt": null, "candidates": 0, "digestLength": 64 }, "catalogAfter": true, "failures": 0 }, "note": "合成库 + 解包候选宿主，走 stdin 私有通道；无模型调用、无派工" }
+  ],
+  "smoke": {
+    "target": "unpacked candidate + npm ci --omit=dev",
+    "port": 18493,
+    "readOnly": true,
+    "backend": "desktop-queue",
+    "release": "portability-20261018.1",
+    "requests": [
+      { "method": "GET", "path": "/workbench/v1/health", "status": 200, "note": "ready true, packageVersion 0.7.1" },
+      { "method": "GET", "path": "/workbench/v1/statistics", "status": 200, "note": "statistics-1, snapshotOnly true" },
+      { "method": "GET", "path": "/workbench/v1/templates", "status": 200, "note": "productivity-1, count 0, readOnly true" },
+      { "method": "GET", "path": "/workbench/v1/notifications", "status": 200, "note": "notification-1" },
+      { "method": "GET", "path": "/workbench/v1/export-preview/task-does-not-exist", "status": 404, "note": "TASK_NOT_FOUND，空库如实 404" },
+      { "method": "GET", "path": "/workbench/productivity.mjs", "status": 200 },
+      { "method": "GET", "path": "/workbench/productivity.css", "status": 200 },
+      { "method": "GET", "path": "/workbench/", "status": 200 },
+      { "method": "POST", "path": "/workbench/v1/templates", "status": 405, "note": "allow: GET, HEAD" }
+    ],
+    "note": "端口由内置默认决定，WORKBENCH_PORT 无效；探针使用自建 DB 与 runs；按 PID 结束进程"
+  },
+  "workspaceLines": [
+    { "line": "L07", "task": "自动化与调度编排（第三批）", "worktree": "E:\\javaproject\\workbuddy-finish\\L07-automation", "branch": "feat/finish-l07-automation", "createdFrom": null, "status": "待 G2 归档提交后创建" },
+    { "line": "L08", "task": "端到端验收与问题复验（第三批）", "worktree": "E:\\javaproject\\workbuddy-finish\\L08-acceptance", "branch": "test/finish-l08-acceptance", "createdFrom": null, "status": "待 G2 归档提交后创建" }
+  ],
+  "dependenciesPrepared": {
+    "method": "按 gateway/package-lock.json 以 npm ci 安装，未改版本",
+    "integrationTree": true,
+    "lineWorktrees": "各线自理，不共用集成树 node_modules/dist"
+  },
+  "verificationEnvironment": {
+    "node": "24.19.0",
+    "git": "2.54.0.windows.1",
+    "cleared": ["WORKBUDDY_* (inherited)", "NODE_TEST_CONTEXT"],
+    "explicit": {
+      "WORKBUDDY_CLI_ELECTRON": "E:\\javaproject\\outputs\\finish-integration-20261105\\G2\\env\\WorkBuddy.exe (synthetic)",
+      "WORKBUDDY_CONFIG_DIR": "E:\\javaproject\\outputs\\finish-integration-20261105\\G2\\env\\workbuddy-config",
+      "NO_PROXY": "127.0.0.1,localhost"
+    },
+    "note": "本机同时存在 ~/.workbuddy 与 ~/.workbuddy-ai，必须显式指定；Invoke-WebRequest 无 -NoProxy，冒烟用 curl.exe --noproxy '*'"
+  },
+  "externalConditions": [
+    "真实安装、升级、生产切换、跨机器验收未执行（归 10）",
+    "真实登录、真实模型目录与费率、真实派工未执行",
+    "L06 政策建议模板只能保存不能激活，等 07",
+    "请求级归因缺口 request-attribution-1 未接真实数据源",
+    "真实 Windows 通知宿主与跨进程去重未验证",
+    "许可文件位置由权利人决定"
+  ],
+  "openUnknowns": [
+    "test/run-worker.test.ts detached worker 在 Windows 高负载下的 EPERM 根因未定位（G2 两轮未复现）",
+    "原 P0-1 未知：不关闭、不重派、不释放；workflow_capacity(slot=1) 仍有占用记录"
+  ],
+  "boundaries": {
+    "pushed": false,
+    "mergedToMain": false,
+    "published": false,
+    "deployed": false,
+    "originalTreeModified": false,
+    "realAcceptanceStarted": false
+  },
+  "sourcePassed": true,
+  "liveReady": false,
+  "nextGate": "G3"
+}

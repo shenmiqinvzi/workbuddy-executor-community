@@ -22,7 +22,8 @@ internal static class DesktopControlPolicy
         if (root.ValueKind != JsonValueKind.Object || root.EnumerateObject().Count() != 2 || root.EnumerateObject().Any(p => p.Name is not ("action" or "parameters"))) throw new ArgumentException("Unexpected desktop request fields.");
         var action = root.GetProperty("action").GetString();
         if (action is not ("catalog" or "preview" or "dispatch" or "status" or "observe" or "choose_workspace" or "latest" or "control_preview" or "control" or "control_status" or "control_list" or "control_observe" or "control_requirements" or "recovery_show" or "attention_verify" or "declare_native_stop"
-            or "productivity_catalog" or "productivity_template_detail" or "productivity_template_save" or "productivity_template_archive" or "productivity_notifications" or "productivity_notification_config" or "productivity_export_preview" or "productivity_export_save"))
+            or "productivity_catalog" or "productivity_template_detail" or "productivity_template_save" or "productivity_template_archive" or "productivity_notifications" or "productivity_notification_config" or "productivity_export_preview" or "productivity_export_save"
+            or "recommend"))
             throw new ArgumentException("Unsupported desktop action.");
         var parameters = root.GetProperty("parameters");
         if (parameters.ValueKind != JsonValueKind.Object) throw new ArgumentException("Object parameters are required.");
@@ -58,6 +59,19 @@ internal static class DesktopControlPolicy
                 if (!parameters.TryGetProperty("digest", out var digest) || digest.ValueKind != JsonValueKind.String || digest.GetString() is not { Length: 64 } text || text.Any(c => !Uri.IsHexDigit(c))) throw new ArgumentException("A verified export digest is required.");
                 if (parameters.TryGetProperty("directory", out var directory) && directory.ValueKind != JsonValueKind.String) throw new ArgumentException("A folder path must be text.");
             }
+        }
+        if (action == "recommend")
+        {
+            // The explanation is computed from the catalog the page may already
+            // read; it is read-only, so only a bounded request shape is accepted.
+            if (!parameters.TryGetProperty("intent", out var intent) || intent.ValueKind != JsonValueKind.Object
+                || parameters.EnumerateObject().Any(p => p.Name is not ("intent" or "constraints" or "statistics" or "resources" or "previous")))
+                throw new ArgumentException("A recommendation intent is required.");
+            foreach (var name in new[] { "constraints", "statistics", "previous" })
+                if (parameters.TryGetProperty(name, out var value) && value.ValueKind is not (JsonValueKind.Object or JsonValueKind.Null))
+                    throw new ArgumentException("Recommendation inputs must be objects.");
+            if (parameters.TryGetProperty("resources", out var resources) && resources.ValueKind is not (JsonValueKind.Array or JsonValueKind.Null))
+                throw new ArgumentException("Recommendation resources must be a list.");
         }
         if (action == "dispatch")
         {

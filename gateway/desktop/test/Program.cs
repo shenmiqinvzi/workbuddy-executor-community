@@ -95,6 +95,11 @@ Reject(()=>DesktopControlPolicy.Decode("{\"action\":\"productivity_export_save\"
 Reject(()=>DesktopControlPolicy.Decode("{\"action\":\"productivity_export_save\",\"parameters\":{\"taskId\":\"task-1\",\"digest\":\""+new string('b',64)+"\",\"path\":\"C:\\\\Windows\"}}"), "export save takes a folder, never a file path");
 Check(DesktopControlPolicy.Decode("{\"action\":\"productivity_notification_config\",\"parameters\":{\"config\":{\"enabled\":false}}}").Action=="productivity_notification_config", "notification switches are explicit fields");
 Reject(()=>DesktopControlPolicy.Decode("{\"action\":\"productivity_notification_config\",\"parameters\":{\"config\":\"off\"}}"), "notification switches need an object");
+Check(DesktopControlPolicy.Decode("{\"action\":\"recommend\",\"parameters\":{\"intent\":{\"title\":\"t\"},\"constraints\":{\"freeOnly\":true},\"resources\":[{\"sourceId\":\"s\"}],\"previous\":{\"digest\":\"d\"},\"statistics\":{}}}").Action=="recommend", "a recommendation reads the catalog with a bounded request shape");
+Reject(()=>DesktopControlPolicy.Decode("{\"action\":\"recommend\",\"parameters\":{\"constraints\":{}}}"), "a recommendation needs an intent");
+Reject(()=>DesktopControlPolicy.Decode("{\"action\":\"recommend\",\"parameters\":{\"intent\":{\"title\":\"t\"},\"selection\":{}}}"), "a recommendation refuses fields outside intent, constraints, statistics, resources and previous");
+Reject(()=>DesktopControlPolicy.Decode("{\"action\":\"recommend\",\"parameters\":{\"intent\":{\"title\":\"t\"},\"resources\":{}}}"), "recommendation resources must be a list");
+Reject(()=>DesktopControlPolicy.Decode("{\"action\":\"recommend\",\"parameters\":{\"intent\":\"dispatch now\"}}"), "a recommendation intent must be an object");
 var start = DesktopCommandChannel.StartInfo(Environment.GetEnvironmentVariable("WORKBUDDY_NODE_BIN") ?? "node", Environment.CurrentDirectory);
 start.ArgumentList.Add("--input-type=module"); start.ArgumentList.Add("-e");
 start.ArgumentList.Add("import readline from 'node:readline';const r=readline.createInterface({input:process.stdin});for await(const l of r){const m=JSON.parse(l);console.log(JSON.stringify({event:'desktop_command_result',id:m.id,ok:true,value:{message:'未知费率，可能计费',echo:m.parameters.text}}));}");

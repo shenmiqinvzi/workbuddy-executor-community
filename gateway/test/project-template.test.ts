@@ -258,7 +258,7 @@ test("template: a legacy record upgrades with named losses and never resurrects 
     name: "旧模板",
     description: "旧结构",
     model: "old-model-name",
-    workspacePath: "C:\\Users\\someone\\project",
+    workspacePath: "C:\\Users\\example\\project",
     scopePaths: ["src/app.ts"],
     checks: [{ id: "typecheck", kind: "command", definition: "npm run typecheck" }],
     notes: "旧备注",
