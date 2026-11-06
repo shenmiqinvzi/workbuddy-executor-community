@@ -2,7 +2,7 @@
 
 - 工作树：`E:\javaproject\workbuddy-finish\L08-acceptance`，分支 `test/finish-l08-acceptance`
 - 基线：`000e9da17c43ded7040c9e6822fb48eb51abcedc`（tree `7fc23ee6ea99da2e5b857a8ec4eeb8f66559941a`），父 `4a3c9b46acf968ec668e2abd60bd3c9d7e451e4f`
-- 证据根：`E:\javaproject\outputs\finish-l08-20261105\`
+- 证据根：`E:\javaproject\outputs\finish-l08-20261105\`；交接文件 `E:\javaproject\outputs\finish-l08-20261105\HANDOFF.json`（COMMON 字段，未知一律 null 加原因）。
 - 本线只新增 `finish-acceptance-*` 测试、夹具与本文档；业务源码、07 线测试、共享入口、包白名单、`workbench-assets.ts`、全局导航与技能六文件均未修改（`git status` 只列本线新增文件）。
 
 ## 0. 结论摘要
