@@ -180,3 +180,16 @@ node scripts/delivery-baseline.mjs --source-root <SOURCE_ROOT> --candidate-manif
 - 桌面命令通道新增只读 `recommend`，并有 5 条 C# 策略正负例与一次真实宿主探针（`catalog`→`recommend`→`catalog`）支撑：返回 `recommendation-1`、`decision:"direct"`、`authorization` 仅要求 preview 与 confirmation、`attempt:null`，不建任务、不写库。
 - L06 的三个只读路由在候选冒烟中实际可达：`/workbench/v1/templates` 200、`/workbench/v1/notifications` 200、`/workbench/v1/export-preview/<不存在>` 404 `TASK_NOT_FOUND`，`POST` 为 405 且 `allow: GET, HEAD`；两个前端资产 200。
 - 仍未执行、也不在本轮改判的项：真实账号池与请求级归因（`request-attribution-1` 缺口仍在）、真实运行中监督、真实安装/升级/回退实跑、D1-02 真实派工、政策建议模板激活（等 07）、真实通知宿主与跨机验证。
+
+## 7. G3 增量登记（集成人，2026-11-06）
+
+本节只追加，不改写上文 53 项矩阵与 C 线原始结论。L08 的 53 项建议更新稿见 `docs/delivery/L08_ACCEPTANCE.md` 第 5 节，其口径是「只新增合成证据，不因新证据改判整项通过」。
+
+- V01/V04/V05/V08/V09/V11 由 L08 的独立夹具新增「合成通过」子断言：关闭后再审查被拒、领取后取消仍占容量、迟到报告只留 `late-report.json`、审查后越界写被拒且旧改动不被吞、命令证据损坏记 `checker_error`、重启后 attempt 身份与事件不重复。
+- V02/V03/V06/V07/V10/V12 只到「合成部分」：无原生停止证据时 `STOP_UNCONFIRMED`、报告先到仍拒绝审查、同键冲突与执行器冲突、越界写与旧改动、缺模型/轮次上限、统计缺失不当零。V06 的「双进程并发同键」在本轮仍是同进程双连接，未升级。
+- V13/V14/V15 与 F01/F02/F17 维持「未覆盖」：真实安装/升级/卸载/回退、中文与空格路径的真实宿主、第二台物理 Windows、关闭真实服务后的冷启动、演示入口持续标注、四尺寸与等待审查页复核，均无新证据。
+- C01–C18 中 C01/C02/C05/C07/C10/C14/C15/C16/C17/C18 新增合成子断言（计划模式限定、accept 幂等、空白模型拒绝、占用拒绝、换执行器拒绝、模板不携带授权、导出脱敏、legacy 模板升级、越界写拒绝、统计源全坏仍可取消）；C03/C04/C06 仍只覆盖拒绝面或固定绑定；C08/C11/C13 仍无新证据（真实账号池、来源退避、硬限能力）。
+- C14 的 `policy_activation_unsupported` 与 L07 的契约对齐一致：模板只能保存、不能激活；L07 的四张自动化表未并入统一 migration，schema_version>1 时以 `AUTOMATION_SCHEMA_UNSUPPORTED` 拒绝，不作无损降级承诺。
+- F03/F04/F10/F11/F13/F14/F18/F19 新增源码级或数据层证据（10 态、三层证明、0 与 null 分流、未知版本降级、恶意 HTML 只进 textContent、键盘焦点、本线命令全 exit 0）；F05/F06/F07/F08/F09/F12/F15/F16 只到源码级或合成部分，未做真实窗口。
+- 产品缺陷登记（未修、未改判）：O1 缺模型时合同路径报 `PLAN_STALE`、legacy 路径报 `MODEL_SELECTION_REQUIRED`；O3 `formatTime(0)` 显示「未提供」；O4 `runs/` 含非 `run-*` 条目时不能按目录数推断派发次数；O6 `workspace-protection.ts` 的 gitIndex 5 秒超时抛未归一化 `spawnSync git ETIMEDOUT`。
+- G3 候选（694 文件、`658a20b1…`）只证明源码与合成候选，不改变 53 项中任何一项的真实环境结论；`liveReady=false` 保持。

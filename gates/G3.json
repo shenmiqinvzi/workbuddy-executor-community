@@ -1,0 +1,307 @@
+{
+  "schemaVersion": "workbuddy-executor/integration-gate-1",
+  "gate": "G3",
+  "title": "第三批（L07 自动化政策、L08 独立验收）集成 gate 与 RC 冻结",
+  "recordedAt": "2026-11-06T10:20:00+08:00",
+  "recordedBy": "集成人",
+  "sourceOfTruth": "docs/delivery/STATUS_INDEX.md",
+  "codeBaseCommit": "05fa644dc1f73d5d0468328f459c097cd41a9d27",
+  "codeBaseTree": "96e12ba18d044a8fe6cf2ad07ef798f5f2f47af4",
+  "gateRecord": {
+    "commit": null,
+    "note": "本文件随 G3 归档提交入库，自引用哈希不写入自身；归档提交哈希记录在 E:\\javaproject\\outputs\\finish-integration-20261105\\G3\\G3_RECEIPT.md"
+  },
+  "workingTreeFixesIncluded": [
+    "gateway/scripts/package.mjs",
+    "gateway/test/package.test.ts",
+    "docs/delivery/STATUS_INDEX.md",
+    "docs/PROGRESS.md",
+    "docs/D0_D1_DELIVERY_READINESS.md",
+    "docs/INTERFACE_CONTRACT.md"
+  ],
+  "integratedCommits": [
+    {
+      "line": "L07",
+      "branch": "feat/finish-l07-automation",
+      "worktree": "E:\\javaproject\\workbuddy-finish\\L07-automation",
+      "tip": "de8cf5de7ddab4f59fd056940a2cd8171cb9bba4",
+      "commits": [
+        "98abb692e8df89231501d0954491fdbb9c22057c",
+        "de8cf5de7ddab4f59fd056940a2cd8171cb9bba4"
+      ],
+      "mergeCommit": "3008d01c2bf4173d4884ae7d972671dabaca498a",
+      "files": 30,
+      "insertions": 3149,
+      "deletions": 13,
+      "integrationRequests": 8,
+      "notes": "保存式自动政策（政策/决策/审计四表）、唯一写缝 scripts/automation.mjs、六条只读 HTTP 投影与只读面板；八条 request 均在 L07 分支应用，集成人逐条复核后采纳；真实派工从未启用（armed=false）"
+    },
+    {
+      "line": "L08",
+      "branch": "test/finish-l08-acceptance",
+      "worktree": "E:\\javaproject\\workbuddy-finish\\L08-acceptance",
+      "tip": "7bbdfb47530ba2111cd7a9b5b996ee20c79b45e9",
+      "commits": [
+        "c0ba81f48a4ce1f60911aed66101ee9217c83cb7",
+        "23a230f6d5147ce49de0d71532a1a6cb82988fe2",
+        "7bbdfb47530ba2111cd7a9b5b996ee20c79b45e9"
+      ],
+      "mergeCommit": "05fa644dc1f73d5d0468328f459c097cd41a9d27",
+      "files": 7,
+      "insertions": 1365,
+      "deletions": 0,
+      "integrationRequests": 4,
+      "notes": "只新增独立验收测试、夹具与报告，未改业务源码；四条 contract request 由集成人落文档（53 项增量登记、状态入口、环境变量说明核对、O6 已知问题登记）"
+    }
+  ],
+  "integratedTotals": {
+    "files": 37,
+    "insertions": 4514,
+    "deletions": 13,
+    "desktopFilesChanged": 0,
+    "desktopCheckRequired": false,
+    "desktopCheckStillRun": "desktop:test 与 dotnet build 仍按惯例执行，因为前两批的 C# 产物仍在本树上"
+  },
+  "integrationFixes": [
+    {
+      "file": "gateway/scripts/package.mjs",
+      "reason": "L07 的唯一写入口 scripts/automation.mjs 不在 REQUIRED_FILES、automation 也不在 scripts 允许规则：发布包会静默丢掉自动化写缝及其 CLI 链",
+      "change": "REQUIRED_FILES.push(\"scripts/automation.mjs\") 与 REQUIRED_FILES.push(...[\"automation\",\"automation-http\",\"automation-cli\"].flatMap(...))；scripts 正则追加 |automation",
+      "verification": "node scripts/package.mjs exit 0，包内 694 文件包含 scripts/automation.mjs 与 dist/automation-cli.js；解包后 --help/status/policy-create/policy-list 均 exit 0"
+    },
+    {
+      "file": "gateway/test/package.test.ts",
+      "reason": "包白名单新增必需文件后，该测试的源树夹具未同步会红 5 个用例",
+      "change": "scripts 夹具加入 automation.mjs；新增 automation/automation-http/automation-cli 的 src 与 dist 夹具",
+      "verification": "npx tsx --test test/package.test.ts 12/12 pass exit 0"
+    },
+    {
+      "file": "docs/INTERFACE_CONTRACT.md",
+      "reason": "L07 文档请求：自动政策的读写边界与只读路由缺少契约登记",
+      "change": "8.3 候选接口表新增六条 /workbench/v1/automation 只读路由；新增一段说明 automatic 方案的 binding 与 authorizationSource 约束、写入面只在本地 CLI、未 arm 时 AUTOMATION_NOT_ARMED",
+      "verification": "文档改动，无代码影响；冒烟中六条路由 200、POST 405 allow GET/HEAD"
+    },
+    {
+      "file": "docs/D0_D1_DELIVERY_READINESS.md",
+      "reason": "L08 contract request ①：53 项矩阵需登记本轮新增的合成证据，且不得改判整项通过",
+      "change": "追加第 7 节 G3 增量登记，逐项列出合成通过/部分/未覆盖与产品缺陷 O1/O3/O4/O6",
+      "verification": "不改写第 2 节原文与 C 线结论"
+    },
+    {
+      "file": "docs/delivery/STATUS_INDEX.md",
+      "reason": "L08 contract request ② 与本轮 gate 现状入口",
+      "change": "重写为 G3 版：八线表、G0–G3 实测表、集成侧修复、任务分层、候选包与工具、推荐探针、HTTP 冒烟、自动化写缝实测、RC 冻结影响表、外部条件 12 条",
+      "verification": "只写已实跑的命令与计数"
+    }
+  ],
+  "checks": [
+    {
+      "id": "build",
+      "command": "npm run build",
+      "exitCode": 0,
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G3\\logs\\build.log"
+    },
+    {
+      "id": "typecheck-task-view",
+      "command": "npm run typecheck:task-view",
+      "exitCode": 0,
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G3\\logs\\typecheck-task-view.log"
+    },
+    {
+      "id": "specials",
+      "command": "npx tsx --test test/automation-policy.test.ts test/automation-dispatch.test.ts test/automation-http.test.ts test/finish-acceptance-review-layers.test.ts test/finish-acceptance-admission-anomalies.test.ts test/finish-acceptance-resources-credentials.test.ts test/finish-acceptance-resource-independence.test.ts test/package.test.ts",
+      "exitCode": 0,
+      "counts": { "tests": 76, "pass": 76, "fail": 0, "durationMs": 99630 },
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G3\\logs\\specials-g3.log"
+    },
+    {
+      "id": "workbench",
+      "command": "npm run test:workbench",
+      "exitCode": 0,
+      "counts": { "tests": 139, "pass": 139, "fail": 0, "durationMs": 4227 },
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G3\\logs\\workbench-g3.log"
+    },
+    {
+      "id": "desktop-policy-tests",
+      "command": "npm run desktop:test",
+      "exitCode": 0,
+      "counts": { "passed": 92, "failed": 0 },
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G3\\logs\\desktop-test.log"
+    },
+    {
+      "id": "dotnet-build",
+      "command": "dotnet build desktop\\WorkBuddy.Workbench.csproj -c Release",
+      "exitCode": 0,
+      "counts": { "warnings": 0, "errors": 0 },
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G3\\logs\\dotnet-build.log"
+    },
+    {
+      "id": "full-test",
+      "command": "npm test",
+      "exitCode": 0,
+      "counts": { "tests": 1281, "pass": 1269, "fail": 0, "cancelled": 0, "skipped": 12, "durationMs": 351328 },
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G3\\logs\\full-test.log",
+      "note": "一轮即 0 失败；G1 的 run-worker EPERM 本轮未复现，仍按未定位保留"
+    },
+    {
+      "id": "skill-copy-consistency",
+      "command": "git diff --no-index --ignore-cr-at-eol --ignore-all-space --quiet -- <root file> gateway/skills/workbuddy-executor/<file>（六次）",
+      "exitCode": 0,
+      "counts": { "files": 6, "identical": 6 },
+      "log": "E:\\javaproject\\outputs\\finish-integration-20261105\\G3\\logs\\skill-copy-diff.log"
+    }
+  ],
+  "package": {
+    "gateway": {
+      "archive": "gateway/outputs/release/codex-workbuddy-gateway-v0.7.1.zip",
+      "files": 694,
+      "bytes": 2235102,
+      "sha256": "658a20b196051fa25be1c669bb9b5c5574216cd30a6b223bd07efe2e90ba11b8",
+      "manifestBytes": 111924
+    },
+    "skill": {
+      "archive": "workbuddy-executor-v0.7.1.zip",
+      "files": 6,
+      "sha256": "e61be9ba03f48e555ed1a8441eb8d56f0013eb818cfdceb610015d26e0839db8",
+      "note": "L07 改了根与网关两侧的 SKILL.md 及 setup/execution/dispatch 三份 references"
+    },
+    "harnessSkill": {
+      "archive": "deepseek-executor-v0.7.1.zip",
+      "files": 2,
+      "sha256": "22909e1b0654df6eb13b3ccdcf5767ed78e094d416b891821a072c1004318d13",
+      "note": "本轮未变"
+    },
+    "unpackedRoot": "E:\\javaproject\\outputs\\finish-integration-20261105\\G3\\candidate\\codex-workbuddy-gateway-v0.7.1\\codex-workbuddy-gateway-v0.7.1",
+    "unpackedItems": 695
+  },
+  "candidateTools": [
+    { "tool": "verify-release", "exitCode": 0, "result": { "version": "0.7.1", "verifiedFiles": 694, "hashesMatch": true }, "log": "G3/logs/verify-release.log" },
+    { "tool": "check", "exitCode": 0, "result": { "ok": true, "files": 694, "problems": [], "totalBytes": 7273213 }, "log": "G3/logs/cand-check.json" },
+    { "tool": "preview", "exitCode": 1, "result": { "safeToApply": false, "counts": { "create": 694, "update": 0, "unchanged": 0, "unmanaged": 0, "blocked": 0, "managedDrift": 0 }, "failedRequirements": ["runtime_dependencies", "desktop_application"] }, "log": "G3/logs/cand-preview.json", "note": "纯包未装依赖、无桌面壳，exit 1 属设计" },
+    { "tool": "version-check", "exitCode": 0, "result": { "matches": true, "exact": true, "matched": 694 }, "log": "G3/logs/cand-version-check.json" },
+    { "tool": "dependencies", "exitCode": 1, "result": { "blocksInstall": true, "gaps": ["production_dependencies:0/94", "workbuddy_data:mismatch"], "notApplicable": ["desktop_shell", "code_signing"], "dotnetDesktopRuntime": "10.0.12", "webview2": "156.0.4314.58" }, "log": "G3/logs/cand-dependencies.json" },
+    { "tool": "npm ci --omit=dev (unpacked)", "exitCode": 0, "result": { "packages": 94 }, "log": "G3/logs/npm-ci-unpacked.log" },
+    { "tool": "drill --apply", "exitCode": 0, "result": { "steps": 4, "stepsOk": 4, "checks": 5, "checksOk": 5 }, "log": "G3/logs/cand-drill.json" },
+    { "tool": "upgrade-drill --apply", "exitCode": 0, "result": { "steps": 17, "stepsOk": 17, "checks": 17, "checksOk": 17, "negativesOk": true }, "log": "G3/logs/cand-upgrade-drill.json" },
+    { "tool": "rollback-plan", "exitCode": 0, "result": { "safeToApply": true, "counts": { "replace": 62, "create": 0, "remove": 113, "keep": 519, "blocked": 0 } }, "log": "G3/logs/cand-rollback-plan.json" },
+    { "tool": "delivery-baseline", "exitCode": 0, "result": { "readOnly": true, "authorizesDispatch": false, "limitations": 5 }, "log": "G3/logs/delivery-baseline.json", "note": "该脚本无 --report，未知参数 exit 2" },
+    { "tool": "live-acceptance-fixture create", "exitCode": 0, "result": { "baselineSha256": "bcc412a26f3c206013bd611e0ed7d8b06c1c5f1de8c8bce245630092006c13b3", "authorized": false, "preparedOnly": true }, "log": "G3/logs/live-fixture-create.json" },
+    { "tool": "live-acceptance-fixture verify", "exitCode": 0, "result": { "ok": true, "preparedOnly": true, "authorized": false, "problems": [] }, "log": "G3/logs/live-fixture-verify.json" },
+    { "tool": "automation CLI --help", "exitCode": 0, "result": { "subcommands": 12 }, "log": "G3/logs/automation-cli-help.log" },
+    { "tool": "automation CLI status", "exitCode": 0, "result": { "enabled": false, "armed": false, "dispatcherWired": false, "writeEntry": "local_cli_only", "httpWrites": false }, "log": "G3/logs/automation-cli-status.log" },
+    { "tool": "automation CLI policy-create", "exitCode": 0, "result": { "policyId": "policy-mDHBfEKaPb4d8cE1iSrwaIO2", "status": "active", "current": true }, "log": "G3/logs/automation-policy-create.log" },
+    { "tool": "automation CLI policy-list", "exitCode": 0, "log": "G3/logs/automation-policy-list.log" },
+    { "tool": "automation CLI execute (未 arm)", "exitCode": 1, "result": { "code": "AUTOMATION_NOT_ARMED" }, "log": "G3/logs/automation-execute-refusal.log" }
+  ],
+  "probes": {
+    "desktopRecommend": {
+      "script": "E:\\javaproject\\outputs\\finish-integration-20261105\\G2\\probe\\host-recommend.mjs",
+      "exitCode": 0,
+      "ready": { "port": 61064, "readOnly": true, "desktopCommands": true, "productivity": true },
+      "recommend": { "schemaVersion": "workbuddy-executor/recommendation-1", "decision": "direct", "readOnly": true, "authorization": "none + preview/confirmation", "attempt": null, "candidates": 0, "digestLength": 64 },
+      "failures": [],
+      "log": "G3/logs/host-recommend.json"
+    },
+    "httpSmoke": {
+      "port": 18493,
+      "readOnly": true,
+      "routes": {
+        "/workbench/v1/health": 200,
+        "/workbench/v1/statistics": 200,
+        "/workbench/v1/templates": 200,
+        "/workbench/v1/notifications": 200,
+        "/workbench/v1/resources/routing": 200,
+        "/workbench/v1/automation": 200,
+        "/workbench/v1/automation/policies": 200,
+        "/workbench/v1/automation/decisions": 200,
+        "/workbench/v1/automation/audit": 200,
+        "/workbench/automation.mjs": 200,
+        "/workbench/automation.css": 200,
+        "/workbench/": 200,
+        "/workbench/v1/export-preview/task-missing": 404
+      },
+      "post": { "/workbench/v1/automation/policies": { "status": 405, "allow": "GET, HEAD" } },
+      "log": "G3/logs/smoke-http.txt"
+    },
+    "automationPanelWithSavedPolicy": {
+      "result": "同一隔离库重启后 /workbench/v1/automation/policies 200、readOnly:true、投影已保存政策；进程仍 armed:false",
+      "log": "G3/logs/smoke-http-policy.log"
+    }
+  },
+  "rcFreeze": {
+    "frozenAt": "2026-11-06T10:20:00+08:00",
+    "frozenArtifacts": [
+      "gates/G3.json 记录的归档提交",
+      "codex-workbuddy-gateway-v0.7.1.zip sha256 658a20b196051fa25be1c669bb9b5c5574216cd30a6b223bd07efe2e90ba11b8",
+      "workbuddy-executor-v0.7.1.zip sha256 e61be9ba03f48e555ed1a8441eb8d56f0013eb818cfdceb610015d26e0839db8",
+      "deepseek-executor-v0.7.1.zip sha256 22909e1b0654df6eb13b3ccdcf5767ed78e094d416b891821a072c1004318d13"
+    ],
+    "impactTable": [
+      { "ifChanged": "gateway/src/** 或 gateway/scripts/**", "rerun": ["build", "typecheck:task-view", "受影响专项", "npm test", "打包", "候选工具", "HTTP 冒烟"], "cannotClaim": "包摘要不变" },
+      { "ifChanged": "gateway/desktop/**", "rerun": ["desktop:test", "dotnet build", "包内 desktop 资产", "drill/upgrade-drill"], "cannotClaim": "桌面壳未变" },
+      { "ifChanged": "根技能六文件", "rerun": ["技能副本一致性", "技能包重打", "drill 的 skill 检查"], "cannotClaim": "六文件仍一致" },
+      { "ifChanged": "gateway/scripts/package.mjs 或 test/package.test.ts", "rerun": ["package.test.ts", "打包", "verify-release", "check"], "cannotClaim": "包内容与白名单不变" },
+      { "ifChanged": "docs/**", "rerun": ["状态与影响表同步"], "cannotClaim": "文档变更等于功能变更" }
+    ],
+    "note": "冻结不改变 liveReady=false；任何改动都需重新走对应检查后才能另立候选。"
+  },
+  "workspaceLines": {
+    "created": [],
+    "note": "八条线全部交付完毕，G3 后不再创建开发工作树；05–08 之外的线从未预建",
+    "worktrees": [
+      { "line": "L01", "path": "E:\\javaproject\\workbuddy-finish\\L01-project", "branch": "feat/finish-l01-project", "head": "226af908e5fd262fb16fac97e968206c6ea31c8b" },
+      { "line": "L02", "path": "E:\\javaproject\\workbuddy-finish\\L02-resources", "branch": "feat/finish-l02-resources", "head": "35d7e0e54ac80582fdc0ca196f2c416d9c71b95d" },
+      { "line": "L03", "path": "E:\\javaproject\\workbuddy-finish\\L03-statistics", "branch": "feat/finish-l03-statistics", "head": "31d60330cca02ca8560c6bd05c33b99025c26005" },
+      { "line": "L04", "path": "E:\\javaproject\\workbuddy-finish\\L04-installation", "branch": "feat/finish-l04-installation", "head": "5527850b6406046bae1a031d8887728fe4c4d2fa" },
+      { "line": "L05", "path": "E:\\javaproject\\workbuddy-finish\\L05-recommendation", "branch": "feat/finish-l05-recommendation", "head": "fd56b132a8c2f2ec4c77f12142c74626153a527c" },
+      { "line": "L06", "path": "E:\\javaproject\\workbuddy-finish\\L06-productivity", "branch": "feat/finish-l06-productivity", "head": "5b31cb3980d943c7f2008345b3c3fbb85749343c" },
+      { "line": "L07", "path": "E:\\javaproject\\workbuddy-finish\\L07-automation", "branch": "feat/finish-l07-automation", "head": "de8cf5de7ddab4f59fd056940a2cd8171cb9bba4" },
+      { "line": "L08", "path": "E:\\javaproject\\workbuddy-finish\\L08-acceptance", "branch": "test/finish-l08-acceptance", "head": "7bbdfb47530ba2111cd7a9b5b996ee20c79b45e9" }
+    ]
+  },
+  "verificationEnvironment": {
+    "node": "24.19.0",
+    "platform": "win32 x64",
+    "isolatedEnv": {
+      "WORKBUDDY_CLI_ELECTRON": "E:\\javaproject\\outputs\\finish-integration-20261105\\G3\\env\\WorkBuddy.exe",
+      "WORKBUDDY_CONFIG_DIR": "E:\\javaproject\\outputs\\finish-integration-20261105\\G3\\env\\workbuddy-config",
+      "NO_PROXY": "127.0.0.1,localhost",
+      "note": "每个命令前清空继承的 WORKBUDDY_* 与 NODE_TEST_CONTEXT；数据库与 runs 均在 G3\\run 下自建"
+    }
+  },
+  "externalConditions": [
+    "真实安装、升级、生产切换、跨机器验收未执行（归 10）",
+    "真实登录、真实模型目录/费率、真实派工未执行；本轮全部为合成会话与本地通道",
+    "原 P0-1 未知不关闭、不重派、不释放；workflow_capacity(slot=1) 仍有占用记录",
+    "run-worker detached 用例在高负载下偶发 EPERM，G2/G3 未复现，根因未定位",
+    "L07 四张自动化表未并入统一 migration，schema_version>1 时拒绝（AUTOMATION_SCHEMA_UNSUPPORTED）",
+    "L07 真实派工从未启用：armed 仅进程内、默认 false，probe 需依赖注入",
+    "L08 的 O1/O3/O4/O6 产品缺陷未修（PLAN_STALE 与 MODEL_SELECTION_REQUIRED 不一致、formatTime(0) 显示未提供、runs/ 目录数不能推断派发次数、gitIndex 超时错误码未归一化）",
+    "请求级归因缺口 request-attribution-1 仍未接真实数据源",
+    "本机多套 WorkBuddy 安装：必须显式 WORKBUDDY_CLI_ELECTRON/WORKBUDDY_CONFIG_DIR，回环需 NO_PROXY",
+    "许可文件位置由权利人决定，仓库根与 gateway/ 均无 LICENSE"
+  ],
+  "openUnknowns": [
+    "自动政策在真实长稳运行下的窗口计数、时钟漂移与跨进程去重行为",
+    "真实宿主上自动化面板与桌面通道的端到端可见性",
+    "真实安装后的升级/回退在真实任务数据上的表现"
+  ],
+  "status": {
+    "sourcePassed": true,
+    "liveReady": false,
+    "deployed": false,
+    "published": false,
+    "pushed": false,
+    "mergedToMain": false
+  },
+  "boundaries": {
+    "pushed": false,
+    "mergedToMain": false,
+    "released": false,
+    "deployed": false,
+    "originalTreeUntouched": true,
+    "originalTreeStatusUnchanged": "M README.md / M ROADMAP.md / ?? docs/parallel/DELIVERY_FINISH_20261105/"
+  },
+  "nextGate": "10",
+  "nextGateNote": "真实验收由 10 集中办理，11 做交付检查；本 gate 不自行启动任何真实验收、登录、安装或派工"
+}

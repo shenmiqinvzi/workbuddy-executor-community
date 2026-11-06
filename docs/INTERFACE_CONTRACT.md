@@ -234,6 +234,7 @@ vnext-2 保留目标/工作区/范围/检查/期限/轮次字段；把 vnext-1 �
 | GET `/workbench/v1/resources/credit-balances` | 已保存的脱敏积分快照；reported_cache、账号覆盖与新鲜度各自标注，不反推任务用量 |
 | GET `/workbench/v1/resources/routing` | 资源路由证据：声明 / 固定连接 / 已观测快照三层各自报告 `verified`，缺证据为 unavailable |
 | GET `/workbench/v1/resources/plan-reference` | 执行选择与统计连接的只读参照；只在执行器、连接、提供方、精确模型（可选 realm）全匹配时建立关联 |
+| GET `/workbench/v1/automation`、`/policies`、`/policies/:id`、`/decisions`、`/decisions/:id`、`/audit` | 已保存的自动政策、修订、决策与审计（`workbuddy-executor/automation-1` 文档键）；只读投影，永不保存、撤销、启用或执行 |
 | GET `/collaboration-plans/:planId` | 已保存方案，未找到不代建 |
 | POST `/collaboration-plans` | 生成/保存方案；只读本地上下文和缓存元数据，不调用 worker 或额外模型 |
 | POST `/collaboration-plans/:planId/confirm` | 确认指定方案 revision；不立即开始 worker |
@@ -244,6 +245,8 @@ vnext-2 保留目标/工作区/范围/检查/期限/轮次字段；把 vnext-1 �
 `/workbench/v1/resources/routing` 的响应体在既有分层之上追加四块只读字段：`layers`（声明层 `execution_selection_declaration`、固定连接层 `fixed_connection`、观测层 `observed_snapshot`，每层只报自己的 `verified` 与 `code`）、`connectionRegistry`（`workbuddy-executor/resource-connections-1` 文档键与连接条目，`credentialEnv` 只接受环境变量名，绝不回显令牌值）、`connectionDiagnostics`（缺省 `not_declared`、重复池、realm 失配、来源超时等，逐条独立失败）与 `requestAttribution`（当前恒为 `unavailable`，见 `workbuddy-executor/request-attribution-1`）。
 
 三层证据全部为 `verified:false` 时，页面只能显示「已声明 / 已观测」，不得写成「已核验」；声明文件、环境变量存在性或成功的一次 GET 都不构成路由核验。`restrictions` 的六项固定值随响应返回，用于说明该文档不代表实际路由、计量或费用。
+
+自动政策（`mode:"automatic"`）的写入面只在本地命令 `scripts/automation.mjs`：保存、修订、撤销政策，记录决策与审计，以及带 `--enable-dispatch` 的执行都走该入口，MCP 工具与 HTTP 路由均无权调用。`automatic` 方案必须携带 `automation` 绑定（policyId、policyRevision、policyVersion、decisionId），手工入口 `createCollaborationPlan` 直接拒绝该模式；审批时还要求 `authorizationSource` 以 `automation:` 开头。已保存政策只收窄派工范围，不授予提交、推送、部署或原生权限批准；进程未 arm 时 `execute` 返回 `AUTOMATION_NOT_ARMED`，容量仍是操作层唯一的共享槽位。
 
 执行器能力分别声明 modelCatalog/selectModel/observeEffectiveModel/cancel/proveStopped/navigateSession/automaticReview/usageAttribution。未知能力为 unavailable，不能根据模型目录推导停止或审查可用。
 
