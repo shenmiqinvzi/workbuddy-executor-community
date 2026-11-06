@@ -9,7 +9,8 @@
 | 源码树 | `E:\javaproject\workbuddy-finish\R-review-fixes` |
 | 分支 | `fix/delivery-review-r1-r4` |
 | 起点提交 | `8a614c9ee7dc76c4cec22727f884cf6a0e658792`（RC4，Codex 复核对象） |
-| 本轮提交 | 见文末「收口轮回执」；提交后由外部回执记录该 SHA，提交前不预设 |
+| 业务基线（RC6） | `8afd839b770fc2e57910fc8882cc3fb6bd08f7c4`（tree `f667a81…`），Codex 复核通过 |
+| 文档增量提交 | 本轮文档校正的提交另记于文末回执；它与业务基线分开，不改变 RC6 身份 |
 | 候选包 | RC6：`gateway/outputs/release/codex-workbuddy-gateway-v0.7.1.zip` |
 | 包 SHA-256 | `c9f724d4888da5ed2566b464c4b85745693d7dd3b600fed1f622b8f3a10338ff`（2,257,997 B，696 个受管文件） |
 | manifest SHA-256 | `49a0656c26d54ff65b470d14a75f629481b19f4e869df370c2e205c79b84f5f4`（112,259 B） |
@@ -21,14 +22,51 @@
 | 许可与发行 | 未决（仓库无 LICENSE；发行范围需用户定） |
 | 部署 | 未部署、未推送、未合 main |
 
-最小复验（只读，约 15 秒）：
+### 真实验收准备（本轮，2026-11-06）
+
+入口：`docs/delivery/RC6_READY_INDEX.md`。
+
+| 已准备 | 文档 |
+| --- | --- |
+| 安装目标、影响面、六步核对、回退边界 | `INSTALL_AND_ROLLBACK_PLAN.md` |
+| 三套库的占用、为何不能自动清、三种不重叠方案 | `CAPACITY_AND_IDENTITY.md` |
+| 两端真实样本的完整契约（精确 CommandSpec）、判定标准、串行顺序 | `LIVE_TASK_PROPOSALS.md` |
+| 需要你拍板的 A1–A3 / B1–B4 / C1–C4 / D1–D4 / E1–E4 | `USER_CHOICES.md` |
+| 桌面壳五次实测、窗口证据缺什么、第二台机步骤 | `UI_AND_SECOND_MACHINE_PLAN.md` |
+
+**仍未取得**（不得写成已通过）：窗口可见性、四尺寸、键盘/焦点、200% 缩放、读屏（本机创建 WebView2 用户数据目录被拒，`UnauthorizedAccessException`，CDP 19491 不通）；WorkBuddy 侧模型目录与本轮报价（客户端 `WorkBuddyAI.exe` 起不来，只有 RC1 时代 23 条快照）；第二台机（未授权、无机器）。
+
+本轮**未**安装 RC6、**未**真实派工、**未**改生产政策、**未**释放 RC1/RC2 的任何占用、**未**推送/合 main/发布。
+
+最小复验分两组，**不要用重建组冒充只读复核**。
+
+只读复核（不写 `dist`、不重打包、不动 RC6；约 30 秒）：
+
+```text
+cd E:\javaproject\workbuddy-finish\R-review-fixes
+git rev-parse HEAD
+git status --porcelain
+Get-FileHash gateway\outputs\release\codex-workbuddy-gateway-v0.7.1.zip -Algorithm SHA256
+Get-FileHash gateway\outputs\release\codex-workbuddy-gateway-v0.7.1.manifest.json -Algorithm SHA256
+cd gateway
+npx tsc --noEmit -p tsconfig.json
+node E:\javaproject\outputs\finish-integration-20261105\closeout\candidate-rc6\codex-workbuddy-gateway-v0.7.1\scripts\verify-release.mjs
+```
+
+预期：HEAD `8afd839…`、工作树 0 行；ZIP 摘要 `c9f724d4…`、manifest `49a0656c…`；`tsc --noEmit` exit 0；`verify-release` 报 696 文件 `hashesMatch:true`。这一组不产生任何文件改动。
+
+重建流程（**会写文件**：重写 `gateway/dist` 与 `gateway/outputs/release`；只在确需重建时执行，输出到自有目录并保留原 RC6 及其摘要）：
 
 ```text
 cd E:\javaproject\workbuddy-finish\R-review-fixes\gateway
-npm run build && npm run typecheck:task-view && npm run test:workbench
-node scripts/package.mjs            # 先拒绝过期 dist，再打包
-node <解包根>\scripts\verify-release.mjs
+npm run build                                   # 重写 dist
+npm run typecheck:task-view
+node scripts/package.mjs                        # 若 release 目录已有同名产物，打包器会先拒绝覆盖，需显式移走旧产物
+node scripts/generate-snapshot-manifest.mjs
+node scripts/verify-snapshot.mjs
 ```
+
+重建出的包是新对象，SHA 会变；不得用它回流覆盖 RC6，也不得把 RC6 的合成/真实验收结论改挂到重建包上。本轮文档修正只改根 `docs/`，业务基线仍是 `8afd839`，不为文档更新重跑 1301 项或重打业务包。
 
 ## 收口轮做了什么
 
