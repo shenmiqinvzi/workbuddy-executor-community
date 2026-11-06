@@ -57,4 +57,12 @@ status 按实际选 completed、blocked 或 failed。validationRecords 可选，
 
 先用 `workbuddy_get_operation_recovery({operationId})` 查看原证据与审计；需要收集原来源事件时显式调用 `workbuddy_observe_operation_recovery`。恢复查询不授权派工，找不到回执不能重发。人工处置通过本地 `node dist/recovery-cli.js show|observe|reconcile|close` 控制台，先展示原绑定与影响，再实际确认。reconcile 保留容量；close 需要可靠停止或无 attempt 的未派工证明，不接受报告、不虚构停止。历史缺证继续阻塞，不删除记录、不换身份或模型。部署与真实模型操作仍需原有授权。
 
+### 自动决定的观察
+
+自动政策派出的任务，记录里多一条决定：`policyId`/`policyRevision`/`policyVersion`、`taskId`、`planId`、`operationId`、`status`、`evaluation`（含 `blocks`、`candidates`、`cost`、`rounds`、`history`）与审计。派工前它已被写进持久意图，所以能解释“为什么这一个任务被派、当时看的是什么证据”。
+
+观察顺序：先 `automation.mjs decisions --limit 20` 或面板「自动政策」页看决定现状；`dispatched` 就走正常的 `wait`/`get_task` 与独立验收，`blocked` 只读阻塞码，不重试同样的请求。`executing` 或 `outcome_unknown` 时用决定里的 `operationId` 查原操作凭证（get_operation，或决定记录的 `effectOperation`），核对原生是否已收到提示，再决定是否需要人工恢复；不做“再派一次”“换个执行器再试”或按 TTL 释放占用。
+
+决定不是验收证据，也不替代报告、停止证明和独立检查。撤回或到期只影响之后的任务：之前已派出的任务仍按原任务政策与当前限制核对，缺证据照旧阻塞。审计只追加，不修改历史记录。
+
 T6 的 check_task / record_inspection / review_task / accept_task 都是显式写操作，必须带稳定 operationId 与当前 expectedRevision/expectedAttemptId。每次成功后读取返回的新 revision。程序批次只由后端生成；worker 的自报不具备 independent_reviewer 身份。完整语义检查必须使用原约定中声明的 semantic 项；非契约 acceptanceCommands 只作命令要求，不推测自然语言属于语义检查。源码、报告、停止/执行绑定或证据变动后重新检查并新增 review；不改旧记录。GET 与 get_reviews 只读已有事实。

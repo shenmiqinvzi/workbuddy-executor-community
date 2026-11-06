@@ -1,4 +1,4 @@
-﻿# Windows desktop-queue 连接与恢复
+# Windows desktop-queue 连接与恢复
 
 仅接通或异常时读取。本部署使用 desktop-queue，不使用 Agent Hub。
 
@@ -21,6 +21,24 @@ node scripts/doctor.mjs
 统一服务的新默认政策为 `selectionMode=user_choice, requireFree=false`，vnext-2 方案固定执行器、连接、provider、model、推理档位及任务范围，由可信应用记录用户实际确认后派工。方案不是模型替代策略；仅提供推荐不构成授权。DSH 适配器已接通：`workbuddy_list_executors` 报适配器状态与可派工的 host，`workbuddy_list_dsh_sessions` 报实时会话；vnext-2 契约 `execution.executorId="dsh"` 即路由到 Harness，但计划必须先由本机 `node scripts/plan.mjs` 创建并授权，MCP 不开放计划写入。面板按 `binding.runtimeSource` 显示执行器并支持筛选。
 
 网关在原生模型配置确认后授权本轮领取，再发唤醒；立即领取的 helper 不必等唤醒回执。默认未接单窗口180秒、总期限1800秒、最多三轮；以已有配置和返回的 claimDeadline/deadline 为准。技能文字不能修复正在运行的旧网关。
+
+## 自动政策（默认关闭）
+
+自动派工默认不启用。保存、修订、撤回与武装只用本机命令行；来源必须是 `user:`、`local-operator:` 或 `desktop:`。agent、MCP 工具、HTTP 路由和模型输出都不能代为保存或确认，面板的「自动政策」页只读。
+
+```powershell
+node scripts/automation.mjs status
+node scripts/automation.mjs policy-create --policy-id auto-<名称> --workspace project --executor workbuddy --connection local-workbuddy --provider workbuddy-native --model <用户选定的精确模型> --max-tasks 1 --window-seconds 86400 --max-timeout 1800 --max-attempts 3 --cost-mode free_only --ttl-hours 168 --actor <操作者> --source user:<操作者>
+node scripts/automation.mjs policy-revise auto-<名称> --expected-revision <当前版本> --source user:<操作者> --max-tasks 2
+node scripts/automation.mjs policy-revoke auto-<名称> --expected-revision <当前版本> --reason "撤回原因" --source user:<操作者>
+node scripts/automation.mjs policy-show auto-<名称>
+```
+
+`policy-create` 绑定工作区、执行器/连接/provider/精确模型/推理档位、可改范围、窗口内轮次、单任务超时与轮次、费用条件与到期。`policy-revise` 生成新版本并把旧版本标为已被替代；修订不能改工作区，也不能延长自己的到期（要更长窗口就另存一份政策）。`policy-revoke` 是终态：之后同工作区重新启用要走新政策，已进入派工意图的决定保留原操作。
+
+`--cost-mode` 三档不能混用：`free_only` 要新鲜的 x0.00 证据，取不到就阻塞；`known_cost` 要有真实可用的硬上限与正数 `--ceiling`；`unknown_allowed` 允许未知价格但明说它不是硬上限，并且 `--requires-hard-cap` 在它上面会被拒绝（`COST_CONTROL_UNAVAILABLE`）。费用单位（`--cost-unit`）与政策不一致时同样拒绝，不按比例换算。
+
+政策生效不等于允许派工：`automation.mjs` 只有在带 `--enable-dispatch`（或宿主显式注入 dispatcher）时才会真正提交，其余情况只能 `evaluate`/`decide`。每次派工前在同一事务里重验授权、撤回、到期、范围、历史模型政策、费用与共享容量，最多一次效果；重启后停留在 `executing` 的决定按“结果不明”处理，只能观察原操作。这层政策只收窄派工范围，不授权提交、推送、部署或原生权限批准，也不替代 AGENTS.md 的逐任务选择确认。
 
 ## 查询与备用入口
 

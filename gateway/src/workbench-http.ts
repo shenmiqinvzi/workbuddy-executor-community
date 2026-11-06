@@ -49,6 +49,8 @@ import { handleStatisticsRequest } from "./statistics-http.js";
 import type { StatisticsSources } from "./statistics-service.js";
 import { handleProductivityRequest } from "./productivity-service.js";
 import type { ProductivitySources } from "./productivity-service.js";
+import { AUTOMATION_PATH, handleAutomationRequest } from "./automation-http.js";
+import type { AutomationService } from "./automation.js";
 
 /** Default local port for the workbench HTTP surface (contract section 1). */
 export const WORKBENCH_DEFAULT_PORT = 18493;
@@ -142,6 +144,13 @@ interface WorkbenchAdapterOptions {
    * routes do not exist; their write counterparts are desktop commands only.
    */
   productivity?: ProductivitySources;
+  /**
+   * Read-only automation surface: the saved dispatch policy, its revisions, the
+   * recorded automatic decisions and the audit trail. Absent means the routes do
+   * not exist. Every mutation (save, revise, revoke, dispatch) is a trusted local
+   * CLI operation, so this surface has no write verb by construction.
+   */
+  automation?: AutomationService;
 }
 
 /** One {code,message} pair per failure shape, kept stable. */
@@ -322,6 +331,8 @@ export class WorkbenchHttpServer {
           || pathname.startsWith("/workbench/v1/templates/")
           || pathname === "/workbench/v1/notifications"
           || pathname.startsWith("/workbench/v1/export-preview/")
+          || pathname === AUTOMATION_PATH
+          || pathname.startsWith(`${AUTOMATION_PATH}/`)
           || /^\/workbench\/v1\/tasks\/[^/]+(\/(rework|cancel|reviews|accept|events|export))?$/.test(pathname);
         if (isKnownPath) {
           response.setHeader("allow", "GET, HEAD");
@@ -351,6 +362,13 @@ export class WorkbenchHttpServer {
         // preview are reads. Every write lives behind a desktop command.
         const productivity = handleProductivityRequest(this.options.productivity, pathname, url.search);
         if (productivity) { this.send(response, productivity.status, productivity.body); return; }
+      }
+      if (this.options.automation) {
+        // The policy, its revisions, the recorded decisions and the audit trail
+        // are reads too. Nothing on this prefix writes, and the handler answers
+        // null outside its own prefix, so it cannot capture another route.
+        const automation = handleAutomationRequest(this.options.automation, pathname, url.search);
+        if (automation) { this.send(response, automation.status, automation.body); return; }
       }
       if (pathname === "/workbench/v1/panel/tasks") {
         const parsed = parseListQuery(url.search);

@@ -17,11 +17,17 @@ export interface ModelPolicy {
   selectionMode?: "allowlist" | "user_choice";
   allowed: ExecutionSelection[];
 }
+/** The saved user policy an automatic plan was decided under. Absent on manual/recommend plans. */
+export interface AutomationPlanBinding {
+  policyId: string; policyRevision: string; policyVersion: string; decisionId: string;
+}
 export interface CollaborationPlan {
-  planId: string; revision: string; mode: "manual" | "recommend";
+  planId: string; revision: string; mode: "manual" | "recommend" | "automatic";
   decision: "delegate"; reason: string; termsHash: string; policyVersion: string;
   createdAt: string; expiresAt: string; authorizedAt: string | null; authorizationSource: string | null;
   consumedBy: string | null; proposal: SupportedTaskContract;
+  /** Only a saved automation policy may fill this, and only through the automation service. */
+  automation: AutomationPlanBinding | null;
 }
 export interface TaskAdmission {
   workspace: RegisteredWorkspace; execution: ExecutionSelection; policy: ModelPolicy;
@@ -125,11 +131,17 @@ export class CollaborationRegistry {
     return policy;
   }
 
-  createPlan(submitted: unknown, policy: ModelPolicy, options: { mode: "manual" | "recommend"; reason: string; ttlSeconds?: number }): CollaborationPlan {
+  createPlan(submitted: unknown, policy: ModelPolicy, options: { mode: "manual" | "recommend" | "automatic"; reason: string; ttlSeconds?: number; automation?: AutomationPlanBinding }): CollaborationPlan {
     const validated = validateSupportedTaskContract(submitted);
     if (!validated.ok || !("execution" in validated.contract)) fail("PLAN_STALE", "A valid vnext-2 proposal is required.");
-    if (options.mode !== "manual" && options.mode !== "recommend") fail("PLAN_CONFIRMATION_REQUIRED", "Automatic scheduling is not enabled in this stage.");
+    if (!["manual", "recommend", "automatic"].includes(options.mode)) fail("PLAN_CONFIRMATION_REQUIRED", "Unknown collaboration mode.");
     const contract = validated.ok ? validated.contract : fail("PLAN_STALE", "Invalid proposal.");
+    if (options.mode === "automatic") {
+      // Only the saved-policy evaluation may bind an automatic plan; a manual caller cannot mint one.
+      if (!options.automation || ![options.automation.policyId, options.automation.policyRevision, options.automation.policyVersion, options.automation.decisionId].every(validId)) {
+        fail("PLAN_CONFIRMATION_REQUIRED", "An automatic plan requires its saved policy and decision binding.");
+      }
+    } else if (options.automation) fail("PLAN_CONFIRMATION_REQUIRED", "Only an automatic plan may carry a policy binding.");
     enforceModelPolicy(policy, contractExecution(contract));
     this.getWorkspace(contract.workspaceId);
     const ttl = options.ttlSeconds ?? 1800;
@@ -137,7 +149,8 @@ export class CollaborationRegistry {
     const createdAt = new Date().toISOString();
     const plan: CollaborationPlan = { planId: `plan-${token()}`, revision: token(), mode: options.mode, decision: "delegate", reason: options.reason,
       termsHash: collaborationTermsHash(contract), policyVersion: policy.version, createdAt, expiresAt: new Date(Date.now() + ttl * 1000).toISOString(),
-      authorizedAt: null, authorizationSource: null, consumedBy: null, proposal: contract };
+      authorizedAt: null, authorizationSource: null, consumedBy: null, proposal: contract,
+      automation: options.mode === "automatic" ? structuredClone(options.automation!) : null };
     this.db.prepare("INSERT INTO collaboration_plans (plan_id,revision,body_json,digest) VALUES (?,?,?,?)").run(plan.planId, plan.revision, JSON.stringify(plan), digest(plan));
     return structuredClone(plan);
   }
@@ -147,7 +160,7 @@ export class CollaborationRegistry {
     if (!row) return fail("PLAN_STALE", "The collaboration plan does not exist.");
     const plan = this.read<CollaborationPlan>(row);
     if (plan.planId !== planId || plan.revision !== row.revision || collaborationTermsHash(plan.proposal) !== plan.termsHash) fail("PLAN_STALE", "The collaboration plan failed integrity verification.");
-    return { ...plan, authorizedAt: row.authorized_at as string | null, authorizationSource: row.authorization_source as string | null, consumedBy: row.consumed_by as string | null };
+    return { ...plan, automation: plan.automation ?? null, authorizedAt: row.authorized_at as string | null, authorizationSource: row.authorization_source as string | null, consumedBy: row.consumed_by as string | null };
   }
 
   /** Called only by a trusted application action after actual user authorization. */
@@ -173,6 +186,13 @@ export class CollaborationRegistry {
       const plan = this.getPlan(contract.collaboration.planId);
       this.checkPlan(plan, contract.collaboration.expectedPlanRevision, policy);
       if (!plan.authorizedAt) fail("PLAN_CONFIRMATION_REQUIRED", "The collaboration plan requires actual authorization.");
+      if (plan.mode === "automatic") {
+        // An automatic plan is valid only while its saved policy binding and automation source are
+        // intact. The binding names the saved automation policy/decision that produced this plan;
+        // the live re-check of that policy belongs to the automation service that dispatches it.
+        if (!plan.automation || ![plan.automation.policyId, plan.automation.policyRevision, plan.automation.policyVersion, plan.automation.decisionId].every(validId)) fail("PLAN_CONFIRMATION_REQUIRED", "An automatic plan lost its saved policy binding.");
+        if (!plan.authorizationSource?.startsWith("automation:")) fail("PLAN_CONFIRMATION_REQUIRED", "An automatic plan was not authorized by the automation policy path.");
+      } else if (plan.automation) fail("PLAN_CONFIRMATION_REQUIRED", "A manual plan cannot carry a policy binding.");
       if (plan.termsHash !== collaborationTermsHash(contract) || (plan.consumedBy !== null && plan.consumedBy !== contract.taskId)) fail("PLAN_STALE", "The plan terms or task binding differ.");
       planId = plan.planId; planRevision = plan.revision;
     }

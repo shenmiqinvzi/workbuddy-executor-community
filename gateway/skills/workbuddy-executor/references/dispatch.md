@@ -112,6 +112,28 @@ node scripts/plan.mjs authorize <返回的 planId> <返回的 revision> --source
 
 
 
+## 自动政策下的派工
+
+自动政策启用后，派工不是由对话触发，而是由已保存的政策与本机命令决定。以下每一步都在本机 gateway 目录运行，来源参数必须指向真实操作者：
+
+```powershell
+node scripts/automation.mjs evaluate --contract tasks/guard.json --policy-id auto-gate --probe probe.json
+node scripts/automation.mjs decide --contract tasks/guard.json --policy-id auto-gate --probe probe.json
+node scripts/automation.mjs execute <决定编号> --operation-id <UUID> --enable-dispatch
+node scripts/automation.mjs decisions --limit 20
+node scripts/automation.mjs recover
+```
+
+`evaluate` 只读：它把政策、任务约定、当前模型政策与 `--probe` 提供的只读目录/额度快照放在一起解释，输出 `decision=delegate|wait`、`candidates`、`blocks`、`limits`、`cost`、`rounds` 与 `history`，不写决定行。`decide` 记录一条决定（`pending`）并返回它的编号，同一任务重放返回原记录；同一 `taskId` 已被别的决定占用时报 `TASK_CONFLICT`。`execute` 用决定编号在派工前于同一事务里重验政策版本与撤回、到期、范围、历史模型政策、费用与容量，成功才写 `dispatched`。
+
+怎么读：
+
+- `blocks` 非空就是没派工，`blockedCode` 是第一条。`MODEL_POLICY_BLOCKED`（该模型被当前政策挡住）、`QUOTA_UNAVAILABLE`/`QUOTA_EXHAUSTED`（额度未知或已耗尽）、`COST_CONTROL_UNAVAILABLE`（要硬上限但来源不保证）、`EXECUTOR_BUSY`（共享容量被占）、`POLICY_REVOKED`/`POLICY_EXPIRED`/`SCOPE_VIOLATION`（政策不再覆盖这个任务）都不能靠重试变成可派。
+- `evaluation.cost.mode` 决定费用语义：`free_only` 只看新鲜的 x0.00 证据；`known_cost` 只认真实可用的硬上限；`unknown_allowed` 允许未知价格，但 `limits` 里会写它不是硬上限，不能据此宣称省钱或封顶。
+- `dispatched` 只说明派工意图已提交，不等于执行成功；后续照常监督与独立验收。
+- `outcome_unknown` 表示原操作结果不明：只观察原 `operationId`，不新建任务、不换执行器、不按超时释放占用。重启后停在 `executing` 的决定由 `recover` 标成同一状态，也不重派。
+- 撤回、到期或修订只影响之后符合条件的任务；已在执行的任务保留原操作与证据。
+
 ## 等待与验收
 
 用 `workbuddy_wait({"taskId":"submit-guard-001","timeoutSeconds":50,"detail":"brief"})` 监督；有新进展时会提前返回。断线后恢复同一 taskId，不重做 ensure_workspace 或 send_task；需要完整报告时 get_task 使用 detail=full。

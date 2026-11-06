@@ -54,6 +54,10 @@ const server = new WorkbenchHttpServer({
   service,
   statistics,
   productivity: productivity.sources,
+  // L07: the saved automation policy, its revisions, recorded decisions and the
+  // audit trail are readable here. Nothing on this surface writes: the policy and
+  // dispatch seam is scripts/automation.mjs, and this entry starts unarmed.
+  automation: service.automation,
   health: () => workbenchHealth({
     runtime: { release: runtimeVersion.release, packageVersion: runtimeVersion.packageVersion, startedAt: runtimeVersion.startedAt },
   }),
