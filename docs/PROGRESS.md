@@ -327,3 +327,15 @@ L07（自动化政策）与 L08（独立验收）在 G2 归档提交 `000e9da` �
 RC 候选包 694 个业务文件、2 235 102 字节，SHA-256 `658a20b196051fa25be1c669bb9b5c5574216cd30a6b223bd07efe2e90ba11b8`；技能包 `e61be9ba…`（L07 改了 SKILL.md 与三份 references），Harness 技能包未变。解包候选执行 verify-release（694 哈希匹配）、check（exit 0、problems 空）、preview（exit 1、create=694、仅 runtime_dependencies 与 desktop_application 未满足）、version-check（exact、matched=694）、dependencies（blocksInstall 真、纯包未装依赖属预期）、包内 `npm ci --omit=dev`（94 包）、drill（4 步 5 检查）、upgrade-drill（17 步 17 检查 + 6 条负例）、rollback-plan（replace62 remove113 keep519）、delivery-baseline（只读）、live-acceptance-fixture create/verify（`bcc412a2…`、`authorized=false`、problems 空）。推荐探针复跑通过；受控启动后 automation 的四条只读路由与两个前端资产均 200，`POST /v1/automation/policies` 为 405 且 allow 头为 `GET, HEAD`；同一隔离库里 `scripts/automation.mjs` 可保存政策（`armed:false`、`httpWrites:false`），`execute` 在未 arm 时以 `AUTOMATION_NOT_ARMED` 拒绝。
 
 已冻结 RC 与影响表（`docs/delivery/STATUS_INDEX.md`「RC 冻结与影响表」与 `gates/G3.json`）：冻结后任何 `src`/`scripts`/`desktop`/技能六文件/包白名单改动都要重跑对应检查，文档改动也须同步状态。未推送、未合 main、未发布、未部署；原集成树 README.md、ROADMAP.md 在途改动保持不变。八条线均为源码加合成证据，`liveReady=false`；真实安装、登录、派工与生产政策仍归 10，原 P0-1 未知维持不关闭、不重派、不释放。
+
+## G3 后修复与 RC2（2026-11-06）
+
+10 在 RC1 上完成了真实安装、技能安装位替换与两单真实派工（DSH `deepseek-v4.1-flash`/high 与 WorkBuddy `deepseek-v4.1-flash-sg`，均 accepted），并跑了五张异常卡。验收同时暴露三处问题，其中两处是代码缺陷：R6「外来会话被拒」与 R8「预算耗尽返工被拒」抛的都是无码 `Error`，`failureCause()` 只认 `AdmissionError.code` 或 errno 风格码，于是 blocked 原因里看不到到底哪条规则拒绝。
+
+本轮把两处换成稳定码，消息一字未改：`gateway/src/workspace-workers.ts` 的会话改绑冲突改抛 `AdmissionError("WORKSPACE_CONFLICT", …)`（新增 `import { AdmissionError } from "./collaboration.js"`，`collaboration.ts` 只 import `task-contract.js`，不成环）；`gateway/src/coordinator.ts` 的轮数上限改抛 `AdmissionError("ATTEMPT_LIMIT", …)`。连带效果是 blocked 原因变成 `Contract preparation failed (WORKSPACE_CONFLICT); …`，MCP 错误分支多一个 `code` 字段；操作状态机不动。
+
+回归：`test/workspace-workers.test.ts` 新增一条「会话不能改绑另一个项目且给出稳定码」；`test/finish-acceptance-admission-anomalies.test.ts` 的预算用例从 `/attempt limit/i` 收紧为断言 `AdmissionError` + `ATTEMPT_LIMIT`。
+
+检查（日志在 `outputs\finish-integration-20261105\G3-fix\logs\`）：构建 exit 0；受影响两文件 23/23；全量 1282 项 / 1269 通过 / 1 失败 / 12 跳过——失败是 `test/command-cleanup.test.ts:24` 的真实嵌套 Job 清理用例（`recovered.length` 期望 1 得 0），单文件复跑两次均 4/4 通过，属高负载下的时序问题，根因未定位。RC2 包 694 文件、2 236 003 字节、SHA-256 `9e146b93fe40ff3b7086e4117c89dd0e2b81f81c61a585cfba4b003ef4411eee`；解包 verify-release 694/694、check `ok=true`、version-check `exact=true`、drill 4 步 5 检查 + 6 条负例、upgrade-drill 17 步 17 检查 + 6 条负例，全部 exit 0。
+
+RC1 的真实证据只属于 RC1。RC2 与 RC1 的差异只有这两个错误码与两处测试文本，安装、技能、派工路径未动，但「无码现象已修」必须在 RC2 上重验才算数；建议在库副本上重放 R6（准备阶段失败、不派工、无模型费用）并复跑一次预算 1 的返工。仍未修：R6 准备期失败落 `outcome_unknown` 并占容量（`effect_started` 语义的设计取舍）、`continueAdmitted` 里其余无码 `Error`、L08 的 O1/O3/O4、L07 四表未并入统一 migration、gitIndex 超时错误码。

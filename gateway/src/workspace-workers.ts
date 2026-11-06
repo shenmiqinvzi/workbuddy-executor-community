@@ -3,6 +3,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import type { Config } from "./config.js";
+import { AdmissionError } from "./collaboration.js";
 import { readDesktopSession, waitForDesktopSession } from "./desktop-runtime.js";
 import { runsDirectory } from "./run-journal.js";
 import { PreparationJournal } from "./preparation-journal.js";
@@ -99,7 +100,10 @@ export class WorkspaceWorkers {
   }
   select(workspace: string, sessionId: string): WorkspaceWorker {
     const existing = this.db.prepare("SELECT workspace FROM workers WHERE sessionId=?").get(sessionId);
-    if(existing && existing.workspace !== workspace)throw new Error("This native session is already registered for another workspace");
+    // A native session may only ever project one workspace. The refusal keeps a
+    // stable code so a blocked task can show what to fix instead of a bare
+    // "contract preparation failed" (live acceptance R6, 2026-11-06).
+    if(existing && existing.workspace !== workspace)throw new AdmissionError("WORKSPACE_CONFLICT","This native session is already registered for another workspace");
     const now = new Date().toISOString();
     this.db.exec("BEGIN IMMEDIATE");
     try {

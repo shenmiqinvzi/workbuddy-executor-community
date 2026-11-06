@@ -221,7 +221,10 @@ test("L08 an exhausted budget refuses another dispatch and keeps the last attemp
   assert.equal(f.counters.preparations, 1, "one dispatch prepares exactly one native route");
   assert.equal(f.counters.inspections, 1, "the bound model is observed once");
 
-  await assert.rejects(f.service.continue({ taskId: f.taskId, feedback: "synthetic rework request after the budget is spent" }), /attempt limit/i);
+  // R8 hung on an uncoded error: the operator saw "attempt limit" but no code
+  // to key recovery on. The refusal must stay a stable admission code.
+  await assert.rejects(f.service.continue({ taskId: f.taskId, feedback: "synthetic rework request after the budget is spent" }),
+    (error: { name?: string; code?: string; message?: string }) => error.name === "AdmissionError" && error.code === "ATTEMPT_LIMIT" && /attempt limit/i.test(error.message ?? ""));
 
   const after = f.store().get(f.taskId)!;
   assert.equal(after.attempt, 1, "no extra attempt is created once the immutable budget is spent");

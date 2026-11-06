@@ -80,6 +80,19 @@ test('selection retains the old worker for already queued tasks and rejects a di
   assert.equal(f.registry.selected(f.a)?.sessionId,'selected-existing');
 });
 
+test('a native session cannot be re-bound to another project and reports a stable code',async t=>{
+  const f=fixture(t);
+  f.registry.seed({workspace:f.a,sessionId:'legacy'});
+  assert.equal(f.registry.selected(f.a)?.sessionId,'legacy');
+  // R6 blocked on an uncoded refusal, so the operator lost the cause. Keep the
+  // message, publish WORKSPACE_CONFLICT.
+  assert.throws(()=>f.registry.select(f.b,'legacy'),(error:{name?:string;code?:string;message?:string})=>
+    error.name==='AdmissionError'&&error.code==='WORKSPACE_CONFLICT'&&/already registered for another workspace/.test(error.message??''));
+  assert.equal(f.registry.selected(f.a)?.sessionId,'legacy');
+  assert.equal(f.registry.list().length,1);
+  assert.equal(f.registry.list()[0].state,'ready');
+});
+
 test('two clients preparing one workspace cannot create duplicate sessions',async t=>{
   const f=fixture(t);let resume!:()=>void;
   const gate=new Promise<void>(resolve=>{resume=resolve;});let entered!:()=>void;const started=new Promise<void>(resolve=>{entered=resolve;});

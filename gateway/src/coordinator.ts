@@ -425,7 +425,9 @@ export class TaskCoordinator {
     const originalSession = this.store.operations.originalSession(task.taskId);
     if (originalSession && task.sessionId !== originalSession) throw new AdmissionError("MODEL_BINDING_CHANGED", "Rework cannot change its original native session.");
     const attemptLimit = storedContract.state === "found" ? storedContract.record.effectiveMaxAttempts : Math.min(this.config.maxTaskAttempts ?? 3, original?.maxAttempts ?? this.config.maxTaskAttempts ?? 3);
-    if ((task.attempt ?? 0) >= attemptLimit) throw new Error("Task attempt limit reached. Stop retrying and review the failure and existing files before changing the configured budget.");
+    // The budget refusal carries its own code so rework refusals are
+    // distinguishable from infrastructure failures (live acceptance R8).
+    if ((task.attempt ?? 0) >= attemptLimit) throw new AdmissionError("ATTEMPT_LIMIT", "Task attempt limit reached. Stop retrying and review the failure and existing files before changing the configured budget.");
     if (!task.sessionId) throw new Error("No verified desktop session is bound. Inspect the old run and start a new task with an explicit WorkBuddy sessionId.");
     if (task.attemptId) {
       const snapshot = this.client.runSnapshot(task.attemptId);

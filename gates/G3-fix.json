@@ -1,0 +1,230 @@
+{
+  "schemaVersion": "workbuddy-executor/integration-gate-1",
+  "gate": "G3-fix",
+  "title": "真实验收（10）缺陷修复、RC2 候选与 10 产物归档",
+  "recordedAt": "2026-11-06T16:06:00+08:00",
+  "recordedBy": "集成人",
+  "sourceOfTruth": "docs/delivery/STATUS_INDEX.md",
+  "codeBaseCommit": "91af89ee9d5a3358f65a6e0e7699c9100f91d732",
+  "codeBaseTree": "4c61792ac92f7ba0597e378d304e0e8ad952a943",
+  "gateRecord": {
+    "commit": null,
+    "note": "本文件随修复提交入库，自引用哈希不写入自身；归档提交哈希记录在 E:\\javaproject\\outputs\\finish-integration-20261105\\G3-fix\\G3_FIX_RECEIPT.md"
+  },
+  "liveAcceptanceInput": {
+    "worktree": "E:\\javaproject\\workbuddy-finish\\F10-live",
+    "branch": "docs/live-acceptance",
+    "head": "91af89ee9d5a3358f65a6e0e7699c9100f91d732",
+    "commitsMadeBy10": 0,
+    "documentsTakenIntoIntegration": [
+      "docs/delivery/EXTERNAL_CONDITIONS.md",
+      "docs/delivery/LIVE_ACCEPTANCE_EVIDENCE_INDEX.md",
+      "docs/delivery/LIVE_ACCEPTANCE_SUMMARY.md"
+    ],
+    "rawEvidence": "E:\\javaproject\\outputs\\finish-live-20261106",
+    "installRoot": "E:\\javaproject\\workbuddy-install\\gateway-v0.7.1-rc1",
+    "installedCodeHash": "ac2a673f187546dc9d00c7a20a56ad6fad86adf54a2b0e90d22d1fbcd681e326",
+    "realDispatches": [
+      {
+        "executor": "dsh",
+        "taskId": "d1-dsh-5f82573e-b87a-4ff1-acd9-ec8d541243f5",
+        "attemptId": "run-4fc382d9-daa5-46d8-bc9a-e4ff17f8c532",
+        "model": "deepseek-v4.1-flash",
+        "reasoning": "high",
+        "rateObservation": "credits x0.00 observed",
+        "reviewId": "review-684133fe-a47d-46c2-becf-d919c00f18e2",
+        "acceptedAt": "2026-11-06T05:55:54.478Z"
+      },
+      {
+        "executor": "workbuddy",
+        "taskId": "d1-workbuddy-2fec4908-eb45-45eb-8852-8e8411b0cacf",
+        "attemptId": "run-bc7288ad-bedb-4593-852d-551e91e6a1e3",
+        "model": "deepseek-v4.1-flash-sg",
+        "reasoning": null,
+        "rateObservation": "credits x0.11 relative multiplier, not an amount",
+        "reviewId": "review-a7598513-0642-4caf-bc29-9d66886ee3e9",
+        "acceptedAt": "2026-11-06T06:15:38.488Z"
+      }
+    ],
+    "anomalyCardsRun": ["R7", "R4", "R8", "R6", "R3"],
+    "anomalyCardsNotRun": ["R1", "R2", "R5", "R9", "R10"],
+    "secondMachine": false,
+    "userDecisionsRecorded": [
+      "R6 blocked 任务按 T7D 原样保留，不关闭、不重派、不释放",
+      "config.toml 本轮不合并（始终未被写入，7449 字节，0 处 workbuddy_rc）",
+      "网关自登记常驻服务保留（PID 11672，data\\persistent-service.json，cdpPort 18491，workers 4）"
+    ]
+  },
+  "integrationVerification": {
+    "method": "把 tasks.sqlite 与 -wal/-shm 复制到临时目录后只读查询，不复用任何真实连接",
+    "probe": "E:\\javaproject\\outputs\\finish-integration-20261105\\G3-probe\\verify-live10.mjs",
+    "output": "E:\\javaproject\\outputs\\finish-integration-20261105\\G3-probe\\live10-verify.json",
+    "tasksFound": 6,
+    "taskStates": {
+      "accepted": 3,
+      "cancelled": 2,
+      "blocked": 1
+    },
+    "closedEvents": 5,
+    "capacityRows": 1,
+    "capacityOccupant": {
+      "slot": 1,
+      "taskId": "d1-workbuddy-2cc8e262-54f5-43a0-8511-b3febf0d4101",
+      "executor": "workbuddy",
+      "operationId": "card-r6-foreign-session-1793948211334",
+      "operationState": "outcome_unknown"
+    },
+    "finalRevisions": {
+      "dsh": "DNbnQevDQ_eiY3Fy",
+      "workbuddy": "nViAz0BiNEdMDcsL"
+    },
+    "evidenceFilesScanned": 34,
+    "evidenceFilesInvalid": 3,
+    "invalidEvidence": [
+      {
+        "file": "evidence/cards/r6/recovery-view.json",
+        "bytes": 952,
+        "reason": "PowerShell transcript of a failed workbuddy-call.mjs invocation; the argument {operationId:...} was unquoted and the call died with SyntaxError at position 1"
+      },
+      {
+        "file": "evidence/get-task-1.json",
+        "reason": "UTF-16LE redirect output, not UTF-8 JSON"
+      },
+      {
+        "file": "evidence/workbuddy-models.json",
+        "reason": "UTF-16LE redirect output, not UTF-8 JSON"
+      }
+    ]
+  },
+  "defectFixes": [
+    {
+      "defect": "R6 foreign-session refusal threw an uncoded Error, so failureCause() could not name the rule",
+      "file": "gateway/src/workspace-workers.ts",
+      "change": "throw new AdmissionError(\"WORKSPACE_CONFLICT\", \"This native session is already registered for another workspace\"); plus import from ./collaboration.js",
+      "messageUnchanged": true,
+      "cycleCheck": "collaboration.ts imports only task-contract.js; no cycle"
+    },
+    {
+      "defect": "R8 exhausted budget threw an uncoded Error",
+      "file": "gateway/src/coordinator.ts",
+      "change": "throw new AdmissionError(\"ATTEMPT_LIMIT\", original message)",
+      "messageUnchanged": true
+    }
+  ],
+  "regressions": [
+    {
+      "file": "gateway/test/workspace-workers.test.ts",
+      "test": "a native session cannot be re-bound to another project and reports a stable code",
+      "asserts": "AdmissionError + WORKSPACE_CONFLICT, original message, no rebinding"
+    },
+    {
+      "file": "gateway/test/finish-acceptance-admission-anomalies.test.ts",
+      "test": "L08 an exhausted budget refuses another dispatch and keeps the last attempt",
+      "asserts": "AdmissionError + ATTEMPT_LIMIT instead of a message-only match"
+    }
+  ],
+  "checks": [
+    {
+      "command": "npm run build",
+      "exitCode": 0,
+      "log": "G3-fix/logs/build.log"
+    },
+    {
+      "command": "npx tsx --test test/workspace-workers.test.ts test/finish-acceptance-admission-anomalies.test.ts",
+      "exitCode": 0,
+      "counts": { "tests": 23, "pass": 23, "fail": 0 },
+      "log": "G3-fix/logs/affected.log"
+    },
+    {
+      "command": "npm test",
+      "exitCode": 1,
+      "counts": { "tests": 1282, "pass": 1269, "fail": 1, "skipped": 12, "durationMs": 264618 },
+      "failed": "test/command-cleanup.test.ts:24 real nested Job cancellation (recovered.length expected 1, got 0)",
+      "log": "G3-fix/logs/full-test.log",
+      "note": "不属于本次改动的路径；单文件复跑两次均 4/4 通过，判为高负载时序问题，根因未定位"
+    },
+    {
+      "command": "npx tsx --test test/command-cleanup.test.ts",
+      "exitCode": 0,
+      "counts": { "tests": 4, "pass": 4, "fail": 0 },
+      "runs": 2,
+      "logs": ["G3-fix/logs/command-cleanup-1.log", "G3-fix/logs/command-cleanup-2.log"]
+    },
+    {
+      "command": "node scripts/package.mjs",
+      "exitCode": 0,
+      "log": "G3-fix/logs/package-rc2.log"
+    }
+  ],
+  "packages": {
+    "rc1": {
+      "gateway": {
+        "files": 694,
+        "bytes": 2235102,
+        "sha256": "658a20b196051fa25be1c669bb9b5c5574216cd30a6b223bd07efe2e90ba11b8",
+        "archivedAt": "E:\\javaproject\\outputs\\finish-integration-20261105\\G3-fix\\release-rc1"
+      },
+      "status": "已安装并做过真实验收（10）；源码已前进，不再作为最终候选"
+    },
+    "rc2": {
+      "gateway": {
+        "files": 694,
+        "bytes": 2236003,
+        "sha256": "9e146b93fe40ff3b7086e4117c89dd0e2b81f81c61a585cfba4b003ef4411eee"
+      },
+      "workbuddySkill": {
+        "files": 6,
+        "sha256": "e61be9ba03f48e555ed1a8441eb8d56f0013eb818cfdceb610015d26e0839db8"
+      },
+      "deepseekSkill": {
+        "files": 2,
+        "sha256": "22909e1b0654df6eb13b3ccdcf5767ed78e094d416b891821a072c1004318d13"
+      },
+      "manifestFiles": 694,
+      "status": "只做过源码与合成候选检查，未进真实环境"
+    }
+  },
+  "candidateTools": [
+    { "tool": "verify-release", "target": "rc2", "exitCode": 0, "result": { "version": "0.7.1", "verifiedFiles": 694, "hashesMatch": true } },
+    { "tool": "check", "target": "rc2", "exitCode": 0, "result": { "ok": true, "files": 694, "problems": [], "totalBytes": 7275426 } },
+    { "tool": "version-check", "target": "rc2", "exitCode": 0, "result": { "matches": true, "exact": true, "matched": 694 } },
+    {
+      "tool": "drill --apply",
+      "target": "rc2",
+      "exitCode": 0,
+      "result": { "steps": 4, "checks": { "installed": true, "idempotent": true, "uninstalled": true, "envPreservedAfterUninstall": true, "skillRemovedAfterUninstall": true }, "negatives": 6 }
+    },
+    {
+      "tool": "upgrade-drill --apply",
+      "target": "rc2",
+      "exitCode": 0,
+      "result": { "steps": 17, "failedSteps": 0, "checksPassed": 17, "negatives": 6 }
+    }
+  ],
+  "rcImpact": [
+    { "change": "两个错误码与两处测试断言", "mustRerun": "build、受影响专项、全量、打包与解包候选检查（已做）", "mustReverifyInLive": "R6 与 R8 的拒绝必须显示 WORKSPACE_CONFLICT / ATTEMPT_LIMIT" },
+    { "change": "安装、技能、派工路径", "mustRerun": "无（未改动）", "mustReverifyInLive": "RC1 的安装与会话证据在 RC2 上仍成立，但若要宣称 RC2 已验收，需在 RC2 上重跑一次装与一单" }
+  ],
+  "openItems": [
+    "R6 准备期失败仍落 outcome_unknown 并占容量（operation-admission 在准备前进入 effect_started），是否改为 rejected 需 10 决定",
+    "continueAdmitted 里其余无码 Error（已取消任务、无会话、活跃 worker、缺 provider 返回值）未改",
+    "evidence 目录三份文件不可解析：recovery-view.json 是失败调用转录，get-task-1.json 与 workbuddy-models.json 为 UTF-16LE；R6 的恢复视图需重采",
+    "全量里 command-cleanup 嵌套 Job 用例高负载偶发失败；run-worker detached 用例同理",
+    "L08 O1/O3/O4、L07 四表未并入统一 migration、gitIndex 5 秒超时错误码、请求级归因缺口、许可文件位置",
+    "原 P0-1 未知仍不关闭、不重派、不释放"
+  ],
+  "boundaries": {
+    "pushed": false,
+    "mergedToMain": false,
+    "published": false,
+    "deployed": false,
+    "originalTreeReadmeRoadmapTouched": false
+  },
+  "status": {
+    "sourcePassed": true,
+    "liveVerifiedForRc1": true,
+    "rc2LiveVerified": false,
+    "releaseReady": false
+  },
+  "nextGate": "10（RC2 重验）→ 11（交付检查）"
+}

@@ -15,10 +15,11 @@
 | G2 | L05–L06 合入、接线、检查、候选包 | 已完成（源码与合成候选通过；真实验收未执行） |
 | 第三批 | L07–L08 开发交付 | 已交付 |
 | G3 | L07–L08 合入、接线、端到端合成联调、RC 冻结与影响表 | 已完成（源码与合成候选通过；真实验收未执行） |
-| 10 | 真实验收（真实安装、登录、真实模型派工、生产政策） | 未开始，集中由 10 办理 |
+| 10 | 真实验收（真实安装、登录、真实模型派工、生产政策） | 已完成（2026-11-06，两单真实派工各一次；五张异常卡；产物已纳入本树） |
+| G3 后修复 | 10 发现的 R6/R8 无码拒绝 → 两个稳定错误码 + 回归；另出 RC2 | 已完成（`sourcePassed=true`；RC1 的 live 证据只属于 RC1） |
 | 11 | 交付检查 | 未开始 |
 
-`sourcePassed=true`、`liveReady=false`：八个开发线全部只做到「源码 + 合成证据」，没有任何一项真实安装、真实登录、真实模型派工或生产政策变更。
+`sourcePassed=true`、`liveReady` 分两层：RC1 完成过一次真实安装 + 两单真实派工（DSH 与 WorkBuddy 各一单，均 accepted），但 10 的验收同时暴露三处缺陷（见「真实验收（10）归档与集成人核验」）。G3 后修复把这些缺陷中属代码的两处修掉并另出 RC2，**RC2 只做过源码与合成候选检查，未再进真实环境**。
 
 ## 八条开发线
 
@@ -236,3 +237,69 @@ RC 冻结对象：归档提交（`gates/G3.json` 记录的集成树 HEAD）、�
 - 53 项矩阵：`docs/D0_D1_DELIVERY_READINESS.md`（第 2 节原文 + 第 5/6/7 节增量登记）。
 - 交付检查：`docs/delivery/L0x_ACCEPTANCE.md` 八份、`outputs\finish-l0x-20261105\HANDOFF.json` 八份、`gates/G0–G3.json` 四份、本文件。
 - 边界：未推送、未合并 main、未发布、未部署；生产容量仍为 1，任何真实派工需按 AGENTS 展示执行器/来源/精确模型/推理/已知费用并取得确认。
+
+## 真实验收（10）归档与集成人核验（2026-11-06）
+
+产物：`E:\javaproject\workbuddy-finish\F10-live`（分支 `docs/live-acceptance`，HEAD `91af89ee9d5a3358f65a6e0e7699c9100f91d732`，未提交）。三份文档由集成人复制进本树并在本次提交归档：`docs/delivery/EXTERNAL_CONDITIONS.md`、`LIVE_ACCEPTANCE_EVIDENCE_INDEX.md`、`LIVE_ACCEPTANCE_SUMMARY.md`；原始证据留在 `E:\javaproject\outputs\finish-live-20261106`（284 文件，不入 Git）。
+
+已发生的真实动作（以 `LIVE_ACCEPTANCE_SUMMARY.md` 与库内记录为准）：
+
+| 项 | 事实 |
+| --- | --- |
+| 真实安装 | `E:\javaproject\workbuddy-install\gateway-v0.7.1-rc1`，install `2026-11-06T03:18:09.022Z`；`doctor` codeHash `ac2a673f…`；`.env` 335B、`data\workbuddy-mcp.toml` 465B（= 清单 snippetHash） |
+| 技能安装位 | 安装前 4/6 与 RC 不同；安装后六文件与 RC 一致；旧版备份 `workbuddy-executor-I5FgPH` |
+| DSH 单 | task `d1-dsh-5f82573e-b87a-4ff1-acd9-ec8d541243f5`，attempt `run-4fc382d9…`，`deepseek-v4.1-flash`/`high`/credits x0.00（观测），review `review-684133fe…`，accepted `05:55:54.478Z` |
+| WorkBuddy 单 | task `d1-workbuddy-2fec4908-eb45-45eb-8852-8e8411b0cacf`，attempt `run-bc7288ad…`，`deepseek-v4.1-flash-sg`/`null`/credits x0.11（相对倍率，非金额），review `review-a7598513…`，accepted `06:15:38.488Z` |
+| 异常卡 | R7 同 operationId 换执行器 → `OPERATION_CONFLICT` 且无副作用；R4 领取后取消 → 原生空闲、`clamp.mjs` 未变；R8 预算耗尽返工被拒后 accepted；R6 外来会话被拒 → 任务 `blocked`、操作 `outcome_unknown`、容量被占；R3 `STOP_UNCONFIRMED` 阻挡重启，停止折入后通过 |
+| 未做 | R1/R2/R5/R9/R10（需人为中断、再造成 outcome_unknown、拖满 600 秒、伪造历史 attempt、故障注入）；第二台机器未执行 |
+| 用户当日决定 | R6 blocked 任务按 T7D 原样保留（recovery-cli show/observe 均 exit 0、`available:[]`）；`config.toml` 本轮不合并（始终 7,449B、0 处 `workbuddy_rc`）；网关自登记常驻服务保留（PID 11672，`data\persistent-service.json`，cdpPort 18491，workers 4） |
+
+集成人独立核验（自写探针 `outputs\finish-integration-20261105\G3-probe\verify-live10.mjs`，把 `tasks.sqlite`+`-wal`+`-shm` 复制到临时目录只读查询）：
+
+- 6 个任务：两单 accepted、R4a/R4b cancelled、R8 accepted、R6 blocked（`attempt_id=null`）；`task_closed` 5 条，R6 无。
+- `workflow_capacity` 仅 1 行，指向 R6 任务 `d1-workbuddy-2cc8e262-54f5-43a0-8511-b3febf0d4101` / `card-r6-foreign-session-1793948211334`；该 send 操作状态 `outcome_unknown`（全库唯一）。
+- 42 条 `task_operations`，其余 send/queue/review/accept 均 `succeeded` 或 `rejected`。
+- 两单最终 `revision` = `DNbnQevDQ_eiY3Fy`、`nViAz0BiNEdMDcsL`，与报告一致。
+
+集成人发现的证据问题（报告未自述）：
+
+1. `evidence\cards\r6\recovery-view.json`（952B）不是恢复视图 JSON，而是一次失败调用的 PowerShell 转录：`workbuddy-call.mjs` 收到未加引号的 `{operationId:…}` 后 `SyntaxError: Expected property name or '}' in JSON at position 1`。报告里「证据：recovery-view.json」不成立，R6 的恢复视图实际未落成可解析文件。
+2. `evidence\get-task-1.json`、`evidence\workbuddy-models.json` 是 UTF-16LE 重定向产物，不是 UTF-8 JSON（34 个 evidence JSON 中这 3 个不可解析，其余 31 个合法）。
+3. 三份文档在 F10-live 里一直未提交（本次由集成人归档，不改 10 的分支）。
+
+由验收暴露、并经源码核对确认的产品缺陷（O6 系列）：
+
+- R6：`gateway/src/workspace-workers.ts` 的会话改绑冲突抛普通 `Error`，`coordinator.ts:38` 的 `failureCause()` 只认 `AdmissionError.code` 或 errno 风格码 → blocked 原因不含原因码。
+- R8：`gateway/src/coordinator.ts` 的轮数上限同样抛无码 `Error`。
+- R6 的 send 操作在「准备阶段」失败仍落 `outcome_unknown`：`src/operation-admission.ts` 在准备前就进入 `effect_started`，失败一律按未知效果处理 → 容量被占、必须走 reconcile/close 流程。属设计取舍，本轮不动。
+
+## G3 后修复与 RC2（2026-11-06）
+
+代码（两处，均只把无码拒绝换成稳定码，消息不变）：
+
+| 文件 | 改动 |
+| --- | --- |
+| `gateway/src/workspace-workers.ts` | 会话已绑到其它项目时抛 `new AdmissionError("WORKSPACE_CONFLICT", "This native session is already registered for another workspace")`；新增 `import { AdmissionError } from "./collaboration.js"`（无环：`collaboration.ts` 只 import `task-contract.js`） |
+| `gateway/src/coordinator.ts` | 轮数上限改抛 `new AdmissionError("ATTEMPT_LIMIT", 原文案)` |
+
+连带效果：`failureCause()` 现在能把 `WORKSPACE_CONFLICT` / `ATTEMPT_LIMIT` 写进 `blocking_reason`（`Contract preparation failed (WORKSPACE_CONFLICT); …`），MCP 结果在 `server.ts` 的错误分支多一个 `code` 字段；操作状态机不变（仍按 `effect_started` 语义判未知）。
+
+回归：`gateway/test/workspace-workers.test.ts` 新增「a native session cannot be re-bound to another project and reports a stable code」；`gateway/test/finish-acceptance-admission-anomalies.test.ts` 的预算耗尽用例由 `/attempt limit/i` 改为断言 `AdmissionError` + `ATTEMPT_LIMIT`。
+
+检查（隔离环境同 G3；日志 `outputs\finish-integration-20261105\G3-fix\logs\`）：
+
+| 检查 | 结果 |
+| --- | --- |
+| `npm run build` | exit 0 |
+| 受影响两文件 | 23/23 pass，exit 0 |
+| 全量 `npm test` | 1282 tests / 1269 pass / **1 fail** / 12 skipped，exit 1；失败为 `test/command-cleanup.test.ts:24` 的真实嵌套 Job 清理用例（`recovered.length` 期望 1 得 0），单文件复跑两次均 4/4 通过 → 高负载下的时序问题，未定位根因 |
+| RC2 打包 | `codex-workbuddy-gateway-v0.7.1.zip` 694 文件 / 2,236,003 字节 / sha256 `9e146b93fe40ff3b7086e4117c89dd0e2b81f81c61a585cfba4b003ef4411eee`；技能包与 Harness 技能包摘要同 G3 |
+| 解包 `verify-release` | `{"version":"0.7.1","verifiedFiles":694,"hashesMatch":true}` exit 0 |
+| `check --expect-sha256 9e146b…` | exit 0，`ok=true`、`problems=[]`、`totalBytes 7,275,426` |
+| `version-check` | exit 0，`matches=true`、`exact=true`、`matched=694` |
+| `drill --apply` | exit 0，steps 4/4、checks 5/5、negatives 6/6 |
+| `upgrade-drill --apply` | exit 0，steps 17/17、checks 17/17、negatives 6/6 |
+
+RC2 影响表：与 RC1 只差上面两个错误码与两处测试文本。RC1 已覆盖的真实结论（真实安装、技能安装位、两单真实派工与验收、五张卡的事件链）在 RC2 上仍然成立（未改这些路径）；但「R6/R8 的无码现象已修」必须在 RC2 上重验才算数。建议的重验方式：在库副本上重放 R6（准备阶段即失败、不派工、无模型费用），确认 `blocking_reason` 带 `WORKSPACE_CONFLICT`、操作错误码带 `WORKSPACE_CONFLICT`；R8 可用预算 1 的任务直接复跑。
+
+仍未修（登记，不在本轮关闭）：R6 准备期失败落 `outcome_unknown` 并占容量；`continueAdmitted` 里其余无码 `Error`（已取消任务、无会话、活跃 worker、缺 provider 返回值）保持原样；L08 的 O1/O3/O4；L07 四表未并入统一 migration；gitIndex 5 秒超时错误码（`workspace-protection.ts`）。
