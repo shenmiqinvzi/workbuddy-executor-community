@@ -1,0 +1,111 @@
+{
+  "schema": "workbuddy-executor/integration-gate-1",
+  "gate": "G3-fix2",
+  "recordedAt": "2026-11-06T17:20:00+08:00",
+  "branch": "integration/delivery-finish",
+  "worktree": "E:\\javaproject\\workbuddy-finish\\I-integration",
+  "codeBaseCommit": "9844adc173e37ca4db892d40f2d23bfc8df9f798",
+  "codeBaseTree": "6081186724e327b24ef65e42620673132bfcf202",
+  "gateRecord": {
+    "commit": null,
+    "reason": "自引用：本文件随本次提交一起入库，提交哈希写入外部回执 outputs\\finish-integration-20261105\\G3-fix2\\RC3_RECEIPT.md"
+  },
+  "source": {
+    "sourceRc": "RC2 (9e146b93fe40ff3b7086e4117c89dd0e2b81f81c61a585cfba4b003ef4411eee)",
+    "trigger": "RC2 真实派工暴露的 F-CAP-1 / F-ACC-1；用户指令「F-CAP-1 / F-ACC-1 要进下一轮源码修复」",
+    "documents": ["docs/delivery/RC2_LIVE_RUN.md", "docs/delivery/STATUS_INDEX.md"]
+  },
+  "fixes": [
+    {
+      "id": "F-CAP-1",
+      "summary": "An admission refusal that never reached the native boundary used to occupy the single workflow slot; cancel left it blocked and the slot stayed occupied.",
+      "files": ["gateway/src/operation-admission.ts", "gateway/src/coordinator.ts"],
+      "changes": [
+        "isClosed() accepts a third closure path: cancelled task plus task_closed event whose source_ref is never_dispatched:<attemptId>",
+        "neverDispatched(taskId, attemptId) requires the occupant to belong to the task, matching attempt, no effect_started/outcome_unknown operation, no effectStartedAt/dispatchEnteredAt, and no task_closed event",
+        "closeNeverDispatched(taskId, attemptId, reason) writes state=cancelled, clears blockingReason, appends task_closed (closure=never_dispatched) and deletes workflow_capacity in one transaction",
+        "requestCancellation uses that branch; finishCancellation returns closed:true, capacityReleased:true, remoteStopped:false, executionState=never_dispatched and states it is not native stop proof",
+        "CAPACITY_OCCUPIED now names the occupying task and points at continue/cancel"
+      ],
+      "deliberatelyNotChanged": "blocked is not auto-closed, because gateway/test/desktop-queue.test.ts relies on correcting a refused dispatch with continue"
+    },
+    {
+      "id": "F-ACC-1",
+      "summary": "The earlier diagnosis 'MCP has no checks() entry point' was wrong: workbuddy_check_task exists. The real blocker was a $scope failure whose note hid the unauthorized path.",
+      "files": ["gateway/src/task-reviews.ts", "gateway/src/server.ts"],
+      "changes": [
+        "$scope note uses scope.error, else lists unauthorized changes (up to five), else keeps the original generic text",
+        "review() INVALID_REVIEW message points at workbuddy_check_task for the batch",
+        "check_task and review_task descriptions state where machineCheckIds come from"
+      ],
+      "stillOpen": "F-CONTRACT-1 (task body allowing a new file while allowedChanges is empty) is unchanged; only the reason is now visible"
+    }
+  ],
+  "regressions": [
+    "gateway/test/desktop-queue.test.ts: a cancellation before native dispatch closes the workflow and frees shared capacity",
+    "gateway/test/task-reviews.test.ts: T5 machine checks name the unauthorized workspace change instead of a generic scope note"
+  ],
+  "checks": [
+    { "command": "npm run build", "exitCode": 0, "notes": "tsc -p tsconfig.json" },
+    { "command": "npx tsx --test --test-concurrency=1 <15 affected suites>", "exitCode": 0, "counts": { "tests": 218, "pass": 217, "fail": 0, "skipped": 1 }, "log": "outputs/finish-integration-20261105/G3-fix2/logs/specials-fcap1.log" },
+    { "command": "npm run test:workbench", "exitCode": 0, "counts": { "tests": 139, "pass": 139, "fail": 0 }, "log": "outputs/finish-integration-20261105/G3-fix2/logs/workbench-fcap1.log" },
+    { "command": "npm test", "exitCode": 0, "counts": { "tests": 1284, "pass": 1272, "fail": 0, "cancelled": 0, "skipped": 12 }, "log": "outputs/finish-integration-20261105/G3-fix2/logs/full-fcap1.log" }
+  ],
+  "package": {
+    "archive": "gateway/outputs/release/codex-workbuddy-gateway-v0.7.1.zip",
+    "files": 694,
+    "bytes": 2239631,
+    "sha256": "4021310ca255497a4bf276f030dc656f24c3e7216ee094220a95766a49562632",
+    "manifestSha256": "a8c4928c6a3172073e78c55b6e83379143ff2ef4a5b167689f039f809a8f12a7",
+    "previousRc2": { "bytes": 2236003, "sha256": "9e146b93fe40ff3b7086e4117c89dd0e2b81f81c61a585cfba4b003ef4411eee" },
+    "skillArchive": { "files": 6, "sha256": "e61be9ba03f48e555ed1a8441eb8d56f0013eb818cfdceb610015d26e0839db8" },
+    "deepseekSkillArchive": { "files": 2, "sha256": "22909e1b0654df6eb13b3ccdcf5767ed78e094d416b891821a072c1004318d13" }
+  },
+  "candidateTools": [
+    { "tool": "scripts/verify-release.mjs", "exitCode": 0, "result": { "version": "0.7.1", "verifiedFiles": 694, "hashesMatch": true } },
+    { "tool": "scripts/candidate-installation.mjs check", "exitCode": 0, "result": { "ok": true, "files": 694, "problems": 0, "totalBytes": 7292282 }, "report": "outputs/finish-integration-20261105/G3-fix2/cand-check.json" },
+    { "tool": "scripts/candidate-installation.mjs version-check", "exitCode": 0, "result": { "matches": true, "exact": true, "matched": 694 }, "report": "outputs/finish-integration-20261105/G3-fix2/cand-version-check.json" },
+    { "tool": "scripts/candidate-installation.mjs drill --apply", "exitCode": 0, "result": { "steps": 4, "stepsAllOk": true, "checksAllTrue": true, "negativesOk": true }, "report": "outputs/finish-integration-20261105/G3-fix2/cand-drill.json" },
+    { "tool": "scripts/candidate-installation.mjs upgrade-drill --apply", "exitCode": 0, "result": { "steps": 17, "stepsAllOk": true, "checksAllTrue": true, "negativesOk": true }, "report": "outputs/finish-integration-20261105/G3-fix2/cand-upgrade-drill.json" }
+  ],
+  "runtimeProbe": {
+    "script": "outputs/finish-integration-20261105/G3-fix2/probe/fcap1-rc3.mjs",
+    "target": "unpacked RC3 candidate dist, synthetic task database, synthetic native session table",
+    "exitCode": 0,
+    "verdict": "F-CAP-1 closure releases capacity on RC3",
+    "steps": [
+      "refuse-unsupported-session-mode",
+      "task-is-blocked",
+      "cancel-closes-undelivered-work",
+      "closed-task-is-cancelled",
+      "capacity-row-is-freed",
+      "closure-is-labelled-never-dispatched",
+      "a-later-task-can-be-sent"
+    ],
+    "report": "outputs/finish-integration-20261105/G3-fix2/probe/fcap1-rc3.json"
+  },
+  "verificationEnvironment": {
+    "node": "v24.19.0",
+    "workbuddyCliElectron": "outputs/finish-integration-20261105/G3/env/WorkBuddy.exe (synthetic)",
+    "workbuddyConfigDir": "outputs/finish-integration-20261105/G3/env/workbuddy-config (synthetic)",
+    "noProxy": "127.0.0.1,localhost",
+    "clearedEnv": ["WORKBUDDY_DB_FILE", "WORKBUDDY_RUNS_DIR", "NODE_TEST_CONTEXT"]
+  },
+  "status": {
+    "sourcePassed": true,
+    "syntheticCandidatePassed": true,
+    "runtimeProbePassed": true,
+    "rc3Installed": false,
+    "rc3Dispatched": false,
+    "rc2HistoricalTaskStillOpen": true,
+    "releaseReady": false
+  },
+  "boundaries": {
+    "pushed": false,
+    "mergedToMain": false,
+    "published": false,
+    "deployed": false,
+    "originalIntegrationTreeModified": false
+  },
+  "nextGate": "RC3 真实验收需用户授权（重装 + 派工）；F-CONTRACT-1 语义决策留待下一轮；推送/合 main/发布仍需显式指令"
+}

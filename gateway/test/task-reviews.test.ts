@@ -59,6 +59,14 @@ test("T6 missing semantic check rejects, fake machine actor and unknown evidence
   assert.throws(() => f.service.review({ ...base(), taskId: "other" }), { code: "STALE_ATTEMPT" });
 });
 
+test("T5 machine checks name the unauthorized workspace change instead of a generic scope note", async t => {
+  const f = await reviewFixture(t, "workbuddy"); await f.finish();
+  fs.writeFileSync(path.join(f.workspace, "notes.txt"), "Not covered by the declared scope\n");
+  const scope = f.checks().checks.find(check => check.checkId === "$scope")!;
+  assert.equal(scope.status, "failed");
+  assert.match(scope.note, /Unauthorized workspace changes: added notes\.txt/);
+});
+
 for (const changed of ["source", "scope", "protected", "report", "request", "events", "inspection"] as const) test(`T6 ${changed} changes after review invalidate acceptance`, async t => {
   const f = await reviewFixture(t, "workbuddy", { semantic: true }); await f.finish(); const review = f.review();
   if (changed === "source" || changed === "inspection" || changed === "protected") fs.appendFileSync(f.source, "// concurrent change\n");

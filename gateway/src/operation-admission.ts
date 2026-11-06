@@ -158,6 +158,10 @@ export class OperationAdmission {
     const recovery = this.store.recoveries.closure(task.taskId);
     if (recovery && task.state === "cancelled" && recovery.attemptId === (task.attemptId ?? null)) return !!this.db.prepare("SELECT 1 FROM task_events WHERE task_id=? AND attempt_id IS ? AND type='task_closed' AND source_ref=?").get(task.taskId, recovery.attemptId, `recovery:${recovery.operationId}`);
     if (!task.attemptId || !["accepted", "cancelled", "failed"].includes(task.state)) return false;
+    // A workflow the gateway refused before its native boundary never ran
+    // natively, so its closure is the recorded refusal, not a stop proof
+    // (F-CAP-1). Only the never-dispatched closure event authorises this path.
+    if (this.db.prepare("SELECT 1 FROM task_events WHERE task_id=? AND attempt_id=? AND type='task_closed' AND source_ref=?").get(task.taskId, task.attemptId, `never_dispatched:${task.attemptId}`)) return true;
     try {
       const evidence = JSON.parse(task.runEvidenceDigest ?? "");
       return evidence.stopped === true && evidence.attemptId === task.attemptId && !!this.db.prepare("SELECT 1 FROM task_events WHERE task_id=? AND attempt_id=? AND type='task_closed'").get(task.taskId, task.attemptId);
@@ -170,7 +174,7 @@ export class OperationAdmission {
     const owner = this.occupant();
     if (owner && owner.taskId !== taskId) {
       const previous = this.store.get(owner.taskId);
-      if (!previous || !this.isClosed(previous)) throw new AdmissionError("CAPACITY_OCCUPIED", "An original workflow remains open or uncertain.");
+      if (!previous || !this.isClosed(previous)) throw new AdmissionError("CAPACITY_OCCUPIED", `An original workflow remains open or uncertain (task ${owner.taskId}); continue or cancel that task before sending another.`);
       this.db.prepare("DELETE FROM workflow_capacity WHERE slot=1").run();
     } else if (owner && owner.executor !== executor) throw new AdmissionError("EXECUTOR_UNAVAILABLE", "The workflow cannot change its original executor.");
     // Check ALL historical rows, including preparations with no attempt. Migration invents no stop facts.
@@ -179,6 +183,39 @@ export class OperationAdmission {
     }
     this.store.dshBindings.assertNoOpen(taskId);
     this.db.prepare("INSERT OR IGNORE INTO workflow_capacity VALUES (1,?,?,?)").run(taskId, executor, operationId);
+  }
+  /**
+   * True only when the capacity owner never crossed a native boundary
+   * (F-CAP-1). A refusal recorded before `nativeBoundary` leaves no
+   * effectStartedAt/dispatchEnteredAt, so there is no native work to stop and
+   * no stop proof to wait for.
+   */
+  neverDispatched(taskId: string, attemptId?: string | null): boolean {
+    const owner = this.occupant();
+    if (!owner || owner.taskId !== taskId) return false;
+    if (attemptId && this.store.get(taskId)?.attemptId !== attemptId) return false;
+    const operation = this.get(owner.operationId);
+    if (!operation) return false;
+    if (operation.state === "effect_started" || operation.state === "outcome_unknown") return false;
+    if (operation.effectStartedAt || operation.dispatchEnteredAt) return false;
+    return !this.db.prepare("SELECT 1 FROM task_events WHERE task_id=? AND type='task_closed'").get(taskId);
+  }
+  /**
+   * Close a workflow that never reached its native side effect and release the
+   * shared capacity. The closure event names its provenance so no reader can
+   * mistake it for a native stop; a native attempt needs recovery instead.
+   */
+  closeNeverDispatched(taskId: string, attemptId: string, reason: string, actor = "codex"): void {
+    this.store.atomic(() => {
+      const task = this.store.get(taskId);
+      if (!task || task.attemptId !== attemptId) throw new AdmissionError("STALE_ATTEMPT", "Only the current attempt can be closed.");
+      if (!this.neverDispatched(taskId, attemptId)) throw new AdmissionError("OPERATION_OUTCOME_UNKNOWN", "Native execution may have started; it needs recovery, not closure.");
+      const now = new Date().toISOString();
+      this.store.update(taskId, { state: "cancelled", blockingReason: null, cancelNote: reason });
+      this.store.appendTaskEvent({ taskId, attemptId, type: "task_closed", occurredAt: now, observedAt: now, actor, payload: { closedAs: "cancelled", closure: "never_dispatched", reason }, sourceRef: `never_dispatched:${attemptId}` });
+      const owner = this.occupant();
+      if (owner?.taskId === taskId) this.db.prepare("DELETE FROM workflow_capacity WHERE slot=1").run();
+    });
   }
   private admit(kind: string, taskId: string, executor: string, parameters: unknown, options: OperationOptions, binding: unknown, capacity: boolean): { record: OperationRecord; fresh: boolean } {
     const legacy = options.operationId === undefined;

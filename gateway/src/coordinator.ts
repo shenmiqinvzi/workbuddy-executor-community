@@ -561,6 +561,14 @@ export class TaskCoordinator {
   private requestCancellation(taskId: string, reason?: string) {
     const task = this.requireTask(taskId);
     if (task.state === "accepted") return { accepted: true as const, task };
+    // F-CAP-1: a workflow the gateway refused before its native boundary has
+    // nothing to stop, so cancellation is a closure, not a stop request. Its
+    // shared capacity must come back or every later send is refused forever.
+    if (task.attemptId && this.store.operations.neverDispatched(taskId, task.attemptId)) {
+      const reasonText = task.cancelNote ?? reason ?? "Cancelled before any native dispatch.";
+      this.store.operations.closeNeverDispatched(taskId, task.attemptId, reasonText);
+      return { accepted: false as const, closed: true as const, task, updated: this.requireTask(taskId), requested: false };
+    }
     const requested = this.client.cancel(task.messageId);
     // Preserve uncertainty: cancellation requested does not prove remote execution stopped.
     const snapshot = task.attemptId ? this.client.runSnapshot(task.attemptId) : undefined;
@@ -573,6 +581,8 @@ export class TaskCoordinator {
   private async finishCancellation(request: ReturnType<TaskCoordinator["requestCancellation"]>) {
     const {task}=request, taskId=task.taskId;
     if (request.accepted) return {ok:true,task, ...this.executionStatus(taskId),message:"Already accepted; no cancellation dispatched"};
+    if (request.closed) return {ok:true,closed:true,capacityReleased:true,task:request.updated,state:request.updated.state,remoteStopped:false,cancellationRequested:false,executionState:"never_dispatched" as const,
+      message:"No native work had started; the workflow is closed and shared capacity is free. This is not a native stop proof."};
     if (this.config.backend === "desktop-queue" && task.sessionId && task.workspace) {
       const registration = readServiceRegistration(this.config.serviceConfigFile ?? path.join(path.dirname(this.config.dbFile), "persistent-service.json"));
       if (registration && path.resolve(registration.dbFile) === path.resolve(this.config.dbFile)) {

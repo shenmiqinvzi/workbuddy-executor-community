@@ -1,4 +1,4 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+﻿import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { loadConfig } from "./config.js";
@@ -144,7 +144,7 @@ server.tool("workbuddy_respond_task", "Respond to an active WorkBuddy permission
 }, ({ taskId, decision, content }) => guard(async () => tasks.respond(taskId, decision, content)));
 
 const reviewOperation = { operationId: z.string().min(1).max(512), expectedRevision: z.string().min(1), expectedAttemptId: z.string().min(1) };
-server.tool("workbuddy_check_task", "Explicitly verify current provenance, native stop, T5 scope and existing command evidence; persists server-owned program check IDs. Does not dispatch a model.", {
+server.tool("workbuddy_check_task", "Explicitly verify current provenance, native stop, T5 scope and existing command evidence; persists server-owned program check IDs and returns the machineCheckIds that workbuddy_review_task requires. Does not dispatch a model.", {
   taskId, ...reviewOperation,
 }, input => guard(async () => ({ ok: true, ...tasks.reviewChecks(input) })));
 server.tool("workbuddy_run_review_command", "Run one exact JSON CommandSpec from the original agreement as independent bounded verification. No arbitrary command overrides, model requests or worker rounds.", {
@@ -153,7 +153,7 @@ server.tool("workbuddy_run_review_command", "Run one exact JSON CommandSpec from
 server.tool("workbuddy_record_inspection", "Record the trusted local coordinator's independent file inspection with current hashes. Worker reports cannot call this a program check.", {
   taskId, ...reviewOperation, note: z.string().trim().min(1).max(4000), files: z.array(z.string().min(1)).min(1).max(100),
 }, input => guard(async () => ({ ok: true, ...tasks.recordInspection(input) })));
-server.tool("workbuddy_review_task", "Create an immutable reviewId from a server program batch and original semantic requirements. Status is not acceptance; failed and checker_error reviews remain in history.", {
+server.tool("workbuddy_review_task", "Create an immutable reviewId from a server program batch (the batch from workbuddy_check_task) and original semantic requirements. Status is not acceptance; failed and checker_error reviews remain in history.", {
   taskId, ...reviewOperation, machineCheckIds: z.array(z.string().min(1)).length(1),
   semanticChecks: z.array(z.object({ checkId: z.string().min(1).max(100), status: z.enum(["passed", "failed", "unknown", "not_applicable", "checker_error"]), note: z.string().trim().min(1).max(4000), evidenceRefs: z.array(z.string().min(1)).min(1).max(100) }).strict()).max(100),
   note: z.string().trim().min(1).max(4000), supersedesReviewId: z.string().min(1).optional(),

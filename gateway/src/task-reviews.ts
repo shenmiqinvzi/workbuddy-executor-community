@@ -138,8 +138,12 @@ export class TaskReviews {
       const scope = this.store.workspaceProtection.review(task.taskId, task.attemptId!);
       task = this.task(task.taskId);
       const binding = this.binding(task, runsDir);
+      // A failed scope check must say which paths were not authorized: a bare
+      // "failed" leaves the operator with no actionable fact (F-ACC-1).
+      const unauthorized = scope.changes.filter(change => change.category === "unauthorized").map(change => `${change.kind} ${change.path}`).slice(0, 5);
+      const scopeNote = scope.error ?? (unauthorized.length ? `Unauthorized workspace changes: ${unauthorized.join(", ")}` : "T5 inventory and original user changes");
       const checks = [this.check("$provenance", "provenance", task, "passed", ["authenticated_report", "native_stop"], { evidence: binding.evidenceDigest }, "Authenticated current report and explicit native stop verified"),
-        this.check("$scope", "scope", task, scope.status, ["workspace_inventory"], { baseline: scope.baselineDigest, inventory: scope.inventoryDigest ?? "unknown" }, scope.error ?? "T5 inventory and original user changes")];
+        this.check("$scope", "scope", task, scope.status, ["workspace_inventory"], { baseline: scope.baselineDigest, inventory: scope.inventoryDigest ?? "unknown" }, scopeNote)];
       for (const required of this.terms(task).checks.filter(check => check.kind === "command")) {
         const records: Array<{ path: string; sha256: string; status?: CheckStatus; inventoryDigest?: string }> = [];
         for (const row of this.db.prepare("SELECT id FROM task_review_records WHERE task_id=? AND kind='command' ORDER BY rowid DESC").all(task.taskId)) {
@@ -224,7 +228,7 @@ export class TaskReviews {
     const { taskId, operationId, expectedRevision, expectedAttemptId, ...parameters } = input;
     return this.store.operations.local("review", taskId, { ...parameters, runsDir }, input, () => {
       const task = this.task(taskId), binding = this.binding(task, runsDir);
-      if (!text(input.note) || !Array.isArray(input.machineCheckIds) || input.machineCheckIds.length !== 1 || !Array.isArray(input.semanticChecks) || input.semanticChecks.length > 100) return fail("INVALID_REVIEW", "Reference one complete program check batch and bounded semantic checks.");
+      if (!text(input.note) || !Array.isArray(input.machineCheckIds) || input.machineCheckIds.length !== 1 || !Array.isArray(input.semanticChecks) || input.semanticChecks.length > 100) return fail("INVALID_REVIEW", "Reference one complete program check batch and bounded semantic checks; call workbuddy_check_task first to create that batch.");
       const batch = this.read<Batch>(input.machineCheckIds[0]!, taskId, "machine");
       if (batch.attemptId !== task.attemptId || batch.runsDir !== runsDir || batch.binding.digest !== binding.digest) return fail("REVIEW_STALE", "Program checks belong to different source, attempt or evidence.");
       this.verifyHashes(batch.checks);

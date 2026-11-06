@@ -288,6 +288,29 @@ test("a rejected queue dispatch remains inspectable and can be corrected without
   assert.equal((await f.queue.claim("unit-session", 0)).status, "task");
 });
 
+test("a cancellation before native dispatch closes the workflow and frees shared capacity", async (t) => {
+  const f = fixture(t);
+  const refused = await f.coordinator.send({ model: "synthetic-user-choice", taskId: "refused-before-native", objective: "Fixture task", workspace: f.dir, sessionId: "unit-session", sessionMode: "new" });
+  assert.equal(refused.ok, false);
+  const blocked = await f.coordinator.sync("refused-before-native");
+  assert.equal(blocked.state, "blocked");
+  const attemptId = blocked.attemptId!;
+  const cancelled = await f.coordinator.cancel("refused-before-native", "No native work was requested");
+  assert.ok("closed" in cancelled, "a refusal that never entered the native boundary closes on cancel");
+  if (!("closed" in cancelled)) throw new Error("Expected a closure");
+  assert.equal(cancelled.capacityReleased, true);
+  assert.equal(cancelled.remoteStopped, false, "closing an undelivered task is not native stop proof");
+  assert.equal((await f.coordinator.sync("refused-before-native")).state, "cancelled");
+  const db = new DatabaseSync(f.config.dbFile, { readOnly: true });
+  assert.equal((db.prepare("SELECT count(*) AS n FROM workflow_capacity").get() as { n: number }).n, 0);
+  const closed = db.prepare("SELECT source_ref FROM task_events WHERE type='task_closed'").all() as Array<{ source_ref: string }>;
+  assert.equal(closed.length, 1);
+  assert.equal(closed[0]!.source_ref, `never_dispatched:${attemptId}`);
+  db.close();
+  await f.send("after-refusal");
+  assert.equal((await f.queue.claim("unit-session", 0)).status, "task");
+});
+
 
 
 

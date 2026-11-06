@@ -19,6 +19,7 @@
 | G3 后修复 | 10 发现的 R6/R8 无码拒绝 → 两个稳定错误码 + 回归；另出 RC2 | 已完成（`sourcePassed=true`；RC1 的 live 证据只属于 RC1） |
 | RC2 真实验收（集成人执行） | 用户授权后在 RC2 上真实重装并用 WorkBuddy 桌面通道派一单 | 已完成（2026-11-06T08:23Z 安装、08:26Z 派工、08:28Z 结果为 `needs_review`；独立核验通过；未走完 review/accept，见 `RC2_LIVE_RUN.md`） |
 | 11 | 交付检查 | 已完成（`265234a`，仅文档；`FINAL_REVIEW_INDEX.md` 648 行/八节 + K1–K8 矛盾） |
+| RC3 修复（F-CAP-1 / F-ACC-1） | 未派工任务取消即关闭并释放单槽；`$scope` 指出未授权变更、批次入口可发现 | 已完成（源码 + 合成 + 运行探针；**未在 RC3 上重装或派工**） |
 
 `sourcePassed=true`、`liveReady` 分两层：RC1 完成过一次真实安装 + 两单真实派工（DSH 与 WorkBuddy 各一单，均 accepted），但 10 的验收同时暴露三处缺陷（见「真实验收（10）归档与集成人核验」）。G3 后修复把这些缺陷中属代码的两处修掉并另出 RC2，**RC2 只做过源码与合成候选检查，未再进真实环境**。
 
@@ -327,3 +328,38 @@ RC2 影响表：与 RC1 只差上面两个错误码与两处测试文本。RC1 �
 | `get-task-1.json` | 无法按原路重采：`workbuddy_get_task` 对 DSH 任务报「The original DSH adapter is unavailable」，`deepseek_get_task` 报「Unknown DeepSeek task」（本沙箱无其运行库） | 给库副本投影 `task-projection-1`（51 事件/10 操作），sha `92b4e999…`；**10 报告中该单「任务详情」应改述为库内投影，不宣称是 `get` 捕获** |
 
 两处修正同时说明：原三份文件都是 PowerShell 重定向 + 参数未加引号造成的（UTF-16 与转录），不是判断错误，但「有文件」不等于「文件成立」。
+
+## RC3 修复：F-CAP-1 与 F-ACC-1（2026-11-06，集成人）
+
+来源：RC2 真实派工暴露的三个发现（`RC2_LIVE_RUN.md` §4），用户指定「F-CAP-1 / F-ACC-1 要进下一轮源码修复」。
+
+### 改了什么
+
+| 发现 | 修复 | 代码 |
+| --- | --- | --- |
+| F-CAP-1：准入拒绝也占单槽；取消不释放 | 从未进入原生边界的任务，取消即关闭并释放容量；返回 `closed:true`、`capacityReleased:true`、`remoteStopped:false`、`executionState:"never_dispatched"`，并声明这不是原生停止证明 | `src/operation-admission.ts`（`isClosed` 第三条路径、`neverDispatched`、`closeNeverDispatched`）、`src/coordinator.ts`（`requestCancellation` / `finishCancellation`） |
+| F-ACC-1（更正）：不是「MCP 缺入口」，而是 `$scope` 失败原因不可见 | `$scope` 的 note 直接列出未授权变更；`review_task` 的拒绝文案指向 `check_task`；两个工具描述说明批次来源 | `src/task-reviews.ts`、`src/server.ts` |
+| 可读性 | `CAPACITY_OCCUPIED` 带上占用任务 id 并指向 continue/cancel | `src/operation-admission.ts` |
+
+刻意不做：把 `blocked` 自动改成 failed/closed —— 既有用例依赖「拒绝后仍可 `continue` 纠正」。F-CONTRACT-1（正文与 `allowedChanges` 冲突）语义未改，只把原因说清楚。
+
+### 检查与候选
+
+| 项 | 结果 |
+| --- | --- |
+| `npm run build` | exit 0 |
+| 受影响 15 套件 | 218 / 217 pass / 0 fail / 1 skipped / exit 0 |
+| `npm run test:workbench` | 139/139 exit 0 |
+| `npm test` | 1284 / 1272 pass / 0 fail / 12 skipped / exit 0 |
+| RC3 包 | 694 文件 / 2 239 631 B / sha256 `4021310ca255497a4bf276f030dc656f24c3e7216ee094220a95766a49562632` |
+| `verify-release` | 694 hashesMatch exit 0 |
+| `check --expect-sha256` | `ok:true`、problems 0、totalBytes 7 292 282 |
+| `version-check` | `matches:true`、`exact:true`、`matched:694` |
+| `drill` / `upgrade-drill` | 4/4、17/17，checks 与 negatives 全 true |
+| 运行探针 `G3-fix2\probe\fcap1-rc3.mjs` | 7 步全 true，`verdict:"F-CAP-1 closure releases capacity on RC3"`，exit 0 |
+
+### 边界
+
+- RC3 只有合成与探针证据；未重装、未派工，`liveReady` 仍为 false。
+- RC2 安装根里那条 `needs_review` 任务仍在占槽；要关闭它需在真实安装根上操作，属用户授权范围。
+- 未推送、未合 main、未发布、未部署。
