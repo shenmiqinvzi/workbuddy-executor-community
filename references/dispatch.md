@@ -64,6 +64,52 @@ node scripts/plan.mjs authorize <返回的 planId> <返回的 revision> --source
 
 授权不是工具能力。agent 可以起草提案和参数，但不能自己创建或授权计划，也不能用非契约派工绕过去；用户没确认模型时停在准备阶段。计划只授权一次派工，`consumedBy` 记录它绑定的 taskId。
 
+## 推荐与排除原因
+
+“新建任务”里的“评估选择”给出可审计的解释，不调用模型、不准备原生会话、不建 attempt。口径是：只依据这次填的约定、当前目录快照、当前与原任务政策、以及已保存的统计；不为凑推荐去扫项目、不另调计费模型、不编造质量分。
+
+输出（`workbuddy-executor/recommendation-1`）的关键字段：
+
+```json
+{
+  "schemaVersion":"workbuddy-executor/recommendation-1",
+  "explanationVersion":1,
+  "readOnly":true,
+  "generatedAt":"2026-11-05T12:00:00.000Z",
+  "decision":"delegate",
+  "mode":"recommend",
+  "authorization":{"state":"none","requires":["preview","confirmation"]},
+  "attempt":null,
+  "nativeAttempt":"none",
+  "catalog":{"catalogId":"目录快照ID","observedAt":"...","expiresAt":"...","fresh":true},
+  "policy":{"version":"政策版本","requireFree":false,"selectionMode":"user_choice","allowedCount":0,"maxAttempts":3,"maxTimeoutSeconds":1800,"dispatchEnabled":true},
+  "decisionReason":{"code":"delegate_ranked_candidates","message":"...","codes":["..."]},
+  "userSelection":null,
+  "recommended":{"selection":{"executorId":"workbuddy","connectionId":"实际连接","providerId":"实际提供方","modelId":"实际模型","reasoningEffort":null},
+    "cost":{"credits":"x0.00","pricingVerified":true,"known":true,"zero":true,"label":"已核实零费率"},
+    "resources":{"status":"fresh","routingVerified":false},
+    "rank":{"tier":1,"rule":"tier_then_lexicographic"}},
+  "candidates":[],"excluded":[],"missing":[],
+  "history":{"status":"partial","code":"statistics_partial_coverage","window":{"from":"...","to":null},"sampleSize":12,
+    "coverage":{"tasksIncluded":12},"claims":{"savings":null,"superiority":null}},
+  "limitations":["recommendation_only","no_model_call","no_attempt_created","routing_unverified"],
+  "digest":"...","drift":null
+}
+```
+
+怎么读：
+
+- `decision=direct` 表示范围与验收都很小（精确文件、少量检查、单轮），建议 Codex 自己改；它不会创建原生轮次，`attempt` 恒为 `null`、`nativeAttempt` 恒为 `none`。这不是拒绝委派：用户指定 WorkBuddy 时照旧委派。
+- `decision=delegate` 表示建议交给执行器；`candidates` 的 `rank.tier` 只是分档（1 零费率且资源引用新鲜、2 零费率、3 已观测费率且资源新鲜、4 已观测费率、5 费用未知），同档按执行选择标识排序，**不是质量排名**，也没有 `score` 字段。
+- `decision=wait` 表示现在不该派：没有任何候选、用户选择不可用、或费用上限无法保证。`recommended` 为 `null` 时不挑“最便宜”的替代，等用户重新决定。`hard_cost_cap_unsupported` 就是“要一个硬费用上限”这一条：本模块不保证，别把未知价格当成零，也别当成硬限。
+- `userSelection` 记录你显式点的模型：命中就是 `available` 且 `user_selection_wins`；缺失或不可用时是 `user_selection_unavailable`，原因写在 `missing`，不静默换模型。
+- `excluded` 是逐项排除原因，常见 `policy_blocked`（原 allowlist/精确模型限制）、`policy_requires_free`、`source_not_online`、`source_not_dispatchable`、`dispatch_not_enabled`、`catalog_expired`、`free_only_not_verified`。分类只据结构判断，不把“在线”当“可执行”。
+- `resources` 来自 `/workbench/v1/resources/plan-reference`：`status=fresh|stale|unavailable`，`routingVerified` 恒为 `false`。声明的关联不是真实路由；`quotaRemaining=null` 表示未知，不是零或充足。
+- `history` 来自 `/workbench/v1/statistics`：`partial` 时照样给样本量与时间窗，并说明覆盖不全；不可用就写不可用，`claims.savings`/`claims.superiority` 恒为 `null`，没有对照实测就不宣称更省或更强。
+- `digest` 只由输入与快照内容决定（同一约定、同一快照重算得到同一 digest）。`previous` 参与评估时返回 `drift`：快照、政策、选择或过期状态变化会标 `blockedForDispatch`，此时确认按钮拦下，不按旧解释派工；一致时 `codes` 为空。
+
+采用候选只是把执行来源/模型/档位填回表单，仍要核对约定并在本机确认；推荐本身不授权，也不等于已经派工。宿主未实现该命令时面板隐藏，手工选择流程不受影响。
+
 
 
 ## 等待与验收
