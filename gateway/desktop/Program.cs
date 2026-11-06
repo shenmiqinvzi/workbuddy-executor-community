@@ -86,6 +86,11 @@ internal sealed class WorkbenchWindow : Form
     private readonly Button retry = new() { Text = "重新连接", AutoSize = true, Visible = false, Anchor = AnchorStyles.None };
     private Process? host;
     private DesktopCommandChannel? commands;
+    private NotifyIcon? tray;
+    // The native shell remembers which episode it already showed, so a duplicate frame from a
+    // reconnecting host cannot turn one episode into two banners. The ledger in Node is the
+    // authority; this set only prevents repainting the same id inside one window session.
+    private readonly HashSet<string> notifiedEpisodes = new(StringComparer.Ordinal);
     private bool confirming;
     private Uri? origin;
     private string? currentTask;
@@ -105,7 +110,7 @@ internal sealed class WorkbenchWindow : Form
         retry.Click += async (_, _) => await StartAsync();
         Resize += (_, _) => retry.Location = new Point((ClientSize.Width - retry.Width) / 2, ClientSize.Height / 2 + 52);
         Shown += async (_, _) => { _ = ListenAsync(); await StartAsync(); };
-        FormClosing += (_, _) => { closing = true; lifetime.Cancel(); StopHost(); };
+        FormClosing += (_, _) => { closing = true; lifetime.Cancel(); tray?.Dispose(); tray = null; StopHost(); };
     }
 
     private async Task StartAsync()
@@ -137,6 +142,7 @@ internal sealed class WorkbenchWindow : Form
             origin = new Uri("http://127.0.0.1:" + port);
             startupStage = "webview";
             commands = new DesktopCommandChannel(ownHost);
+            _ = Task.Run(() => ReadHostEventsAsync(ownHost));
             ownHost.EnableRaisingEvents = true;
             ownHost.Exited += (_, _) => { try { if (!closing && host == ownHost && IsHandleCreated) BeginInvoke(() => ShowFailure("本地记录连接已结束。任务执行仍由原执行器管理，可以重新连接查看。")); } catch (InvalidOperationException) { } };
             if (web.CoreWebView2 is null)
@@ -253,6 +259,36 @@ internal sealed class WorkbenchWindow : Form
                     }
                     finally { confirming = false; }
                 }
+                else if (request.Action == "productivity_export_save")
+                {
+                    if (confirming) throw new DesktopCommandError("CONFIRMATION_BUSY", "请先完成当前确认窗口。");
+                    confirming = true;
+                    try
+                    {
+                        var directory = request.Parameters.TryGetProperty("directory", out var chosen) ? chosen.GetString() : null;
+                        if (string.IsNullOrWhiteSpace(directory))
+                        {
+                            using var picker = new FolderBrowserDialog { Description = "选择导出保存文件夹", UseDescriptionForTitle = true, ShowNewFolderButton = true };
+                            if (picker.ShowDialog(this) != DialogResult.OK) throw new DesktopCommandError("CONFIRMATION_CANCELLED", "尚未保存导出，可以重新选择文件夹。");
+                            directory = picker.SelectedPath;
+                        }
+                        if (!DesktopProductivityConfirmation.ShowExportSave(this, request.Parameters, directory)) throw new DesktopCommandError("CONFIRMATION_CANCELLED", "尚未保存导出，可以返回继续核对预览。");
+                        var parameters = JsonSerializer.SerializeToElement(new { taskId = request.Parameters.GetProperty("taskId").GetString(), digest = request.Parameters.GetProperty("digest").GetString(), directory });
+                        result = await commands.CallAsync("productivity_export_save", parameters);
+                    }
+                    finally { confirming = false; }
+                }
+                else if (request.Action == "productivity_template_save")
+                {
+                    if (confirming) throw new DesktopCommandError("CONFIRMATION_BUSY", "请先完成当前确认窗口。");
+                    confirming = true;
+                    try
+                    {
+                        if (!DesktopProductivityConfirmation.ShowTemplateSave(this, request.Parameters)) throw new DesktopCommandError("CONFIRMATION_CANCELLED", "尚未保存模板，可以返回继续修改。");
+                        result = await commands.CallAsync("productivity_template_save", request.Parameters);
+                    }
+                    finally { confirming = false; }
+                }
                 else result = await commands.CallAsync(request.Action, request.Parameters);
                 reply = new { ok = true, value = result };
             }
@@ -265,6 +301,60 @@ internal sealed class WorkbenchWindow : Form
                 e.Response = core.Environment.CreateWebResourceResponse(new MemoryStream(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(reply))), status, status == 200 ? "OK" : "Bad Request", "Content-Type: application/json; charset=utf-8\r\nCache-Control: no-store");
         }
         finally { deferral.Complete(); }
+    }
+
+    /// <summary>
+    /// Reads the host's event frames after the ready line. Only a banner is shown: the native shell
+    /// never approves, retries, extends a deadline or writes task state from a notification, and
+    /// closing the window does not remove any task evidence.
+    /// </summary>
+    private async Task ReadHostEventsAsync(Process source)
+    {
+        try
+        {
+            while (!lifetime.IsCancellationRequested && await source.StandardOutput.ReadLineAsync(lifetime.Token) is { } line)
+            {
+                if (line.Length is 0 or > 70000) continue;
+                try
+                {
+                    using var frame = JsonDocument.Parse(line);
+                    if (!frame.RootElement.TryGetProperty("event", out var kind) || kind.GetString() != "desktop_notification") continue;
+                    if (!frame.RootElement.TryGetProperty("notification", out var notification) || notification.ValueKind != JsonValueKind.Object) continue;
+                    ShowNotification(notification);
+                }
+                catch (JsonException) { /* A malformed frame is dropped; it cannot break the window. */ }
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (ObjectDisposedException) { }
+        catch (InvalidOperationException) { }
+    }
+
+    private void ShowNotification(JsonElement notification)
+    {
+        if (closing || !IsHandleCreated) return;
+        var id = notification.TryGetProperty("notificationId", out var identifier) ? identifier.GetString() : null;
+        if (string.IsNullOrWhiteSpace(id) || !notifiedEpisodes.Add(id)) return;
+        string Text(string name) => notification.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() ?? string.Empty : string.Empty;
+        var title = Text("taskTitle");
+        var reason = Text("reason") switch
+        {
+            "input_requested" => "等待你提供信息",
+            "needs_review" => "已停止，等待验收",
+            "failed" => "执行失败",
+            "deadline" => "已超过约定时限",
+            _ => "任务有新进展",
+        };
+        var body = $"{(title.Length == 0 ? "任务" : title)}：{reason}\r\n任务编号 {Text("taskId")}。通知不改变任务状态；请回到工作台查看证据。";
+        BeginInvoke(() =>
+        {
+            if (closing) return;
+            tray ??= new NotifyIcon { Icon = SystemIcons.Application, Text = "WorkBuddy 任务通知", Visible = true };
+            tray.BalloonTipTitle = "WorkBuddy";
+            tray.BalloonTipText = body;
+            tray.BalloonTipIcon = ToolTipIcon.Info;
+            tray.ShowBalloonTip(8000);
+        });
     }
 
     private void ShowFailure(string text)
