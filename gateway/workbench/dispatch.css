@@ -84,3 +84,14 @@
 .plan-resource-facts dd {margin-bottom:8px}
 .plan-resource-actions {gap:12px}
 }
+
+/* Recommendation panel: one explanation per capability snapshot. */
+.dispatch-recommendation {border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin:0 0 14px;display:flex;flex-direction:column;gap:8px;background:var(--surface-sunken,transparent)}
+.dispatch-recommendation h3 {font-size:13px;letter-spacing:.02em;margin:0}
+.dispatch-recommendation .dispatch-hint {margin:0}
+.dispatch-recommendation #recommendation-why,.dispatch-recommendation #recommendation-missing {padding-left:18px;display:flex;flex-direction:column;gap:4px}
+.dispatch-recommendation-list {list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.dispatch-recommendation-list li {display:flex;gap:12px;align-items:baseline;justify-content:space-between;font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+.dispatch-recommendation-list .text-button {flex:0 0 auto;font-size:12px}
+.dispatch-recommendation #recommendation-decision {font-size:12px}
+@media(max-width:640px) {.dispatch-recommendation-list li {flex-direction:column;gap:4px}}

@@ -43,6 +43,16 @@ export async function mountDesktopDispatch({ onTask, onResources = null }) {
      * late response never rewrites a newer decision. */
     let selectedProjectId = null, revising = null, consumedDraftId = null;
     let planReference = null;
+    /** The last explanation, whether the desktop host answered the recommendation
+     * command at all, whether the user touched the selection, and the digest the
+     * explanation was computed from. A host that cannot answer keeps the composer
+     * working: the panel degrades to hidden instead of blocking a dispatch. */
+    let recommendation = null, recommendationSupported = null, recommendationGeneration = 0, recommendationTimer = null, selectionTouched = false;
+    const recommendationBody = el('div', { id: 'recommendation-body' });
+    const recommendationRefresh = el('button', { class: 'text-button', id: 'recommendation-refresh', type: 'button', onclick: () => refreshRecommendation(null) }, '评估选择');
+    const recommendationPanel = el('section', { class: 'dispatch-recommendation', id: 'recommendation', 'aria-label': '推荐与排除原因' },
+        el('h3', {}, '推荐与排除原因'), recommendationRefresh, recommendationBody,
+        el('p', { class: 'dispatch-hint' }, '只依据本次约定、当前能力快照与已有统计给出解释；不调用模型、不创建轮次，推荐不等于授权。'));
     const panel = el('section', { class: 'dispatch-workflow', id: 'task-compose', hidden: true, 'aria-label': '准备新任务' });
     sheet.querySelector('.page-heading').after(panel);
     const notice = el('div', { class: 'dispatch-notice', role: 'status', 'aria-live': 'polite', hidden: true });
@@ -93,20 +103,21 @@ export async function mountDesktopDispatch({ onTask, onResources = null }) {
     function renderEditor() {
         const editor=++editorGeneration;
         setStage('edit');
+        recommendation=null; recommendationBody.replaceChildren(el('p',{class:'dispatch-hint',id:'recommendation-idle'},'填写目标与范围后点「评估选择」，或直接选择执行来源；两者都不会开始派工。'));
         const workspace = field('workspace', '项目文件夹', el('input', { required: true, autocomplete: 'off', placeholder: '已有项目的绝对路径' }), '任务只作用于此目录；原有改动继续受保护。');
         const typedProject = () => { selectedProjectId = null; if (controls.project) controls.project.value = ''; updateProjectNotice(); };
         controls.workspace.addEventListener('input', () => { typedProject(); controls.session.value=''; if(catalog&&controls.model.value) updateSessions(); });
         workspace.append(el('button', { type: 'button', class: 'text-button', onclick: async () => { const prior=controls.workspace.value; try { const selected = await desktopRequest('choose_workspace'); if(editor!==editorGeneration||panel.hidden||controls.workspace.value!==prior)return; if (selected.directory) { controls.workspace.value = selected.directory; typedProject(); controls.session.value=''; if(catalog&&controls.model.value) updateSessions(); } } catch (error) { if(editor===editorGeneration&&!panel.hidden)showNotice(error.message, true); } } }, '选择文件夹'));
         const project = field('project', '已登记项目（可选）', el('select', { onchange: () => selectProject(controls.project.value) }), '从已核验的项目身份中选择；直接填写路径同样有效，预览时会重新核验目录身份。');
         const projectNotice = el('p', { id: 'project-notice', class: 'dispatch-hint', role: 'status', hidden: true });
-        const source = field('source', '执行来源', el('select', { required: true, onchange: updateModels }), '读取可用目录不会准备或切换模型。');
-        const model = field('model', '精确模型', el('select', { required: true, onchange: updateEfforts }));
-        const effort = field('effort', '推理档位', el('select', { required: true, onchange: updateChoice }));
+        const source = field('source', '执行来源', el('select', { required: true, onchange: () => { selectionTouched = true; updateModels(); } }), '读取可用目录不会准备或切换模型。');
+        const model = field('model', '精确模型', el('select', { required: true, onchange: () => { selectionTouched = true; updateEfforts(); } }));
+        const effort = field('effort', '推理档位', el('select', { required: true, onchange: () => { selectionTouched = true; updateChoice(); } }));
         const session = field('session', 'DSH 原会话', el('select', { onchange: updateChoice }), '选择属于本项目、已连接且空闲的会话；不会自动创建或续接其他会话。'); session.id = 'compose-session-field'; session.hidden = true;
         const main = el('div', { class: 'dispatch-fields' }, el('fieldset', {}, el('legend', {}, '项目与目标'), workspace, project, projectNotice,
             field('title', '任务名称', el('input', { required: true, maxLength: 200, placeholder: '为这次交付起一个明确的名字' })),
             field('objective', '任务目标', el('textarea', { required: true, rows: 4, maxLength: 8000, placeholder: '说明要完成什么，以及完成后应有的行为。' }))),
-            el('fieldset', {}, el('legend', {}, '执行选择'), el('div', { class: 'dispatch-inline' }, source, model), effort, session,
+            el('fieldset', {}, el('legend', {}, '执行选择'), recommendationPanel, el('div', { class: 'dispatch-inline' }, source, model), effort, session,
                 el('p', {id:'choice-rate',class:'dispatch-rate',role:'status'},'请选择完整模型'), el('button', { class: 'text-button', id: 'refresh-models', type: 'button', onclick: loadCatalog }, '刷新来源与费率'), el('div', { id: 'catalog-notices', class: 'dispatch-hint' })),
             el('fieldset', {}, el('legend', {}, '修改范围与验收'),
                 field('allowedChanges', '允许修改的文件或目录（每行一项）', el('textarea', { rows: 3, placeholder: 'src/example.ts\nsrc/components/**' }), '留空表示只读。填写精确文件或 directory/**，不自动扩大范围。'),
@@ -251,6 +262,99 @@ export async function mountDesktopDispatch({ onTask, onResources = null }) {
         const submit = document.getElementById('preview-task');
         if (submit) { submit.disabled = busy || isDemo() || !canPreview; submit.textContent = revising ? `核对第 ${revising.revision + 1} 版` : '核对任务约定'; }
         if (choice?.blockedReason) showNotice(choice.blockedReason,true);
+        scheduleRecommendation();
+    }
+    const isUnsupportedRecommendation = error => /unsupported desktop (command|action)/i.test(String(error?.message || ''));
+    const effortSuffix = execution => execution.reasoningEffort ? ` · ${execution.reasoningEffort}` : '';
+    const resourceLabel = status => ({ fresh: '资源引用新鲜', stale: '资源引用已过期', unavailable: '无可用资源引用', unverified_claim: '声明关联未被核实' }[status] || '无可用资源引用');
+    const candidateText = item => `${item.sourceLabel} / ${item.selection.modelId}${effortSuffix(item.selection)} · ${item.cost.label} · ${resourceLabel(item.resources.status)}`;
+    /** The intent and the explicit selection are read from the fields exactly as
+     * the user typed them; the panel never invents a scope or a preference. */
+    function intentFromForm() {
+        const choice = selectedChoice();
+        return { title: controls.title.value.trim(), objective: controls.objective.value.trim(),
+            allowedChanges: lineValues(controls.allowedChanges.value), permittedMetadata: lineValues(controls.permittedMetadata.value), checks: lineValues(controls.checks.value),
+            maxAttempts: Number(controls.maxAttempts.value) || 1, timeoutSeconds: Number(controls.timeoutSeconds.value) || 600,
+            sessionId: choice && choice.execution.executorId === 'dsh' && controls.session.value ? controls.session.value : null };
+    }
+    function constraintsFromForm() { const choice = selectedChoice(); return selectionTouched && choice ? { selection: choice.execution } : {}; }
+    async function readStatisticsSample() {
+        try { const response = await fetch('/workbench/v1/statistics?limit=20', { signal: AbortSignal.timeout(15000) }); if (!response.ok) return null; const doc = await response.json(); return doc && doc.schemaVersion ? doc : null; } catch { return null; }
+    }
+    async function readResourceReference(execution) {
+        const query = new URLSearchParams({ executorId: execution.executorId, connectionId: execution.connectionId, providerId: execution.providerId, modelId: execution.modelId });
+        if (execution.reasoningEffort) query.set('reasoningEffort', execution.reasoningEffort);
+        try { const response = await fetch('/workbench/v1/resources/plan-reference?' + query, { signal: AbortSignal.timeout(15000) }); if (!response.ok) return null; const doc = await response.json(); return doc && doc.schemaVersion ? doc : null; } catch { return null; }
+    }
+    function renderRecommendation(result) {
+        recommendationPanel.hidden = false;
+        const recommended = result.recommended;
+        const head = result.decision === 'direct' ? '建议直接处理' : result.decision === 'wait' ? '暂不派工' : '建议交给执行器';
+        const reasons = recommended ? recommended.reasons.map(item => el('li', {}, item.message)) : [el('li', {}, result.decisionReason.message)];
+        const candidates = result.candidates.slice(0, 8).map(item => el('li', {},
+            el('span', {}, `${candidateText(item)} · ${item.reasons.slice(0, 2).map(reason => reason.message).join('；')}`),
+            el('button', { class: 'text-button', type: 'button', onclick: () => applySelection(item.selection) }, '采用此候选')));
+        recommendationBody.replaceChildren(
+            el('p', { class: 'dispatch-rate', id: 'recommendation-decision' }, recommended ? `${head} · ${candidateText(recommended)}` : `${head} · ${result.decisionReason.message}`),
+            el('ul', { class: 'dispatch-hint', id: 'recommendation-why' }, reasons, el('li', {}, `判定编号：${[result.decisionReason.code, ...result.decisionReason.codes].join('、')}`)),
+            el('ul', { class: 'dispatch-recommendation-list', id: 'recommendation-candidates' }, candidates),
+            result.excluded.length ? el('p', { class: 'dispatch-hint', id: 'recommendation-excluded' }, `排除 ${result.excluded.length} 项：${result.excluded.slice(0, 3).map(item => `${item.sourceLabel}/${item.selection.modelId}：${item.message}`).join('；')}`) : null,
+            el('ul', { class: 'dispatch-hint', id: 'recommendation-missing' }, result.missing.map(item => el('li', {}, `${item.severity === 'blocks' ? '阻断' : '局限'} · ${item.message}`))),
+            el('p', { class: 'dispatch-hint', id: 'recommendation-history' }, result.history.status === 'unavailable'
+                ? `历史统计：不可用（${result.history.code}）；样本量与时间窗未知，不据此推断质量。`
+                : `历史统计：${result.history.status === 'partial' ? '仅部分覆盖' : '可用'} · 样本 ${result.history.sampleSize ?? '未知'} 项 · 时间窗 ${result.history.window ? `${result.history.window.from ?? '未限定'} 至 ${result.history.window.to ?? '现在'}` : '未知'}`),
+            el('p', { class: 'dispatch-hint', id: 'recommendation-limitations' }, `局限：${result.limitations.join('、')}`),
+            result.drift && result.drift.codes.length ? el('p', { class: 'dispatch-hint is-error', id: 'recommendation-drift' }, `与上次评估不同：${result.drift.message}`) : null,
+            el('p', { class: 'technical', id: 'recommendation-digest' }, `评估 ${result.digest.slice(0, 16)} · 快照 ${result.catalog.catalogId || '未知'}${result.catalog.fresh ? '' : '（已过期）'}`));
+    }
+    function applySelection(execution) {
+        selectionTouched = true;
+        controls.source.value = sourceKey(execution); updateModels();
+        controls.model.value = execution.modelId; updateEfforts();
+        controls.effort.value = execution.reasoningEffort ?? '__none__';
+        updateChoice();
+        showNotice(`已改用 ${execution.modelId}${effortSuffix(execution)}；仍需核对约定并在本机确认，推荐本身不授权。`);
+    }
+    /**
+     * One explanation per snapshot: the catalog answer, the statistics window and
+     * the documented resource references are read, then the same pure evaluator
+     * runs again with them attached. A host without the command hides the panel
+     * and leaves the existing composer untouched.
+     */
+    async function refreshRecommendation(previous) {
+        if (recommendationSupported === false || !available || isDemo() || stage !== 'edit') return;
+        const generation = ++recommendationGeneration;
+        const parameters = { intent: intentFromForm(), constraints: constraintsFromForm() };
+        if (previous) parameters.previous = previous;
+        const statistics = await readStatisticsSample();
+        if (generation !== recommendationGeneration || panel.hidden) return;
+        if (statistics) parameters.statistics = statistics;
+        let result;
+        try { result = await desktopRequest('recommend', parameters); }
+        catch (error) {
+            if (isUnsupportedRecommendation(error)) { recommendationSupported = false; recommendationPanel.hidden = true; return; }
+            if (generation === recommendationGeneration && !panel.hidden) showNotice(`推荐未能生成：${error.message}`, true);
+            return;
+        }
+        if (generation !== recommendationGeneration || panel.hidden) return;
+        // A host that answers with nothing has not implemented the command; the
+        // panel disappears instead of reporting an empty evaluation.
+        if (!result || !Array.isArray(result.candidates)) { recommendationSupported = false; recommendationPanel.hidden = true; return; }
+        const documents = [];
+        for (const item of result.candidates.slice(0, 5)) { const doc = await readResourceReference(item.selection); if (doc) documents.push(doc); }
+        if (documents.length && generation === recommendationGeneration) {
+            try {
+                const refined = await desktopRequest('recommend', { ...parameters, resources: documents });
+                if (generation === recommendationGeneration) result = refined;
+            } catch { /* the first answer stands; resources stay named as missing */ }
+        }
+        if (generation !== recommendationGeneration || panel.hidden) return;
+        recommendation = result; renderRecommendation(result);
+    }
+    function scheduleRecommendation() {
+        if (recommendationSupported === false || !available || isDemo() || stage !== 'edit') return;
+        clearTimeout(recommendationTimer);
+        recommendationTimer = setTimeout(() => { void refreshRecommendation(null); }, 400);
     }
     function renderReview() {
         setStage('review');
@@ -287,6 +391,18 @@ export async function mountDesktopDispatch({ onTask, onResources = null }) {
         if(busy||!draft||isDemo())return;
         const {draftId,digest}=draft;
         if(consumedDraftId===draftId){showNotice('本方案已提交派工，不能再次确认。结果不明时请按原编号查询回执，不会重复派工。',true);return;}
+        if(recommendation){
+            // The explanation the user read must still match the snapshot; a
+            // changed catalog or policy waits for a new review instead of
+            // dispatching on an outdated reason.
+            try{
+                const check=await desktopRequest('recommend',{intent:intentFromForm(),constraints:constraintsFromForm(),previous:{digest:recommendation.digest,catalogId:recommendation.catalog.catalogId,policyVersion:recommendation.policy.version,selection:recommendation.recommended?.selection??null}});
+                if(check.drift&&check.drift.blockedForDispatch){showNotice(`能力快照或政策已变化（${check.drift.codes.join('、')}）；请返回修改后重新核对，不会按旧解释派工。`,true);return;}
+            }catch(error){
+                if(isUnsupportedRecommendation(error)){recommendationSupported=false;recommendationPanel.hidden=true;}
+                else showNotice('未能重新核对推荐；仍按已核对的约定继续，未按推荐派工。');
+            }
+        }
         busy=true;sourceChanged();const button=document.getElementById('confirm-task');button.disabled=true;showNotice('请在本机确认窗口核对，尚未派工。');
         try {
             try {localStorage.setItem(receiptKey,draftId);}catch{}
