@@ -258,6 +258,27 @@ function isSubset(requested: string[], allowed: string[]): boolean {
 }
 
 export function ensureAutomationSchema(db: DatabaseSync): void {
+  // A future database must not be mutated by an older gateway, so the stored
+  // version is checked before this build creates or indexes any table.
+  const metaTable = db
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='automation_meta'")
+    .get() as { name?: string } | undefined;
+  if (metaTable) {
+    let stored: number;
+    try {
+      const current = db
+        .prepare("SELECT schema_version FROM automation_meta WHERE id=1")
+        .get() as { schema_version?: number } | undefined;
+      stored = current === undefined ? AUTOMATION_SCHEMA_VERSION : Number(current.schema_version);
+    } catch (error) {
+      fail(AUTOMATION_ERRORS.schemaUnsupported,
+        `The automation metadata exists but is unreadable (${(error as Error).message}); this build will not migrate it.`);
+    }
+    if (!Number.isInteger(stored) || stored > AUTOMATION_SCHEMA_VERSION) {
+      fail(AUTOMATION_ERRORS.schemaUnsupported,
+        `This build reads automation schema ${AUTOMATION_SCHEMA_VERSION}; the database reports ${String(stored)}. Upgrade the gateway instead of rolling the database back.`);
+    }
+  }
   db.exec(`CREATE TABLE IF NOT EXISTS automation_meta (
     id INTEGER PRIMARY KEY CHECK (id=1),
     schema_version INTEGER NOT NULL,

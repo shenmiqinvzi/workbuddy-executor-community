@@ -366,3 +366,11 @@ RC4：695 文件 / 2 248 287 B / sha256 `c5981c09933342e9581cb336db95dfaac75d575
 从 `8a614c9` 起在 `fix/delivery-review-r1-r4` 收口 Codex 复核项：C4-1 把「journal 读异常」从「视为未派工」改为「只有 ENOENT 算干净」，并覆盖 stat 与 readdir 两阶段；同类把 `process.kill` 的存活判定收紧到只有 ESRCH 算消失；R3 给 CLI 组合根补上真实派工正向证据与幂等/冲突/撤回围栏；R2 把 title 与 correction 纳入脱敏；另加构建新鲜度守卫，避免再次把上一轮 dist 打进新候选（本轮真实发生过一次，被解包探针抓到后重建）。
 
 检查：build/typecheck exit 0；完整后端 1300/1287/1 fail（`command-cleanup` 高负载时序，单跑通过）/12 skipped；workbench 139/139；desktop 92/92；RC5 包 696 文件 sha `17758de7…`，解包自检与全部候选工具、三个缺陷探针通过。边界：未安装、未推送、未合 main、未发布。
+
+## RC6 与迁移守卫（2026-11-06，集成人）
+
+- 旧库交叉验证把 RC1 时代的 25 表库交给冻结候选服务：4 张 automation 表按需建立、6 个任务与 42 次操作原样保留、统计与自动化投影全部 200、写入口 405。
+- 同一轮发现 `ensureAutomationSchema` 先建表后校验版本，遇到更高版本的库会先写入再拒绝；改为先读版本、再建表，版本过高或元数据不可读一律 `AUTOMATION_SCHEMA_UNSUPPORTED`，并补一条「拒绝时不得新增同类表」的回归。
+- 源码变动后重出候选 RC6：2,257,997 B、696 个受管文件、sha256 `c9f724d4888da5ed2566b464c4b85745693d7dd3b600fed1f622b8f3a10338ff`；解包 verify/check/version/drill/upgrade/rollback 全过，三个缺陷探针与交叉验证全过。
+- 完整后端套件 1301 测试 / 1289 通过 / 0 失败 / 12 跳过，workbench 139/139，桌面策略 92/92。第一轮全量失败在本轮自写的新鲜度回归上，属夹具只刷新了部分 dist 文件，修正夹具后复跑全绿。
+- 边界不变：未安装、未推送、未合 main、未发布；RC6 无真实派工。

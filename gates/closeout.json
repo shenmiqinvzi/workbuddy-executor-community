@@ -22,6 +22,12 @@
   },
   "fixes": [
     {
+      "id": "C4-3",
+      "what": "ensureAutomationSchema created its four tables before reading the stored version, so an older gateway could add tables to a newer database before refusing.",
+      "fix": "The stored schema_version is read first; a version above the supported one, or unreadable metadata, fails with AUTOMATION_SCHEMA_UNSUPPORTED and no table is created.",
+      "evidence": "test/automation-policy.test.ts 'a newer automation schema is refused before this build creates any table'; outputs\\finish-integration-20261105\\closeout\\probe\\crosscheck.mjs"
+    },
+    {
       "id": "C4-1",
       "file": "gateway/src/coordinator.ts",
       "change": "journalShowsNoDispatch treats only ENOENT as a clean absence; EACCES/EPERM/EIO/ENOTDIR/unknown and a failed readdir all mean 'not proven'. A JournalFiles seam (6th constructor argument, default fs) makes both stages injectable.",
@@ -32,12 +38,18 @@
     },
     {
       "id": "C4-1-related-liveness",
-      "files": ["gateway/src/run-journal.ts", "gateway/src/run-worker.ts"],
+      "files": [
+        "gateway/src/run-journal.ts",
+        "gateway/src/run-worker.ts"
+      ],
       "change": "process.kill(pid, 0) now counts as stopped only on ESRCH; EPERM means the process exists and stays alive."
     },
     {
       "id": "R3-positive",
-      "files": ["gateway/src/automation-cli.ts", "gateway/test/automation-cli-dispatch.test.ts"],
+      "files": [
+        "gateway/src/automation-cli.ts",
+        "gateway/test/automation-cli-dispatch.test.ts"
+      ],
       "change": "runAutomationCli accepts an injectable runtime (client/resolveWorkspace/observeModel) so a recording client proves the composition root reaches TaskApplicationService.send. Defaults unchanged: still unarmed, still no HTTP/MCP write entry.",
       "regressions": [
         "automation-cli-dispatch.test.ts: a legal decision is dispatched once, replayed for the same operationId, refused with OPERATION_CONFLICT for a different one, and never dispatched after policy-revoke"
@@ -54,14 +66,19 @@
     },
     {
       "id": "F-CONTRACT-1",
-      "files": ["gateway/src/coordinator.ts", "docs/delivery/F_CONTRACT_1.md"],
+      "files": [
+        "gateway/src/coordinator.ts",
+        "docs/delivery/F_CONTRACT_1.md"
+      ],
       "change": "Legacy prompt states plainly that prose never grants a write scope. Scope enforcement is unchanged; the B/C options (reject at admission, or derive scope from prose) are documented as user decisions."
     },
     {
       "id": "release-freshness",
       "file": "gateway/scripts/package.mjs",
       "change": "assertBuildIsFresh runs from the release entry point: when src has a newer .ts than the oldest dist artifact by more than 2 s and both trees look real, packaging stops. A fixture-size floor keeps synthetic trees out of the rule.",
-      "regressions": ["package.test.ts: a stale dist is refused before anything is zipped"]
+      "regressions": [
+        "package.test.ts: a stale dist is refused before anything is zipped"
+      ]
     }
   ],
   "incidents": [
@@ -85,66 +102,166 @@
       "log": "outputs\\finish-integration-20261105\\closeout\\logs\\typecheck.log"
     },
     {
-      "command": "npx tsx --test \"test/**/*.test.ts\"",
-      "exitCode": 1,
-      "counts": { "tests": 1300, "pass": 1287, "fail": 1, "skipped": 12 },
-      "failures": [
-        {
-          "test": "command-cleanup.test.ts: real nested Job cancellation leaves no descendants and orphan record is reconciled",
-          "detail": "recovered.length expected 1, got 0 under full-suite load",
-          "isolated": "npx tsx --test --test-concurrency=1 test/command-cleanup.test.ts -> 4/4 pass, exit 0",
-          "status": "known high-load flake, root cause not located"
-        }
-      ],
-      "log": "outputs\\finish-integration-20261105\\closeout\\logs\\full-test-freeze.log"
-    },
-    {
       "command": "npm run test:workbench",
       "exitCode": 0,
-      "counts": { "tests": 139, "pass": 139, "fail": 0 },
+      "counts": {
+        "tests": 139,
+        "pass": 139,
+        "fail": 0
+      },
       "log": "outputs\\finish-integration-20261105\\closeout\\logs\\workbench-final.log"
     },
     {
       "command": "npm run desktop:test",
       "exitCode": 0,
-      "counts": { "passed": 92, "failed": 0 },
+      "counts": {
+        "passed": 92,
+        "failed": 0
+      },
+      "log": "outputs\\finish-integration-20261105\\closeout\\logs\\desktop-final.log"
+    },
+    {
+      "command": "npx tsx --test \"test/**/*.test.ts\"",
+      "exitCode": 0,
+      "counts": {
+        "tests": 1301,
+        "pass": 1289,
+        "fail": 0,
+        "skipped": 12
+      },
+      "log": "outputs\\finish-integration-20261105\\closeout\\logs\\full-test-rc6b.log",
+      "note": "The first RC6 run failed on this round's own freshness regression, which refreshed only part of the fixture dist tree; the test was corrected and the whole suite re-run green."
+    },
+    {
+      "command": "npm run test:workbench",
+      "exitCode": 0,
+      "counts": {
+        "tests": 139,
+        "pass": 139,
+        "fail": 0
+      },
+      "log": "outputs\\finish-integration-20261105\\closeout\\logs\\workbench-final.log"
+    },
+    {
+      "command": "npm run desktop:test",
+      "exitCode": 0,
+      "counts": {
+        "passed": 92,
+        "failed": 0
+      },
       "log": "outputs\\finish-integration-20261105\\closeout\\logs\\desktop-final.log"
     }
   ],
   "package": {
-    "name": "RC5",
+    "name": "RC6",
     "archive": "gateway\\outputs\\release\\codex-workbuddy-gateway-v0.7.1.zip",
-    "bytes": 2256922,
-    "sha256": "17758de7c284c76e0d46712f24c1d196ca93f01851833a88ae4aa5846acdeb38",
+    "bytes": 2257997,
+    "sha256": "c9f724d4888da5ed2566b464c4b85745693d7dd3b600fed1f622b8f3a10338ff",
     "files": 696,
     "manifestBytes": 112259,
-    "manifestSha256": "065e2bdaa1a66eaa812d012c1b9c6f4d66a42b173def57da3f4eededba82854f",
+    "manifestSha256": "49a0656c26d54ff65b470d14a75f629481b19f4e869df370c2e205c79b84f5f4",
     "skillArchiveSha256": "e61be9ba03f48e555ed1a8441eb8d56f0013eb818cfdceb610015d26e0839db8",
     "harnessSkillArchiveSha256": "22909e1b0654df6eb13b3ccdcf5767ed78e094d416b891821a072c1004318d13",
-    "unpacked": "outputs\\finish-integration-20261105\\closeout\\candidate-final\\codex-workbuddy-gateway-v0.7.1",
+    "unpacked": "outputs\\finish-integration-20261105\\closeout\\candidate-rc6\\codex-workbuddy-gateway-v0.7.1",
     "verifiedFiles": 696
   },
   "candidateTools": [
-    { "command": "verify-release.mjs", "exitCode": 0, "result": "696 verified, hashesMatch true" },
-    { "command": "candidate-installation.mjs check --expect-sha256 <correct>", "exitCode": 0, "result": "ok true, problems [], totalBytes 7351337" },
-    { "command": "candidate-installation.mjs check --expect-sha256 <wrong but same prefix>", "exitCode": 1, "result": "Archive SHA-256 does not match the expected value (negative control turned out to be a truncated hex, kept as evidence the comparison works)" },
-    { "command": "candidate-installation.mjs preview", "exitCode": 1, "result": "safeToApply false, create 696; expected for a bare archive without node_modules or the desktop shell" },
-    { "command": "candidate-installation.mjs version-check", "exitCode": 0, "result": "matches true, exact true" },
-    { "command": "candidate-installation.mjs drill --apply", "exitCode": 0, "result": "ok true" },
-    { "command": "candidate-installation.mjs upgrade-drill --apply", "exitCode": 0, "result": "ok true" },
-    { "command": "candidate-installation.mjs rollback-plan --to RC4", "exitCode": 0, "result": "safeToApply true" },
-    { "command": "delivery-baseline.mjs", "exitCode": 0, "result": "readOnly true, authorizesDispatch false" }
+    {
+      "command": "verify-release.mjs",
+      "exitCode": 0,
+      "result": "696 verified, hashesMatch true"
+    },
+    {
+      "command": "candidate-installation.mjs check --expect-sha256 <correct>",
+      "exitCode": 0,
+      "result": "ok true, problems [], totalBytes 7351337"
+    },
+    {
+      "command": "candidate-installation.mjs check --expect-sha256 <wrong but same prefix>",
+      "exitCode": 1,
+      "result": "Archive SHA-256 does not match the expected value (negative control turned out to be a truncated hex, kept as evidence the comparison works)"
+    },
+    {
+      "command": "candidate-installation.mjs preview",
+      "exitCode": 1,
+      "result": "safeToApply false, create 696; expected for a bare archive without node_modules or the desktop shell"
+    },
+    {
+      "command": "candidate-installation.mjs version-check",
+      "exitCode": 0,
+      "result": "matches true, exact true"
+    },
+    {
+      "command": "candidate-installation.mjs drill --apply",
+      "exitCode": 0,
+      "result": "ok true"
+    },
+    {
+      "command": "candidate-installation.mjs upgrade-drill --apply",
+      "exitCode": 0,
+      "result": "ok true"
+    },
+    {
+      "command": "candidate-installation.mjs rollback-plan --to RC4",
+      "exitCode": 0,
+      "result": "safeToApply true"
+    },
+    {
+      "command": "delivery-baseline.mjs",
+      "exitCode": 0,
+      "result": "readOnly true, authorizesDispatch false"
+    }
   ],
   "runtimeProbes": [
-    { "name": "C4-1 packaged three-state", "file": "outputs\\finish-integration-20261105\\closeout\\probe\\c41-rc5.mjs", "exitCode": 0, "verdict": "unreadable journals keep shared capacity" },
-    { "name": "R1 database and journal gates", "file": "outputs\\finish-integration-20261105\\G4-review-fixes\\probe\\r1-rc4.mjs", "exitCode": 0, "verdict": "R1 gates hold on the unpacked candidate" },
-    { "name": "R2/R3 packaged scrubber and CLI", "file": "outputs\\finish-integration-20261105\\G4-review-fixes\\probe\\r2-r3-rc4.mjs", "exitCode": 0, "verdict": "packaged scrubber and CLI composition root behave" }
+    {
+      "name": "R1 database and journal gates",
+      "file": "outputs\\finish-integration-20261105\\G4-review-fixes\\probe\\r1-rc4.mjs",
+      "exitCode": 0,
+      "verdict": "R1 gates hold on the unpacked candidate"
+    },
+    {
+      "name": "R2/R3 packaged scrubber and CLI",
+      "file": "outputs\\finish-integration-20261105\\G4-review-fixes\\probe\\r2-r3-rc4.mjs",
+      "exitCode": 0,
+      "verdict": "packaged scrubber and CLI composition root behave"
+    },
+    {
+      "name": "C4-1 packaged three-state",
+      "file": "outputs\\finish-integration-20261105\\closeout\\probe\\c41-rc5.mjs",
+      "candidate": "outputs\\finish-integration-20261105\\closeout\\candidate-rc6\\codex-workbuddy-gateway-v0.7.1",
+      "exitCode": 0,
+      "verdict": "unreadable journals keep shared capacity"
+    },
+    {
+      "name": "Legacy database and schema guard",
+      "file": "outputs\\finish-integration-20261105\\closeout\\probe\\crosscheck.mjs",
+      "candidate": "outputs\\finish-integration-20261105\\closeout\\candidate-rc6\\codex-workbuddy-gateway-v0.7.1",
+      "exitCode": 0,
+      "verdict": "a 25-table RC1-era database is served as-is with 4 lazy automation tables and 6 tasks preserved; version 2 and unreadable metadata are refused with AUTOMATION_SCHEMA_UNSUPPORTED and no sibling table",
+      "report": "outputs\\finish-integration-20261105\\closeout\\crosscheck\\crosscheck.json"
+    }
   ],
   "rcImpact": [
-    { "change": "coordinator admission and cancellation", "needs": "re-run desktop-queue, finish-acceptance suite, full backend suite", "mustNotClaim": "real capacity behaviour under a live desktop" },
-    { "change": "automation CLI composition root", "needs": "re-run automation-dispatch/http/policy and the CLI dispatch test", "mustNotClaim": "automatic dispatch enabled by default" },
-    { "change": "delivery export redaction", "needs": "re-run delivery-export and package tests", "mustNotClaim": "every possible secret is recognised" },
-    { "change": "package.mjs freshness guard", "needs": "re-run package tests and a real packaging run", "mustNotClaim": "the guard can tell a fixture from a checkout by content alone" }
+    {
+      "change": "coordinator admission and cancellation",
+      "needs": "re-run desktop-queue, finish-acceptance suite, full backend suite",
+      "mustNotClaim": "real capacity behaviour under a live desktop"
+    },
+    {
+      "change": "automation CLI composition root",
+      "needs": "re-run automation-dispatch/http/policy and the CLI dispatch test",
+      "mustNotClaim": "automatic dispatch enabled by default"
+    },
+    {
+      "change": "delivery export redaction",
+      "needs": "re-run delivery-export and package tests",
+      "mustNotClaim": "every possible secret is recognised"
+    },
+    {
+      "change": "package.mjs freshness guard",
+      "needs": "re-run package tests and a real packaging run",
+      "mustNotClaim": "the guard can tell a fixture from a checkout by content alone"
+    }
   ],
   "verificationEnvironment": {
     "node": "24.19.0",
@@ -188,11 +305,13 @@
     "sourcePassed": true,
     "syntheticCandidatePassed": true,
     "runtimeProbePassed": true,
-    "rc5Installed": false,
-    "rc5Dispatched": false,
+    "legacyDatabaseVerified": true,
+    "migrationGuardVerified": true,
+    "rc6Installed": false,
+    "rc6Dispatched": false,
     "liveVerifiedForRc1": true,
     "liveVerifiedForRc2": false,
     "releaseReady": false
   },
-  "nextGate": "User decisions in docs/delivery/EXTERNAL_DECISIONS.md, then one Codex re-review of this branch plus RC5; real acceptance needs a fresh install and dispatch."
+  "nextGate": "User decisions in docs/delivery/EXTERNAL_DECISIONS.md, then one Codex re-review of this branch plus RC6; real acceptance needs a fresh install and dispatch."
 }

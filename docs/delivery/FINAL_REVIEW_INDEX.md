@@ -10,13 +10,13 @@
 | 分支 | `fix/delivery-review-r1-r4` |
 | 起点提交 | `8a614c9ee7dc76c4cec22727f884cf6a0e658792`（RC4，Codex 复核对象） |
 | 本轮提交 | 见文末「收口轮回执」；提交后由外部回执记录该 SHA，提交前不预设 |
-| 候选包 | RC5：`gateway/outputs/release/codex-workbuddy-gateway-v0.7.1.zip` |
-| 包 SHA-256 | `17758de7c284c76e0d46712f24c1d196ca93f01851833a88ae4aa5846acdeb38`（2,256,922 B，696 个受管文件） |
-| manifest SHA-256 | `065e2bdaa1a66eaa812d012c1b9c6f4d66a42b173def57da3f4eededba82854f`（112,259 B） |
+| 候选包 | RC6：`gateway/outputs/release/codex-workbuddy-gateway-v0.7.1.zip` |
+| 包 SHA-256 | `c9f724d4888da5ed2566b464c4b85745693d7dd3b600fed1f622b8f3a10338ff`（2,257,997 B，696 个受管文件） |
+| manifest SHA-256 | `49a0656c26d54ff65b470d14a75f629481b19f4e869df370c2e205c79b84f5f4`（112,259 B） |
 | 技能包 / Harness 包 | `e61be9ba…`（6 文件）/ `22909e1b…`（2 文件），本轮未变 |
-| 解包核对位置 | `E:\javaproject\outputs\finish-integration-20261105\closeout\candidate-final\codex-workbuddy-gateway-v0.7.1` |
-| 安装状态 | 未安装。最后一次真实安装是 RC2（`E:\javaproject\workbuddy-install\gateway-v0.7.1-rc2`），RC3/RC4/RC5 都没进过真实环境 |
-| 真实派工 | RC1 两单真实派工 accepted；RC2 一单落 `needs_review`、另一单被拒后 `blocked` 占着容量（按 T7D 原样保留）。RC3–RC5 无真实派工 |
+| 解包核对位置 | `E:\javaproject\outputs\finish-integration-20261105\closeout\candidate-rc6\codex-workbuddy-gateway-v0.7.1` |
+| 安装状态 | 未安装。最后一次真实安装是 RC2（`E:\javaproject\workbuddy-install\gateway-v0.7.1-rc2`），RC3/RC4/RC5/RC6 都没进过真实环境 |
+| 真实派工 | RC1 两单真实派工 accepted；RC2 一单落 `needs_review`、另一单被拒后 `blocked` 占着容量（按 T7D 原样保留）。RC3–RC6 无真实派工 |
 | 异机 / 远端 CI | 未做 |
 | 许可与发行 | 未决（仓库无 LICENSE；发行范围需用户定） |
 | 部署 | 未部署、未推送、未合 main |
@@ -40,26 +40,28 @@ node <解包根>\scripts\verify-release.mjs
 | R2 脱敏边界 | 已补：`task.title` 与 `evidence.reviews[].correction` 也脱敏；同字段重复只报一次 | `gateway/test/delivery-export.test.ts`（20 例） |
 | F-CONTRACT-1 | 已给行为说明、兼容影响表与需要用户决定的 B/C 选项；本轮只改提示词措辞，不放宽范围判定 | `docs/delivery/F_CONTRACT_1.md` |
 | 打包发布态 | 新增构建新鲜度守卫：`dist` 比 `src` 旧超过 2 秒且文件数达到真实规模时，`node scripts/package.mjs` 直接拒绝 | `gateway/scripts/package.mjs`；回归 `a stale dist is refused before anything is zipped` |
-| 打包事故（本轮真实发生） | 第一次 RC5 复用了上一轮的 `dist`，C4-1 修复没进包；解包探针把「源码修了、包没修」当场抓出，重建后才得到上表 SHA | `outputs\finish-integration-20261105\closeout\c41-rc5.json` 的失败轮与通过轮 |
+| 打包事故（本轮真实发生） | 第一次 RC5 复用了上一轮的 `dist`，C4-1 修复没进包；解包探针把「源码修了、包没修」当场抓出，重建后才得到 RC5 的 SHA | `outputs\finish-integration-20261105\closeout\c41-rc5.json` 的失败轮与通过轮 |
+| 迁移事故（RC6 前） | 旧 `ensureAutomationSchema` 先建四张表再校验版本，遇到更高版本的库会先写入再拒绝；旧库交叉验证发现后改为先校验后建表，并加回归 | `outputs\finish-integration-20261105\closeout\probe\crosscheck.mjs` 与 `rc6-crosscheck.json` |
 
 ## 收口轮验证
 
 | 检查 | 结果 |
 | --- | --- |
 | `npm run build` / `npm run typecheck:task-view` | exit 0 / exit 0 |
-| 完整后端套件 `npx tsx --test "test/**/*.test.ts"` | 1300 tests / 1287 pass / **1 fail** / 12 skipped。唯一失败是 `command-cleanup.test.ts` 的实时嵌套 Job 取消用例；单跑 4/4 通过（高负载时序，根因未定位，与 run-worker 的 EPERM 同类） |
+| 完整后端套件 `npx tsx --test "test/**/*.test.ts"` | 1301 tests / 1289 pass / 0 fail / 12 skipped。首轮曾红在本轮自写的新鲜度回归（夹具只刷新了部分 dist），修正夹具后全绿；`command-cleanup` 与 `run-worker` 两个高负载偶发本轮未复现，仍按未定位记录 |
 | `npm run test:workbench` | 139/139，exit 0 |
 | `npm run desktop:test` | `{"passed":92,"failed":0}` |
 | 解包 `verify-release.mjs` | 696 文件、`hashesMatch:true` |
-| `candidate-installation.mjs check` | `ok:true`、`problems:[]`、`totalBytes 7,351,337`；用错误 SHA 复核会稳定报 `Archive SHA-256 does not match` |
+| `candidate-installation.mjs check` | `ok:true`、`problems:[]`、`totalBytes 7,355,535`；用错误 SHA 复核会稳定报 `Archive SHA-256 does not match` |
 | `preview` | exit 1（预期：纯包无依赖与桌面壳），`safeToApply:false`、`create:696` |
 | `version-check` | `matches:true`、`exact:true` |
-| `drill --apply` / `upgrade-drill --apply` / `rollback-plan` | 全部 exit 0；回退到 RC4 的计划 `safeToApply:true` |
-| 三个打包缺陷探针 | C4-1 三态（clean 关闭、两种不可读都保留容量）；R1 两道门；R2/R3（脱敏保留正文、CLI 报 `dispatcherWired:true`） |
+| `drill --apply` / `upgrade-drill --apply` / `rollback-plan` | 全部 exit 0；回退到上一候选（RC5）的计划 `safeToApply:true` |
+| 三个打包缺陷探针 | C4-1 三态（clean 关闭、两种不可读都保留容量）；R1 两道门（9 步）；R2/R3（脱敏保留正文、CLI 报 `dispatcherWired:true`、`armed:false`） |
+| 旧库交叉验证 | RC1 时代 25 表库直接服务：按需建 4 张 automation 表、6 任务与 42 操作保留、五条只读路由 200、写入口 405；版本 2 与不可读元数据均 503 `AUTOMATION_SCHEMA_UNSUPPORTED` 且不新增同类表 |
 
 ## 仍未满足（不许读成通过）
 
-1. **真实环境只到 RC1/RC2。** RC5 的安装、派工、异机、CI 都是未做状态。
+1. **真实环境只到 RC1/RC2。** RC6 的安装、派工、异机、CI 都是未做状态。
 2. **53 项矩阵没有一项因本轮改动改判「整项通过」**；本轮只补证据与缺陷，`docs/D0_D1_DELIVERY_READINESS.md` 第 2 节原文不动。
 3. **F-CONTRACT-1 的 B/C 方案需要用户决定**：放行未声明范围的写入、或从正文推导范围，都会改正式语义。
 4. **两个高负载偶发**（`command-cleanup` 计数、`run-worker` EPERM）根因未定位。
@@ -68,7 +70,7 @@ node <解包根>\scripts\verify-release.mjs
 
 ---
 
-> 以下为第 11 线历史记录（对象：`06d52b1` + RC2）。其中「最终候选 RC2 从未进过真实环境」等表述描述的是当时对象；当前对象见顶部 RC5。
+> 以下为第 11 线历史记录（对象：`06d52b1` + RC2）。其中「最终候选 RC2 从未进过真实环境」等表述描述的是当时对象；当前对象见顶部 RC6。
 
 ## 判读约定（先看这一节，否则后面每个状态都会被误读）
 
@@ -771,9 +773,9 @@ HEAD 树对象:     f2f6553d2bfdb0b49466b8c90d9989f1720fe399
 | 分支 / 工作树 | `fix/delivery-review-r1-r4` / `E:\javaproject\workbuddy-finish\R-review-fixes` |
 | 本轮提交 | 由外部回执 `E:\javaproject\outputs\finish-integration-20261105\closeout\CLOSEOUT_RECEIPT.md` 记录（提交不能包含自身哈希） |
 | 提交内容 | C4-1 与同类存活判定、R3 正向接线、R2 边界、F-CONTRACT-1 文档与措辞、打包新鲜度守卫、索引/进度/矩阵增量 |
-| 候选 | RC5，696 个受管文件，sha256 `17758de7c284c76e0d46712f24c1d196ca93f01851833a88ae4aa5846acdeb38` |
+| 候选 | RC6，696 个受管文件，sha256 `c9f724d4888da5ed2566b464c4b85745693d7dd3b600fed1f622b8f3a10338ff` |
 | 已验证 | 构建、类型、完整后端、workbench、桌面策略、解包自检、全部候选工具、三个缺陷探针 |
 | 未验证 | 安装、真实派工、异机、远端 CI、真实窗口 UI、许可与发行 |
-| 下一步 | 用户在 `docs/delivery/EXTERNAL_DECISIONS.md` 逐项选择；之后一次 Codex 复核本分支与 RC5 |
+| 下一步 | 用户在 `docs/delivery/EXTERNAL_DECISIONS.md` 逐项选择；之后一次 Codex 复核本分支与 RC6 |
 
-一句话：**源码与合成候选可以复核；真实环境仍停在 RC2；RC5 没有进过真实环境，也没有部署或发行。**
+一句话：**源码与合成候选可以复核；真实环境仍停在 RC2；RC6 没有进过真实环境，也没有部署或发行。**

@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { DatabaseSync } from "node:sqlite";
 import { AdmissionError, defaultModelPolicy } from "../src/collaboration.js";
 import { TaskStore } from "../src/task-store.js";
 import { AutomationService, ensureAutomationSchema } from "../src/automation.js";
@@ -342,6 +343,23 @@ test("the automation module never appears in the MCP tool surface", () => {
     const source = fs.readFileSync(path.join(here, "..", "src", file), "utf8");
     assert.equal(/automation/i.test(source), false, `${file} must not expose an automation write tool`);
   }
+});
+
+test("a newer automation schema is refused before this build creates any table", (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "automation-schema-"));
+  const db = new DatabaseSync(path.join(dir, "tasks.sqlite"));
+  t.after(() => {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+  db.exec("CREATE TABLE automation_meta (id INTEGER PRIMARY KEY CHECK (id=1), schema_version INTEGER NOT NULL, enabled INTEGER NOT NULL, updated_at TEXT NOT NULL)");
+  db.prepare("INSERT INTO automation_meta (id, schema_version, enabled, updated_at) VALUES (1, 2, 0, ?)").run(new Date().toISOString());
+  assert.throws(() => ensureAutomationSchema(db), (error: unknown) => code(error) === "AUTOMATION_SCHEMA_UNSUPPORTED");
+  const tables = db
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'automation_%' ORDER BY name")
+    .all()
+    .map((row) => String(row.name));
+  assert.deepEqual(tables, ["automation_meta"], "an older gateway must not add tables to a newer database");
 });
 
 test("ensureAutomationSchema is idempotent on the same connection", (t) => {

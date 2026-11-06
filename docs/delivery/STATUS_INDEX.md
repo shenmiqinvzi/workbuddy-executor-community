@@ -434,7 +434,7 @@ Codex 独立复核（`outputs\codex-finish-review-20261106\REVIEW.md`）对 RC3 
   真实窗口/读屏验收未做；P0-1 继续按 T7D 原样保留（不关闭、不重派、不释放）。
 - 若要把 RC4 变成「真实验收通过」，仍需用户授权在独立安装根重装并派一单，且要等 `$scope` 之类的语义阻塞被真实检查确认。
 
-## 收口轮（R1–R4 + C4-1，2026-11-06）
+## 收口轮（R1–R4 + C4-1 + 迁移守卫，2026-11-06）
 
 分支 `fix/delivery-review-r1-r4`，工作树 `E:\javaproject\workbuddy-finish\R-review-fixes`，起点 `8a614c9`（RC4）。
 
@@ -448,6 +448,8 @@ Codex 独立复核（`outputs\codex-finish-review-20261106\REVIEW.md`）对 RC3 
 
 检查：build/typecheck exit 0；完整后端 1300 tests / 1287 pass / 1 fail（`command-cleanup` 高负载时序，单跑 4/4 通过）/ 12 skipped；workbench 139/139；desktop 92/92。
 
-候选 RC5：`gateway/outputs/release/codex-workbuddy-gateway-v0.7.1.zip`，2,256,922 B，sha256 `17758de7c284c76e0d46712f24c1d196ca93f01851833a88ae4aa5846acdeb38`，696 个受管文件；解包 `verify-release` 696/696 一致；`check` `ok:true`；`version-check` 匹配；`drill`/`upgrade-drill`/`rollback-plan` 全部 exit 0；三个打包缺陷探针通过。
+候选 RC6：`gateway/outputs/release/codex-workbuddy-gateway-v0.7.1.zip`，2,257,997 B，sha256 `c9f724d4888da5ed2566b464c4b85745693d7dd3b600fed1f622b8f3a10338ff`，696 个受管文件；解包 `verify-release` 696/696 一致；`check` `ok:true`、`problems:[]`；`version-check` 精确匹配；`drill`/`upgrade-drill`/`rollback-plan` 全部 exit 0；三个缺陷探针与旧库交叉验证通过。
 
-边界：未安装、未推送、未合 main、未发布；RC5 无真实派工；F-CONTRACT-1 的 B/C 方案与许可/发行等见 `docs/delivery/EXTERNAL_DECISIONS.md`。
+迁移守卫（RC6 新增）：`ensureAutomationSchema` 现在先读 `automation_meta` 的版本，再决定是否建表；遇到更高版本或元数据不可读时以 `AUTOMATION_SCHEMA_UNSUPPORTED` 拒绝，且不添加任何同类表。旧库交叉验证：RC1 时代的 25 表库由 RC6 直接服务，按需只建 4 张 automation 表、6 个任务与 42 次操作原样保留，统计/自动化/模板/通知/路由全部 200、写入口 405；版本 2 与不可读元数据两种库均 503 拒绝、只留下 `automation_meta`。
+
+边界：未安装、未推送、未合 main、未发布；RC6 无真实派工；F-CONTRACT-1 的 B/C 方案与许可/发行等见 `docs/delivery/EXTERNAL_DECISIONS.md`。

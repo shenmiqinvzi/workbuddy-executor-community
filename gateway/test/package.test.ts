@@ -305,7 +305,14 @@ test("a stale dist is refused before anything is zipped", async () => {
     await fs.utimes(path.join(value.source, "dist/generated/module-0.js"), stamp, stamp);
     await assert.rejects(assertBuildIsFresh(value.source), /dist is older than src; run npm run build before packaging/);
     const fresh = new Date();
-    for (let index = 0; index < 60; index += 1) await fs.utimes(path.join(value.source, `dist/generated/module-${index}.js`), fresh, fresh);
+    const touch = async (dir: string): Promise<void> => {
+      for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
+        const target = path.join(dir, entry.name);
+        if (entry.isDirectory()) await touch(target);
+        else await fs.utimes(target, fresh, fresh);
+      }
+    };
+    await touch(path.join(value.source, "dist"));
     await assert.doesNotReject(assertBuildIsFresh(value.source));
   } finally { await fs.rm(value.root, { recursive: true, force: true }); }
 });
