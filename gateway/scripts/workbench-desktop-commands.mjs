@@ -1,7 +1,7 @@
 import {desktopExact} from '../dist/desktop-dispatch.js';
 
 // Private parent/child transport only. Nothing is registered on the HTTP server.
-export function desktopCommandHandler(session, controls = null, recovery = null, attention = null, declarations = null) {
+export function desktopCommandHandler(session, controls = null, recovery = null, attention = null, declarations = null, productivity = null) {
     return async (method, parameters) => {
         if (method === 'catalog') { desktopExact(parameters, []); return session.catalog(); }
         if (method === 'latest') { desktopExact(parameters, []); return session.latest(); }
@@ -33,11 +33,21 @@ export function desktopCommandHandler(session, controls = null, recovery = null,
             if(confirmation!==`declare native stop ${taskId} ${attemptId} ${revision}`)throw Object.assign(new Error('Type the shown sentence exactly to declare a stop.'),{name:'AdmissionError',code:'CONFIRMATION_REQUIRED'});
             return declarations.declare({taskId,attemptId,revision,statement,actor:'local-interactive-user'});
         }
+        if (productivity) {
+            // Templates, notification configuration and the controlled export are
+            // structured commands; the page never sends document bytes or a shell
+            // string, and the export directory comes from the native dialog.
+            const outcome = await productivity.run(method, parameters);
+            if (outcome.handled) {
+                if (outcome.failure) throw Object.assign(new Error(outcome.failure.message), {name:'AdmissionError', code: outcome.failure.code});
+                return outcome.value;
+            }
+        }
         throw Error('Unsupported desktop command.');
     };
 }
-export function installDesktopCommands(session, input = process.stdin, output = process.stdout, controls = null, recovery = null, attention = null, declarations = null) {
-    const handle = desktopCommandHandler(session, controls, recovery, attention, declarations);
+export function installDesktopCommands(session, input = process.stdin, output = process.stdout, controls = null, recovery = null, attention = null, declarations = null, productivity = null) {
+    const handle = desktopCommandHandler(session, controls, recovery, attention, declarations, productivity);
     let pending = 0, buffer = '', dropping = false;
     input.setEncoding('utf8');
     async function receive(line) {

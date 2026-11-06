@@ -19,6 +19,7 @@ import { runtimeVersion } from "./runtime-version.js";
 import { runsDirectory } from "./run-journal.js";
 import { WorkbenchHttpServer, workbenchHealth, workbenchPortFromEnv } from "./workbench-http.js";
 import { statisticsSources } from "./statistics-http.js";
+import { exportStatisticsFrom, openProductivityRuntime } from "./productivity-runtime.js";
 import { attributeTaskUsageFromLedger } from "./usage-attribution.js";
 import { WorkBuddyQuotaCollector } from "./quota-observation.js";
 import { WorkBuddyCreditBalanceCollector } from "./credit-balance.js";
@@ -41,9 +42,18 @@ const service = new TaskApplicationService(coordinator, config.maxTaskAttempts ?
 // instead of creating the table, so a GET cannot migrate anything.
 const statistics = statisticsSources(store, (taskId, attemptIds) =>
   attributeTaskUsageFromLedger({ file: store.file, taskId, attemptIds }));
+// L06: templates and the notification ledger are read from the config directory.
+// This entry never delivers a notification and never writes a template; a GET
+// only reports what the desktop surface saved earlier.
+const productivity = openProductivityRuntime({
+  configDir: config.workbuddyConfigDir,
+  store,
+  statistics: exportStatisticsFrom(statistics),
+});
 const server = new WorkbenchHttpServer({
   service,
   statistics,
+  productivity: productivity.sources,
   health: () => workbenchHealth({
     runtime: { release: runtimeVersion.release, packageVersion: runtimeVersion.packageVersion, startedAt: runtimeVersion.startedAt },
   }),

@@ -47,6 +47,8 @@ import { STAGE_TASK_VIEW_SCHEMA_VERSION, STAGE_TASK_VIEW_UNAVAILABLE, type Stage
 import type { StageListItem } from "./task-application-service.js";
 import { handleStatisticsRequest } from "./statistics-http.js";
 import type { StatisticsSources } from "./statistics-service.js";
+import { handleProductivityRequest } from "./productivity-service.js";
+import type { ProductivitySources } from "./productivity-service.js";
 
 /** Default local port for the workbench HTTP surface (contract section 1). */
 export const WORKBENCH_DEFAULT_PORT = 18493;
@@ -134,6 +136,12 @@ interface WorkbenchAdapterOptions {
    * every other route keeps its current behaviour.
    */
   statistics?: StatisticsSources;
+  /**
+   * Read-only productivity surface: saved template catalog/detail, the
+   * notification snapshot and the delivery-export preview. Absent means the
+   * routes do not exist; their write counterparts are desktop commands only.
+   */
+  productivity?: ProductivitySources;
 }
 
 /** One {code,message} pair per failure shape, kept stable. */
@@ -310,6 +318,10 @@ export class WorkbenchHttpServer {
           || pathname === TASKS_PREFIX
           || pathname === "/workbench/v1/statistics"
           || pathname.startsWith("/workbench/v1/statistics/")
+          || pathname === "/workbench/v1/templates"
+          || pathname.startsWith("/workbench/v1/templates/")
+          || pathname === "/workbench/v1/notifications"
+          || pathname.startsWith("/workbench/v1/export-preview/")
           || /^\/workbench\/v1\/tasks\/[^/]+(\/(rework|cancel|reviews|accept|events|export))?$/.test(pathname);
         if (isKnownPath) {
           response.setHeader("allow", "GET, HEAD");
@@ -333,6 +345,12 @@ export class WorkbenchHttpServer {
         // for everything else, so this cannot capture another route.
         const statistics = handleStatisticsRequest(this.options.statistics, pathname, url.search);
         if (statistics) { this.send(response, statistics.status, statistics.body); return; }
+      }
+      if (this.options.productivity) {
+        // Same contract: templates, the notification snapshot and the export
+        // preview are reads. Every write lives behind a desktop command.
+        const productivity = handleProductivityRequest(this.options.productivity, pathname, url.search);
+        if (productivity) { this.send(response, productivity.status, productivity.body); return; }
       }
       if (pathname === "/workbench/v1/panel/tasks") {
         const parsed = parseListQuery(url.search);

@@ -21,10 +21,44 @@ internal static class DesktopControlPolicy
         var root = document.RootElement;
         if (root.ValueKind != JsonValueKind.Object || root.EnumerateObject().Count() != 2 || root.EnumerateObject().Any(p => p.Name is not ("action" or "parameters"))) throw new ArgumentException("Unexpected desktop request fields.");
         var action = root.GetProperty("action").GetString();
-        if (action is not ("catalog" or "preview" or "dispatch" or "status" or "observe" or "choose_workspace" or "latest" or "control_preview" or "control" or "control_status" or "control_list" or "control_observe" or "control_requirements" or "recovery_show" or "attention_verify" or "declare_native_stop")) throw new ArgumentException("Unsupported desktop action.");
+        if (action is not ("catalog" or "preview" or "dispatch" or "status" or "observe" or "choose_workspace" or "latest" or "control_preview" or "control" or "control_status" or "control_list" or "control_observe" or "control_requirements" or "recovery_show" or "attention_verify" or "declare_native_stop"
+            or "productivity_catalog" or "productivity_template_detail" or "productivity_template_save" or "productivity_template_archive" or "productivity_notifications" or "productivity_notification_config" or "productivity_export_preview" or "productivity_export_save"))
+            throw new ArgumentException("Unsupported desktop action.");
         var parameters = root.GetProperty("parameters");
         if (parameters.ValueKind != JsonValueKind.Object) throw new ArgumentException("Object parameters are required.");
         if (action is "catalog" or "choose_workspace" or "latest" && parameters.EnumerateObject().Any()) throw new ArgumentException("Action has no parameters.");
+        if (action is "productivity_notifications" && parameters.EnumerateObject().Any()) throw new ArgumentException("Action has no parameters.");
+        if (action == "productivity_catalog")
+        {
+            if (parameters.EnumerateObject().Any(p => p.Name != "includeArchived" || p.Value.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                || parameters.EnumerateObject().Count() > 1) throw new ArgumentException("Only an archived switch is accepted.");
+        }
+        if (action is "productivity_template_detail" or "productivity_template_archive")
+        {
+            if (parameters.EnumerateObject().Count() != 1 || parameters.EnumerateObject().Any(p => p.Name != "templateId")
+                || !IsTemplateId(parameters.GetProperty("templateId"))) throw new ArgumentException("A template identity is required.");
+        }
+        if (action == "productivity_template_save")
+        {
+            if (parameters.EnumerateObject().Count() is < 1 or > 2 || parameters.EnumerateObject().Any(p => p.Name is not ("template" or "templateId"))
+                || !parameters.TryGetProperty("template", out var template) || template.ValueKind != JsonValueKind.Object
+                || (parameters.TryGetProperty("templateId", out var named) && !IsTemplateId(named))) throw new ArgumentException("A template body is required.");
+        }
+        if (action == "productivity_notification_config")
+        {
+            if (parameters.EnumerateObject().Count() != 1 || parameters.EnumerateObject().Any(p => p.Name != "config")
+                || !parameters.TryGetProperty("config", out var config) || config.ValueKind != JsonValueKind.Object) throw new ArgumentException("A notification configuration is required.");
+        }
+        if (action is "productivity_export_preview" or "productivity_export_save")
+        {
+            var allowed = action == "productivity_export_preview" ? new[] { "taskId" } : new[] { "taskId", "digest", "directory" };
+            if (parameters.EnumerateObject().Any(p => !allowed.Contains(p.Name)) || !parameters.TryGetProperty("taskId", out var taskId) || !IsIdentity(taskId)) throw new ArgumentException("A task identity is required.");
+            if (action == "productivity_export_save")
+            {
+                if (!parameters.TryGetProperty("digest", out var digest) || digest.ValueKind != JsonValueKind.String || digest.GetString() is not { Length: 64 } text || text.Any(c => !Uri.IsHexDigit(c))) throw new ArgumentException("A verified export digest is required.");
+                if (parameters.TryGetProperty("directory", out var directory) && directory.ValueKind != JsonValueKind.String) throw new ArgumentException("A folder path must be text.");
+            }
+        }
         if (action == "dispatch")
         {
             if (parameters.EnumerateObject().Count() != 2 || parameters.EnumerateObject().Any(p => p.Name is not ("draftId" or "digest"))
@@ -69,4 +103,11 @@ internal static class DesktopControlPolicy
         }
         return new DesktopWebCommand(action!, parameters.Clone());
     }
+    // Identities are matched, never turned into paths: a template id has a fixed prefix and alphabet,
+    // and a task id is a bounded string without control characters.
+    private static bool IsTemplateId(JsonElement value)
+        => value.ValueKind == JsonValueKind.String && value.GetString() is { } text
+        && System.Text.RegularExpressions.Regex.IsMatch(text, "^tmpl-[A-Za-z0-9-]{8,64}$");
+    private static bool IsIdentity(JsonElement value)
+        => value.ValueKind == JsonValueKind.String && value.GetString() is { Length: > 0 and <= 200 } text && !text.Any(char.IsControl);
 }
