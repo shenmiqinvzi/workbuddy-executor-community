@@ -173,7 +173,7 @@ node scripts/candidate-installation.mjs rollback-plan --package "D:/pkg/codex-wo
 
 计划列出将被替换、新建、删除、保留与阻挡的文件（含当前和目标哈希）、运行目标（哪些进程需要重启、正在运行的进程不会自动换版本）、配置影响、执行步骤和失败补救顺序。存在本地改动、路径异常或目标包未通过核对时 `safeToApply=false` 且退出码为 1，计划不写盘。
 
-若现有任务库结构比回退目标更新，计划会单独给出 schema 判断（`schema.assessment.decision`）：`compatible` 才可直接回退；`incompatible` 或 `unknown` 时保持原状，先备份整个 data 目录，再按[恢复说明](RESTORE.md)核对。把 `--task-db` 指向 WorkBuddy 原生库（只有 sessions 表）时同样是 `unknown`，并提示该库不像网关任务库。不要用删除任务库或把旧库覆盖到新库的方式“恢复”，也不声称旧程序能读新结构。
+若现有任务库结构比回退目标更新，计划会单独给出 schema 判断（`schema.assessment.decision`）：`compatible` 才可直接回退；`incompatible` 或 `unknown` 时保持原状，先备份整个 data 目录，再按[恢复说明](../RESTORE.md)核对。把 `--task-db` 指向 WorkBuddy 原生库（只有 sessions 表）时同样是 `unknown`，并提示该库不像网关任务库。不要用删除任务库或把旧库覆盖到新库的方式“恢复”，也不声称旧程序能读新结构。
 
 ```powershell
 node scripts/setup.mjs uninstall

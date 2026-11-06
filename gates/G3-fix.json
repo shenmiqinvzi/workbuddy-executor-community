@@ -7,6 +7,8 @@
   "sourceOfTruth": "docs/delivery/STATUS_INDEX.md",
   "codeBaseCommit": "91af89ee9d5a3358f65a6e0e7699c9100f91d732",
   "codeBaseTree": "4c61792ac92f7ba0597e378d304e0e8ad952a943",
+  "packageSourceCommit": "b37be81f708863516411023351839729cd0642d4",
+  "packageSourceNote": "RC2 压缩包在 b37be81 之后打包；codeBaseCommit 记录的是本 gate 的对比基线（修复前），不能用来复算打包输入树。11 的 K2 已指出这一点，这里补一个显式字段。",
   "gateRecord": {
     "commit": null,
     "note": "本文件随修复提交入库，自引用哈希不写入自身；归档提交哈希记录在 E:\\javaproject\\outputs\\finish-integration-20261105\\G3-fix\\G3_FIX_RECEIPT.md"
@@ -239,6 +241,100 @@
       }
     ]
   },
+  "rc2Live": {
+    "authorizedBy": "用户 2026-11-06 决定：真实重装并派一单；五张未做卡不补；其余按集成人建议",
+    "installRoot": "E:\\javaproject\\workbuddy-install\\gateway-v0.7.1-rc2",
+    "installedAt": "2026-11-06T08:23:09.782Z",
+    "installAction": "setup install --apply",
+    "installResult": { "ok": true, "changed": true, "unchanged": false, "mcpConfigModified": false, "envCreated": true },
+    "snippetHash": "3657dcac47dac5abcc7d6ef7602bb494b15705acd22dd53d72f0f3dd4f22e0f5",
+    "skillFiles": "六文件哈希与清单逐条一致，与 RC1 内容相同，故本次无新备份（skillBackup 为空）",
+    "productionDependencies": "npm ci --omit=dev exit 0，added 94 packages",
+    "envExtra": "WORKBUDDY_DSH_ENABLED=0（本次只走 WorkBuddy 桌面队列，不需要 DSH 桥接宿主）",
+    "installedDistReplay": {
+      "evidence": "outputs\\finish-integration-20261105\\G3-fix\\run\\installed-replay.json",
+      "r6": "AdmissionError / WORKSPACE_CONFLICT / failureCause WORKSPACE_CONFLICT",
+      "r8": "AdmissionError / ATTEMPT_LIMIT / failureCause ATTEMPT_LIMIT",
+      "verdict": "both refusals carry stable codes",
+      "exitCode": 0
+    },
+    "dispatch": {
+      "executor": "workbuddy",
+      "runtimeSource": "desktop_queue",
+      "model": "deepseek-v4.1-flash-sg",
+      "modelCredits": "x0.11（面板相对倍率标识，不是金额；真实扣费以面板为准）",
+      "reasoningEffort": null,
+      "taskId": "rc2-live-20261106b",
+      "sessionId": "39afd554-3a3e-4472-8bae-e38fb3385332",
+      "attemptId": "run-de1afbd3-571a-4533-885e-3819146f0882",
+      "operationId": "compat:send:rc2-live-20261106b:9c9f24222b86e16423bfa510c5068393606bd3a7f934b7e96a75e0c0b61f4f70",
+      "state": "needs_review",
+      "nativeStoppedAt": "2026-11-06T08:28:13.793Z",
+      "accepted": false,
+      "acceptedReason": "review_task 需要 machineCheckIds，只有可信协调器路径（task-reviews.js checks()）能产生；MCP 工具面没有该入口，故无法生成 reviewId（F-ACC-1）"
+    },
+    "independentVerification": {
+      "file": "rc2-check.txt",
+      "bytes": 11,
+      "sha256": "cfb99eca7087b9d796bb7bcfc86832215311e6494531db609f67c5d475addd89",
+      "content": "RC2-LIVE-OK",
+      "acceptanceCommandExit": 0,
+      "readmeUnchanged": { "bytes": 124, "sha256": "6cb9bfcf7b729b55e46c871c90ab0ce5f9802a226f49b223e78f43dcc7d82e66" },
+      "inspectionEvidenceId": "inspection-e468e8ce-c33b-46b0-beaf-3dc0ca0eb058"
+    },
+    "doc": "docs/delivery/RC2_LIVE_RUN.md",
+    "evidence": "outputs\\finish-integration-20261105\\G3-fix\\run\\ 与 ...\\G3-fix\\live-rc2\\"
+  },
+  "finalReview": {
+    "commit": "265234ac9e2c978ac3d26f0209cf992ab8ded618",
+    "tree": "6babbccf991a16528c4f997087a960505f7c6090",
+    "branch": "docs/final-review",
+    "file": "docs/delivery/FINAL_REVIEW_INDEX.md",
+    "lines": 648,
+    "sections": "§0–§8 与任务书 1:1，附 §9 矛盾 K1–K8、§10 不成立 12 条与未核验 9 类、§11 复现、§12 下一步、§13 回执",
+    "independentlyComputed": [
+      "RC2 9e146b93… / 2 236 003B / 695 条目 / 694 声明文件；RC1 658a20b1… / 2 235 102B",
+      "RC2 解包跑 verify-release → 694 hashesMatch:true exit 0",
+      "二进制层面：RC2 dist/workspace-workers.js 有 WORKSPACE_CONFLICT、dist/coordinator.js 有 ATTEMPT_LIMIT；RC1 对应各 0 处",
+      "包内 node_modules 0、.env 仅 .env.example、data/ 0"
+    ],
+    "mergedInto": "integration/delivery-finish（fast-forward）"
+  },
+  "postRc2Findings": [
+    {
+      "id": "F-CAP-1",
+      "severity": "high",
+      "summary": "准入阶段就被拒（未发生任何原生派工）的任务仍占 workflow_capacity 单槽；cancel_task 返回 ok 但 stop_unconfirmed、状态仍 blocked、槽位不释放；recovery-cli show 的 available 为空、proof.reconcile/close 为 null",
+      "evidence": "outputs\\finish-integration-20261105\\G3-fix\\run\\send-task.out.json、cancel-a.out.json、live-rc2\\evidence\\blocked-capacity\\",
+      "workaround": "只对本次测试安装：整库复制留证后换新库继续，不是产品修复",
+      "owner": "下一轮源码修复（operation-admission / task-store 容量释放语义）"
+    },
+    {
+      "id": "F-ACC-1",
+      "severity": "medium",
+      "summary": "MCP 工具面到不了「程序检查批次 → review → accept」：review_task 必须提供 machineCheckIds，而生成批次的 checks() 只在可信协调器（桌面控制通道）路径上；workbuddy_run_review_command 只产单条命令证据",
+      "evidence": "dist/server.js:145（schema 要求 length(1)）、dist/task-reviews.js:139-190、dist/desktop-control-runtime.js:170",
+      "impact": "通过 MCP 派工的任务只能停在 needs_review，且继续占槽；验收必须走客户端 UI",
+      "owner": "下一轮：要么暴露批次入口，要么在文档里把这条路径写清楚"
+    },
+    {
+      "id": "F-CONTRACT-1",
+      "severity": "low",
+      "summary": "任务正文允许新增文件，但网关附带的 legacy 说明称只读、不得新建工作区文件；执行器报告两处冲突，并提示若以空 allowedChanges 判定可能判越界",
+      "evidence": "outputs\\finish-integration-20261105\\G3-fix\\run\\get-task.out.json（report.rawText）",
+      "owner": "下一轮统一文案与范围声明"
+    }
+  ],
+  "finalReviewDispositions": {
+    "K1": "已修：gateway/docs/INSTALL_WINDOWS.md:176 的 RESTORE.md 链接改为 ../RESTORE.md；该文件入包，故下一版打包才会包含",
+    "K2": "已在 gate 增 packageSourceCommit=b37be81 与说明",
+    "K3": "已在 STATUS_INDEX 更新 11 与 RC2 实测两行",
+    "K4": "已在 LIVE_ACCEPTANCE_EVIDENCE_INDEX.md 增两处附注，回链 LIVE_EVIDENCE_REPAIR.md",
+    "K5": "11_PROMPT.md 是 outputs 下的转交件，不是仓库文件；不追溯修改，本条以本 gate 记录为准",
+    "K6": "STATUS_INDEX 与 RC2_LIVE_RUN.md 均成对写「10 已完成 / rc2 accepted 未达成」",
+    "K7": "已记录：候选包解包目录被 npm ci 污染（4099 文件），复现须解到全新空目录",
+    "K8": "已处理：RC2_REVERIFY_10.md 未入库且已被 RC2_LIVE_RUN.md 取代，删除该未跟踪文件"
+  },
   "openItems": [
     "R6 准备期失败仍落 outcome_unknown 并占容量（operation-admission 在准备前进入 effect_started），是否改为 rejected 需 10 决定",
     "continueAdmitted 里其余无码 Error（已取消任务、无会话、活跃 worker、缺 provider 返回值）未改",
@@ -257,8 +353,9 @@
   "status": {
     "sourcePassed": true,
     "liveVerifiedForRc1": true,
-    "rc2LiveVerified": false,
+    "rc2LiveDispatched": true,
+    "rc2Accepted": false,
     "releaseReady": false
   },
-  "nextGate": "10（RC2 重验）→ 11（交付检查）"
+  "nextGate": "11 已完成（265234a）；后续：F-CAP-1/F-ACC-1/F-CONTRACT-1 归下一轮源码修复，K1 需下次打包才进包；推送/合 main/发布/部署仍需用户显式指令"
 }

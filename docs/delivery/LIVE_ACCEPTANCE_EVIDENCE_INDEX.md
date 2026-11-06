@@ -67,6 +67,8 @@
 | `checks/acceptance.test.mjs` | 953 | `e46e3a157d6d11b5048bd70fa5b210b09ad299463d47e7675f687563207b6061` | 未变（范围守住） |
 | `README.md` | 293 | `b133aa74f9a2ce5715595f3c6e5b2cfc56621dd1f3a301b1f2c9e33c9b209f6b` | 未变 |
 
+> 集成人注（2026-11-06）：该 5042B 原件是 UTF-16LE 重定向产物，按 UTF-8 不可解析；可读转码件与判定见 `docs\delivery\LIVE_EVIDENCE_REPAIR.md`。
+
 真实模型目录：`outputs\finish-live-20261106\evidence\workbuddy-models.json`（5042B）
 - 23 条；字段只有 `id`/`name`/`credits`，**没有 `reasoningEfforts`** → 本单推理档只能 `null`
 - 目录里没有裸 `deepseek-v4.1-flash`，只有 `deepseek-v4.1-flash-sg`（`credits x0.11`，相对倍率，非金额）
@@ -182,3 +184,11 @@ G3 汇总：全量 1281 tests / 1269 pass / 0 fail / 0 cancelled / 12 skipped，
 - `E:\javaproject\workbuddy-install\start-workbuddy-debug.ps1`（带调试端口启动客户端）；
 - `evidence\codex-config-preview\{proposed-block.toml, merge-preview.md, merge-preview.json}`（Codex 配置合并预览，文件未被修改）。
 - `LICENSE` 与代码签名。
+
+## 附注（集成人，2026-11-06）：三份不可解析的原始证据
+
+本索引引用的以下三份原件**不是合法 JSON**，不能作为可解析证据使用；判定、重采与替代件见 `docs\delivery\LIVE_EVIDENCE_REPAIR.md`：
+
+- `evidence\cards\r6\recovery-view.json`（952B，一次失败的 PowerShell 调用转录，非恢复视图）→ 已用 RC1 库副本跑 `recovery-cli show|observe` 重采（`sha256 5a4feca1…`）。
+- `evidence\get-task-1.json`（PowerShell 转录；`workbuddy_get_task` 对 DSH 任务按设计拒绝、`deepseek_get_task` 不认识该 id）→ 以库副本投影替代（`task-projection-1`，`sha256 92b4e999…`），任务详情不得再宣称由 `get` 捕获。
+- `evidence\workbuddy-models.json`（UTF-16LE）→ 已转码为 `transcoded\workbuddy-models.json`（`sha256 2ebda8f8…`，内容未改）。
