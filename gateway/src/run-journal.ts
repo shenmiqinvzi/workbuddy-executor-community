@@ -175,7 +175,15 @@ export class RunJournal {
     // Never replay a prompt after losing its worker. WorkBuddy may still have
     // performed side effects; the operator must inspect the original session.
     if (snapshot.status === "queued" && Date.now() - Date.parse(snapshot.updatedAt) < 10_000) return;
-    if (snapshot.pid) { try { process.kill(snapshot.pid, 0); return; } catch {} }
+    if (snapshot.pid) {
+      try { process.kill(snapshot.pid, 0); return; }
+      catch (error) {
+        // Only ESRCH proves the worker is gone. EPERM (another owner) and any
+        // unknown failure keep the attempt running: a lost worker is never
+        // replayed and never silently declared stopped.
+        if ((error as NodeJS.ErrnoException).code !== "ESRCH") return;
+      }
+    }
     const error = "Bridge worker stopped before a terminal result. Inspect the original WorkBuddy session; the task was not automatically resent.";
     const updated: RunSnapshot = { ...snapshot, status: "blocked", error };
     this.save(updated);

@@ -5,7 +5,7 @@ import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
 import { readZip } from "./support/read-zip.mjs";
-import { assertSafeContent, collectReleaseFiles, createPackage, createSkillPackage } from "../scripts/package.mjs";
+import { assertBuildIsFresh, assertSafeContent, collectReleaseFiles, createPackage, createSkillPackage } from "../scripts/package.mjs";
 import { createDesktopPackage } from "../scripts/package-desktop.mjs";
 
 
@@ -288,5 +288,24 @@ test("desktop ZIP includes only fixed native artifacts and omits profiles and un
       assert.equal(crypto.createHash("sha256").update(data).digest("hex"), entry.sha256);
     }
     await assert.rejects(createDesktopPackage(value.source, value.output, "0.0.0-test"), /replace/);
+  } finally { await fs.rm(value.root, { recursive: true, force: true }); }
+});
+
+test("a stale dist is refused before anything is zipped", async () => {
+  const value = await fixture();
+  try {
+    // The freshness floor ignores tiny fixtures, so this case has to look like a real tree.
+    await fs.mkdir(path.join(value.source, "src/generated"), { recursive: true });
+    await fs.mkdir(path.join(value.source, "dist/generated"), { recursive: true });
+    for (let index = 0; index < 60; index += 1) {
+      await fs.writeFile(path.join(value.source, `src/generated/module-${index}.ts`), "export {};\n");
+      await fs.writeFile(path.join(value.source, `dist/generated/module-${index}.js`), "export {};\n");
+    }
+    const stamp = new Date(Date.now() - 60_000);
+    await fs.utimes(path.join(value.source, "dist/generated/module-0.js"), stamp, stamp);
+    await assert.rejects(assertBuildIsFresh(value.source), /dist is older than src; run npm run build before packaging/);
+    const fresh = new Date();
+    for (let index = 0; index < 60; index += 1) await fs.utimes(path.join(value.source, `dist/generated/module-${index}.js`), fresh, fresh);
+    await assert.doesNotReject(assertBuildIsFresh(value.source));
   } finally { await fs.rm(value.root, { recursive: true, force: true }); }
 });

@@ -433,3 +433,21 @@ Codex 独立复核（`outputs\codex-finish-review-20261106\REVIEW.md`）对 RC3 
 - F-CONTRACT-1（任务正文允许新增文件 vs legacy 只读说明冲突）本轮未处理；第二台机、R1/R2/R5/R9/R10 五张卡、
   真实窗口/读屏验收未做；P0-1 继续按 T7D 原样保留（不关闭、不重派、不释放）。
 - 若要把 RC4 变成「真实验收通过」，仍需用户授权在独立安装根重装并派一单，且要等 `$scope` 之类的语义阻塞被真实检查确认。
+
+## 收口轮（R1–R4 + C4-1，2026-11-06）
+
+分支 `fix/delivery-review-r1-r4`，工作树 `E:\javaproject\workbuddy-finish\R-review-fixes`，起点 `8a614c9`（RC4）。
+
+| 修复 | 内容 | 回归 |
+| --- | --- | --- |
+| C4-1 | `journalShowsNoDispatch` 只有 `ENOENT` 算干净；`EACCES/EPERM/EIO/ENOTDIR/未知` 一律未证明；`stat` 与 `readdir` 两阶段都覆盖 | `desktop-queue.test.ts`：7 种注入 + ENOENT 对照 |
+| 同类 | `process.kill` 只有 `ESRCH` 才算进程消失（`run-journal.ts`、`run-worker.ts`） | 受影响套件 |
+| R3 正向 | 真实 CLI 组合根 + 记录型客户端；合法 decision 进 `TaskApplicationService.send`，同键幂等、换键冲突、撤回不派发 | `automation-cli-dispatch.test.ts` 2 例 |
+| R2 边界 | `task.title` 与 `reviews[].correction` 也脱敏；同字段重复只报一次 | `delivery-export.test.ts` 20 例 |
+| 发布态 | 新增构建新鲜度守卫（`dist` 旧于 `src` 且规模真实时拒绝打包） | `package.test.ts` 13 例 |
+
+检查：build/typecheck exit 0；完整后端 1300 tests / 1287 pass / 1 fail（`command-cleanup` 高负载时序，单跑 4/4 通过）/ 12 skipped；workbench 139/139；desktop 92/92。
+
+候选 RC5：`gateway/outputs/release/codex-workbuddy-gateway-v0.7.1.zip`，2,256,922 B，sha256 `17758de7c284c76e0d46712f24c1d196ca93f01851833a88ae4aa5846acdeb38`，696 个受管文件；解包 `verify-release` 696/696 一致；`check` `ok:true`；`version-check` 匹配；`drill`/`upgrade-drill`/`rollback-plan` 全部 exit 0；三个打包缺陷探针通过。
+
+边界：未安装、未推送、未合 main、未发布；RC5 无真实派工；F-CONTRACT-1 的 B/C 方案与许可/发行等见 `docs/delivery/EXTERNAL_DECISIONS.md`。

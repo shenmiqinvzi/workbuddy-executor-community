@@ -9,7 +9,7 @@ import { loadConfig, type Config } from "../src/config.js";
 import { DesktopQueue, assertDesktopCaller, ownedCommandStopReason, windowsWorkerCommand } from "../src/desktop-queue.js";
 import { TaskStore } from "../src/task-store.js";
 import { SelectedModelClient as WorkBuddyClient } from "./support/selected-model-client.js";
-import { TaskCoordinator } from "../src/coordinator.js";
+import { TaskCoordinator, type JournalFiles } from "../src/coordinator.js";
 import { RunJournal } from "../src/run-journal.js";
 import { readWorkerResult } from "../src/worker-result.js";
 
@@ -313,6 +313,61 @@ test("a cancellation before native dispatch closes the workflow and frees shared
 
 
 
+
+function journalFailure(target: string, operation: "stat" | "readdir" | "readfile", code: string): JournalFiles {
+  const failed = (file: string) => path.resolve(file) === path.resolve(target);
+  const error = () => Object.assign(new Error(`synthetic ${code}`), { code });
+  return {
+    statSync(file) { if (operation === "stat" && failed(file)) throw error(); return fs.statSync(file); },
+    readdirSync(file) { if (operation === "readdir" && failed(file)) throw error(); return fs.readdirSync(file); },
+    readFileSync(file, encoding) { if (operation === "readfile" && failed(file)) throw error(); return fs.readFileSync(file, encoding); },
+  };
+}
+
+test("an unreadable attempt journal never proves that a task was undelivered", async (t) => {
+  const failures: Array<{ operation: "stat" | "readdir" | "readfile"; code: string }> = [
+    { operation: "stat", code: "EACCES" },
+    { operation: "stat", code: "EPERM" },
+    { operation: "stat", code: "EIO" },
+    { operation: "stat", code: "ENOTDIR" },
+    { operation: "stat", code: "UNKNOWN" },
+    { operation: "readdir", code: "EACCES" },
+    { operation: "readdir", code: "EIO" },
+  ];
+  for (const failure of failures) {
+    const f = fixture(t);
+    await f.coordinator.send({ model: "synthetic-user-choice", taskId: "unreadable-journal", objective: "Fixture task", workspace: f.dir, sessionId: "unit-session", sessionMode: "new" });
+    const blocked = await f.coordinator.sync("unreadable-journal");
+    assert.equal(blocked.state, "blocked");
+    const attemptId = blocked.attemptId!;
+    const directory = path.join(f.config.runsDir!, attemptId);
+    const target = failure.operation === "readfile" ? path.join(directory, "state.json") : directory;
+    const guarded = new TaskCoordinator(f.config, f.store, new WorkBuddyClient(f.config), undefined, undefined, journalFailure(target, failure.operation, failure.code));
+    const cancelled = await guarded.cancel("unreadable-journal", "Synthetic unreadable journal");
+    assert.equal("closed" in cancelled, false, `${failure.operation} ${failure.code} must not close the workflow`);
+    assert.equal((await guarded.sync("unreadable-journal")).state === "cancelled", false, `${failure.operation} ${failure.code} must not cancel`);
+    const db = new DatabaseSync(f.config.dbFile, { readOnly: true });
+    assert.equal((db.prepare("SELECT count(*) AS n FROM workflow_capacity").get() as { n: number }).n, 1, `${failure.operation} ${failure.code} must keep capacity`);
+    db.close();
+    assert.equal((cancelled as { executionState?: string }).executionState, "stop_unconfirmed", "the cancellation stays a stop request, never a closure");
+  }
+});
+
+test("only a genuinely absent journal directory still allows an undelivered closure", async (t) => {
+  const f = fixture(t);
+  await f.coordinator.send({ model: "synthetic-user-choice", taskId: "absent-journal", objective: "Fixture task", workspace: f.dir, sessionId: "unit-session", sessionMode: "new" });
+  const blocked = await f.coordinator.sync("absent-journal");
+  assert.equal(blocked.state, "blocked");
+  const directory = path.join(f.config.runsDir!, blocked.attemptId!);
+  const gone = new TaskCoordinator(f.config, f.store, new WorkBuddyClient(f.config), undefined, undefined, journalFailure(directory, "stat", "ENOENT"));
+  const cancelled = await gone.cancel("absent-journal", "No journal was ever created");
+  assert.ok("closed" in cancelled, "ENOENT is the one read failure that may still prove a refusal");
+  if (!("closed" in cancelled)) throw new Error("Expected a closure");
+  assert.equal(cancelled.capacityReleased, true);
+  const db = new DatabaseSync(f.config.dbFile, { readOnly: true });
+  assert.equal((db.prepare("SELECT count(*) AS n FROM workflow_capacity").get() as { n: number }).n, 0);
+  db.close();
+});
 
 test("a refusal continued into a native claim is cancelled for real, never closed as undelivered", async (t) => {
   const f = fixture(t);

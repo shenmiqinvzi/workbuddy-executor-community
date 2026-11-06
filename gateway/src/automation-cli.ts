@@ -124,7 +124,21 @@ function readJson(file: string): unknown {
   return JSON.parse(fs.readFileSync(file.replace(/^@/, ""), "utf8")) as unknown;
 }
 
-export async function runAutomationCli(argv: string[] = process.argv.slice(2)): Promise<void> {
+/**
+ * Test-only seams for the local CLI composition root. Production callers pass
+ * nothing, so the CLI still builds the real coordinator, the real native
+ * client and the real workspace routing. The seams exist so an isolated test
+ * can prove the wiring without a desktop process, a native session or an
+ * account: the guarded service, operation admission and the policy checks all
+ * stay real, only the transport and the workspace resolver are substituted.
+ */
+export interface AutomationCliRuntime {
+  client?: WorkBuddyClient;
+  resolveWorkspace?: ConstructorParameters<typeof TaskCoordinator>[3];
+  observeModel?: ConstructorParameters<typeof TaskCoordinator>[4];
+}
+
+export async function runAutomationCli(argv: string[] = process.argv.slice(2), runtime: AutomationCliRuntime = {}): Promise<void> {
   const [command, ...rest] = argv;
   if (!command || command === "--help" || command === "-h") {
     process.stdout.write(USAGE + "\n");
@@ -145,7 +159,7 @@ export async function runAutomationCli(argv: string[] = process.argv.slice(2)): 
   // the saved policy still has to be enabled.
   let sharedDispatch: ((input: SendTaskInput) => Promise<unknown>) | undefined;
   const service = new TaskApplicationService(
-    new TaskCoordinator(config, store, new WorkBuddyClient(config)),
+    new TaskCoordinator(config, store, runtime.client ?? new WorkBuddyClient(config), runtime.resolveWorkspace, runtime.observeModel),
     config.maxTaskAttempts ?? 3,
     runs,
     configuredDshCoordinator(store, runs),

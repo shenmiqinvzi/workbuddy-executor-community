@@ -1,0 +1,198 @@
+{
+  "schema": "workbuddy-executor/integration-gate-1",
+  "gate": "closeout-r1-r4-c41",
+  "recordedAt": "2026-11-06T21:45:00+08:00",
+  "branch": "fix/delivery-review-r1-r4",
+  "worktree": "E:\\javaproject\\workbuddy-finish\\R-review-fixes",
+  "codeBaseCommit": "8a614c9ee7dc76c4cec22727f884cf6a0e658792",
+  "codeBaseTree": "b2aa8f175082c5999a05dab68aecfdb9faeefd2f",
+  "gateRecord": {
+    "commit": null,
+    "reason": "A commit cannot contain its own hash. The archive commit is recorded in outputs\\finish-integration-20261105\\closeout\\CLOSEOUT_RECEIPT.md after the commit lands."
+  },
+  "source": {
+    "review": "E:\\javaproject\\outputs\\codex-rc4-review-20261106\\REVIEW.md",
+    "probe": "E:\\javaproject\\outputs\\codex-rc4-review-20261106\\probe.mjs",
+    "probeResult": "E:\\javaproject\\outputs\\codex-rc4-review-20261106\\probe-result.json",
+    "masterTask": "E:\\javaproject\\workbuddy-final-closeout-20261106\\DSH_MASTER_TASK.md",
+    "previousCandidate": {
+      "name": "RC4",
+      "sha256": "c5981c09933342e9581cb336db95dfaac75d575e0f136d83fb0b9d26838cc816"
+    }
+  },
+  "fixes": [
+    {
+      "id": "C4-1",
+      "file": "gateway/src/coordinator.ts",
+      "change": "journalShowsNoDispatch treats only ENOENT as a clean absence; EACCES/EPERM/EIO/ENOTDIR/unknown and a failed readdir all mean 'not proven'. A JournalFiles seam (6th constructor argument, default fs) makes both stages injectable.",
+      "regressions": [
+        "gateway/test/desktop-queue.test.ts: an unreadable attempt journal never proves that a task was undelivered (7 injections: stat EACCES/EPERM/EIO/ENOTDIR/UNKNOWN, readdir EACCES/EIO)",
+        "gateway/test/desktop-queue.test.ts: only a genuinely absent journal directory still allows an undelivered closure (stat ENOENT)"
+      ]
+    },
+    {
+      "id": "C4-1-related-liveness",
+      "files": ["gateway/src/run-journal.ts", "gateway/src/run-worker.ts"],
+      "change": "process.kill(pid, 0) now counts as stopped only on ESRCH; EPERM means the process exists and stays alive."
+    },
+    {
+      "id": "R3-positive",
+      "files": ["gateway/src/automation-cli.ts", "gateway/test/automation-cli-dispatch.test.ts"],
+      "change": "runAutomationCli accepts an injectable runtime (client/resolveWorkspace/observeModel) so a recording client proves the composition root reaches TaskApplicationService.send. Defaults unchanged: still unarmed, still no HTTP/MCP write entry.",
+      "regressions": [
+        "automation-cli-dispatch.test.ts: a legal decision is dispatched once, replayed for the same operationId, refused with OPERATION_CONFLICT for a different one, and never dispatched after policy-revoke"
+      ]
+    },
+    {
+      "id": "R2-boundary",
+      "file": "gateway/src/delivery-export.ts",
+      "change": "task.title and evidence.reviews[].correction are scrubbed like note/definition; a field holding the same secret twice is reported once.",
+      "regressions": [
+        "delivery-export.test.ts: a title and a reviewer correction are scrubbed like any other prose",
+        "delivery-export.test.ts: one field holding the same secret twice is reported once"
+      ]
+    },
+    {
+      "id": "F-CONTRACT-1",
+      "files": ["gateway/src/coordinator.ts", "docs/delivery/F_CONTRACT_1.md"],
+      "change": "Legacy prompt states plainly that prose never grants a write scope. Scope enforcement is unchanged; the B/C options (reject at admission, or derive scope from prose) are documented as user decisions."
+    },
+    {
+      "id": "release-freshness",
+      "file": "gateway/scripts/package.mjs",
+      "change": "assertBuildIsFresh runs from the release entry point: when src has a newer .ts than the oldest dist artifact by more than 2 s and both trees look real, packaging stops. A fixture-size floor keeps synthetic trees out of the rule.",
+      "regressions": ["package.test.ts: a stale dist is refused before anything is zipped"]
+    }
+  ],
+  "incidents": [
+    {
+      "id": "stale-dist-in-candidate",
+      "what": "The first RC5 archive was built from the previous round's dist; the C4-1 fix was in src but not in the package.",
+      "detected": "The unpacked-candidate probe returned closed=true for readdir-denied and stat-denied, which contradicts the unit tests.",
+      "resolution": "npm run build, verify markers in dist, repackage; the freshness guard and its regression prevent a silent repeat.",
+      "evidence": "outputs\\finish-integration-20261105\\closeout\\c41-rc5.json (failed run) vs c41-final.json (passing run)"
+    }
+  ],
+  "checks": [
+    {
+      "command": "npm run build",
+      "exitCode": 0,
+      "log": "outputs\\finish-integration-20261105\\closeout\\logs\\build.log"
+    },
+    {
+      "command": "npm run typecheck:task-view",
+      "exitCode": 0,
+      "log": "outputs\\finish-integration-20261105\\closeout\\logs\\typecheck.log"
+    },
+    {
+      "command": "npx tsx --test \"test/**/*.test.ts\"",
+      "exitCode": 1,
+      "counts": { "tests": 1300, "pass": 1287, "fail": 1, "skipped": 12 },
+      "failures": [
+        {
+          "test": "command-cleanup.test.ts: real nested Job cancellation leaves no descendants and orphan record is reconciled",
+          "detail": "recovered.length expected 1, got 0 under full-suite load",
+          "isolated": "npx tsx --test --test-concurrency=1 test/command-cleanup.test.ts -> 4/4 pass, exit 0",
+          "status": "known high-load flake, root cause not located"
+        }
+      ],
+      "log": "outputs\\finish-integration-20261105\\closeout\\logs\\full-test-freeze.log"
+    },
+    {
+      "command": "npm run test:workbench",
+      "exitCode": 0,
+      "counts": { "tests": 139, "pass": 139, "fail": 0 },
+      "log": "outputs\\finish-integration-20261105\\closeout\\logs\\workbench-final.log"
+    },
+    {
+      "command": "npm run desktop:test",
+      "exitCode": 0,
+      "counts": { "passed": 92, "failed": 0 },
+      "log": "outputs\\finish-integration-20261105\\closeout\\logs\\desktop-final.log"
+    }
+  ],
+  "package": {
+    "name": "RC5",
+    "archive": "gateway\\outputs\\release\\codex-workbuddy-gateway-v0.7.1.zip",
+    "bytes": 2256922,
+    "sha256": "17758de7c284c76e0d46712f24c1d196ca93f01851833a88ae4aa5846acdeb38",
+    "files": 696,
+    "manifestBytes": 112259,
+    "manifestSha256": "065e2bdaa1a66eaa812d012c1b9c6f4d66a42b173def57da3f4eededba82854f",
+    "skillArchiveSha256": "e61be9ba03f48e555ed1a8441eb8d56f0013eb818cfdceb610015d26e0839db8",
+    "harnessSkillArchiveSha256": "22909e1b0654df6eb13b3ccdcf5767ed78e094d416b891821a072c1004318d13",
+    "unpacked": "outputs\\finish-integration-20261105\\closeout\\candidate-final\\codex-workbuddy-gateway-v0.7.1",
+    "verifiedFiles": 696
+  },
+  "candidateTools": [
+    { "command": "verify-release.mjs", "exitCode": 0, "result": "696 verified, hashesMatch true" },
+    { "command": "candidate-installation.mjs check --expect-sha256 <correct>", "exitCode": 0, "result": "ok true, problems [], totalBytes 7351337" },
+    { "command": "candidate-installation.mjs check --expect-sha256 <wrong but same prefix>", "exitCode": 1, "result": "Archive SHA-256 does not match the expected value (negative control turned out to be a truncated hex, kept as evidence the comparison works)" },
+    { "command": "candidate-installation.mjs preview", "exitCode": 1, "result": "safeToApply false, create 696; expected for a bare archive without node_modules or the desktop shell" },
+    { "command": "candidate-installation.mjs version-check", "exitCode": 0, "result": "matches true, exact true" },
+    { "command": "candidate-installation.mjs drill --apply", "exitCode": 0, "result": "ok true" },
+    { "command": "candidate-installation.mjs upgrade-drill --apply", "exitCode": 0, "result": "ok true" },
+    { "command": "candidate-installation.mjs rollback-plan --to RC4", "exitCode": 0, "result": "safeToApply true" },
+    { "command": "delivery-baseline.mjs", "exitCode": 0, "result": "readOnly true, authorizesDispatch false" }
+  ],
+  "runtimeProbes": [
+    { "name": "C4-1 packaged three-state", "file": "outputs\\finish-integration-20261105\\closeout\\probe\\c41-rc5.mjs", "exitCode": 0, "verdict": "unreadable journals keep shared capacity" },
+    { "name": "R1 database and journal gates", "file": "outputs\\finish-integration-20261105\\G4-review-fixes\\probe\\r1-rc4.mjs", "exitCode": 0, "verdict": "R1 gates hold on the unpacked candidate" },
+    { "name": "R2/R3 packaged scrubber and CLI", "file": "outputs\\finish-integration-20261105\\G4-review-fixes\\probe\\r2-r3-rc4.mjs", "exitCode": 0, "verdict": "packaged scrubber and CLI composition root behave" }
+  ],
+  "rcImpact": [
+    { "change": "coordinator admission and cancellation", "needs": "re-run desktop-queue, finish-acceptance suite, full backend suite", "mustNotClaim": "real capacity behaviour under a live desktop" },
+    { "change": "automation CLI composition root", "needs": "re-run automation-dispatch/http/policy and the CLI dispatch test", "mustNotClaim": "automatic dispatch enabled by default" },
+    { "change": "delivery export redaction", "needs": "re-run delivery-export and package tests", "mustNotClaim": "every possible secret is recognised" },
+    { "change": "package.mjs freshness guard", "needs": "re-run package tests and a real packaging run", "mustNotClaim": "the guard can tell a fixture from a checkout by content alone" }
+  ],
+  "verificationEnvironment": {
+    "node": "24.19.0",
+    "WORKBUDDY_CLI_ELECTRON": "E:\\javaproject\\outputs\\finish-integration-20261105\\G3\\env\\WorkBuddy.exe (synthetic)",
+    "WORKBUDDY_CONFIG_DIR": "E:\\javaproject\\outputs\\finish-integration-20261105\\G3\\env\\workbuddy-config (synthetic)",
+    "NO_PROXY": "127.0.0.1,localhost",
+    "WORKBUDDY_DSH_ENABLED": "0",
+    "note": "All databases, runs directories, profiles and ports are per-test temp paths; no production task database, no live desktop, no real dispatch."
+  },
+  "knownFailures": [
+    "command-cleanup.test.ts nested Job cancellation counts 0 under full-suite load; isolated run 4/4",
+    "run-worker.test.ts detached worker occasionally hits EPERM on rename under load; isolated run 5/5 (documented in earlier gates)"
+  ],
+  "externalConditions": [
+    "Install RC5 and verify rollback: needs the user's choice in EXTERNAL_DECISIONS D1",
+    "Real dispatch with a named model and cost: EXTERNAL_DECISIONS D2",
+    "The RC2 blocked task still occupies slot 1: EXTERNAL_DECISIONS D3",
+    "Second Windows machine: EXTERNAL_DECISIONS D4",
+    "Production policy and persistent service: EXTERNAL_DECISIONS D5",
+    "License and release scope: EXTERNAL_DECISIONS D6",
+    "Push and merge to main: EXTERNAL_DECISIONS D7",
+    "F-CONTRACT-1 options B and C: documented, waiting for a user decision"
+  ],
+  "openUnknowns": [
+    "Root cause of the two high-load flakes",
+    "Real window UI behaviour at four sizes, 200% scaling and screen-reader paths",
+    "Whether the packaged desktop shell behaves like the synthetic host"
+  ],
+  "boundaries": {
+    "pushed": false,
+    "mergedToMain": false,
+    "installed": false,
+    "published": false,
+    "deployed": false,
+    "realDispatch": false,
+    "changedOriginalIntegrationTree": false,
+    "originalTreeReadmeSha256": "540b4bbf16a25a8d3af003e92d8f1bab7dd802ea6aa7eb8cfe07e6b451720800",
+    "originalTreeRoadmapSha256": "912d4184653721a627e09e9dae3e0866c342be51d357d9535df14a963e36cec0"
+  },
+  "status": {
+    "sourcePassed": true,
+    "syntheticCandidatePassed": true,
+    "runtimeProbePassed": true,
+    "rc5Installed": false,
+    "rc5Dispatched": false,
+    "liveVerifiedForRc1": true,
+    "liveVerifiedForRc2": false,
+    "releaseReady": false
+  },
+  "nextGate": "User decisions in docs/delivery/EXTERNAL_DECISIONS.md, then one Codex re-review of this branch plus RC5; real acceptance needs a fresh install and dispatch."
+}

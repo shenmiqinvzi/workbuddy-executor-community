@@ -46,7 +46,14 @@ export function acquireSessionLease(root: string, sessionId: string, attemptId: 
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
       const value = JSON.parse(fs.readFileSync(file, "utf8")) as { pid?: number };
       let alive = false;
-      if (value.pid) { try { process.kill(value.pid, 0); alive = true; } catch {} }
+      if (value.pid) {
+        try { process.kill(value.pid, 0); alive = true; }
+        catch (error) {
+          // EPERM proves the process exists under another owner; only an explicit
+          // ESRCH lets this reservation conclude that the previous worker is gone.
+          if ((error as NodeJS.ErrnoException).code !== "ESRCH") alive = true;
+        }
+      }
       if (alive) throw new Error("This WorkBuddy desktop conversation is already executing another bridge task. Wait for that task before continuing.");
       fs.unlinkSync(file);
     }

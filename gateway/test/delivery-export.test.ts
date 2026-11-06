@@ -343,3 +343,32 @@ test("redact: inline pairs and header values are scrubbed inside sentences, not 
   assert.equal(note.includes("first line"), true);
   assert.ok(result.fields.includes("note"));
 });
+
+test("export: a title and a reviewer correction are scrubbed like any other prose", () => {
+  const titleToken = ["sk", "live", "00112233445566778899"].join("-");
+  const correctionValue = ["Basic", "dXNlcjpwYXNzd29yZA=="].join(" ");
+  const review = { ...reviewFixture(1), correction: `Corrected after review: Authorization: ${correctionValue}` } as ReviewRecord;
+  const built = buildDeliveryExport(fakeStore({ contract: contractRecord(`Delivery for ${titleToken}`), reviews: [review] }), "task-1", { now: NOW });
+  assert.equal(built.ok, true);
+  if (!built.ok) return;
+  const bytes = built.bytes.toString("utf8");
+  assert.equal(bytes.includes(titleToken), false, "the title credential never reaches the export bytes");
+  assert.equal(bytes.includes("dXNlcjpwYXNzd29yZA=="), false, "the correction credential never reaches the export bytes");
+  assert.match(built.document.task.title, /\[redacted\]/);
+  assert.match(String(built.document.evidence.reviews[0]?.correction), /\[redacted\]/);
+  assert.ok(built.document.redactions.fields.includes("task.title"));
+  assert.ok(built.document.redactions.fields.includes("evidence.reviews[].correction"));
+  assert.equal(built.document.redactions.count, built.document.redactions.fields.length);
+});
+
+test("export: one field holding the same secret twice is reported once", () => {
+  const secret = ["sk", "live", "ffeeddccbbaa99887766"].join("-");
+  const note = `first line ${secret} and again ${secret}`;
+  const built = buildDeliveryExport(fakeStore({ reviews: [reviewFixture(1, note)] }), "task-1", { now: NOW });
+  assert.equal(built.ok, true);
+  if (!built.ok) return;
+  const fields = built.document.redactions.fields;
+  assert.equal(fields.filter(field => field === "evidence.reviews[].checks[].note").length, 1);
+  assert.equal(built.document.redactions.count, fields.length);
+  assert.equal(built.bytes.toString("utf8").includes(secret), false);
+});

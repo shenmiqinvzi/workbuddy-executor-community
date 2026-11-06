@@ -360,3 +360,9 @@ Codex 独立复核在 RC3 上复现了三条缺陷并指出索引过期（`outpu
 RC4：695 文件 / 2 248 287 B / sha256 `c5981c09933342e9581cb336db95dfaac75d575e0f136d83fb0b9d26838cc816`；
 解包 `verify-release` 695 hashesMatch、`check` problems 0、`version-check` matches、`drill`/`upgrade-drill` exit 0；
 运行时探针 `r1-rc4`（7/7 门控）与 `r2-r3-rc4`（脱敏 + CLI 接线）均 exit 0。**RC4 未安装、未派工；RC1 的真实证据仍只属 RC1。**
+
+## 收口轮：R1–R4 与 C4-1（2026-11-06，集成人）
+
+从 `8a614c9` 起在 `fix/delivery-review-r1-r4` 收口 Codex 复核项：C4-1 把「journal 读异常」从「视为未派工」改为「只有 ENOENT 算干净」，并覆盖 stat 与 readdir 两阶段；同类把 `process.kill` 的存活判定收紧到只有 ESRCH 算消失；R3 给 CLI 组合根补上真实派工正向证据与幂等/冲突/撤回围栏；R2 把 title 与 correction 纳入脱敏；另加构建新鲜度守卫，避免再次把上一轮 dist 打进新候选（本轮真实发生过一次，被解包探针抓到后重建）。
+
+检查：build/typecheck exit 0；完整后端 1300/1287/1 fail（`command-cleanup` 高负载时序，单跑通过）/12 skipped；workbench 139/139；desktop 92/92；RC5 包 696 文件 sha `17758de7…`，解包自检与全部候选工具、三个缺陷探针通过。边界：未安装、未推送、未合 main、未发布。

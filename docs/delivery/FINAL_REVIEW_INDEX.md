@@ -1,17 +1,74 @@
-# 最终交付检查与复核索引（11 线）
+# 最终交付检查与复核索引
 
-- 生成时间：2026-11-06（Asia/Shanghai）
-- 执笔：第 11 条线（交付检查与最终复核），独立于集成人
-- 工作树：`E:\javaproject\workbuddy-finish\F11-final`
-- 分支：`docs/final-review`
-- HEAD：`06d52b1e3c7d6e9221d618b42737e16cbf91f101`
-- HEAD 树对象：`f2f6553d2bfdb0b49466b8c90d9989f1720fe399`（`git cat-file -p HEAD` 首行；与集成人实测值一致）
-- 起点工作树：干净（`git status --porcelain` 0 行）
-- 本线只新增本文件；未改任何源码、测试、包、配置、其他文档
+本文件是交付的唯一入口。**顶部是收口轮（2026-11-06）的当前状态**；从「判读约定」开始到 §14 是第 11 线在提交 `06d52b1` / RC2 上的历史记录，保留原文不再更新；读到旧 SHA 与旧结论时以顶部为准。
 
-**一句话结论：源码与合成候选可以复核，真实证据只属于 RC1，最终候选 RC2 从未进过真实环境；正式交付状态是「未完成」，不是「通过」。**
+## 当前状态（收口轮，2026-11-06）
+
+| 项 | 值 |
+| --- | --- |
+| 源码树 | `E:\javaproject\workbuddy-finish\R-review-fixes` |
+| 分支 | `fix/delivery-review-r1-r4` |
+| 起点提交 | `8a614c9ee7dc76c4cec22727f884cf6a0e658792`（RC4，Codex 复核对象） |
+| 本轮提交 | 见文末「收口轮回执」；提交后由外部回执记录该 SHA，提交前不预设 |
+| 候选包 | RC5：`gateway/outputs/release/codex-workbuddy-gateway-v0.7.1.zip` |
+| 包 SHA-256 | `17758de7c284c76e0d46712f24c1d196ca93f01851833a88ae4aa5846acdeb38`（2,256,922 B，696 个受管文件） |
+| manifest SHA-256 | `065e2bdaa1a66eaa812d012c1b9c6f4d66a42b173def57da3f4eededba82854f`（112,259 B） |
+| 技能包 / Harness 包 | `e61be9ba…`（6 文件）/ `22909e1b…`（2 文件），本轮未变 |
+| 解包核对位置 | `E:\javaproject\outputs\finish-integration-20261105\closeout\candidate-final\codex-workbuddy-gateway-v0.7.1` |
+| 安装状态 | 未安装。最后一次真实安装是 RC2（`E:\javaproject\workbuddy-install\gateway-v0.7.1-rc2`），RC3/RC4/RC5 都没进过真实环境 |
+| 真实派工 | RC1 两单真实派工 accepted；RC2 一单落 `needs_review`、另一单被拒后 `blocked` 占着容量（按 T7D 原样保留）。RC3–RC5 无真实派工 |
+| 异机 / 远端 CI | 未做 |
+| 许可与发行 | 未决（仓库无 LICENSE；发行范围需用户定） |
+| 部署 | 未部署、未推送、未合 main |
+
+最小复验（只读，约 15 秒）：
+
+```text
+cd E:\javaproject\workbuddy-finish\R-review-fixes\gateway
+npm run build && npm run typecheck:task-view && npm run test:workbench
+node scripts/package.mjs            # 先拒绝过期 dist，再打包
+node <解包根>\scripts\verify-release.mjs
+```
+
+## 收口轮做了什么
+
+| 项 | 结论 | 证据 |
+| --- | --- | --- |
+| C4-1 journal 读异常被当成「未派工」 | 已修：只有 `ENOENT` 视为干净，`EACCES/EPERM/EIO/ENOTDIR/未知` 一律视为未证明；`stat` 与 `readdir` 两阶段都覆盖 | `gateway/src/coordinator.ts` 的 `journalShowsNoDispatch`；7 种注入回归在 `gateway/test/desktop-queue.test.ts` |
+| 同类「读失败 = 已停止」 | 已修两处：`process.kill` 只有 `ESRCH` 才算进程消失 | `gateway/src/run-journal.ts`、`gateway/src/run-worker.ts` |
+| R3 正向派工证据 | 已补：真实 CLI 组合根 + 记录型客户端，合法 decision 走到 `TaskApplicationService.send`；同 operationId 幂等、换 operationId 冲突、撤回后不派发 | `gateway/test/automation-cli-dispatch.test.ts`（2 例） |
+| R2 脱敏边界 | 已补：`task.title` 与 `evidence.reviews[].correction` 也脱敏；同字段重复只报一次 | `gateway/test/delivery-export.test.ts`（20 例） |
+| F-CONTRACT-1 | 已给行为说明、兼容影响表与需要用户决定的 B/C 选项；本轮只改提示词措辞，不放宽范围判定 | `docs/delivery/F_CONTRACT_1.md` |
+| 打包发布态 | 新增构建新鲜度守卫：`dist` 比 `src` 旧超过 2 秒且文件数达到真实规模时，`node scripts/package.mjs` 直接拒绝 | `gateway/scripts/package.mjs`；回归 `a stale dist is refused before anything is zipped` |
+| 打包事故（本轮真实发生） | 第一次 RC5 复用了上一轮的 `dist`，C4-1 修复没进包；解包探针把「源码修了、包没修」当场抓出，重建后才得到上表 SHA | `outputs\finish-integration-20261105\closeout\c41-rc5.json` 的失败轮与通过轮 |
+
+## 收口轮验证
+
+| 检查 | 结果 |
+| --- | --- |
+| `npm run build` / `npm run typecheck:task-view` | exit 0 / exit 0 |
+| 完整后端套件 `npx tsx --test "test/**/*.test.ts"` | 1300 tests / 1287 pass / **1 fail** / 12 skipped。唯一失败是 `command-cleanup.test.ts` 的实时嵌套 Job 取消用例；单跑 4/4 通过（高负载时序，根因未定位，与 run-worker 的 EPERM 同类） |
+| `npm run test:workbench` | 139/139，exit 0 |
+| `npm run desktop:test` | `{"passed":92,"failed":0}` |
+| 解包 `verify-release.mjs` | 696 文件、`hashesMatch:true` |
+| `candidate-installation.mjs check` | `ok:true`、`problems:[]`、`totalBytes 7,351,337`；用错误 SHA 复核会稳定报 `Archive SHA-256 does not match` |
+| `preview` | exit 1（预期：纯包无依赖与桌面壳），`safeToApply:false`、`create:696` |
+| `version-check` | `matches:true`、`exact:true` |
+| `drill --apply` / `upgrade-drill --apply` / `rollback-plan` | 全部 exit 0；回退到 RC4 的计划 `safeToApply:true` |
+| 三个打包缺陷探针 | C4-1 三态（clean 关闭、两种不可读都保留容量）；R1 两道门；R2/R3（脱敏保留正文、CLI 报 `dispatcherWired:true`） |
+
+## 仍未满足（不许读成通过）
+
+1. **真实环境只到 RC1/RC2。** RC5 的安装、派工、异机、CI 都是未做状态。
+2. **53 项矩阵没有一项因本轮改动改判「整项通过」**；本轮只补证据与缺陷，`docs/D0_D1_DELIVERY_READINESS.md` 第 2 节原文不动。
+3. **F-CONTRACT-1 的 B/C 方案需要用户决定**：放行未声明范围的写入、或从正文推导范围，都会改正式语义。
+4. **两个高负载偶发**（`command-cleanup` 计数、`run-worker` EPERM）根因未定位。
+5. **UI 四尺寸 / 200% 缩放 / 读屏 / 键盘路径** 只有合成断言，没有真实窗口实测。
+6. **许可、发行范围、推送与合 main** 等用户在 `docs/delivery/EXTERNAL_DECISIONS.md` 里逐项确认。
 
 ---
+
+> 以下为第 11 线历史记录（对象：`06d52b1` + RC2）。其中「最终候选 RC2 从未进过真实环境」等表述描述的是当时对象；当前对象见顶部 RC5。
 
 ## 判读约定（先看这一节，否则后面每个状态都会被误读）
 
@@ -704,3 +761,19 @@ HEAD 树对象:     f2f6553d2bfdb0b49466b8c90d9989f1720fe399
 - 第二台机、R1/R2/R5/R9/R10 五张异常卡、真实窗口/读屏验收未做。
 - P0-1 仍按 T7D 原样保留（不关闭、不重派、不释放）。
 - RC4 只有在真实重装并派工后才能宣称真实验收；本轮交付的是源码 + 合成候选。
+
+---
+
+## 收口轮回执
+
+| 项 | 值 |
+| --- | --- |
+| 分支 / 工作树 | `fix/delivery-review-r1-r4` / `E:\javaproject\workbuddy-finish\R-review-fixes` |
+| 本轮提交 | 由外部回执 `E:\javaproject\outputs\finish-integration-20261105\closeout\CLOSEOUT_RECEIPT.md` 记录（提交不能包含自身哈希） |
+| 提交内容 | C4-1 与同类存活判定、R3 正向接线、R2 边界、F-CONTRACT-1 文档与措辞、打包新鲜度守卫、索引/进度/矩阵增量 |
+| 候选 | RC5，696 个受管文件，sha256 `17758de7c284c76e0d46712f24c1d196ca93f01851833a88ae4aa5846acdeb38` |
+| 已验证 | 构建、类型、完整后端、workbench、桌面策略、解包自检、全部候选工具、三个缺陷探针 |
+| 未验证 | 安装、真实派工、异机、远端 CI、真实窗口 UI、许可与发行 |
+| 下一步 | 用户在 `docs/delivery/EXTERNAL_DECISIONS.md` 逐项选择；之后一次 Codex 复核本分支与 RC5 |
+
+一句话：**源码与合成候选可以复核；真实环境仍停在 RC2；RC5 没有进过真实环境，也没有部署或发行。**

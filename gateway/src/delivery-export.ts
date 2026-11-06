@@ -247,6 +247,15 @@ export function buildDeliveryExport(
   if (!statistics) limitations.push("未提供统计 coverage；这份导出不包含汇总数字，也不把缺失当作零。");
 
   const redactionFields: string[] = [];
+  // R2 follow-up: the title and a reviewer correction are free text as well.
+  // They are scrubbed instead of clipped, so the whitelist keeps its keys and
+  // no credential survives in a field an operator can read.
+  const rawTitle = contract.state === "found" ? contract.record.contract.title : "";
+  const taskTitle = scrubText(rawTitle);
+  if (taskTitle.redacted) redactionFields.push("task.title");
+  for (const review of reviews) {
+    if (review.correction !== null && scrubText(review.correction).redacted) { redactionFields.push("evidence.reviews[].correction"); break; }
+  }
   const contractSection: DeliveryExportDocument["contract"] = contract.state === "found"
     ? {
       present: true,
@@ -276,7 +285,7 @@ export function buildDeliveryExport(
     generator: { name: "workbuddy-executor", version: null, readOnly: true },
     task: {
       taskId: task.taskId,
-      title: contract.state === "found" ? contract.record.contract.title : "",
+      title: taskTitle.text,
       state: task.state,
       createdAt: task.createdAt,
       updatedAt: task.updatedAt,
@@ -291,7 +300,7 @@ export function buildDeliveryExport(
         reviewId: review.reviewId,
         createdAt: review.createdAt,
         supersedesReviewId: review.supersedesReviewId,
-        correction: review.correction,
+        correction: review.correction === null ? null : scrubText(review.correction).text,
         reviewer: { actor: review.reviewer.actor, channel: review.reviewer.channel },
         machineCheckIds: [...review.machineCheckIds],
         checks: reviewChecks(review).map(check => {

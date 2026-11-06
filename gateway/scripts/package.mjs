@@ -101,6 +101,64 @@ export async function createSkillPackage(sourceDir, outputDir, version, skillNam
   } finally { await fs.rm(stage, { recursive: true, force: true }); }
 }
 
+// A stale build is worse than a missing one: the release would ship code that no
+// longer matches src. Refuse only when a dist artifact predates src by more than a
+// couple of seconds, which is far below a real edit-to-build gap and far above the
+// same-millisecond ordering of freshly created fixtures.
+const STALE_BUILD_TOLERANCE_MS = 2000;
+
+// Fixtures build a handful of files, so a size floor keeps this release check from
+// firing on synthetic trees whose write order says nothing about a real build.
+const FRESHNESS_MINIMUM_FILES = 40;
+
+export async function assertBuildIsFresh(sourceDir) {
+  const srcDir = path.join(sourceDir, "src");
+  const distDir = path.join(sourceDir, "dist");
+  const sources = await walkFiles(srcDir);
+  const outputs = await walkFiles(distDir);
+  if (sources.filter((name) => /\.ts$/.test(name)).length < FRESHNESS_MINIMUM_FILES) return;
+  if (outputs.filter((name) => /\.(?:js|d\.ts)$/.test(name)).length < FRESHNESS_MINIMUM_FILES) return;
+  const newestSource = await newestMtime(srcDir, /\.ts$/);
+  const oldestOutput = await oldestMtime(distDir, /\.(?:js|d\.ts)$/);
+  if (newestSource === null || oldestOutput === null) return;
+  if (newestSource - oldestOutput > STALE_BUILD_TOLERANCE_MS) {
+    throw new Error("dist is older than src; run npm run build before packaging.");
+  }
+}
+
+async function newestMtime(directory, pattern) {
+  let newest = null;
+  for (const relative of await walkFiles(directory)) {
+    if (!pattern.test(relative)) continue;
+    const stat = await fs.stat(path.join(directory, relative)).catch(() => null);
+    if (stat && (newest === null || stat.mtimeMs > newest)) newest = stat.mtimeMs;
+  }
+  return newest;
+}
+
+async function oldestMtime(directory, pattern) {
+  let oldest = null;
+  for (const relative of await walkFiles(directory)) {
+    if (!pattern.test(relative)) continue;
+    const stat = await fs.stat(path.join(directory, relative)).catch(() => null);
+    if (stat && (oldest === null || stat.mtimeMs < oldest)) oldest = stat.mtimeMs;
+  }
+  return oldest;
+}
+
+async function walkFiles(directory, relative = "") {
+  let entries;
+  try { entries = await fs.readdir(path.join(directory, relative), { withFileTypes: true }); }
+  catch { return []; }
+  const found = [];
+  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+    const next = path.posix.join(relative, entry.name);
+    if (entry.isDirectory()) found.push(...(await walkFiles(directory, next)));
+    else if (entry.isFile()) found.push(next);
+  }
+  return found;
+}
+
 export async function collectReleaseFiles(sourceDir) {
   const files = [];
   async function visit(relative) {
@@ -199,6 +257,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const sourceDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   const pkg = JSON.parse(await fs.readFile(path.join(sourceDir, "package.json"), "utf8"));
   const outputDir = process.argv[2] ? path.resolve(process.argv[2]) : path.join(sourceDir, "outputs", "release");
+  await assertBuildIsFresh(sourceDir);
   const result = await createPackage(sourceDir, outputDir, pkg.version);
   const skill = await createSkillPackage(sourceDir, outputDir, pkg.version);
   const deepseekSkill = await createSkillPackage(sourceDir, outputDir, pkg.version, "deepseek-executor");

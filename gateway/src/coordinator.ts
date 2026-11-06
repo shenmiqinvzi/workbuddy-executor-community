@@ -40,10 +40,27 @@ export function failureCause(error: unknown): string | null {
   const code = (error as NodeJS.ErrnoException)?.code;
   return typeof code === "string" && /^[A-Z][A-Z0-9_]{2,40}$/.test(code) ? code : null;
 }
+/**
+ * The attempt journal is read through this narrow seam so failure injection in
+ * tests never has to patch the global file system.
+ */
+export interface JournalFiles {
+  statSync(file: string): { isDirectory(): boolean };
+  readdirSync(file: string): string[];
+  readFileSync(file: string, encoding: "utf8"): string;
+}
+
+/** Only a missing path proves that a journal was never created; every other error is unproven. */
+function journalErrorCode(error: unknown): string | undefined {
+  const code = (error as NodeJS.ErrnoException | null | undefined)?.code;
+  return typeof code === "string" ? code : undefined;
+}
+
 export class TaskCoordinator {
   constructor(private readonly config: Config, readonly store: TaskStore, private readonly client: WorkBuddyClient,
     private readonly resolveWorkspace: (config: Config, input: { workspace: string; sessionId?: string; title?: string; model?: string; workerKey?: string; admissionTaskId?: string; admissionOperationId?: string }) => Promise<{ workspace: string; sessionId: string }> = ensureWorkspace,
-    private readonly observeModel: (config: Config, sessionId: string, model: string) => Promise<ModelObservation> = observeSelectedModel) {}
+    private readonly observeModel: (config: Config, sessionId: string, model: string) => Promise<ModelObservation> = observeSelectedModel,
+    private readonly journalFiles: JournalFiles = fs) {}
   modelPolicy() { return this.store.collaboration.currentPolicy(defaultModelPolicy(this.config.maxTaskAttempts ?? 3)); }
   private requireDesktop(): void {
     if (!["desktop-acp", "desktop-queue"].includes(this.config.backend)) throw new Error("Desktop supervision requires WORKBUDDY_BACKEND=desktop-queue or desktop-acp. CLI and hidden gateway execution do not prove execution in your WorkBuddy desktop conversation.");
@@ -128,7 +145,7 @@ export class TaskCoordinator {
     if (!scopeGuard) protectLegacy(input.workspace ?? "");
     const initial = this.store.createOrGet({ taskId, submissionHash, messageId: `pending-${taskId}`, objective: input.objective, workspace: input.workspace, constraints: input.constraints, acceptanceCommands: input.acceptanceCommands, state: "queued", sessionId: input.sessionId });
     if (!initial.created) return reuse(initial.task);
-    return this.dispatch(initial.task, `${buildTaskPrompt({ ...input, taskId, timeoutSeconds: input.timeoutSeconds ?? this.config.taskTimeoutSeconds ?? 1800 })}\n${declaredScope ? `Immutable file scope: ${JSON.stringify(declaredScope)}` : "No structured file scope was declared: this legacy submission is read-only. Do not create, modify or delete workspace files."}`, { ...input, scopeGuard });
+    return this.dispatch(initial.task, `${buildTaskPrompt({ ...input, taskId, timeoutSeconds: input.timeoutSeconds ?? this.config.taskTimeoutSeconds ?? 1800 })}\n${declaredScope ? `Immutable file scope: ${JSON.stringify(declaredScope)}` : "No structured file scope was declared: this submission is read-only. Do not create, modify or delete workspace files. If the objective needs file changes, report that the caller must declare a structured scope first; prose never grants a write scope."}`, { ...input, scopeGuard });
   }
   private async sendWithContract(input: SendTaskInput, operation?: OperationRecord) {
     if (this.config.backend !== "desktop-queue") throw new AdmissionError("EXECUTOR_CAPABILITY_MISSING", "Contract dispatch requires the verified desktop-queue adapter.");
@@ -567,15 +584,28 @@ export class TaskCoordinator {
    */
   private journalShowsNoDispatch(attemptId: string): boolean {
     const directory = path.join(runsDirectory(this.config), attemptId);
+    let stats: { isDirectory(): boolean };
+    try {
+      stats = this.journalFiles.statSync(directory);
+    } catch (error) {
+      // Only a genuinely absent attempt directory proves that no journal was
+      // ever created. EACCES/EPERM/EIO/ENOTDIR and unknown failures leave the
+      // journal unread, which is unproven and never authorises a closure (C4-1).
+      return journalErrorCode(error) === "ENOENT";
+    }
+    if (!stats.isDirectory()) return false; // a file where a journal belongs proves nothing
     let entries: string[];
     try {
-      if (!fs.statSync(directory).isDirectory()) return false;
-      entries = fs.readdirSync(directory);
-    } catch { return true; }
+      entries = this.journalFiles.readdirSync(directory);
+    } catch {
+      // The directory vanished or became unreadable between the two calls: the
+      // journal is unproven, so the workflow stays on the recovery path.
+      return false;
+    }
     if (entries.some(name => ["claim.json", "request.json", "model-ready.json", "worker-context.json"].includes(name))) return false;
     if (!entries.includes("state.json")) return entries.every(name => name === "events.jsonl");
     try {
-      const state = JSON.parse(fs.readFileSync(path.join(directory, "state.json"), "utf8")) as { status?: string; pid?: unknown };
+      const state = JSON.parse(this.journalFiles.readFileSync(path.join(directory, "state.json"), "utf8")) as { status?: string; pid?: unknown };
       return state.status === "blocked" && state.pid === undefined;
     } catch { return false; }
   }
