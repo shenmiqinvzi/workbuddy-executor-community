@@ -30,6 +30,23 @@ export function operationStateLabel(state) { return { reserved: '已预留', eff
 const leaseLabels = { live: '所有者仍在运行，心跳正常', stuck: '所有者进程仍在，但心跳已停止', abandoned: '所有者进程已退出，未见回执', lease_unavailable: '无租约记录' };
 export function leaseLabel(dispatch) { return !dispatch ? '无记录' : (leaseLabels[dispatch.settlement] || '无租约记录'); }
 export function recoveryConclusionText(conclusion) { return { outcome_unsettled: '效果不可排除：保留原请求与执行容量，由后端按证据判断。', succeeded: '原操作已成功完成。', rejected: '原操作被拒绝，未产生效果。', active: '原操作仍在进行，等待回执。', dispatch_only: '只有派工请求记录，没有原操作记录。' }[conclusion] || '证据不足，请保留原编号。'; }
+/** Refusals the gateway raises before anything was handed to an executor. They
+ * are definite: the terms can be corrected under the same task identity. */
+const definiteRefusals = new Set(['DISPATCH_NOT_ENABLED', 'MODEL_UNVERIFIED', 'MODEL_POLICY_BLOCKED', 'MODEL_SELECTION_REQUIRED', 'QUOTE_CHANGED', 'POLICY_CHANGED', 'WORKSPACE_CONFLICT', 'SESSION_REQUIRED', 'SESSION_AMBIGUOUS', 'DRAFT_EXPIRED', 'DRAFT_CHANGED', 'DRAFT_CONSUMED', 'PLAN_ALREADY_CONSUMED', 'CATALOG_EXPIRED', 'CATALOG_TOO_LARGE', 'BUDGET_EXCEEDED', 'INVALID_REQUEST', 'INVALID_CONTRACT', 'SCOPE_NOT_DECLARED', 'PROJECT_NOT_REGISTERED', 'PROJECT_IDENTITY_CHANGED', 'PROJECT_NOT_FOUND', 'PROJECT_ACCESS_DENIED', 'PROJECT_NOT_DIRECTORY', 'PROJECT_UNREADABLE', 'PROJECT_LINK_UNRESOLVED', 'GATEWAY_UPGRADE_REQUIRED', 'DISPATCH_PREPARATION_FAILED']);
+export function isDefiniteRefusal(code) { return definiteRefusals.has(code); }
+/**
+ * One confirmation has three possible endings, and the page must not blur them:
+ * the user cancelled (nothing sent, the agreement stands), the gateway refused
+ * before the hand-off (nothing sent, same identity, correct and re-check), or
+ * the hand-off may have happened (identity stays spent, query the original).
+ */
+export function confirmFailure(error, identity) {
+    const code = error?.code, message = error?.message;
+    if (code === 'CONFIRMATION_CANCELLED') return { tone: 'info', consumed: false, receipt: false, text: '已在本机确认窗口取消，尚未派工。原约定仍然有效，可以再次打开确认或返回修改。' };
+    if (code === 'PLAN_ALREADY_CONSUMED') return { tone: 'error', consumed: true, receipt: false, text: `同一份任务约定已在任务 ${identity.taskId} 上派工，不能换一个任务身份重复提交。结果不明时按操作编号 ${identity.operationId} 查询原请求。` };
+    if (isDefiniteRefusal(code)) return { tone: 'error', consumed: false, receipt: false, text: `尚未派工：${message || '准备阶段的核验没有通过'}。已保留原任务与操作编号；返回修改后重新核对即可，不会自动换模型、换档位或重试。` };
+    return { tone: 'error', consumed: true, receipt: true, text: `无法确认本次派工是否已经开始：${message || '本地连接中断'}。请按操作编号 ${identity.operationId} 查询原回执或恢复证据，不要重复派工。` };
+}
 const option = (value, text, disabled = false) => el('option', { value, disabled }, text);
 const lineValues = value => value.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
 
@@ -390,7 +407,7 @@ export async function mountDesktopDispatch({ onTask, onResources = null }) {
     async function confirm() {
         if(busy||!draft||isDemo())return;
         const {draftId,digest}=draft;
-        if(consumedDraftId===draftId){showNotice('本方案已提交派工，不能再次确认。结果不明时请按原编号查询回执，不会重复派工。',true);return;}
+        if(consumedDraftId===draftId){showNotice(`本方案已提交派工，不能再次确认。结果不明时请按操作编号 ${draft.operationId} 查询原回执，不会重复派工。`,true);return;}
         if(recommendation){
             // The explanation the user read must still match the snapshot; a
             // changed catalog or policy waits for a new review instead of
@@ -411,11 +428,16 @@ export async function mountDesktopDispatch({ onTask, onResources = null }) {
             // the returned receipt is later found to be uncertain.
             consumedDraftId=draftId;renderReceipt(receipt);showNotice('');
         } catch(error){
-            if(error.code==='CONFIRMATION_CANCELLED'){try{localStorage.removeItem(receiptKey);}catch{}}
-            if(error.code==='PLAN_ALREADY_CONSUMED')consumedDraftId=draftId;
-            showNotice(error.message,true);
+            const outcome=confirmFailure(error,{taskId:draft.taskId,operationId:draft.operationId});
+            if(!outcome.consumed){try{localStorage.removeItem(receiptKey);}catch{}}
+            // A hand-off that may have happened spends the confirmation even
+            // when no readable receipt came back: the page keeps the request
+            // identity and offers queries instead of a second confirm.
+            if(outcome.consumed)consumedDraftId=draftId;
+            if(outcome.receipt)renderReceipt({requestId:draftId,taskId:draft.taskId,operationId:draft.operationId,state:'outcome_unknown',message:outcome.text});
+            else showNotice(outcome.text,outcome.tone==='error');
         }
-        finally{busy=false;sourceChanged();if(stage==='review')button.disabled=!catalog.dispatchEnabled||isDemo()||consumedDraftId===draftId;}
+        finally{busy=false;sourceChanged();if(stage==='review')button.disabled=!catalog.dispatchEnabled||isDemo()||consumedDraftId===draft.draftId;}
     }
     function renderReceipt(receipt) {
         setStage('receipt');clearTimeout(timer);
@@ -424,6 +446,11 @@ export async function mountDesktopDispatch({ onTask, onResources = null }) {
         const signature=JSON.stringify(receipt),unchanged=receiptSignature===signature;receiptSignature=signature;
         if(!unchanged)content.replaceChildren(el('div',{class:'dispatch-receipt'},el('h2',{tabIndex:-1,role:'status'},receiptStatusText(receipt.state)),el('p',{},receipt.message||(receipt.state==='submitted'?'受理回执不代表验收结果，请查看任务详情。':'请求登记不代表原生接单，请保留以下编号。')),
             el('dl',{class:'dispatch-facts'},el('dt',{},'任务编号'),el('dd',{class:'technical'},receipt.taskId),el('dt',{},'操作编号'),el('dd',{class:'technical'},receipt.operationId)),
+            ...(receipt.state==='failed'&&receipt.retryable?[el('section',{'aria-label':'尚未派工的失败'},
+                el('h3',{},'尚未派工，可修正后重新核对'),
+                el('p',{},'这次核验在交给执行器之前就结束了：没有轮次、没有提示词、没有占用执行容量。'),
+                el('p',{},'原任务与操作编号保持不变；修正后重新核对会生成新一版约定，不会自动换模型或换档位。'),
+                ...(draft&&draft.draftId===receipt.requestId?[el('div',{class:'dispatch-actions'},el('button',{type:'button',class:'button',onclick:()=>renderReview()},'回到约定核对'))]:[]))]:[]),
             el('div',{class:'dispatch-actions'},el('button',{type:'button',class:'button',onclick:()=>queryReceipt(receipt.requestId)},'查询原请求'),
                 ...(receipt.state==='submitted'?[el('button',{type:'button',class:'button',onclick:async event=>{event.currentTarget.disabled=true;showNotice('正在观察原执行状态，不会派工或改变模型…');try{await desktopRequest('observe',{requestId:receipt.requestId});close();await onTask(receipt.taskId);}catch(error){showNotice(error.message,true);}finally{event.target.disabled=false;}}},'更新执行状态')]:[]),
                 el('button',{type:'button',class:'button dispatch-primary',onclick:async()=>{close();await onTask(receipt.taskId);}},'查看已保存任务')),
