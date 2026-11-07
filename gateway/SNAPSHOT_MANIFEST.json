@@ -1634,6 +1634,11 @@
       "bytes": 5883
     },
     {
+      "path": "test/readiness-pipe-identity.test.ts",
+      "sha256": "3dd1a699c0796d0ee12298599b9ef416be2b71dafd37d87052a2bd79d939e8ff",
+      "bytes": 2528
+    },
+    {
       "path": "test/readiness.test.ts",
       "sha256": "19cd03a42e5c357f2cb33b3abc6ce03cd9bec6f5467d84d0fdf820f509bedb93",
       "bytes": 19148
