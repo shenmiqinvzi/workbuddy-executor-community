@@ -114,6 +114,14 @@ export function writePrivateJson(file: string, value: unknown): void {
   fs.renameSync(temp, file);
 }
 
+/** A journal that exists but cannot be read. Never equal to an absent one. */
+export class UnreadableJournalError extends Error {
+  constructor(readonly attemptId: string, readonly file: string, readonly cause: unknown) {
+    super(`attempt ${attemptId} journal is unreadable: ${path.basename(file)} exists but could not be parsed (${cause instanceof Error ? cause.message : String(cause)}); an unreadable journal is not an absent one, so nothing was resent, re-claimed or closed. Inspect ${file} before acting.`);
+    this.name = "UnreadableJournalError";
+  }
+}
+
 export class RunJournal {
   readonly dir: string;
   private seq: number;
@@ -123,10 +131,18 @@ export class RunJournal {
     this.seq = this.events(0, Infinity).at(-1)?.seq ?? 0;
   }
   static newId(): string { return `run-${crypto.randomUUID()}`; }
-  request(): RunRequest { return JSON.parse(fs.readFileSync(path.join(this.dir, "request.json"), "utf8")) as RunRequest; }
+  request(): RunRequest {
+    const file = path.join(this.dir, "request.json");
+    try { return JSON.parse(fs.readFileSync(file, "utf8")) as RunRequest; }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") throw error; throw new UnreadableJournalError(this.attemptId, file, error); }
+  }
   snapshot(): RunSnapshot | undefined {
-    try { return JSON.parse(fs.readFileSync(path.join(this.dir, "state.json"), "utf8")) as RunSnapshot; }
-    catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined; throw error; }
+    const file = path.join(this.dir, "state.json");
+    try { return JSON.parse(fs.readFileSync(file, "utf8")) as RunSnapshot; }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      throw new UnreadableJournalError(this.attemptId, file, error);
+    }
   }
   save(snapshot: RunSnapshot): void { writePrivateJson(path.join(this.dir, "state.json"), { ...snapshot, updatedAt: new Date().toISOString() }); }
   append(type: string, text: string, metadata?: Record<string, unknown>): RunEvent {
@@ -215,13 +231,26 @@ export class DurableRuns {
       return [{ message_id: `${cursor}:unrecoverable`, role: "assistant", content: ["TASK_STATUS: blocked\nThis legacy in-memory run cannot be recovered after restart. Inspect the old WorkBuddy conversation before starting a new task."], metadata: { type: "result", status: "blocked", source: "legacy-unrecoverable" } }];
     }
     const journal = new RunJournal(this.root, attemptId);
-    journal.checkWorker();
-    const snapshot = journal.snapshot();
-    if (!snapshot) throw new Error("Run journal was not found; refusing to report an unverified completion");
-    return journal.events(Number(sequence) || 0, limit).map((event) => ({
-      message_id: `${attemptId}:${event.seq}`, role: event.type === "result" ? "assistant" : "system", content: [event.text], created_at: event.createdAt,
-      metadata: { source: snapshot.driver === "desktop-queue" ? "workbuddy-desktop-queue" : "workbuddy-desktop-acp", attemptId, eventSeq: event.seq, type: event.type, sessionId: snapshot.sessionId, runtimeSource: snapshot.runtimeSource, ...event.metadata },
-    }));
+    try {
+      journal.checkWorker();
+      const snapshot = journal.snapshot();
+      if (!snapshot) throw new Error("Run journal was not found; refusing to report an unverified completion");
+      return journal.events(Number(sequence) || 0, limit).map((event) => ({
+        message_id: `${attemptId}:${event.seq}`, role: event.type === "result" ? "assistant" : "system", content: [event.text], created_at: event.createdAt,
+        metadata: { source: snapshot.driver === "desktop-queue" ? "workbuddy-desktop-queue" : "workbuddy-desktop-acp", attemptId, eventSeq: event.seq, type: event.type, sessionId: snapshot.sessionId, runtimeSource: snapshot.runtimeSource, ...event.metadata },
+      }));
+    } catch (error) {
+      if (!(error instanceof UnreadableJournalError)) throw error;
+      // Status must stay readable when the record is damaged: the operator needs
+      // to see which attempt is broken. This is a report about the journal, not
+      // a result, so it can never be read as a completion.
+      return [{
+        message_id: `${attemptId}:unreadable`, role: "assistant",
+        content: [`TASK_STATUS: blocked\n${error.message}`],
+        created_at: new Date().toISOString(),
+        metadata: { source: "unreadable-journal", type: "result", status: "blocked", blockedReason: "journal_unreadable", attemptId, file: error.file },
+      }];
+    }
   }
   cancel(attemptId: string): boolean {
     const id = attemptId.split(":")[0]!;
@@ -245,6 +274,12 @@ export class DurableRuns {
       if (decision !== "cancel" && !pending.options?.some((option) => option.kind === decision && typeof option.optionId === "string")) throw new Error("This single-action permission choice was not offered by WorkBuddy");
     } else if (pending.method) throw new Error(`Unsupported WorkBuddy input request: ${pending.method}. Inspect its desktop conversation.`);
     const target = path.join(journal.dir, `input-${pending.key}.json`);
-    fs.writeFileSync(target, JSON.stringify({ decision, content }), { flag: "wx", mode: 0o600 });
+    try { fs.writeFileSync(target, JSON.stringify({ decision, content }), { flag: "wx", mode: 0o600 }); }
+    catch (error) {
+      // First answer wins. Saying so is the whole point: a silent overwrite would
+      // let a later click replace the decision the worker is about to consume.
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") throw new Error(`This WorkBuddy input request (${pending.key.slice(0, 8)}) was already answered; the first answer is kept and was not overwritten`);
+      throw error;
+    }
   }
 }

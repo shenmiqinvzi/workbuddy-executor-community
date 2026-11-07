@@ -128,7 +128,10 @@ export async function runWorker(root: string, attemptId: string, config: Config,
           while (Date.now() < deadline) {
             if (journal.cancellationRequested()) return input.method === "elicitation/create" ? { action: "cancel" } : { outcome: { outcome: "cancelled" } };
             if (fs.existsSync(answerFile)) {
+              // Consume before interpreting: an identical request id issued later
+              // must never be satisfied by an earlier answer.
               const answer = JSON.parse(fs.readFileSync(answerFile, "utf8")) as { decision: string; content?: Record<string, unknown> };
+              fs.rmSync(answerFile, { force: true });
               if (input.method === "elicitation/create") {
                 if (answer.decision === "submit") return { action: "accept", content: answer.content ?? {} };
                 if (answer.decision === "cancel") return { action: "cancel" };
