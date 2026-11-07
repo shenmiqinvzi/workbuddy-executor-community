@@ -12,7 +12,7 @@
 | 起点 | `134cdc7febbf858e89fb1010cf6b9d72da5edbe7`（`workbuddy-finish\R-review-fixes`，分支 `fix/delivery-review-r1-r4`） |
 | 本轮最新提交 | **代码与测试冻结于 `1143d65`**（其后只改 `docs/forward/**`，不在发布包白名单）；精确 HEAD 请跑 `git rev-parse HEAD`，工作区应为空 |
 | 证据根 | `E:\javaproject\outputs\forward-delivery-20261107\`（`A/ B/ C/ D/ I/ shared/`） |
-| 续接入口 | `docs/forward/I_CHECKPOINT_2.md`、证据根 `RESUME.md` |
+| 续接入口 | **复核轮（R1–R4）回执：`docs/forward/REVIEW_ROUND_RECEIPT.md`**（本轮最新状态以它为准）、`docs/forward/I_CHECKPOINT_2.md`、证据根 `RESUME.md` |
 | 计划包 | `E:\javaproject\workbuddy-development-plan-20261107\`（10 个 md） |
 
 ## 2. 交付状态（按档位，不合并表述）
