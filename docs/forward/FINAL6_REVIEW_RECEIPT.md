@@ -76,8 +76,9 @@
 | 候选安装前置 | `candidate-installation.mjs check --package … --expect-sha256 8ca1e719…` | `ok:true / files 750 / totalBytes 8,170,501 / problems []` | `I\candidate-final8-check.json` |
 | 隔离安装演练 | `drill --apply` / `upgrade-drill --apply` / `version-check` / `rollback-plan` | 四条全 exit 0；`version-check` `matched 750 / exact true / matches true` | `I\candidate-final8-{drill,upgrade,version,rollback}.log` |
 | 桌面成品 | `node scripts/package-desktop.mjs I\candidate-final8-desktop` | 758 文件 / 2,919,650 B / `a2e7f2ee…`（重打同摘要） | `I\desktop-package-final8.log` |
+| 串行全量（补齐） | `npx tsx --test --test-concurrency=1 test/**/*.test.ts` | **1458 tests / 1446 pass / 0 fail / 12 skipped**，exit 0 | `I\full-suite-final8.log` |
 
-后端串行全量（1455/1443/0/12）属于上一轮同一业务冻结点，本轮只改 `automation.ts` 的费用判据、测试与一处提示文案，按复核要求跑受影响专项；全量留给下一轮统一重跑，不在这里冒充新一轮数字。
+串行全量比上一轮多 3 条用例（1444→1458 含 R4 轮新增的 11 条），全部通过；候选 final8 的包内测试文件与这一 Tree 相同，所以这组数字对应同一份候选。
 
 ## 5. 新候选
 

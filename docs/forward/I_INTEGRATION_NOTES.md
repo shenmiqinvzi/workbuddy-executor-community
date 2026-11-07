@@ -67,6 +67,9 @@ C 线自述未取得的档位（如实保留）：真实来源联调、真实请
 9. `gateway/src/task-store.ts` + `gateway/src/dsh-coordinator.ts`：请求归因账本真实接线（I-3）。`TaskStore.usage` 改成**懒建**（`private usageLedger?: UsageLedger; get usage()`）——eager 构造会建 `usage_records` 表，破坏「从未记录过用量时读取路径报告不存在」的既有语义（`test/statistics.test.ts:304` 立刻红）。`DshTaskCoordinator` 只在 `result.accepted === true` 且 `requestId` 匹配之后写观测行，每行 `valueKind:"unavailable"`、`value:null`；写入失败被吞掉，不让已接受的派工变成不确定。测试：`test/dsh-adapter.test.ts` 两条（已确认→`credits`/`tokens` 两行；`setPromptError` 未确认→零行）。
 10. `gateway/test/productivity-http.test.ts`、`gateway/test/desktop-command-template.test.ts`：把「传输层不许吃掉字段」写成断言（B-2 `draft.warnings` / `receipt.retryable`；B-4 `deliveryFailures` / `failures[]` 只计真正失败过的待办）。
 11. `.github/workflows/forward-gate.yml`（新增，**未执行**）：把本轮手工门（verify-snapshot → `npm ci` → build → `typecheck:task-view` → 串行全量 → 工作台 → 桌面策略 → 打包 + `candidate-installation check` → workbench smoke）写成工作流，并把 `WORKBUDDY_CONFIG_DIR` 指向 runner 上自建的空目录。它一次都没跑过——不构成 CI 档证据，只为「第二台机器/远端 CI」准备好入口。
+12. `gateway/src/automation.ts`（final6 复核 P1）：旧观测行没有 `balance` 时，回退只保留 `kind` 供显示，`routing` 一律 `unverified`、`source` 为 `null`；`known_cost` 的判据从「拒 unavailable」扩为「非 reported 即拒」。同一处的 `cost.unit` 仍取目录行，余额不可用时回落政策单位，只影响显示——任何 ceiling 比较都要求 `unitMatches`。证据：`I\p1-before.log`（delegate）/`I\p1-after.log`（wait + `cost.routing`），用例在 `test/automation-selection-gate.test.ts`（两条 P1）与 `test/automation-cli-dispatch.test.ts`（`decide`→`blocked`、`execute`→`COST_CONTROL_UNAVAILABLE`、`client.sent.length===0`）。
+13. `gateway/test/support/automation-fixture.ts`：新增 `withCostEvidence()`，让「当前探针」显式带 `rate`/`balance`（reported + `routing:"verified"`）。想把行造成旧快照的用例自己省略这两个字段——夹具不再替产品说谎。这条修正不是放宽规则，而是让 P1 的规则在旧夹具上不再被误判为回归。
+14. `gateway/src/installation-bootstrap.ts`：`next` 里的提示原来是 `setup.mjs plan --root <install-root>`，实跑报 `Unknown option '--root'`；改成实际可用的 `cd <install-root> && node scripts/setup.mjs plan --workbuddy-app … --workbuddy-config … --codex-home …`。
 
 ## IR-C 处置（C 线在合入后补齐）
 
