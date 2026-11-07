@@ -19,10 +19,10 @@ function request(port: number, options: { method?: string; path: string }): Prom
   });
 }
 
-async function start(t: { after(fn: () => void): void }, fixture: ReturnType<typeof automationFixture>, withAutomation = true) {
+async function start(t: { after(fn: () => void): void }, fixture: ReturnType<typeof automationFixture>, withAutomation = true, automation?: ReturnType<typeof automationFixture>["service"]["automation"]) {
   const server = new WorkbenchHttpServer({
     service: fixture.service,
-    ...(withAutomation ? { automation: fixture.service.automation } : {}),
+    ...(withAutomation ? { automation: automation ?? fixture.service.automation } : {}),
     health: () => workbenchHealth({ runtime: { release: "test", packageVersion: "0.0.0", startedAt: "2026-11-05T00:00:00.000Z" } }),
   });
   const port = await server.listen(0);
@@ -132,5 +132,34 @@ test("revoking a policy is visible as a status, not an error", async (t) => {
   assert.equal(detail.status, 200);
   assert.equal(json(detail.body).status, "revoked");
   assert.equal((json(detail.body).policy as { revocationReason: string }).revocationReason, "Synthetic withdrawal");
+  fixture.close();
+});
+
+test("the read page receives the layers, the observation time and the requesting identity, and nothing else", async (t) => {
+  const fixture = automationFixture(t);
+  const service = fixture.automation({ probe: () => fixture.probe(), probeKind: "read_only_local" });
+  const saved = fixture.savePolicy(service);
+  const decision = await service.decide({ proposal: fixture.proposal("auto-http-page"), policyId: saved.policy.policyId }, "synthetic-operator");
+  const port = await start(t, fixture, true, service);
+
+  const root = json((await request(port, { path: "/workbench/v1/automation" })).body);
+  assert.equal(root.readOnly, true);
+  assert.equal(root.probeKind, "read_only_local");
+  const layers = root.layers as Record<string, { layer: string }>;
+  assert.deepEqual(Object.values(layers).map((entry) => entry.layer), [
+    "installation_enabled", "process_armed", "policy_authorization", "per_task_selection", "recorded_decision", "actual_dispatch",
+  ]);
+
+  const rows = (root.decisions as Array<{ decisionId: string; requestedBy: string | null; probeObservedAt: string | null; probe: unknown }>);
+  const row = rows.find((item) => item.decisionId === decision.decisionId);
+  assert.ok(row, "the decision is part of the read projection");
+  assert.equal(row!.requestedBy, "synthetic-operator");
+  assert.equal(row!.probeObservedAt, fixture.probe().observedAt);
+  assert.ok(row!.probe, "the page can show which observation the decision used");
+
+  // The projection never carries the task body or a credential.
+  const serialised = JSON.stringify(root);
+  assert.equal(serialised.includes(fixture.proposal().objective), false, "the objective text is not published");
+  assert.equal(serialised.includes("\"credentials\":"), false);
   fixture.close();
 });
