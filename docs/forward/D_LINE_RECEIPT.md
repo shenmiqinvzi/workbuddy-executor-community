@@ -3,7 +3,8 @@
 - 轮次：`forward-delivery-20261107`
 - 工作树：`E:\javaproject\workbuddy-forward-20261107\D-automation`
 - 分支：`feat/forward-automation-readiness`，起点 `134cdc7febbf858e89fb1010cf6b9d72da5edbe7`
-- 本轮 HEAD：`ee1cfcc`（含起点共 7 个提交，未推送、未合入 main、未 reset/clean/stash/rebase）
+- 本轮内容 HEAD：`ee1cfcc`（其后只有指向本回执的 docs-only 提交，不再改变代码或计数；
+  截至交付时分支 HEAD 见 `git rev-parse HEAD`）。含起点共 8 个提交，未推送、未合入 main、未 reset/clean/stash/rebase
 - 未写 `E:\javaproject\workbuddy-finish\R-review-fixes`；未安装、未 arm 真实政策、未产生真实模型调用与费用
 
 ## 0. 一句话结论
