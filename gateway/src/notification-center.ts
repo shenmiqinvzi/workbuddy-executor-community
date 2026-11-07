@@ -89,6 +89,9 @@ export interface PendingNotification {
   occurredAt: string;
   /** Null when it can be delivered now, otherwise the throttle window end. */
   readyAt: string | null;
+  /** Why the last attempt did not show anything, if it failed. The episode is
+   * still pending, so a reader can see the reason instead of silence. */
+  lastFailure?: { message: string; at: string; attempts: number };
 }
 
 export interface NotificationRejection {
@@ -121,6 +124,9 @@ interface LedgerFile {
   schemaVersion: 1;
   episodes: Record<string, { taskId: string; reason: NotificationReason; anchor: string; deliveredAt: string }>;
   deferred: Record<string, DeferredEpisode>;
+  /** The last failed delivery attempt per episode, kept so a silent presenter
+   * can be explained later instead of looking like "nothing happened". */
+  failures: Record<string, { taskId: string; reason: NotificationReason; message: string; at: string; attempts: number }>;
   watermarks: Record<string, number>;
   lastDeliveredAt: Partial<Record<NotificationReason, string>>;
 }
@@ -128,7 +134,7 @@ interface LedgerFile {
 type Ledger = LedgerFile;
 
 function emptyLedger(): Ledger {
-  return { schemaVersion: NOTIFICATION_LEDGER_SCHEMA, episodes: {}, deferred: {}, watermarks: {}, lastDeliveredAt: {} };
+  return { schemaVersion: NOTIFICATION_LEDGER_SCHEMA, episodes: {}, deferred: {}, failures: {}, watermarks: {}, lastDeliveredAt: {} };
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -210,6 +216,9 @@ export interface NotificationPollResult {
   delivered: DesktopNotification[];
   deferred: number;
   suppressedByReasonOff: number;
+  /** Episodes whose delivery attempt threw; each carries its own reason. */
+  deliveryFailures: number;
+  failures: Array<{ episodeKey: string; taskId: string; reason: NotificationReason; message: string; attempts: number }>;
   tasksRead: number;
   eventsRead: number;
   unreadableTasks: number;
@@ -261,7 +270,8 @@ export class NotificationCenter {
       if (ledger.episodes[key]) continue;
       if (!this.reasonEnabled(candidate.reason, config)) continue;
       const ready = this.readyAtMs(candidate.reason, ledger.deferred[key], config, ledger);
-      out.push({ ...candidate, episodeKey: key, readyAt: ready > now ? new Date(ready).toISOString() : null });
+      const failure = ledger.failures[key];
+      out.push({ ...candidate, episodeKey: key, readyAt: ready > now ? new Date(ready).toISOString() : null, ...(failure ? { lastFailure: { message: failure.message, at: failure.at, attempts: failure.attempts } } : {}) });
     }
     return out.sort((a, b) => a.occurredAt.localeCompare(b.occurredAt)).slice(0, NOTIFICATION_LIMITS.pending);
   }
@@ -272,7 +282,7 @@ export class NotificationCenter {
     const ledger = this.loadLedger();
     const now = this.now();
     const nowMs = now.getTime();
-    const result: NotificationPollResult = { delivered: [], deferred: 0, suppressedByReasonOff: 0, tasksRead: scan.tasksRead, eventsRead: scan.eventsRead, unreadableTasks: scan.unreadableTasks, truncated: scan.truncated };
+    const result: NotificationPollResult = { delivered: [], deferred: 0, suppressedByReasonOff: 0, deliveryFailures: 0, failures: [], tasksRead: scan.tasksRead, eventsRead: scan.eventsRead, unreadableTasks: scan.unreadableTasks, truncated: scan.truncated };
 
     for (const candidate of this.candidatesFor(scan.candidates, ledger)) {
       const key = episodeKey(candidate.taskId, candidate.reason, candidate.anchor);
@@ -283,6 +293,7 @@ export class NotificationCenter {
         // task store is never touched either way.
         result.suppressedByReasonOff++;
         delete ledger.deferred[key];
+        delete ledger.failures[key];
         continue;
       }
       const readyAtMs = this.readyAtMs(candidate.reason, ledger.deferred[key], config, ledger);
@@ -306,13 +317,28 @@ export class NotificationCenter {
       try {
         this.options.deliver?.(notification);
       }
-      catch {
+      catch (error) {
         // A failing presenter must not consume the episode. It stays deferred
-        // and is retried on the next poll, still subject to the throttle.
+        // and is retried on the next poll, still subject to the throttle. The
+        // failure itself is recorded so the missing balloon has a named cause.
+        const previous = ledger.failures[key];
+        const message = error instanceof Error && error.message ? error.message : String(error ?? "");
+        ledger.failures[key] = {
+          taskId: candidate.taskId,
+          reason: candidate.reason,
+          message: clip(message.trim() || "投递过程没有给出原因。", 200),
+          at: now.toISOString(),
+          attempts: (previous?.attempts ?? 0) + 1,
+        };
         ledger.deferred[key] = { ...candidate, readyAt: new Date(nowMs).toISOString() };
+        result.deliveryFailures++;
+        if (result.failures.length < NOTIFICATION_LIMITS.pending) {
+          result.failures.push({ episodeKey: key, taskId: candidate.taskId, reason: candidate.reason, message: ledger.failures[key]!.message, attempts: ledger.failures[key]!.attempts });
+        }
         continue;
       }
       delete ledger.deferred[key];
+      delete ledger.failures[key];
       ledger.episodes[key] = { taskId: candidate.taskId, reason: candidate.reason, anchor: anchorText(candidate.anchor), deliveredAt: now.toISOString() };
       ledger.lastDeliveredAt[candidate.reason] = now.toISOString();
       result.delivered.push(notification);
@@ -436,6 +462,15 @@ export class NotificationCenter {
     for (const [key, deferred] of Object.entries(ledger.deferred)) {
       if (Date.parse(deferred.readyAt) < now - 24 * 60 * 60 * 1000) delete ledger.deferred[key];
     }
+    const failures = Object.entries(ledger.failures);
+    for (const [key, failure] of failures) {
+      const at = Date.parse(failure.at);
+      if (!Number.isFinite(at) || at < now - 24 * 60 * 60 * 1000) delete ledger.failures[key];
+    }
+    if (Object.keys(ledger.failures).length > NOTIFICATION_LIMITS.episodes) {
+      const keep = Object.entries(ledger.failures).sort((a, b) => b[1].at.localeCompare(a[1].at)).slice(0, NOTIFICATION_LIMITS.episodes);
+      ledger.failures = Object.fromEntries(keep);
+    }
   }
 
   private loadConfig(): NotificationConfig {
@@ -501,6 +536,13 @@ export class NotificationCenter {
       if (isObject(parsed.lastDeliveredAt)) {
         for (const [key, value] of Object.entries(parsed.lastDeliveredAt)) {
           if ((NOTIFICATION_REASONS as readonly string[]).includes(key) && typeof value === "string") ledger.lastDeliveredAt[key as NotificationReason] = value;
+        }
+      }
+      if (isObject(parsed.failures)) {
+        for (const [key, value] of Object.entries(parsed.failures)) {
+          if (!isObject(value) || typeof value.message !== "string" || typeof value.at !== "string" || typeof value.attempts !== "number") continue;
+          if (typeof value.taskId !== "string" || typeof value.reason !== "string" || !(NOTIFICATION_REASONS as readonly string[]).includes(value.reason)) continue;
+          ledger.failures[key] = { taskId: value.taskId, reason: value.reason as NotificationReason, message: value.message, at: value.at, attempts: value.attempts };
         }
       }
     }

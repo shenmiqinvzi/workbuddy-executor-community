@@ -419,6 +419,8 @@ export interface TemplateInstantiationOptions {
   objective?: string;
   /** Server policy, never a client field. */
   policyMaxAttempts?: number;
+  /** Server policy ceiling for the run deadline, never a client field. */
+  policyMaxTimeoutSeconds?: number;
   now?: Date;
 }
 
@@ -431,7 +433,7 @@ export interface TemplateDraft {
   /** Null by construction: a template carries no authorization. */
   authorization: null;
   requires: readonly ["plan_create", "user_confirmation"];
-  budget: { requested: number; policy: number; applied: number; clamped: boolean };
+  budget: { requested: number; policy: number; applied: number; clamped: boolean; timeout: { requested: number; policy: number; applied: number; clamped: boolean } };
   notes: string[];
 }
 
@@ -458,7 +460,10 @@ export function instantiateTemplate(template: ProjectTemplate, options: Template
   if ("rejection" in objective) return { ok: false, rejection: objective.rejection };
   const policyMaxAttempts = Math.max(1, Math.min(options.policyMaxAttempts ?? 3, 100));
   const applied = Math.max(1, Math.min(template.project.maxAttempts, policyMaxAttempts));
-  const timeoutSeconds = Math.max(1, Math.min(template.project.timeoutSeconds, TASK_CONTRACT_LIMITS.timeoutSeconds));
+  // The deadline is a budget too: a template may ask for longer than the
+  // server policy allows, and the draft must not carry a larger one.
+  const policyTimeout = Math.max(1, Math.min(options.policyMaxTimeoutSeconds ?? TASK_CONTRACT_LIMITS.timeoutSeconds, TASK_CONTRACT_LIMITS.timeoutSeconds));
+  const timeoutSeconds = Math.max(1, Math.min(template.project.timeoutSeconds, policyTimeout));
 
   const raw = {
     schemaVersion: TASK_CONTRACT_SCHEMA_VERSION,
@@ -477,6 +482,7 @@ export function instantiateTemplate(template: ProjectTemplate, options: Template
 
   const notes: string[] = ["模板只提供预设；派工仍需创建方案并由用户确认。"];
   if (applied !== template.project.maxAttempts) notes.push(`模板建议 ${template.project.maxAttempts} 次尝试，当前策略上限 ${policyMaxAttempts} 次，已按策略取 ${applied} 次。`);
+  if (timeoutSeconds !== template.project.timeoutSeconds) notes.push(`模板预设 ${template.project.timeoutSeconds} 秒时限，当前策略上限 ${policyTimeout} 秒，已按策略取 ${timeoutSeconds} 秒。`);
   if (template.selectionSuggestion) notes.push("执行器/模型建议仅供参考，未写入授权；实际选择仍需用户在派工面板确认。");
   if (template.policySuggestion) notes.push("模板保存了政策建议，但本线不具备政策引擎，建议未生效。");
 
@@ -488,7 +494,7 @@ export function instantiateTemplate(template: ProjectTemplate, options: Template
     selectionSuggestion: template.selectionSuggestion,
     authorization: null,
     requires: ["plan_create", "user_confirmation"],
-    budget: { requested: template.project.maxAttempts, policy: policyMaxAttempts, applied, clamped: applied !== template.project.maxAttempts },
+    budget: { requested: template.project.maxAttempts, policy: policyMaxAttempts, applied, clamped: applied !== template.project.maxAttempts, timeout: { requested: template.project.timeoutSeconds, policy: policyTimeout, applied: timeoutSeconds, clamped: timeoutSeconds !== template.project.timeoutSeconds } },
     notes,
   };
   const leak = findCarriedIdentity(draft);
