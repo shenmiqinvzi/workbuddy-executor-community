@@ -317,8 +317,44 @@ export function recordHarnessToolCalls(sink: CallEventSink, input: RecordHarness
   return { writes, unpaired: pairing.unpaired, ignored: pairing.ignored, unidentified: pairing.unidentified };
 }
 
-/** Read-back of Harness-produced call facts, for tests and receipts. */
-export function readHarnessCallEvents(events: readonly StoredTaskEvent[]): StoredTaskEvent[] {
+/** The one read the producer needs: the attempt's own synchronized events. */
+export interface HarnessEventReader {
+  events(attemptId: string, limit?: number): readonly HarnessEventLike[];
+}
+
+export interface ObserveHarnessCallsInput {
+  sink: CallEventSink;
+  reader: HarnessEventReader;
+  identity: HarnessCallIdentity;
+  /** True only when the attempt is terminal and no further event can arrive. */
+  final: boolean;
+  limit?: number;
+  now?: Date;
+}
+
+/**
+ * Produce `tool_call_finished` facts for one attempt from the events the
+ * gateway already synchronized.
+ *
+ * This is the whole call site: a reader that returns the attempt's events and
+ * the sink every other task event goes through. Re-consuming the same batch is
+ * safe because each fact carries `tool-call:<executorId>:<attemptId>:<seq>` as
+ * its `sourceRef` and `task_events.source_ref` is unique per task.
+ */
+export function observeAttemptHarnessCalls(input: ObserveHarnessCallsInput):
+RecordHarnessToolCallsResult & { read: number } {
+  const attemptId = input.identity.attemptId;
+  if (!attemptId) throw refuse("invalid_identity", "attemptId", "reading harness events needs the attempt they belong to");
+  const limit = input.limit ?? 200;
+  if (!Number.isInteger(limit) || limit < 1 || limit > 5000) throw refuse("invalid_identity", "limit", "limit must be an integer between 1 and 5000");
+  const events = input.reader.events(attemptId, limit);
+  const result = recordHarnessToolCalls(input.sink, {
+    identity: input.identity, events, final: input.final, now: input.now,
+  });
+  return { ...result, read: events.length };
+}
+
+/** Read-back of Harness-produced call facts, for tests and receipts. */export function readHarnessCallEvents(events: readonly StoredTaskEvent[]): StoredTaskEvent[] {
   return events.filter(event => {
     if (event.type !== "tool_call_finished") return false;
     const payload = event.payload as Record<string, unknown> | null;

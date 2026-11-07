@@ -7,6 +7,7 @@ import { TaskStore } from "../src/task-store.js";
 import {
   pairHarnessToolCalls,
   recordHarnessToolCalls,
+  observeAttemptHarnessCalls,
   readHarnessCallEvents,
   harnessCallSourceRef,
 } from "../src/statistics-harness-calls.js";
@@ -182,4 +183,52 @@ test("chain: harness events -> calls metric -> statistics HTTP body", async t =>
   assert.equal(response.status, 200);
   const body = response.body as { totals: { calls: { channel: string; outcome: string; count: number }[] } };
   assert.deepEqual(body.totals.calls.map(call => [call.channel, call.outcome, call.count]), [["native", "failed", 1], ["native", "succeeded", 1]]);
+});
+
+test("the one-shot producer reads the attempt events and re-consuming them adds nothing", t => {
+  const { store } = tempStore(t);
+  seedTask(store);
+  const batch = [
+    { seq: 10, rawType: "text/delta", timestamp: "2026-11-07T00:00:09.000Z" },
+    CALL_1,
+    RESULT_1,
+  ];
+  const reader = { events: (attemptId: string, limit?: number) => batch.slice(0, limit ?? batch.length) };
+  const identity = { taskId: TASK_A, attemptId: ATTEMPT_A, executorId: "dsh" };
+
+  const first = observeAttemptHarnessCalls({
+    sink: store, reader, identity, final: true, now: new Date("2026-11-07T00:00:13.000Z"),
+  });
+  assert.equal(first.read, 3);
+  assert.equal(first.writes.length, 1);
+  assert.equal(first.writes[0].status, "inserted");
+
+  // The same synchronized batch is consumed again (a retrying poller, a second
+  // reader): it resolves to the same row, not to a second call.
+  const second = observeAttemptHarnessCalls({
+    sink: store, reader, identity, final: true, now: new Date("2026-11-07T00:00:19.000Z"),
+  });
+  assert.equal(second.writes.length, 1);
+  assert.equal(second.writes[0].eventId, first.writes[0].eventId);
+  assert.equal(second.writes[0].status, "replayed");
+  assert.equal(readHarnessCallEvents(store.listTaskEvents(TASK_A, { limit: 200 }).events).length, 1);
+});
+
+test("a non-terminal batch leaves an unfinished call unwritten; the terminal one resolves it", t => {
+  const { store } = tempStore(t);
+  seedTask(store);
+  let batch: Record<string, unknown>[] = [CALL_1];
+  const reader = { events: () => batch as never };
+  const identity = { taskId: TASK_A, attemptId: ATTEMPT_A, executorId: "dsh" };
+
+  const open = observeAttemptHarnessCalls({ sink: store, reader, identity, final: false });
+  assert.equal(open.writes.length, 0);
+  assert.equal(open.unpaired.length, 1);
+  assert.equal(readHarnessCallEvents(store.listTaskEvents(TASK_A, { limit: 200 }).events).length, 0);
+
+  batch = [CALL_1, RESULT_1];
+  const done = observeAttemptHarnessCalls({ sink: store, reader, identity, final: true });
+  assert.equal(done.writes.length, 1);
+  assert.equal(done.writes[0].outcome, "succeeded");
+  assert.throws(() => observeAttemptHarnessCalls({ sink: store, reader, identity: { ...identity, attemptId: null }, final: true }), /needs the attempt/);
 });
