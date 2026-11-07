@@ -23,7 +23,7 @@ export const previewGuide = (version) => `# WorkBuddy 桌面预览 · 启动说�
 
 ## 2. 安装网关依赖（必须做一次）
 
-先确认当前目录是**解包目录**（能看到 `gateway\` 和 `RELEASE_MANIFEST.json` 的那一层），再任选一种：
+先确认当前目录是**解包目录**（能看到 \`gateway\` 目录和 \`RELEASE_MANIFEST.json\` 的那一层），再任选一种：
 
 \`\`\`powershell
 # 方式 A：走网关自带引导（复用本地 npm 缓存，缺什么装什么）
@@ -35,7 +35,7 @@ cd gateway
 npm ci --omit=dev
 \`\`\`
 
-解包路径含空格时命令本身要加引号，例如：
+命令里的路径含空格时，用引号把脚本路径和安装根分别括起来：
 
 \`\`\`powershell
 node "gateway\\scripts\\bootstrap.mjs" --install-root "gateway" --apply
@@ -54,9 +54,9 @@ node "gateway\\scripts\\bootstrap.mjs" --install-root "gateway" --apply
 
 ## 4. 启动与自检
 
-1. 校验包完整性（**安装依赖前就能跑**，只读，不改任何文件）：\`node gateway\\scripts\\verify-desktop.mjs\`，应输出 \`"hashesMatch": true\`。
+1. 先校验包完整性（**安装依赖前就能跑**，只读，不改任何文件）：\`node gateway\\scripts\\verify-desktop.mjs\`，应输出 \`"hashesMatch": true\`。
 2. 双击 \`gateway\\desktop\\app\\WorkBuddy.Workbench.exe\`；窗口标题应为「WorkBuddy · 任务工作台」。
-3. 单独下载的**网关 ZIP** 才有自己的校验入口：在网关解包根跑 \`node scripts\\verify-release.mjs\`。桌面包里 \`gateway\\\` 下没有 \`RELEASE_MANIFEST.json\`（清单只在包根），所以在桌面包里跑它会报 ENOENT，这属预期。
+3. 单独下载的**网关 ZIP** 才有自己的校验入口：在网关解包根跑 \`node scripts\\verify-release.mjs\`。桌面包里 \`gateway\` 目录下没有 \`RELEASE_MANIFEST.json\`（清单只在包根），所以在桌面包里跑它会报 ENOENT，属预期。
 
 ## 5. 窗口报错怎么读
 
