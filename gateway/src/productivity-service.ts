@@ -123,6 +123,9 @@ export interface NotificationSnapshotView {
   notificationSchema: typeof NOTIFICATION_SCHEMA;
   config: NotificationConfig;
   pending: PendingNotification[];
+  /** Episodes still pending whose last delivery attempt is saved as failed. */
+  deliveryFailures: number;
+  failures: Array<{ episodeKey: string; taskId: string; reason: PendingNotification["reason"]; message: string; attempts: number; at: string }>;
   issues: string[];
   delivery: { mode: "desktop_native"; delivered: null; note: string };
   limits: { pendingReturned: number };
@@ -134,12 +137,19 @@ export interface NotificationSnapshotView {
  */
 export function readNotificationSnapshot(sources: ProductivitySources): NotificationSnapshotView {
   const pending = sources.notifications.pending();
+  // Only saved facts: an episode is listed here because its own ledger entry
+  // says the last attempt threw. Nothing is counted for an attempt never made.
+  const failures = pending.flatMap(item => item.lastFailure
+    ? [{ episodeKey: item.episodeKey, taskId: item.taskId, reason: item.reason, message: item.lastFailure.message, attempts: item.lastFailure.attempts, at: item.lastFailure.at }]
+    : []);
   return {
     schemaVersion: PRODUCTIVITY_SCHEMA,
     readOnly: true,
     notificationSchema: NOTIFICATION_SCHEMA,
     config: sources.notifications.config(),
     pending,
+    deliveryFailures: failures.length,
+    failures,
     issues: sources.notifications.issues(),
     delivery: { mode: "desktop_native", delivered: null, note: "通知由受控桌面壳显示；这里只列出待办，不发送也不代表任务状态。" },
     limits: { pendingReturned: pending.length },

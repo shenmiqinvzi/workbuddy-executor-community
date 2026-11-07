@@ -73,7 +73,16 @@ function exportStore(): DeliveryExportStore {
     get: id => (id === "task-1" ? task : undefined),
     getContract: () => ({ state: "absent" }),
     listAttempts: () => [{ attemptId: "attempt-1" }],
-    listTaskEvents: () => ({ events: [], nextEventId: 3 }),
+    listTaskEvents: () => ({
+      // The count reported in an export is the number of events actually read,
+      // so the fixture has to carry them: a cursor alone proves nothing.
+      events: [1, 2, 3].map(eventId => ({
+        taskId: "task-1", eventId, attemptId: null, type: "task_state_changed",
+        occurredAt: `2026-11-05T10:0${eventId}:00.000Z`, observedAt: `2026-11-05T10:0${eventId}:00.000Z`,
+        actor: "workbuddy", payload: { patch: { state: "needs_review" } }, sourceRef: `event-${eventId}`,
+      })),
+      nextEventId: 3,
+    }),
     reviews: { list: () => [] },
   };
 }

@@ -1,5 +1,6 @@
 import {desktopExact} from '../dist/desktop-dispatch.js';
 import {recommendTask} from '../dist/recommendation.js';
+import {instantiateTemplate} from '../dist/project-template.js';
 
 // Private parent/child transport only. Nothing is registered on the HTTP server.
 export function desktopCommandHandler(session, controls = null, recovery = null, attention = null, declarations = null, productivity = null) {
@@ -38,6 +39,19 @@ export function desktopCommandHandler(session, controls = null, recovery = null,
             // casual click cannot become a stop declaration.
             if(confirmation!==`declare native stop ${taskId} ${attemptId} ${revision}`)throw Object.assign(new Error('Type the shown sentence exactly to declare a stop.'),{name:'AdmissionError',code:'CONFIRMATION_REQUIRED'});
             return declarations.declare({taskId,attemptId,revision,statement,actor:'local-interactive-user'});
+        }
+        if (productivity && method === 'productivity_template_instantiate') {
+            // A saved template becomes a draft only through this command. The
+            // deadline ceiling is read from the stored collaboration policy,
+            // never from the request: a template cannot raise its own budget.
+            desktopExact(parameters,['templateId','workspaceId']);
+            const {templateId,workspaceId}=parameters;
+            if(typeof templateId!=='string'||!/^tmpl-[A-Za-z0-9-]{8,64}$/.test(templateId))throw Error('Invalid template identity.');
+            if(typeof workspaceId!=='string'||workspaceId.length<1||workspaceId.length>200)throw Error('Invalid workspace identity.');
+            const versions=productivity.sources.templates.versions(templateId);
+            if(!versions.length)throw Object.assign(new Error('No saved template with that identity exists.'),{name:'AdmissionError',code:'TEMPLATE_NOT_FOUND'});
+            const {policy}=await session.catalog();
+            return instantiateTemplate(versions[0],{workspaceId,policyMaxAttempts:policy.maxAttempts,policyMaxTimeoutSeconds:policy.maxTimeoutSeconds});
         }
         if (productivity) {
             // Templates, notification configuration and the controlled export are

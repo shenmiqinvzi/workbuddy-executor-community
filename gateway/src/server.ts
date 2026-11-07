@@ -1,4 +1,4 @@
-﻿import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { loadConfig } from "./config.js";
@@ -21,6 +21,8 @@ import { registerTaskProjectionTool } from "./task-view-reader.js";
 import { runsDirectory } from "./run-journal.js";
 import { AdmissionError } from "./collaboration.js";
 import { configuredDshCoordinator } from "./dsh-runtime.js";
+import { createReadOnlyProbe } from "./automation.js";
+import { desktopModelCatalog } from "./desktop-dispatch-runtime.js";
 import { DSH_DISCOVERY_SCHEMA_VERSION, dshExecutorSummary, dshSessionsFor, summarizeDshHosts } from "./dsh-discovery.js";
 
 // Load this installation's .env so the MCP host does not have to export it or
@@ -30,7 +32,16 @@ const config = loadConfig();
 const client = new WorkBuddyClient(config);
 const store = new TaskStore(config.dbFile);
 const coordinator = new TaskCoordinator(config, store, client);
-const tasks = new TaskApplicationService(coordinator, config.maxTaskAttempts ?? 3, runsDirectory(config), configuredDshCoordinator(store, runsDirectory(config)));
+const tasks = new TaskApplicationService(coordinator, config.maxTaskAttempts ?? 3, runsDirectory(config), configuredDshCoordinator(store, runsDirectory(config)), undefined, {
+  // D02 / IR-D1: the MCP process observes through the same read-only probe the local CLI uses --
+  // declared resource connections, the saved quota/credit tables and the visible executor/model
+  // catalog -- and it is never armed and gets no dispatcher, so nothing here can spend a credit or
+  // reach the native boundary. An observation that cannot be read says so and blocks; it never
+  // falls back to the saved policy as if that were a live reading.
+  probe: createReadOnlyProbe({ db: store.database, env: process.env, catalog: () => desktopModelCatalog(config, process.env) }),
+  probeKind: "read_only_local",
+  armed: false,
+});
 const server = new McpServer({ name: "codex-workbuddy-gateway", version: runtimeVersion.packageVersion });
 const timeout = z.number().int().positive().max(86_400).optional();
 const taskId = z.string().min(1).max(200);
@@ -141,7 +152,16 @@ server.tool("workbuddy_reconcile_report", "Restore an existing authenticated, on
 
 server.tool("workbuddy_respond_task", "Respond to an active WorkBuddy permission or form request. Only offered single-action permission choices are accepted; never grants permanent access. Use submit with content for elicitation.", {
   taskId, decision: z.enum(["allow_once", "reject_once", "cancel", "submit"]), content: z.record(z.unknown()).optional(),
-}, ({ taskId, decision, content }) => guard(async () => tasks.respond(taskId, decision, content)));
+}, ({ taskId, decision, content }) => guard(async () => {
+  try { return await tasks.respond(taskId, decision, content); }
+  catch (error) {
+    // Answering one request twice is an idempotent refusal, not an internal
+    // failure: the first answer is kept and is never replaced by the second.
+    if (error instanceof Error && /was already answered; the first answer is kept/.test(error.message))
+      throw new AdmissionError("INPUT_ALREADY_ANSWERED", error.message);
+    throw error;
+  }
+}));
 
 const reviewOperation = { operationId: z.string().min(1).max(512), expectedRevision: z.string().min(1), expectedAttemptId: z.string().min(1) };
 server.tool("workbuddy_check_task", "Explicitly verify current provenance, native stop, T5 scope and existing command evidence; persists server-owned program check IDs and returns the machineCheckIds that workbuddy_review_task requires. Does not dispatch a model.", {
