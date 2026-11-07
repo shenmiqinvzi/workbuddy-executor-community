@@ -130,6 +130,52 @@ export class TaskReviews {
   private check(checkId: string, kind: ReviewCheck["kind"], task: StoredTask, status: CheckStatus, evidenceRefs: string[], inputHashes: Record<string, string>, note: string): ReviewCheck {
     return { id: id("check"), checkId, kind, status, attemptId: task.attemptId!, actor: "program", evidenceRefs, inputHashes: Object.values(inputHashes), fileHashes: inputHashes, note, checkedAt: new Date().toISOString(), checkerVersion: "t6-1" };
   }
+  /**
+   * How a review check status maps onto an observable call outcome.
+   *
+   * `not_applicable` maps to null: the check was never run, so publishing a
+   * zero-duration success would invent a call that did not happen. `unknown`
+   * and `checker_error` map to `outcome_unknown`, not to failure: the service
+   * could not tell what the call did, which is a different fact.
+   */
+  private static readonly callOutcome: Record<CheckStatus, "succeeded" | "failed" | "outcome_unknown" | null> = {
+    passed: "succeeded", failed: "failed", checker_error: "outcome_unknown", unknown: "outcome_unknown", not_applicable: null,
+  };
+  /** Real on-disk sizes and elapsed time of one bounded command, when measured. */
+  private static outputSizes(command: { stdout?: unknown; stderr?: unknown; durationMs?: unknown }) {
+    const size = (value: unknown) => {
+      if (typeof value !== "string") return undefined;
+      try { const stat = fs.statSync(value); return stat.isFile() ? stat.size : undefined; } catch { return undefined; }
+    };
+    const stdout = size(command.stdout), stderr = size(command.stderr);
+    const durationMs = command.durationMs;
+    return {
+      durationSeconds: typeof durationMs === "number" && Number.isFinite(durationMs) && durationMs >= 0 ? Math.round(durationMs) / 1000 : null,
+      bytes: { ...(stdout === undefined ? {} : { stdout }), ...(stderr === undefined ? {} : { stderr }) },
+    };
+  }
+  /**
+   * Publish one trusted local-check call fact into the task event stream.
+   *
+   * `calls` in the statistics view is only as trustworthy as its producers: this
+   * event is derived from a check THIS service actually performed or refused to
+   * trust, never from worker text. `sourceRef` is the dedup key, so a replayed
+   * operation or a repeated `sync` appends nothing.
+   */
+  private publishCallFact(task: StoredTask, sourceRef: string, fact: { checkId: string; kind: ReviewCheck["kind"]; status: CheckStatus; occurredAt: string; durationSeconds?: number | null; bytes?: { stdout?: number; stderr?: number } }) {
+    const outcome = TaskReviews.callOutcome[fact.status];
+    if (!outcome) return;
+    const bytes = fact.bytes && (fact.bytes.stdout !== undefined || fact.bytes.stderr !== undefined) ? { ...fact.bytes } : null;
+    const payload: Record<string, unknown> = {
+      checkId: fact.checkId, kind: fact.kind, checkStatus: fact.status, channel: "local_check", outcome,
+      ...(typeof fact.durationSeconds === "number" && Number.isFinite(fact.durationSeconds) && fact.durationSeconds >= 0 ? { durationSeconds: fact.durationSeconds } : {}),
+      ...(bytes ? { bytes } : {}),
+    };
+    this.store.appendTaskEvent({
+      taskId: task.taskId, attemptId: task.attemptId!, type: "local_check_finished",
+      occurredAt: fact.occurredAt, observedAt: new Date().toISOString(), actor: "program", payload, sourceRef,
+    });
+  }
   /** Explicit write: collect existing authenticated command records and re-use T5 inventory. */
   checks(input: ReviewOptions, runsDir: string) {
     exact(input, ["taskId", "operationId", "expectedRevision", "expectedAttemptId"]);
@@ -175,6 +221,11 @@ export class TaskReviews {
       const batch: Batch = { id: id("machine"), taskId: task.taskId, attemptId: task.attemptId!, runsDir, binding, checks };
       this.save(batch.id, task.taskId, "machine", batch);
       this.changed(task, "program_checks_recorded", { machineCheckIds: [batch.id] }, "program");
+      // One call fact per evaluated check. The batch id is part of the dedup key:
+      // replaying the same batch is idempotent, while a genuinely new verification
+      // pass is a new observed check. No byte figures here: this pass verifies
+      // existing outputs instead of producing new ones.
+      for (const check of checks) this.publishCallFact(task, `review-call:batch:${batch.id}:${check.id}`, { checkId: check.checkId, kind: check.kind, status: check.status, occurredAt: check.checkedAt });
       return { machineCheckIds: [batch.id], checks, revision: this.store.get(task.taskId)!.revision! };
     });
   }
@@ -206,7 +257,9 @@ export class TaskReviews {
       const verified = status === "passed" ? readValidationEvidence(this.config(runsDir), task.attemptId!, [result.record])[0]! : { path: result.record, sha256: this.fileHash(result.record) };
       const record: CommandRecord = { id: id("command"), taskId: task.taskId, attemptId: task.attemptId!, checkId: check.id,
         inventoryDigest: crypto.createHash("sha256").update(JSON.stringify(guard.inventory)).digest("hex"), status, ...verified };
-      this.store.atomic(() => { this.store.operations.assertTaskVersion(operation); this.save(record.id, task.taskId, "command", record); this.changed(task, "independent_command_recorded", { evidenceId: record.id, status }, "program"); });
+      this.store.atomic(() => { this.store.operations.assertTaskVersion(operation); this.save(record.id, task.taskId, "command", record); this.changed(task, "independent_command_recorded", { evidenceId: record.id, status }, "program");
+        const measured = TaskReviews.outputSizes(result);
+        this.publishCallFact(task, `review-call:command:${record.id}`, { checkId: check.id, kind: "command", status, occurredAt: new Date().toISOString(), durationSeconds: measured.durationSeconds, bytes: measured.bytes }); });
       return { ok: result.cleanupConfirmed, evidenceId: record.id, status, exitCode: result.exitCode, cleanupConfirmed: result.cleanupConfirmed, reason: result.reason, revision: this.store.get(task.taskId)!.revision! };
     });
   }

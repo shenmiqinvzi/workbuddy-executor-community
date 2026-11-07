@@ -165,6 +165,8 @@ MetricSummary 必含 schemaVersion、taskId、complete、timing、calls、accept
 
 calls 按 channel 与 outcome 分组；channel 为 mcp/cli/native/local_check，outcome 为 succeeded/failed/outcome_unknown。捕获字节注明 stdout/stderr/combined/wire 及测量层；不同层不能重复相加成“总传输量”。
 
+`tool_call_finished` 与 `local_check_finished` 的生产者、payload 字段、去重键与“不可观察即不产出”的边界见 [CALL_EVENT_CONTRACT.md](CALL_EVENT_CONTRACT.md)。生产端只写本服务实际观察到的调用；没有观察者时 calls 保持为空并给出 limitations，不用估算值填充。
+
 rework 统计真实已发送的外部反馈轮数，reason 为 worker_content/worker_scope/reviewer_error/unknown；被拒绝而未发送的 continuation 记操作失败/恢复，不增加 worker 返工轮数。worker 自纠仅在有证据时另记，否则 null。
 
 interventions 以 episodeId 去重，记录 requested/resolved/rejected/expired、requestedAt/resolvedAt；一次请求与一次回复不算两次。仅从原生“user cancelled”标签无法确定操作者时，actor 保持 unknown。
