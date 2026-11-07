@@ -5,9 +5,9 @@
  * the 2026-10-23 development handoff, task T1.
  *
  * What this adapter serves:
- *   - GET /workbench/v1/health       — stored service facts, no dispatch.
- *   - GET /workbench/v1/tasks        — stable createdAt+taskId cursor list.
- *   - GET /workbench/v1/tasks/:taskId — one stage view snapshot.
+ *   - GET /workbench/v1/health       閳?stored service facts, no dispatch.
+ *   - GET /workbench/v1/tasks        閳?stable createdAt+taskId cursor list.
+ *   - GET /workbench/v1/tasks/:taskId 閳?one stage view snapshot.
  *
  * What this adapter deliberately does not serve:
  *   - Task events use the T2 persistent cross-attempt cursor. Resource quota
@@ -102,6 +102,38 @@ export function workbenchHealth(input: { runtime: { release: string; packageVers
   };
 }
 
+/**
+ * Health for a process that started but could not open its stores.
+ *
+ * The point of answering at all is that the shell (and the operator) get a
+ * reason instead of a blank page: ready is false, the reason is named, and the
+ * readiness route 閳?which needs no store 閳?still answers in full. Nothing here
+ * claims a count of tasks, and no route reads a database that was never opened.
+ */
+export function workbenchDegradedHealth(input: {
+  runtime: { release: string; packageVersion: string; startedAt: string };
+  degraded: { code: string; reason: string };
+}): WorkbenchHealth {
+  return {
+    schemaVersion: STAGE_TASK_VIEW_SCHEMA_VERSION,
+    ready: false,
+    runtime: input.runtime,
+    capacity: { limit: 1, occupiedByTaskId: null },
+    modelPolicy: {
+      nativeModelBound: false,
+      note: "No model readiness is claimed: this process never opened its stores.",
+    },
+    capabilities: {
+      nativePermissionResponse: false,
+      nativeSessionNavigation: false,
+      readOnlyHttp: true,
+      taskEventsHttp: false,
+    },
+    unavailable: [...STAGE_TASK_VIEW_UNAVAILABLE],
+    degraded: input.degraded,
+  };
+}
+
 /** The health body. ready means "this process opened its stores", nothing more. */
 export interface WorkbenchHealth {
   schemaVersion: typeof STAGE_TASK_VIEW_SCHEMA_VERSION;
@@ -118,10 +150,16 @@ export interface WorkbenchHealth {
     nativePermissionResponse: false;
     nativeSessionNavigation: false;
     /** Stage surface facts: T2 opens the read-only event stream. */
-    readOnlyHttp: true;
-    taskEventsHttp: true;
+    readOnlyHttp: boolean;
+    /** False when this process could not open its store: no event stream exists. */
+    taskEventsHttp: boolean;
   };
   unavailable: typeof STAGE_TASK_VIEW_UNAVAILABLE;
+  /**
+   * Present only when this process started without opening its stores. Absent on
+   * a healthy process, so a client can tell "no store" from "empty store".
+   */
+  degraded?: { code: string; reason: string };
 }
 
 interface WorkbenchAdapterOptions {
@@ -157,6 +195,12 @@ interface WorkbenchAdapterOptions {
    * session and writes no configuration. Absent means the route does not exist.
    */
   readiness?: { observe: () => Promise<unknown> };
+  /**
+   * Set when this process could not open its stores. Health, embed and readiness
+   * still answer 鈥?they need no database 鈥?and every other route answers 503 with
+   * this reason instead of pretending to read an unopened store.
+   */
+  degraded?: { code: string; reason: string };
 }
 
 /**
@@ -395,6 +439,13 @@ export class WorkbenchHttpServer {
           // as ready and the caller sees an explicit 503 instead of a stale copy.
           this.refuse(response, 503, "READINESS_UNAVAILABLE", "The readiness report could not be observed; no layer is reported as ready.");
         }
+        return;
+      }
+      if (this.options.degraded && pathname !== HEALTH_PATH) {
+        // Health (answered below with ready:false), the embed settings and the
+        // readiness report need no store and have already been served or are
+        // still allowed. Everything past here would read one that never opened.
+        this.refuse(response, 503, "SURFACE_DEGRADED", this.options.degraded.reason);
         return;
       }
       if (pathname === "/workbench/v1/panel/tasks") {

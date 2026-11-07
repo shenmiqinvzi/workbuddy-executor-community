@@ -1,9 +1,9 @@
-/**
+﻿/**
  * The readiness read on the workbench HTTP surface.
  *
  * Five separate answers, computed per request, and nothing about it may write:
  * no configuration file, no model preparation, no session. The report itself is
- * produced by ./readiness.js and tested there; this file tests the HTTP seam 鈥? * that the route exists, refuses query parameters, reports a failed observation
+ * produced by ./readiness.js and tested there; this file tests the HTTP seam 閳? * that the route exists, refuses query parameters, reports a failed observation
  * as a 503 rather than a stale success, and disappears when no surface is bound.
  */
 
@@ -18,7 +18,7 @@ import { TaskCoordinator } from "../src/coordinator.js";
 import { TaskApplicationService } from "../src/task-application-service.js";
 import { TaskStore } from "../src/task-store.js";
 import { WorkBuddyClient } from "../src/workbuddy-client.js";
-import { WorkbenchHttpServer, workbenchHealth } from "../src/workbench-http.js";
+import { WorkbenchHttpServer, workbenchDegradedHealth, workbenchHealth } from "../src/workbench-http.js";
 
 class NoopClient extends WorkBuddyClient {}
 
@@ -72,6 +72,43 @@ async function start(svc: TaskApplicationService, readiness?: { observe: () => P
   const port = await server.listen(0);
   return { port, close: () => server.close() };
 }
+
+/**
+ * The degraded process: it bound its port without opening a store. Health and
+ * the diagnosis must still answer, and nothing may pretend to read a database.
+ */
+async function startDegraded(svc: TaskApplicationService): Promise<{ port: number; close: () => Promise<void> }> {
+  const degraded = { code: "CONFIG_UNRESOLVED", reason: "Multiple WorkBuddy data directories found; set WORKBUDDY_CONFIG_DIR." };
+  const server = new WorkbenchHttpServer({
+    service: svc,
+    degraded,
+    readiness: { observe: async () => ({ schema: "workbuddy-readiness/v1", readOnly: true, selection: { state: "ambiguous", config: { candidates: ["%USERPROFILE%\\.workbuddy-ai", "%USERPROFILE%\\.workbuddy"] } }, layers: [] }) },
+    health: () => workbenchDegradedHealth({ runtime: { release: "test", packageVersion: "0.0.0", startedAt: "2026-11-07T00:00:00.000Z" }, degraded }),
+  });
+  const port = await server.listen(0);
+  return { port, close: () => server.close() };
+}
+
+test("a process without a store still explains itself instead of showing a blank page", async t => {
+  const svc = service(t);
+  const { port, close } = await startDegraded(svc);
+  t.after(close);
+  const health = await request(port, { path: "/workbench/v1/health" });
+  assert.equal(health.status, 200, "the shell gets an answer, not a refused connection");
+  const body = JSON.parse(health.body) as { ready: boolean; degraded: { code: string; reason: string }; capabilities: { taskEventsHttp: boolean } };
+  assert.equal(body.ready, false, "a process that opened no store is not ready");
+  assert.equal(body.degraded.code, "CONFIG_UNRESOLVED");
+  assert.match(body.degraded.reason, /WORKBUDDY_CONFIG_DIR/);
+  assert.equal(body.capabilities.taskEventsHttp, false);
+  // The diagnosis needs no store, so it still answers in full.
+  const readiness = await request(port, { path: "/workbench/v1/readiness" });
+  assert.equal(readiness.status, 200);
+  assert.match(readiness.body, /ambiguous/);
+  // Everything that would read the unopened store says so.
+  const tasks = await request(port, { path: "/workbench/v1/tasks" });
+  assert.equal(tasks.status, 503);
+  assert.match(tasks.body, /SURFACE_DEGRADED/);
+});
 
 test("the readiness route serves the report it observed on this request", async t => {
   const svc = service(t);
