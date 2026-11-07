@@ -73,8 +73,28 @@ test("changed quote, policy, availability and expired agreements never prepare o
   await assert.rejects(Promise.resolve().then(()=>f.session.commit(value.draftId,value.digest)));assert.equal(f.enqueued,0);
  }
 });
-test("deployment free-only restrictions remain in force; explicit paid and unknown rates can be chosen otherwise",async t=>{
- const f=fixture(t);f.source.requiredFreeModel="another-model";
+test("a preparation refusal is definite: it keeps the identity, releases the plan and names what must change",async t=>{
+ const f=fixture(t),value=await draft(f);
+ assert.equal(f.session.receipt(value.draftId),null);
+ f.source.models[0]!.credits="x1.00";f.source.models[0]!.pricingVerified=true;
+ await assert.rejects(f.session.commit(value.draftId,value.digest),hasCode("QUOTE_CHANGED"));
+ assert.equal(f.enqueued,0);
+ const refused=f.session.receipt(value.draftId)!;
+ assert.equal(refused.state,"failed");assert.equal(refused.code,"QUOTE_CHANGED");assert.equal(refused.retryable,true);
+ assert.equal(refused.taskId,value.taskId);assert.equal(refused.operationId,value.operationId);
+ assert.equal(f.session.latest()!.state,"failed");
+ // The unchanged terms are refused again by the same re-check and still never
+ // reach an executor, so no confirmation is silently spent.
+ await assert.rejects(f.session.commit(value.draftId,value.digest),hasCode("QUOTE_CHANGED"));assert.equal(f.enqueued,0);
+ f.source.models[0]!.credits=null;f.source.models[0]!.pricingVerified=false;
+ const catalog=await f.session.catalog();
+ const revised=f.session.preview({draftId:value.draftId,digest:value.digest,catalogId:catalog.catalogId,modelKey:catalog.models[0]!.key,workspace:f.project,title:"Synthetic scoped task",objective:"Update the explicitly allowed file",allowedChanges:["src/**"],permittedMetadata:[],checks:["Independent check of the requested behavior"],maxAttempts:1,timeoutSeconds:600,sessionId:null});
+ assert.equal(revised.taskId,value.taskId);assert.equal(revised.operationId,value.operationId);assert.equal(revised.revision,2);
+ assert.equal(f.session.receipt(value.draftId),null);
+ const receipt=await f.session.commit(revised.draftId,revised.digest);
+ assert.equal(receipt.state,"launch_requested");assert.equal(f.enqueued,1);assert.equal(receipt.operationId,value.operationId);
+});
+test("deployment free-only restrictions remain in force; explicit paid and unknown rates can be chosen otherwise",async t=>{ const f=fixture(t);f.source.requiredFreeModel="another-model";
  await assert.rejects(draft(f),hasCode("MODEL_POLICY_BLOCKED"));
  f.source.requiredFreeModel=null;f.source.policy.requireFree=true;
  await assert.rejects(draft(f),hasCode("MODEL_POLICY_BLOCKED"));
