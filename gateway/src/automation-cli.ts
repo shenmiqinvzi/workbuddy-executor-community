@@ -9,7 +9,9 @@ import { configuredDshCoordinator } from "./dsh-runtime.js";
 import { runsDirectory } from "./run-journal.js";
 import { AdmissionError } from "./collaboration.js";
 import type { SendTaskInput } from "./coordinator.js";
-import type { AutomationPolicyInput, AutomationProbeResult, CostMode } from "./automation.js";
+import { createReadOnlyProbe, type AutomationPolicyInput, type AutomationProbeResult, type CostMode } from "./automation.js";
+import { desktopModelCatalog } from "./desktop-dispatch-runtime.js";
+import type { DesktopCatalogSource } from "./desktop-dispatch.js";
 
 // Trusted local seam for the saved automation policy (D5-01/D5-02).
 //
@@ -136,6 +138,8 @@ export interface AutomationCliRuntime {
   client?: WorkBuddyClient;
   resolveWorkspace?: ConstructorParameters<typeof TaskCoordinator>[3];
   observeModel?: ConstructorParameters<typeof TaskCoordinator>[4];
+  /** Test seam for the read-only catalog observation; production reads the real catalog. */
+  catalog?: () => DesktopCatalogSource | Promise<DesktopCatalogSource>;
 }
 
 export async function runAutomationCli(argv: string[] = process.argv.slice(2), runtime: AutomationCliRuntime = {}): Promise<void> {
@@ -150,8 +154,19 @@ export async function runAutomationCli(argv: string[] = process.argv.slice(2), r
   const runs = runsDirectory(config);
   const parsed = parse(rest);
   const probeFile = parsed.values.get("probe");
-  const probe = probeFile ? (): AutomationProbeResult => readJson(probeFile) as AutomationProbeResult : undefined;
   const armed = parsed.switches.has("enable-dispatch");
+  // D02: the default observation is a real read-only composition over what this machine already
+  // has — the declared resource connections, the saved quota/credit tables and the visible
+  // executor/model catalog. `--probe FILE` stays available for replaying a recorded observation,
+  // and it is labelled as a file snapshot so nobody mistakes it for a live read.
+  const probe = probeFile
+    ? () => readJson(probeFile) as AutomationProbeResult
+    : createReadOnlyProbe({
+      db: store.database,
+      env: process.env,
+      catalog: runtime.catalog ?? (() => desktopModelCatalog(config, process.env)),
+    });
+  const probeKind = probeFile ? "snapshot_file" : "read_only_local";
   // R3: this trusted local CLI is a real composition root. Automated dispatch
   // must enter the same guarded service a manual dispatch uses, so the same
   // plan/policy/capacity/native-identity/scope/fee rechecks apply. Wiring the
@@ -167,6 +182,7 @@ export async function runAutomationCli(argv: string[] = process.argv.slice(2), r
     {
       armed,
       probe,
+      probeKind,
       send: input => {
         if (!sharedDispatch) throw new AdmissionError("AUTOMATION_NOT_ARMED", "The guarded dispatcher is not available in this process.");
         return sharedDispatch(input);

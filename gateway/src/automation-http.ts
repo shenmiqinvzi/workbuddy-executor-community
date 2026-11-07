@@ -37,6 +37,7 @@ export function automationPaths(): string[] {
     `${AUTOMATION_PATH}/policies/:policyId`,
     `${AUTOMATION_PATH}/decisions`,
     `${AUTOMATION_PATH}/decisions/:decisionId`,
+    `${AUTOMATION_PATH}/decisions/:decisionId/operation`,
     `${AUTOMATION_PATH}/audit`,
   ];
 }
@@ -63,6 +64,9 @@ export function handleAutomationRequest(service: AutomationService | undefined, 
       if (parts.length === 2) {
         const decision = service.getDecision(decodeURIComponent(parts[1] ?? ""));
         return { status: 200, body: { readOnly: true, decision } };
+      }
+      if (parts.length === 3 && parts[2] === "operation") {
+        return { status: 200, body: { readOnly: true, ...service.operationFor(decodeURIComponent(parts[1] ?? "")) } };
       }
       return { status: 404, body: { error: { code: "NOT_FOUND" } } };
     }

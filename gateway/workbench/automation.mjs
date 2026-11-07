@@ -102,6 +102,113 @@ export function auditLine(entry) {
   return `${entry.action ?? NA} · ${entry.source ?? NA} · ${entry.actor ?? NA} · ${target} · ${entry.at ?? NA}`;
 }
 
+export const LAYER_LABELS = Object.freeze({
+  installation_enabled: "① 安装级启用",
+  process_armed: "② 进程内武装",
+  policy_authorization: "③ 政策授权",
+  per_task_selection: "④ 逐任务选择",
+  recorded_decision: "⑤ 已记录决定",
+  actual_dispatch: "⑥ 实际派工",
+});
+
+/**
+ * One line per layer. The six are shown separately on purpose: a saved policy that is
+ * enabled is still not armed, and an armed process still has not chosen a model for the
+ * task in front of it.
+ */
+export function layerLine(layer) {
+  if (!layer || typeof layer !== "object" || typeof layer.layer !== "string") return NA;
+  const label = LAYER_LABELS[layer.layer] ?? layer.layer;
+  const off = (value) => (value === true ? "是" : "否");
+  switch (layer.layer) {
+    case "installation_enabled":
+      return `${label}：${off(layer.enabled)}（来源 ${layer.source ?? NA}）`;
+    case "process_armed":
+      return `${label}：武装 ${off(layer.armed)} · 派工器已接 ${off(layer.dispatcherWired)} · 观测 ${layer.probeKind ?? NA}`;
+    case "policy_authorization": {
+      const accepted = Array.isArray(layer.acceptedSources) ? layer.acceptedSources.join("/") : NA;
+      return `${label}：只经 ${layer.writeEntry ?? NA} 写入 · 接受来源 ${accepted} · 当前政策 ${layer.policiesCurrent ?? NA}`;
+    }
+    case "per_task_selection":
+      return `${label}：${layer.mode ?? NA} — ${layer.note ?? "每个新任务仍需用户确认选择"}`;
+    case "recorded_decision":
+      return `${label}：待派工 ${layer.pending ?? 0} · 阻塞 ${layer.blocked ?? 0} · 派工中 ${layer.executing ?? 0} · 已派工 ${layer.dispatched ?? 0} · 结果不明 ${layer.outcomeUnknown ?? 0} · 撤回未派工 ${layer.revoked ?? 0}`;
+    case "actual_dispatch":
+      return `${label}：经 ${layer.guardedService ?? NA} · 容量 ${layer.capacity ?? NA}`;
+    default:
+      return label;
+  }
+}
+
+export function layerLines(describe) {
+  const layers = Array.isArray(describe?.layers) ? describe.layers : [];
+  return layers.map(layerLine);
+}
+
+/** What a blocked decision is actually waiting for, from the codes the server recorded. */
+export const WAITING_LABELS = Object.freeze({
+  QUOTA_UNAVAILABLE: "等新的额度观测（旧快照不算实时）",
+  MODEL_UNVERIFIED: "等目录重新观测到该模型与推理档",
+  EXECUTOR_UNAVAILABLE: "等执行器恢复可派工",
+  EXECUTOR_BUSY: "等唯一容量位释放（不抢、不换机、不换库）",
+  OBSERVATION_UNAVAILABLE: "等观测面可读后再评估",
+  SCOPE_VIOLATION: "等范围内的任务，或由人修订政策",
+  MODEL_POLICY_BLOCKED: "等模型策略允许该选择",
+  DEADLINE_EXCEEDED: "等新政策或更短的任务时限",
+  ATTEMPT_LIMIT: "等窗口内的轮次释放",
+  TASK_CONFLICT: "该任务标识已被占用，不会替换",
+  POLICY_EXPIRED: "政策已到期，需要人重新保存",
+  POLICY_REVOKED: "政策已撤回，不再派工",
+  COST_CONTROL_UNAVAILABLE: "费用无法硬封顶，不做自动派工",
+  QUOTA_EXHAUSTED: "额度不足",
+  WORKSPACE_CONFLICT: "工作区身份不一致，需要人确认",
+});
+
+export function waitingLine(decision) {
+  const blocks = Array.isArray(decision?.blocks)
+    ? decision.blocks
+    : (Array.isArray(decision?.evaluation?.blocks) ? decision.evaluation.blocks : []);
+  if (!blocks.length) return "没有记录等待条件。";
+  return blocks
+    .map(block => `${block?.code ?? NA}：${WAITING_LABELS[block?.code] ?? "等该阻塞原因消失"}`)
+    .join("；");
+}
+
+/** The observation a decision was taken under: when, from which surface, with what coverage. */
+export function probeLine(probe) {
+  if (!probe || typeof probe !== "object") return "没有记录观测；未声明的观测不等于免费。";
+  const coverage = probe.coverage && typeof probe.coverage === "object" ? probe.coverage : {};
+  return `观测 ${probe.observedAt ?? NA} · ${probe.probeVersion ?? NA} · 执行器 ${coverage.executors ?? NA} · 目录 ${coverage.catalog ?? NA} · 费用证据 ${coverage.costEvidence ?? NA} · 任务归因 ${coverage.taskAttribution ?? NA}`;
+}
+
+/** Each read surface with the status it reported, so a stale or missing one is visible. */
+export function probeSourceLines(probe) {
+  const sources = Array.isArray(probe?.sources) ? probe.sources : [];
+  return sources.map((source) => {
+    const head = `${source?.source ?? NA}：${source?.status ?? NA}（${source?.entries ?? 0} 条）`;
+    return source?.detail ? `${head}— ${source.detail}` : head;
+  });
+}
+
+/** The shell's declared task deep link; a decision is only ever linked, never re-opened here. */
+export function taskLink(taskId) {
+  if (typeof taskId !== "string" || !taskId) return null;
+  return `#taskId=${encodeURIComponent(taskId)}`;
+}
+
+/**
+ * The guarded dispatcher's record for the original operation, if there is one.
+ * This is the only evidence of what actually happened; the decision row is not.
+ */
+export function operationLine(record) {
+  if (!record || typeof record !== "object") return "没有查询到原操作。";
+  const operation = record.operation && typeof record.operation === "object" ? record.operation : null;
+  if (!operation) return `没有原操作可查：${record.note ?? "记录未说明原因。"}`;
+  const started = operation.effectStartedAt ? ` · 生效开始 ${operation.effectStartedAt}` : "";
+  const error = operation.error?.code ? ` · 错误 ${operation.error.code}` : "";
+  return `操作 ${operation.operationId ?? NA} · ${operation.state ?? NA} · ${operation.kind ?? NA} · 任务 ${operation.taskId ?? NA}${started}${error}`;
+}
+
 function h(tag, props = {}, ...children) {
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(props)) {
@@ -138,6 +245,7 @@ export function mountAutomation({ root, fetchJson }) {
   let decisionRequest = 0;
 
   const stateHost = h("dl", { class: "automation-config" });
+  const layerList = h("ul", { class: "automation-list", "aria-live": "polite" });
   const refresh = h("button", { type: "button", class: "automation-button", text: "刷新政策快照" });
   const snapshotIssues = h("p", { class: "automation-issue", role: "status" });
   const policyList = h("ul", { class: "automation-list", "aria-live": "polite" });
@@ -161,8 +269,14 @@ export function mountAutomation({ root, fetchJson }) {
         h("dd", { text: body?.enabled === true ? "已启用" : "未启用（默认）" }),
         h("dt", { text: "派工闸门" }),
         h("dd", { text: body?.armed === true ? "运行进程已武装" : "未武装：即使有政策也不会派工" }),
+        h("dt", { text: "观测方式" }),
+        h("dd", { text: body?.probeKind === "read_only_local" ? "本机只读组合观测（资源声明/额度/信用/目录）" : body?.probeKind === "snapshot_file" ? "录制的观测文件（非实时）" : body?.probeKind === "injected" ? "注入的观测（调用方提供）" : "未记录观测" }),
         h("dt", { text: "存储 schema" }),
         h("dd", { text: typeof body?.schemaVersion === "number" ? String(body.schemaVersion) : NA }));
+      const layers = layerLines(body);
+      layerList.replaceChildren(...(layers.length
+        ? layers.map(text => h("li", { class: "automation-item" }, h("span", { class: "automation-item-text", text })))
+        : [h("li", { class: "automation-empty", text: "分层信息未提供：无法区分安装启用、进程武装与政策授权。" })]));
       const policies = Array.isArray(body?.policies) ? body.policies : [];
       policyList.replaceChildren(...(policies.length
         ? policies.map(policy => h("li", { class: "automation-item" },
@@ -202,6 +316,7 @@ export function mountAutomation({ root, fetchJson }) {
       policyList.replaceChildren(h("li", { class: "automation-empty", text: "政策列表未能读取。" }));
       decisionList.replaceChildren(h("li", { class: "automation-empty", text: "决定列表未能读取。" }));
       auditList.replaceChildren(h("li", { class: "automation-empty", text: "审计列表未能读取。" }));
+      layerList.replaceChildren(h("li", { class: "automation-empty", text: "分层信息未能读取。" }));
     }
     finally {
       if (!disposed && request === snapshotRequest) refresh.disabled = false;
@@ -245,12 +360,41 @@ export function mountAutomation({ root, fetchJson }) {
       const evaluation = decision.evaluation ?? {};
       const blocks = blockLines(evaluation);
       const limits = Array.isArray(evaluation.limits) ? evaluation.limits : [];
+      const probe = decision.probe ?? evaluation.probe ?? null;
+      const sources = probeSourceLines(probe);
+      const link = taskLink(decision.taskId);
+      const operationHost = h("div", { class: "automation-operation" });
       decisionDetail.replaceChildren(
         h("h3", { class: "automation-subheading", text: `决定 ${decisionId}` }),
         h("p", { class: "automation-item-text", text: `${decision.taskId ?? NA} · ${decisionStatusLabel(decision.status)}` }),
         h("p", { class: "automation-item-text", text: `政策 ${decision.policyId ?? NA}@${decision.policyRevision ?? NA} · 评估 ${evaluation.decision ?? NA}` }),
         h("p", { class: "automation-item-text", text: costLine(evaluation.cost) }),
         h("p", { class: "automation-item-text", text: `方案 ${decision.planId ?? NA} · 操作 ${decision.operationId ?? NA}` }),
+        decision.operationId
+          ? h("button", {
+            type: "button",
+            class: "automation-link",
+            text: "查询原操作",
+            "aria-label": `查看决定 ${decisionId} 的原操作状态`,
+            onclick: async () => {
+              try {
+                const record = await fetchJson(`${ROOT}/decisions/${encodeURIComponent(decisionId)}/operation`);
+                operationHost.replaceChildren(h("p", { class: "automation-item-text", text: operationLine(record) }));
+              }
+              catch (error) {
+                operationHost.replaceChildren(h("p", { class: "automation-issue", text: `原操作读取失败：${error?.message ?? "未知错误"}` }));
+              }
+            },
+          })
+          : null,
+        operationHost,
+        link ? h("p", { class: "automation-item-text" }, h("a", { class: "automation-link", href: link, text: "查看原任务" })) : null,
+        h("p", { class: "automation-item-text", text: `实际请求身份 ${decision.requestedBy ?? NA}` }),
+        h("h3", { class: "automation-subheading", text: "等待条件" }),
+        h("p", { class: "automation-item-text", text: waitingLine(decision) }),
+        h("h3", { class: "automation-subheading", text: "当时的观测" }),
+        h("p", { class: "automation-item-text", text: probeLine(probe) }),
+        lines(sources, "limit", "没有记录观测来源；未声明不等于免费。"),
         h("h3", { class: "automation-subheading", text: "阻塞原因" }),
         lines(blocks, "block", "没有阻塞原因。"),
         h("h3", { class: "automation-subheading", text: "已知限制" }),
@@ -270,6 +414,9 @@ export function mountAutomation({ root, fetchJson }) {
     h("div", { class: "automation-toolbar" }, refresh),
     snapshotIssues,
     stateHost,
+    h("h3", { class: "automation-subheading", text: "六层边界" }),
+    h("p", { class: "automation-note", text: "启用、武装、政策授权、逐任务选择、记录决定与实际派工是六件不同的事；任何一层没到位，都不会有自动派工。" }),
+    layerList,
     section("已保存政策", "政策绑定工作区、执行器、精确模型、范围、轮次、费用条件与到期；修订产生新版本，旧版本保留并标记为已被替代。"),
     policyList,
     policyDetail,
