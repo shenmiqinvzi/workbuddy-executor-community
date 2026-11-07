@@ -84,6 +84,8 @@
 
 `npm run verification:preflight` 在未配置的树上直接 `ERR_SQLITE_ERROR: unable to open database file`（`scripts/verification-preflight.mjs:22`）。它按设计要连已配置的库，而本机未安装本轮候选，固定 `WORKBUDDY_CONFIG_DIR` 去跑会打开真实数据目录并可能建表——这属于安装/真实环境动作（外部条件 A2），本轮不越界，记为未跑。
 
+`npm run deployment:check` 同理不跑：`src/deployment-acceptance.ts` 的 `runDeploymentCheck()` 先 `loadConfig()` 再 `diagnose()`，会打开真实数据库；它要求 `--machine-label` 与三个真实任务编号（`--normal-task/--rework-task/--cancel-task`），而本轮没有真实派工，跑出来的 `scenarios` 只能是 `pending`。缺的正是外部条件 A1/A2。
+
 ## 5. 候选包（本机生成，非发行）
 
 | 项 | 值 |
@@ -96,7 +98,7 @@
 | `verify-release.mjs` | `{"version":"0.7.1","verifiedFiles":744,"hashesMatch":true}` → `I\candidate-final3-verify.txt` |
 | `candidate-installation.mjs check` | `ok:true`、`problems:[]`、`totalBytes 8120343` → `I\candidate-final3-check.json` |
 | 对应提交 | `21764ec`（含账本接线；`git status` 除文档外干净） |
-| 桌面成品 | 未生成（`npm run desktop:package` 需要 WebView2 构建产物与本机桌面环境；`desktop:test` 122 pass 只证明策略层） |
+| 桌面成品 | **本轮新生成**：`npm run desktop:build`（exit 0，`desktop/app/` 出 `WorkBuddy.Workbench.exe` + `WorkBuddy.Workbench.dll` + WebView2 DLL 与 `runtimes/win-x64/native/WebView2Loader.dll`）→ `npm run desktop:package`（exit 0）→ `workbuddy-desktop-v0.7.1-t7d-desktop-preview.zip`，**752 文件 / 2,903,333 B / SHA-256 `cb3effed00af5e259fca41593a490df2ea2f63ea72fef1c5f8c49e560912c216`**（证据副本 `I\workbuddy-desktop-v0.7.1-t7d-desktop-preview.zip` + `.sha256`，日志 `I\desktop-build.log`、`I\desktop-package.log`）。重打包得到同一 SHA（确定性）。**边界**：只证明「能构建、能打包、包内是本机 Release 产物」，不证明「装上能起窗口」——窗口层仍是 0（WebView 初始化失败、无普通桌面会话）。<br>注：`package-desktop.mjs:17` 有「拒绝覆盖已有桌面包」的守卫，重复执行同一路径会 exit 1 并打印 `Refusing to replace a desktop archive or checksum.`——这是设计，不是失败 |
 
 > 更早两个中间包 `outputs\candidate-cp2`（734 文件 / `61dc0456…`）与 `outputs\candidate-final`（745 文件 / `b3a8a86a…`）、`candidate-final2`（`49c8ba09…`）只保留作对照，**不是**本轮候选。
 
@@ -111,6 +113,7 @@
 5. **产品面接线**：模板实例化（时限只取存储政策）、通知失败原因透传、重复回答 `INPUT_ALREADY_ANSWERED`、MCP 进程只读 probe（经 `src/read-only-probe.ts` 门面，自动化模块不进 MCP 入口）。
 6. **C 线两项**：quota 文档升 `workbuddy-executor/quota-2` 并兼容 quota-1（旧文档不伪造逐来源读数）；`tool_call_finished` 从真实 DSH `sync()` 事件流生产。
 7. **请求归因账本真实接线**：`TaskStore.usage` 懒建（首次写入才建表，保持"从未记录 → 报告不存在"的语义）；`DshTaskCoordinator` 在派工被确认接受（`result.accepted === true` 且 `requestId` 匹配）之后写一条请求观测，每行 `valueKind="unavailable"`、`value=null`——上游从不发 token/credit，所以宁可标"没测到"也不写 0；账本写失败不把已接受的派工改成不确定。测试 `test/dsh-adapter.test.ts` 两条（已确认→两行、未确认→零行）。
+8. **桌面成品可构建、可打包**：`desktop:build` → `desktop:package` 两条都 exit 0，产物含 `WorkBuddy.Workbench.exe`/`.dll` 与 WebView2 运行时 DLL（752 文件 / 2,903,333 B / `cb3effed…`）。仍**不**等于能起窗口：窗口层 0 未动。
 
 ## 7. 未满足项（逐条给阻塞原因）
 

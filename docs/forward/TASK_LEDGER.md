@@ -9,7 +9,7 @@
 | D0-01 版本与包/技能核对 | 候选包重建（734 文件）、技能六文件一致性沿用上轮结论 | source + machine | `I\candidate-cp2-extract\…\` 解压根、`docs/forward/I_CHECKPOINT_2.md` §5 | 安装后运行身份 codeHash 对齐需要真装 |
 | D0-02 53 项矩阵 | 新建 `SCENARIO_INDEX.md` 逐项挂本轮证据 | source | `docs/forward/SCENARIO_INDEX.md` | 大量项只能挂 source/synthetic |
 | D0-03 边界与旧任务裁决 | `README.md` 七档等级与禁止说法、旧任务三层分类沿用 A 线结论 | source | `docs/forward/README.md`、`A_LINE_RECEIPT.md` | `rc2-live-20261106b` 仍需人裁决 |
-| D1-01 安装器与回退 | A04 有界锁文件安装 + 首跑内联；隔离安装根自举/重复/升级/回退全 exit 0 | machine | `A\bootstrap-*.json`、`A\drill\`、`A\desktop-build.log` | 未在本机或异机真实安装当前候选 |
+| D1-01 安装器与回退 | A04 有界锁文件安装 + 首跑内联；隔离安装根自举/重复/升级/回退全 exit 0；**本轮新做**：`desktop:build` 与 `desktop:package` 均 exit 0，桌面包 752 文件 / 2,903,333 B / `cb3effed…` | machine | `A\bootstrap-*.log`、`A\bootstrap-*.json`、`A\drill\`、`I\desktop-build.log`、`I\desktop-package.log`、`I\workbuddy-desktop-v0.7.1-t7d-desktop-preview.zip(.sha256)` | 未在本机或异机真实安装当前候选；窗口层 0 |
 | D1-02 双端真实代码任务 | 未做 | — | — | 需真实派工确认（外部条件 A1/A4/A5） |
 | D1-03 返工取消恢复 | A03 补 `UnreadableJournalError` 与输入答案只消费一次 | source | `A_LINE_RECEIPT.md`、`test/run-journal.test.ts` | 真实取消/期限路径需 window/live |
 | D1-04 不确定任务围栏 | 原裁决保持，未重开 | source | 原 `F-CONTRACT-1` 记录 | 真实异常卡不补做（已决定） |
