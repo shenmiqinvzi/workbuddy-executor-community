@@ -475,8 +475,8 @@
     },
     {
       "path": "scripts/package-desktop.mjs",
-      "sha256": "67bd3bbf500434934ec8fc84c18e5d16c4b5b2737ab395c6d8a993ed43696585",
-      "bytes": 6990
+      "sha256": "257beaf31a1677ba0f8747d41ae696607d11ef1936dd77824f40aacd8453a292",
+      "bytes": 7030
     },
     {
       "path": "scripts/package.mjs",
