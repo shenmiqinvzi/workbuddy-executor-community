@@ -9,6 +9,7 @@ import type { Config } from "./config.js";
 import { DISPATCH_HEARTBEAT_MS } from "./dispatch-settlement.js";
 import { AdmissionError, defaultModelPolicy, type ModelPolicy } from "./collaboration.js";
 import { listModels } from "./workspace-manager.js";
+import { readOnlyWorkbuddyCatalog } from "./read-only-catalog.js";
 import { DshClient } from "./dsh-client.js";
 import { nativeModelPolicy } from "./native-desktop-trigger.js";
 import { TaskStore } from "./task-store.js";
@@ -43,8 +44,17 @@ function policy(config: Config): ModelPolicy {
     return value;
   } finally { db.close(); }
 }
-type CatalogReaders = { workbuddy: typeof listModels; dsh: (registry?: string, host?: string) => Pick<DshClient, "resolveHostId" | "models" | "sessions"> };
+type WorkbuddyCatalogReader = (config: Config) => Promise<{ models?: Array<{ id: string; credits?: unknown }> }>;
+export type CatalogReaders = { workbuddy: WorkbuddyCatalogReader; dsh: (registry?: string, host?: string) => Pick<DshClient, "resolveHostId" | "models" | "sessions"> };
 const catalogReaders: CatalogReaders = { workbuddy: listModels, dsh: (registry, host) => new DshClient(registry, host) };
+/**
+ * R1 — readers for observation-only callers. WorkBuddy is read through the non-launching catalog
+ * read, so an unarmed evaluation or a workbench probe cannot start, restart or reconfigure the
+ * native client just to look at it.
+ */
+export function readOnlyCatalogReaders(overrides: Partial<CatalogReaders> = {}): CatalogReaders {
+  return { workbuddy: readOnlyWorkbuddyCatalog, dsh: catalogReaders.dsh, ...overrides };
+}
 export async function desktopModelCatalog(config: Config, env: NodeJS.ProcessEnv = process.env, readers: CatalogReaders = catalogReaders): Promise<DesktopCatalogSource> {
   const pinned = nativeModelPolicy(env);
   const source: DesktopCatalogSource = {models:[],sessions:[],policy:policy(config),requiredFreeModel:pinned.model||null,requireZeroRate:pinned.requireZeroRate,dispatchEnabled:env.WORKBUDDY_DESKTOP_DISPATCH_ENABLED==="1",errors:[],diagnostics:[]};

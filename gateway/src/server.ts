@@ -22,7 +22,7 @@ import { runsDirectory } from "./run-journal.js";
 import { AdmissionError } from "./collaboration.js";
 import { configuredDshCoordinator } from "./dsh-runtime.js";
 import { createReadOnlyProbe } from "./read-only-probe.js";
-import { desktopModelCatalog } from "./desktop-dispatch-runtime.js";
+import { desktopModelCatalog, readOnlyCatalogReaders } from "./desktop-dispatch-runtime.js";
 import { DSH_DISCOVERY_SCHEMA_VERSION, dshExecutorSummary, dshSessionsFor, summarizeDshHosts } from "./dsh-discovery.js";
 
 // Load this installation's .env so the MCP host does not have to export it or
@@ -38,7 +38,7 @@ const tasks = new TaskApplicationService(coordinator, config.maxTaskAttempts ?? 
   // catalog -- and it is never armed and gets no dispatcher, so nothing here can spend a credit or
   // reach the native boundary. An observation that cannot be read says so and blocks; it never
   // falls back to the saved policy as if that were a live reading.
-  probe: createReadOnlyProbe({ db: store.database, env: process.env, catalog: () => desktopModelCatalog(config, process.env) }),
+  probe: createReadOnlyProbe({ db: store.database, env: process.env, catalog: () => desktopModelCatalog(config, process.env, readOnlyCatalogReaders()) }),
   probeKind: "read_only_local",
   armed: false,
 });

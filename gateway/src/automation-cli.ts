@@ -10,7 +10,7 @@ import { runsDirectory } from "./run-journal.js";
 import { AdmissionError } from "./collaboration.js";
 import type { SendTaskInput } from "./coordinator.js";
 import { createReadOnlyProbe, type AutomationPolicyInput, type AutomationProbeResult, type CostMode } from "./automation.js";
-import { desktopModelCatalog } from "./desktop-dispatch-runtime.js";
+import { desktopModelCatalog, readOnlyCatalogReaders } from "./desktop-dispatch-runtime.js";
 import type { DesktopCatalogSource } from "./desktop-dispatch.js";
 
 // Trusted local seam for the saved automation policy (D5-01/D5-02).
@@ -164,7 +164,7 @@ export async function runAutomationCli(argv: string[] = process.argv.slice(2), r
     : createReadOnlyProbe({
       db: store.database,
       env: process.env,
-      catalog: runtime.catalog ?? (() => desktopModelCatalog(config, process.env)),
+      catalog: runtime.catalog ?? (() => desktopModelCatalog(config, process.env, readOnlyCatalogReaders())),
     });
   const probeKind = probeFile ? "snapshot_file" : "read_only_local";
   // R3: this trusted local CLI is a real composition root. Automated dispatch
