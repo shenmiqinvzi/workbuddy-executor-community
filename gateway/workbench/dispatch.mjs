@@ -285,6 +285,17 @@ export async function mountDesktopDispatch({ onTask, onResources = null }) {
     const effortSuffix = execution => execution.reasoningEffort ? ` · ${execution.reasoningEffort}` : '';
     const resourceLabel = status => ({ fresh: '资源引用新鲜', stale: '资源引用已过期', unavailable: '无可用资源引用', unverified_claim: '声明关联未被核实' }[status] || '无可用资源引用');
     const candidateText = item => `${item.sourceLabel} / ${item.selection.modelId}${effortSuffix(item.selection)} · ${item.cost.label} · ${resourceLabel(item.resources.status)}`;
+    /** Missing resource facts stay missing: no quality score, no remaining
+     * credits and no balance is invented for a candidate that lacks them. */
+    const resourceDetail = item => {
+        const resources = item.resources || {};
+        const freshness = { fresh: '新鲜', stale: '已过期', unavailable: '不可用' }[resources.quotaFreshness] || '新鲜度未知';
+        const quota = resources.quotaRemaining === null || resources.quotaRemaining === undefined ? '剩余额度未知' : `剩余额度 ${resources.quotaRemaining}（${freshness}）`;
+        const balance = resources.creditBalance === null || resources.creditBalance === undefined ? '余额未知' : `余额 ${resources.creditBalance}`;
+        const limits = Array.isArray(resources.limitations) && resources.limitations.length ? `；${resources.limitations.slice(0, 2).join('、')}` : '';
+        return `${quota} · ${balance}${limits}`;
+    };
+    const costText = item => item.cost.known ? (item.cost.zero ? '已核实零费率' : '费率已知，按实际计费') : '费用未知，可能计费';
     /** The intent and the explicit selection are read from the fields exactly as
      * the user typed them; the panel never invents a scope or a preference. */
     function intentFromForm() {
@@ -310,11 +321,17 @@ export async function mountDesktopDispatch({ onTask, onResources = null }) {
         const reasons = recommended ? recommended.reasons.map(item => el('li', {}, item.message)) : [el('li', {}, result.decisionReason.message)];
         const candidates = result.candidates.slice(0, 8).map(item => el('li', {},
             el('span', {}, `${candidateText(item)} · ${item.reasons.slice(0, 2).map(reason => reason.message).join('；')}`),
+            el('span', { class: 'technical' }, `${costText(item)} · ${resourceDetail(item)}`),
             el('button', { class: 'text-button', type: 'button', onclick: () => applySelection(item.selection) }, '采用此候选')));
+        const requires = Array.isArray(result.authorization?.requires) ? result.authorization.requires : [];
+        const cap = result.constraints?.hardCostCap;
         recommendationBody.replaceChildren(
             el('p', { class: 'dispatch-rate', id: 'recommendation-decision' }, recommended ? `${head} · ${candidateText(recommended)}` : `${head} · ${result.decisionReason.message}`),
             el('ul', { class: 'dispatch-hint', id: 'recommendation-why' }, reasons, el('li', {}, `判定编号：${[result.decisionReason.code, ...result.decisionReason.codes].join('、')}`)),
             el('ul', { class: 'dispatch-recommendation-list', id: 'recommendation-candidates' }, candidates),
+            el('p', { class: 'dispatch-hint', id: 'recommendation-authority' }, `建议不授予派工权：仍需${requires.map(item => ({ preview: '预览', confirmation: '本机确认' }[item] || item)).join('与') || '人工确认'}；这里不会建立执行轮次（记录的执行轮次：${result.attempt === null ? '无' : '有'}，原生派工：${result.nativeAttempt === 'none' ? '未发生' : result.nativeAttempt}）。`),
+            result.decision === 'direct' ? el('p', { class: 'dispatch-hint', id: 'recommendation-direct' }, '建议直接处理：这类任务在本机完成更快，若仍要派工，需自己选择执行器并核对约定。') : null,
+            cap && (cap.status === 'unsupported' || cap.requested) ? el('p', { class: 'dispatch-hint is-error', id: 'recommendation-cost-cap' }, `费用上限：${cap.status === 'unsupported' ? '不支持硬性花费上限' : '未生效'}${cap.message ? `（${cap.message}）` : ''}${cap.requested ? `；请求值 ${cap.requested} 只作为说明` : ''}。`) : null,
             result.excluded.length ? el('p', { class: 'dispatch-hint', id: 'recommendation-excluded' }, `排除 ${result.excluded.length} 项：${result.excluded.slice(0, 3).map(item => `${item.sourceLabel}/${item.selection.modelId}：${item.message}`).join('；')}`) : null,
             el('ul', { class: 'dispatch-hint', id: 'recommendation-missing' }, result.missing.map(item => el('li', {}, `${item.severity === 'blocks' ? '阻断' : '局限'} · ${item.message}`))),
             el('p', { class: 'dispatch-hint', id: 'recommendation-history' }, result.history.status === 'unavailable'
