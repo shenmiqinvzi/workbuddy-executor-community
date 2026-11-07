@@ -41,11 +41,11 @@
 | C09 | 估算/耗尽/未知 | `null` 不写 0 的字节与额度语义 | source | 真实额度 |
 | C10 | 额度源失联/超时 | 陈旧标注与不回放旧结论（就绪路由同样） | source | 真实失联 |
 | C11 | 刷新资源/后台采集/探测 | D 线正式只读 probe（`probeKind:"read_only_local"`） | source | 真实探测授权 |
-| C12 | 多客户端并发与计量 | 归因账本覆盖率分子分母 | source | 真实请求标识 |
+| C12 | 多客户端并发与计量 | 归因账本覆盖率分子分母；DSH 派工确认接受后写请求观测（金额恒 `unavailable`） | source | 真实请求标识 |
 | C13 | 硬费用限制 | `hardCap` 恒 unsupported，不冒充 | source | 需可控制来源 |
 | C14 | 方案审计/政策撤回/模板 | B 线模板实例化 + I 线接线（时限只取存储政策） | source | 真实窗口 |
 | C15 | 额度连接/面板/导出边界 | 导出真实 bytes 与 digest | source | 真实面板 |
-| C16 | schema 与历史升级 | 配额文档契约待升版（**未完成**，本轮如实保留失败） | source | C 线待交 |
+| C16 | schema 与历史升级 | 配额文档升 `quota-2` 且兼容 `quota-1`（旧文档不伪造逐来源读数），契约见 `docs/RESOURCE_DOCUMENT_CONTRACT.md` | source | 真实旧库升级样本 |
 | C17 | 换执行器意图与旧验收 | 首期拒绝语义不变 | source | — |
 | C18 | 宿主兼容/统计/发布 | 统计页显示覆盖与未知 | source | 真实派工样本 |
 

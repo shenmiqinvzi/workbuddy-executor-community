@@ -58,6 +58,7 @@ C 线仍在收尾，未回执。已由 I 侧先行落地、C 不需要再动的�
 6. `gateway/test/productivity-service.test.ts`：导出夹具补真实三条事件（原夹具只给游标，计数改为「实际读取条数」后必然为 0）。
 7. `gateway/src/read-only-probe.ts`：read-only probe 的门面（新增）。`server.ts` 只能从这里拿到不可派工的观测接口，自动化模块的名字不再出现在 MCP 入口——`test/automation-policy.test.ts:340` 那条「server.ts 不得暴露自动化写工具」的断言就是这么守住的，改回直接 import `./automation.js` 会立刻红。
 8. `gateway/scripts/package.mjs` + `gateway/test/package.test.ts`：候选包必须带 `scripts/readiness.mjs`、`scripts/bootstrap.mjs`、`src/readiness.ts`、`dist/readiness.js`、`src/installation-bootstrap.ts`、`dist/installation-bootstrap.js`；打包夹具同步补齐，否则发布包在别人机器上无法自诊断也无法自举依赖。
+9. `gateway/src/task-store.ts` + `gateway/src/dsh-coordinator.ts`：请求归因账本真实接线（I-3）。`TaskStore.usage` 改成**懒建**（`private usageLedger?: UsageLedger; get usage()`）——eager 构造会建 `usage_records` 表，破坏「从未记录过用量时读取路径报告不存在」的既有语义（`test/statistics.test.ts:304` 立刻红）。`DshTaskCoordinator` 只在 `result.accepted === true` 且 `requestId` 匹配之后写观测行，每行 `valueKind:"unavailable"`、`value:null`；写入失败被吞掉，不让已接受的派工变成不确定。测试：`test/dsh-adapter.test.ts` 两条（已确认→`credits`/`tokens` 两行；`setPromptError` 未确认→零行）。
 
 ## IR-C 处置（C 线在合入后补齐）
 

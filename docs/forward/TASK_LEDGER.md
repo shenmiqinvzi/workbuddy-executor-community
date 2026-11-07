@@ -27,8 +27,8 @@
 | D5-01 政策 CRUD 与审计 | 六层披露、版本/期限/撤回 | source | `test/automation-policy.test.ts` | 真实授权来源仍为常量声明 |
 | D5-02 只读 probe 与竞态 | 正式只读 probe 接入 MCP 组合根；`pending→executing` 事务线性化 | source | `src/server.ts`、`src/automation.ts:834-861` | 真实自动模式 arming 未开（外部条件 A7） |
 | D5-03 自动页面只读 | 页面真实状态 + 审计 + 只读路由 | source | `test/automation-http.test.ts`、`test/automation-probe.test.ts` | 页面未在真实窗口渲染 |
-| D6-01 归因账本 | 真实上游请求写入账本，覆盖率分子分母 | source | `test/usage-attribution-adapter.test.ts` | 不能关联的请求保留 unknown |
-| D6-02 统计生产链 | **I 线补 `local_check_finished` 真实生产**；C 的 harness 事件生产者仍无调用者 | source | `test/check-call-events.test.ts` 5/5、`docs/CALL_EVENT_CONTRACT.md` | `tool_call_finished` 未接线 → calls 只覆盖一半 |
+| D6-01 归因账本 | 真实上游请求写入账本，覆盖率分子分母；**DSH 派工确认接受后写请求观测**（`TaskStore.usage` 懒建 + `DshTaskCoordinator` 调用 `recordRequestObservation`，金额恒 `unavailable`/`null`） | source | `test/usage-attribution-adapter.test.ts`、`test/dsh-adapter.test.ts`（37/37） | 不能关联的请求保留 unknown；真实请求标识未取到（`connection_only`） |
+| D6-02 统计生产链 | **两个生产者都已接真实入口**：I 线 `local_check_finished`（`TaskReviews.publishCallFact`）＋ C 线 `tool_call_finished`（`DshTaskCoordinator.sync()` 末端 `recordHarnessToolCalls`） | source | `test/check-call-events.test.ts` 5/5、`test/dsh-harness-call-events.test.ts`、`docs/CALL_EVENT_CONTRACT.md` | 字节/时长为 harness 未测量 → `unavailable`；WorkBuddy 原生侧无离散事件不可观察 |
 | D6-03 模板实例化 | 版本化模板 + 真实实例化接线 + 预算裁剪 | source | `test/project-template.test.ts`、`test/desktop-command-template.test.ts` | 未在真实窗口实例化 |
 | D6-04 通知/脱敏导出 | 导出统计整事件流、bytes 与预览一致；通知失败原因透传 | source | `test/delivery-export.test.ts`、`test/notification-center.test.ts` | 窗口未就绪不写通过 |
 | D6-05 统计页面 | 样本/时间窗/覆盖/检查器错误显示 | source | `test/statistics-page.test.ts`、`test/statistics.test.ts` | 无实证省钱结论仍禁止 |

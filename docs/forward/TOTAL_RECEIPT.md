@@ -37,13 +37,14 @@
 | B-product | 9 提交（`19ef402` `bd6f3c1` `4e63b7a` `e26fe7a` `2cdb97b` `da5c43d` `58813cc` `4e22c2e` `bd9d632`） | 派工三结局、面板恢复、模板期限裁剪、导出比对、五尺寸探针、文档 |
 | C-data | 6 提交（`b6edd38` `25787e8` `e49c5ea` `9e00fee` `7af4515` 等） | 来源能力声明、路由歧义、harness 调用事实、统计契约、quota-2 升版与 DSH sync 生产接线 |
 | D-automation | 8 提交（`6267e05` `8e35607` `07f7b79` `d50ae78` `70b1803` `ee1cfcc` `a162469` 等） | 六层披露、只读 probe、操作只读路由、幂等派工、socket 修复、文档 |
-| I 集成 | `caa7a5fa` `15e23ae` `387a6f6` `02e7de8` `6774476` `804ce30` `1e0597c` `4b04bfa` `65c1d7a` `9898edb` `f47fb4b` + 3 个 merge | local_check 生产端、歧义文案、就绪只读路由、降级启动、产品面接线、打包白名单、MCP 入口隔离、交付入口前移、清理误入日志、四次合并 |
+| I 集成 | `caa7a5fa` `15e23ae` `387a6f6` `02e7de8` `6774476` `804ce30` `1e0597c` `4b04bfa` `65c1d7a` `9898edb` `f47fb4b` `4c2bc16` `5ff65f5` `21764ec` + 5 个 merge | local_check 生产端、歧义文案、就绪只读路由、降级启动、产品面接线、打包白名单、MCP 入口隔离、交付入口前移、清理误入日志、总回执与证据、请求归因账本接线、五次合并 |
 
 ## 4. 验证（真实输出，命令与日志）
 
 | 门 | 命令 | 结果 | 日志 |
 |---|---|---|---|
-| 全量后端 | `$env:WORKBUDDY_CONFIG_DIR='C:\Users\LENOVO\.workbuddy-ai'; npx tsx --test test/**/*.test.ts` | **1439 tests / 1427 pass / 0 fail / 12 skipped**（exit 0） | `I\full-suite-final.log` |
+| 全量后端（串行，候选基线） | `$env:WORKBUDDY_CONFIG_DIR='C:\Users\LENOVO\.workbuddy-ai'; npx tsx --test --test-concurrency=1 test/**/*.test.ts` | **1442 tests / 1430 pass / 0 fail / 12 skipped**（exit 0） | `I\full-suite-serial.log` |
+| 全量后端（默认并发，三轮） | 同上但不加 `--test-concurrency=1` | 三轮均 **1442 tests / 1429 pass / 1 fail / 12 skipped**，每轮失败的用例不同且都能单跑通过（见 4.3） | `I\full-suite-final3.log`、`I\full-suite-final3b.log`、`I\full-suite-final3c.log` |
 | 工作台 | `npm run test:workbench` | 164 tests / 164 pass / 0 fail | 终端 |
 | 桌面策略 | `npm run desktop:test` | 122 pass / 0 fail | `A\desktop-policy-tests.log` |
 | 类型 | `npx tsc --noEmit -p tsconfig.json`、`npm run typecheck:task-view` | 均 exit 0 | 终端 |
@@ -53,6 +54,18 @@
 
 1. **配置目录歧义**：不设 `WORKBUDDY_CONFIG_DIR` 时本机同时存在 `%USERPROFILE%\.workbuddy-ai` 与 `%USERPROFILE%\.workbuddy`，`loadConfig()` 按设计抛错，180 条用例构造即失败（起点树同样失败，已证非本轮回归）。本文件所有全量数字都在固定 `WORKBUDDY_CONFIG_DIR` 下取得。
 2. **`dist` 陈旧**：`scripts/workbench-read-store.mjs:7` 从 `../dist/quota-observation.js` 读，源码改了不重建 `dist` 会让桌面只读路径读出版本漂移（本轮确实出现过，`npm run build` 后消失）。因此「改了 `src` 就要 build 再跑该文件」。
+
+### 4.3 默认并发下的一枚轮转失败（不是逻辑回归）
+
+默认并发（每个测试文件一个子进程并行）连跑三轮，每轮都恰好 1 条失败，且三轮各不同：
+
+| 轮 | 失败用例 | 单跑该文件 |
+|---|---|---|
+| 1 | `test/statistics.test.ts:304` `ledger read: the statistics file reader never creates or migrates the ledger` | 修后 68/68（这是**真回归**：`TaskStore` eager 建 `usage_records`，已改懒建） |
+| 2 | `test/desktop-queue.test.ts:141` `active queue listeners are visible only during native claim wait` | 24 tests / 24 pass |
+| 3 | `test/desktop-dispatch-e2e.test.ts:73` `a previewed agreement reaches the fake native boundary exactly once` | 1 tests / 1 pass（同 E4） |
+
+判定：轮 2/3 属机器级争用（SQLite 写、目录读与 pid 活跃判定的时序），**同一提交在 `--test-concurrency=1` 下 0 失败**。三轮结果与串行结果都保留，不用串行那次掩盖并发的三次红。
 
 ### 4.2 本机真实运行证据（machine 档，合并后复跑）
 
@@ -75,16 +88,17 @@
 
 | 项 | 值 |
 |---|---|
-| 路径 | `I-integration\gateway\outputs\candidate-final\codex-workbuddy-gateway-v0.7.1.zip` |
-| 字节 | 2,479,137 |
+| 路径 | `E:\javaproject\outputs\forward-delivery-20261107\I\candidate-final3\codex-workbuddy-gateway-v0.7.1.zip` |
+| 字节 | 2,481,829 |
 | 条目数 | 745（`candidate-installation` 计 744 个受管文件，`verify-release` 校验 744） |
-| ZIP SHA-256 | `b3a8a86ab8350fec0a3918a6cc5110aecfec0421c4df8bf6874b977775f38e8d` |
-| manifest | 120,216 B / SHA-256 `d84b629de0d2238046d2e6e16002880ab5d26ce42abd659f2926e1fe0ebc3688` |
-| `verify-release.mjs` | `{"version":"0.7.1","verifiedFiles":744,"hashesMatch":true}` → `I\candidate-final-verify.txt` |
-| `candidate-installation.mjs check` | `ok:true`、`problems:[]`、`totalBytes 8110205` → `I\candidate-final-check.json` |
+| ZIP SHA-256 | `86018f5d0ee0ae84b966a0d6b9d830099cc0d4b19f4e200dc5837fcef9369593` |
+| manifest | 120,216 B / SHA-256 `420372ed45adddaa2dbce5d1a5ca0a6c318ec6aff680296a4f8256dd530ff9cc` → 副本 `I\candidate-final3-manifest.json` |
+| `verify-release.mjs` | `{"version":"0.7.1","verifiedFiles":744,"hashesMatch":true}` → `I\candidate-final3-verify.txt` |
+| `candidate-installation.mjs check` | `ok:true`、`problems:[]`、`totalBytes 8120343` → `I\candidate-final3-check.json` |
+| 对应提交 | `21764ec`（含账本接线；`git status` 除文档外干净） |
 | 桌面成品 | 未生成（`npm run desktop:package` 需要 WebView2 构建产物与本机桌面环境；`desktop:test` 122 pass 只证明策略层） |
 
-> 上一轮中间包 `outputs\candidate-cp2`（734 文件 / `61dc0456…`）只保留作对照，**不是**本轮候选。
+> 更早两个中间包 `outputs\candidate-cp2`（734 文件 / `61dc0456…`）与 `outputs\candidate-final`（745 文件 / `b3a8a86a…`）、`candidate-final2`（`49c8ba09…`）只保留作对照，**不是**本轮候选。
 
 ## 6. 本轮新增能力（每条都在 §4 有测试）
 
@@ -94,6 +108,7 @@
 4. **歧义拒绝说人话**：`ambiguityMessage()` 列出候选并点名两个环境变量，声明不代选、不回退。
 5. **产品面接线**：模板实例化（时限只取存储政策）、通知失败原因透传、重复回答 `INPUT_ALREADY_ANSWERED`、MCP 进程只读 probe（经 `src/read-only-probe.ts` 门面，自动化模块不进 MCP 入口）。
 6. **C 线两项**：quota 文档升 `workbuddy-executor/quota-2` 并兼容 quota-1（旧文档不伪造逐来源读数）；`tool_call_finished` 从真实 DSH `sync()` 事件流生产。
+7. **请求归因账本真实接线**：`TaskStore.usage` 懒建（首次写入才建表，保持"从未记录 → 报告不存在"的语义）；`DshTaskCoordinator` 在派工被确认接受（`result.accepted === true` 且 `requestId` 匹配）之后写一条请求观测，每行 `valueKind="unavailable"`、`value=null`——上游从不发 token/credit，所以宁可标"没测到"也不写 0；账本写失败不把已接受的派工改成不确定。测试 `test/dsh-adapter.test.ts` 两条（已确认→两行、未确认→零行）。
 
 ## 7. 未满足项（逐条给阻塞原因）
 
