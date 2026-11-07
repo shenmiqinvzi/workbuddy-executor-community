@@ -20,7 +20,7 @@ internal sealed record GatewayDependencies(string GatewayDirectory, string Modul
     internal bool Installed => Problem is null && Missing.Count == 0;
 
     /// <summary>The recovery entry points a preview package offers, in the order the guide lists them.</summary>
-    internal string RecoveryCommand => "node scripts/bootstrap.mjs --install-root \"" + GatewayDirectory + "\"";
+    internal string RecoveryCommand => "node scripts/bootstrap.mjs --install-root \"" + GatewayDirectory + "\" --apply";
 
     internal string MissingSummary => Missing.Count switch
     {

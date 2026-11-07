@@ -198,6 +198,7 @@ Check(!emptyModules.Installed, "an empty node_modules directory is not installed
 Check(emptyModules.Missing.Count == 2, "every declared dependency is checked, including scoped names");
 Check(emptyModules.OperatorMessage.Contains(Path.Combine(dependencyRoot, "gateway", "node_modules")), "the failure names the dependency directory");
 Check(emptyModules.OperatorMessage.Contains("scripts/bootstrap.mjs --install-root") && emptyModules.OperatorMessage.Contains("npm ci --omit=dev"), "the failure names both recovery entries");
+Check(emptyModules.OperatorMessage.Contains("--apply"), "the bootstrap entry carries --apply, without which the bootstrap only plans and exits 0");
 Check(emptyModules.OperatorMessage.Contains(GatewayDependencies.PreviewGuideFileName), "the failure points at the preview guide");
 Directory.CreateDirectory(Path.Combine(dependencyRoot, "gateway", "node_modules", "zod"));
 var partial = GatewayDependencies.Inspect(Path.Combine(dependencyRoot, "gateway"));

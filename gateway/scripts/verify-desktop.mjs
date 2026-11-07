@@ -10,9 +10,22 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+const usage = 'Usage: node gateway/scripts/verify-desktop.mjs [--root <extracted desktop tree>]';
 const args = process.argv.slice(2);
-const flag = args.indexOf('--root');
-const root = flag >= 0 ? path.resolve(args[flag + 1] ?? '') : path.resolve(here, '..', '..');
+let rootArg = null;
+for (let index = 0; index < args.length; index += 1) {
+  const arg = args[index];
+  if (arg === '--root') {
+    const value = args[index + 1];
+    if (value === undefined || value === '' || value.startsWith('--')) fail('--root needs a directory value. ' + usage);
+    if (rootArg !== null) fail('--root was given more than once. ' + usage);
+    rootArg = value;
+    index += 1;
+    continue;
+  }
+  fail('Unknown argument: ' + JSON.stringify(arg) + '. ' + usage);
+}
+const root = rootArg === null ? path.resolve(here, '..', '..') : path.resolve(rootArg);
 const guideName = 'PREVIEW-START-HERE.md';
 const manifestFile = path.join(root, 'RELEASE_MANIFEST.json');
 
@@ -22,14 +35,21 @@ const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
 if (manifest.project !== 'workbuddy-desktop') fail('This manifest is not a desktop package manifest: project=' + JSON.stringify(manifest.project));
 if (!Array.isArray(manifest.files) || !manifest.files.length) fail('Missing release file manifest');
 const allowed = (entry) => entry === guideName || entry.startsWith('gateway/');
-const seen = new Set();
+// Windows paths are case-insensitive, so "Gateway/x" and "gateway/x" are one file there.
+// Counting them separately would let a manifest claim coverage it does not have.
+const seen = new Map();
+const pathKey = (relative) => (process.platform === 'win32' ? relative.toLowerCase() : relative);
 const counts = { gateway: 0, app: 0, guide: 0 };
 for (const entry of manifest.files) {
   const relative = entry.path;
   if (typeof relative !== 'string' || !allowed(relative)) fail('Unsafe release path: ' + JSON.stringify(relative));
   if (!/^\w[\w./-]*$/.test(relative) || relative.split('/').some((part) => !part || part === '.' || part === '..')) fail('Unsafe release path: ' + JSON.stringify(relative));
-  if (seen.has(relative)) fail('Duplicate release path: ' + relative);
-  seen.add(relative);
+  const key = pathKey(relative);
+  if (seen.has(key)) {
+    const first = seen.get(key);
+    fail('Duplicate release path: ' + relative + (first === relative ? '' : ' (same file as ' + first + ' on a case-insensitive file system)'));
+  }
+  seen.set(key, relative);
   const filename = path.resolve(root, relative);
   if (!filename.startsWith(root + path.sep)) fail('Release path escapes root: ' + relative);
   let current = root;

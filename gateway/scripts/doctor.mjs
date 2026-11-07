@@ -19,7 +19,7 @@ try {
   const code = error && error.code;
   const pkg = missingPackage(error);
   if (pkg) {
-    console.error(`Gateway dependency '${pkg}' is missing. Run node scripts/bootstrap.mjs --install-root . (or npm ci --omit=dev) in the gateway directory, then retry.`);
+    console.error(`Gateway dependency '${pkg}' is missing. Run node scripts/bootstrap.mjs --install-root . --apply (or npm ci --omit=dev) in the gateway directory, then retry.`);
   } else if (code === 'ERR_MODULE_NOT_FOUND' || code === 'ERR_UNSUPPORTED_DIR_IMPORT') {
     console.error('The gateway build is missing (dist/doctor.js). Run npm run build after installing dependencies, then retry.');
   } else if (error && typeof error.message === 'string' && error.message.length) {

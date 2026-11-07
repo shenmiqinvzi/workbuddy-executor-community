@@ -23,18 +23,25 @@ export const previewGuide = (version) => `# WorkBuddy 桌面预览 · 启动说�
 
 ## 2. 安装网关依赖（必须做一次）
 
-在解包目录里任选一种：
+先确认当前目录是**解包目录**（能看到 `gateway\` 和 `RELEASE_MANIFEST.json` 的那一层），再任选一种：
 
 \`\`\`powershell
-# 方式 A：走网关自带引导（会复用本地 npm 缓存，缺什么装什么）
-node gateway\\scripts\\bootstrap.mjs --install-root gateway
+# 方式 A：走网关自带引导（复用本地 npm 缓存，缺什么装什么）
+# --apply 必须带：不带时引导只打印计划并以 0 退出，node_modules 不会出现
+node gateway\\scripts\\bootstrap.mjs --install-root gateway --apply
 
 # 方式 B：直接走 npm
 cd gateway
 npm ci --omit=dev
 \`\`\`
 
-装完确认：\`gateway\\node_modules\\zod\\package.json\` 与 \`gateway\\node_modules\\@modelcontextprotocol\\sdk\\package.json\` 都存在。
+解包路径含空格时命令本身要加引号，例如：
+
+\`\`\`powershell
+node "gateway\\scripts\\bootstrap.mjs" --install-root "gateway" --apply
+\`\`\`
+
+装完确认：\`gateway\\node_modules\\zod\\package.json\` 与 \`gateway\\node_modules\\@modelcontextprotocol\\sdk\\package.json\` 都存在；引导输出里应有 \`"apply": true\` 与 \`npm_ci\` 成功记录。
 
 ## 3. 运行前置
 
@@ -47,9 +54,9 @@ npm ci --omit=dev
 
 ## 4. 启动与自检
 
-1. 双击 \`gateway\\desktop\\app\\WorkBuddy.Workbench.exe\`；窗口标题应为「WorkBuddy · 任务工作台」。
-2. 校验包完整性：\`node gateway\\scripts\\verify-desktop.mjs\`，应输出 \`"hashesMatch": true\`。
-3. 网关自己的校验入口仍可用：\`node gateway\\scripts\\verify-release.mjs\`。
+1. 校验包完整性（**安装依赖前就能跑**，只读，不改任何文件）：\`node gateway\\scripts\\verify-desktop.mjs\`，应输出 \`"hashesMatch": true\`。
+2. 双击 \`gateway\\desktop\\app\\WorkBuddy.Workbench.exe\`；窗口标题应为「WorkBuddy · 任务工作台」。
+3. 单独下载的**网关 ZIP** 才有自己的校验入口：在网关解包根跑 \`node scripts\\verify-release.mjs\`。桌面包里 \`gateway\\\` 下没有 \`RELEASE_MANIFEST.json\`（清单只在包根），所以在桌面包里跑它会报 ENOENT，这属预期。
 
 ## 5. 窗口报错怎么读
 
