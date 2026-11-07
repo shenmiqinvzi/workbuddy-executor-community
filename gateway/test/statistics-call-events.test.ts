@@ -75,10 +75,10 @@ test("outcome classification: only a clean exit is a pass", () => {
 });
 
 test("redaction: credential-shaped arguments and user paths never reach the payload", () => {
-  const redacted = redactCallText("node --token=sk-live-1234567890 C:\\Users\\alice\\repo\\a.ts Bearer abcdefgh12345678");
+  const redacted = redactCallText("node --token=sk-live-1234567890 C:\\Users\\example\\repo\\a.ts Bearer abcdefgh12345678");
   assert.equal(redacted.redactions, 4);
   assert.ok(!redacted.text.includes("sk-live-1234567890"));
-  assert.ok(!redacted.text.includes("alice"));
+  assert.ok(!redacted.text.includes("example"));
   assert.ok(!redacted.text.includes("abcdefgh12345678"));
 });
 

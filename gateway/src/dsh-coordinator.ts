@@ -10,6 +10,7 @@ import { RunJournal, hasNativeStopEvidence, type RunSnapshot, writePrivateJson }
 import { parseReport, runEvidenceDigestOf } from "./coordinator.js";
 import { reportDigest } from "./report-authentication.js";
 import { DeepSeekRpcError } from "./deepseek-client.js";
+import { harnessEventLikes, recordHarnessToolCalls, type HarnessEventLike } from "./statistics-harness-calls.js";
 import { readTaskProjection } from "./task-view-reader.js";
 
 import type { OperationOptions, OperationRecord } from "./operation-admission.js";
@@ -28,6 +29,9 @@ const selection = (e: ExecutionSelection): DshSelection => ({ providerId: e.prov
 /** Shared TaskStore owns business state. The transport owns native sessions,
  * durable request events and cancellation. No workflow/Reviewer is created. */
 export class DshTaskCoordinator {
+  /** `tool/call` starts whose result has not arrived yet, per attempt: a call can
+   *  begin in one observed page and finish in the next. */
+  private readonly openToolCalls = new Map<string, HarnessEventLike[]>();
   constructor(readonly store: TaskStore, readonly client: DshTransport, readonly runsDir: string, private readonly observeRate?: DshRateObserver) {}
   policy() { return this.store.collaboration.currentPolicy(defaultModelPolicy()); }
   owns(taskId: string) { return !!this.store.dshBindings.forTask(taskId); }
@@ -228,6 +232,22 @@ export class DshTaskCoordinator {
         }
         if (Object.keys(patch).length) this.store.updateAttempt(taskId, binding.attemptId, patch);
         this.store.appendTaskEvent({ taskId, attemptId: binding.attemptId, type: config ? "native_request_observed" : `dsh_${event.type}`, occurredAt: event.timestamp ?? new Date().toISOString(), observedAt: new Date().toISOString(), actor: "dsh", payload: { nativeEventSeq: event.seq, requestId: binding.requestId, rawType: event.rawType ?? null, ...(event.text ? { text: event.text } : {}), ...(config ? { effectiveModel: snapshot.dsh?.effectiveModel ?? null } : {}) }, sourceRef: `${binding.attemptId}:dsh:${event.seq}` });
+      }
+      // The page above has already been proven to belong to this request, in
+      // order and inside its cursor, so only observable tool traffic reaches the
+      // ledger here. A read-only observer writes nothing: observing must not
+      // create task events. `final` is true only once no further event can
+      // arrive, which is what lets an unpaired call be recorded as unknown
+      // rather than as a finished success.
+      if (!observeOnly && page.events.length > 0) {
+        const written = recordHarnessToolCalls(this.store, {
+          identity: { taskId, attemptId: binding.attemptId, executorId: "dsh", role: "worker" },
+          events: harnessEventLikes(page.events),
+          carry: this.openToolCalls.get(binding.attemptId) ?? [],
+          final: !current.runOpen,
+        });
+        if (written.open.length) this.openToolCalls.set(binding.attemptId, written.open);
+        else this.openToolCalls.delete(binding.attemptId);
       }
       if (!observeOnly && current.runOpen && !current.cancelRequested && Date.parse(snapshot.deadline ?? "") <= Date.now()) {
         current = { ...current, cancelRequested: true }; cancelOriginal = true;

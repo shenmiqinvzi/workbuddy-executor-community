@@ -352,7 +352,10 @@ test("the desktop host serves the resource page and the saved resources over HTT
     }
     const quotas = await get(port, "/workbench/v1/resources/quotas");
     assert.equal(quotas.status, 200);
-    assert.equal(JSON.parse(quotas.body).schemaVersion, "workbuddy-executor/quota-1");
+    const quotaDocument = JSON.parse(quotas.body);
+    assert.equal(quotaDocument.schemaVersion, "workbuddy-executor/quota-2");
+    // Each merged row carries the reading of the source it came from.
+    assert.deepEqual(quotaDocument.observations[0].readings.map((item: { connectionId: string }) => item.connectionId), ["synthetic-quota"]);
     const credits = await get(port, "/workbench/v1/resources/credit-balances");
     assert.equal(credits.status, 200);
     assert.equal(JSON.parse(credits.body).schemaVersion, "workbuddy-executor/credit-balance-1");

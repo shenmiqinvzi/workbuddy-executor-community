@@ -223,6 +223,7 @@ export function demoDocuments(now = () => new Date()) {
             sourceObservedAt: at(-6),
             collectedAt: at(-2),
             connectionIds: ['demo-conn-cn'],
+            readings: [{ connectionId: 'demo-conn-cn', snapshotId: 'demo-snapshot-cn', realm: 'cn', availability: 'available', sourceObservedAt: at(-6), used: 1200000, budget: 5000000, remaining: 3800000 }],
         },
         {
             scopeId: POOL_INTL,
@@ -244,6 +245,7 @@ export function demoDocuments(now = () => new Date()) {
             sourceObservedAt: at(-241),
             collectedAt: at(-240),
             connectionIds: ['demo-conn-intl'],
+            readings: [{ connectionId: 'demo-conn-intl', snapshotId: 'demo-snapshot-intl', realm: 'intl', availability: 'unknown', sourceObservedAt: at(-241), used: null, budget: null, remaining: null }],
         },
     ];
     const creditConnections = [
@@ -296,7 +298,7 @@ export function demoDocuments(now = () => new Date()) {
     ];
     return {
         quota: {
-            schemaVersion: 'workbuddy-executor/quota-1',
+            schemaVersion: 'workbuddy-executor/quota-2',
             readOnly: true,
             connections: quotaConnections,
             observations,

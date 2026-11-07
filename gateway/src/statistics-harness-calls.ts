@@ -69,6 +69,10 @@ export interface HarnessPairing {
   facts: HarnessCallFact[];
   /** Calls whose result never arrived; only reported as facts when `final`. */
   unpaired: { callId: string; callSeq: number; name: string }[];
+  /** `tool/call` entries still waiting for their result, to be handed back next
+   *  time: a call can start in one page and finish in the next, and dropping the
+   *  start would silently lose the call. */
+  open: HarnessEventLike[];
   /** Events that are neither a tool call nor a result. */
   ignored: number;
   /** Events that look like a call but carry no usable identity. */
@@ -105,6 +109,49 @@ function rawTypeOf(event: HarnessEventLike): string | null {
   return null;
 }
 
+/** The transport event a Harness reader hands back, before its payload is read. */
+export interface HarnessStreamEvent {
+  seq: number;
+  type?: string | null;
+  rawType?: string | null;
+  timestamp?: string | null;
+  requestId?: string | null;
+  turnId?: string | null;
+  data?: unknown;
+}
+
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+/**
+ * Read the tool identity out of one transport event.
+ *
+ * Only fields the stream actually carries are copied; a missing `name` or
+ * `callId` stays missing so the pairing can say the call is unidentified
+ * instead of inventing an identity from the sequence number.
+ */
+export function harnessEventLike(event: HarnessStreamEvent): HarnessEventLike {
+  const data = record(event.data);
+  const message = record(data.message);
+  const callId = typeof data.callId === "string" ? data.callId : typeof message.toolCallId === "string" ? message.toolCallId : null;
+  return {
+    seq: event.seq,
+    rawType: event.rawType ?? null,
+    type: event.type ?? null,
+    timestamp: event.timestamp ?? null,
+    name: typeof data.name === "string" ? data.name : null,
+    callId,
+    isError: typeof message.isError === "boolean" ? message.isError : null,
+    requestId: event.requestId ?? null,
+    turnId: event.turnId ?? null,
+  };
+}
+
+export function harnessEventLikes(events: readonly HarnessStreamEvent[]): HarnessEventLike[] {
+  return events.map(harnessEventLike);
+}
+
 /**
  * Pair `tool/call` with `tool/result` by `callId`, per attempt, in stream order.
  *
@@ -112,12 +159,34 @@ function rawTypeOf(event: HarnessEventLike): string | null {
  * caller says the stream is final for this attempt, and then it is recorded as
  * `outcome_unknown` — never as a success and never as a failure.
  */
-export function pairHarnessToolCalls(events: readonly HarnessEventLike[], options: { final: boolean }): HarnessPairing {
+export function pairHarnessToolCalls(events: readonly HarnessEventLike[], options: { final: boolean; carry?: readonly HarnessEventLike[] }): HarnessPairing {
   const facts: HarnessCallFact[] = [];
   const pending = new Map<string, HarnessCallFact>();
+  const openEvents = new Map<string, HarnessEventLike>();
   const unpaired: HarnessPairing["unpaired"] = [];
   let ignored = 0;
   let unidentified = 0;
+
+  // Starts carried from an earlier page keep their original identity: the call
+  // began then, and this page only brings its result.
+  for (const event of options.carry ?? []) {
+    const callId = typeof event.callId === "string" && event.callId.length > 0 ? event.callId : null;
+    if (callId === null || typeof event.seq !== "number" || !Number.isSafeInteger(event.seq)) continue;
+    if (pending.has(callId)) continue;
+    pending.set(callId, {
+      callId,
+      name: typeof event.name === "string" && event.name.length > 0 ? event.name : "unknown",
+      callSeq: event.seq,
+      terminalSeq: event.seq,
+      startedAt: isoOrNull(event.timestamp).value,
+      endedAt: null,
+      status: "pending",
+      isError: null,
+      requestId: typeof event.requestId === "string" ? event.requestId : null,
+      turnId: typeof event.turnId === "string" ? event.turnId : null,
+    });
+    openEvents.set(callId, event);
+  }
 
   for (const event of events) {
     const rawType = rawTypeOf(event);
@@ -150,7 +219,7 @@ export function pairHarnessToolCalls(events: readonly HarnessEventLike[], option
       };
       // A repeated `tool/call` for the same id keeps the first identity: the
       // Harness may replay a page, and a second start is the same call.
-      if (!pending.has(callId)) pending.set(callId, fact);
+      if (!pending.has(callId)) { pending.set(callId, fact); openEvents.set(callId, event); }
       continue;
     }
     // tool/result
@@ -169,6 +238,7 @@ export function pairHarnessToolCalls(events: readonly HarnessEventLike[], option
       turnId: open?.turnId ?? (typeof event.turnId === "string" ? event.turnId : null),
     };
     if (open) pending.delete(callId);
+    openEvents.delete(callId);
     facts.push(fact);
   }
 
@@ -180,7 +250,8 @@ export function pairHarnessToolCalls(events: readonly HarnessEventLike[], option
     }
   }
   facts.sort((a, b) => a.terminalSeq - b.terminalSeq);
-  return { facts, unpaired, ignored, unidentified };
+  const open = options.final ? [] : [...openEvents.values()].sort((a, b) => a.seq - b.seq);
+  return { facts, unpaired, open, ignored, unidentified };
 }
 
 export function classifyHarnessToolStatus(status: HarnessToolStatus): { outcome: CallOutcome; failureKind: CallFailureKind | null } {
@@ -217,6 +288,8 @@ export interface HarnessCallWrite {
 export interface RecordHarnessToolCallsInput {
   identity: HarnessCallIdentity;
   events: readonly HarnessEventLike[];
+  /** Starts from earlier pages of the same attempt, not yet finished. */
+  carry?: readonly HarnessEventLike[];
   /** Set true only when no further events can arrive for this attempt. */
   final: boolean;
   now?: Date;
@@ -225,6 +298,8 @@ export interface RecordHarnessToolCallsInput {
 export interface RecordHarnessToolCallsResult {
   writes: HarnessCallWrite[];
   unpaired: HarnessPairing["unpaired"];
+  /** Starts still waiting for a result; hand them back on the next page. */
+  open: HarnessEventLike[];
   ignored: number;
   unidentified: number;
 }
@@ -247,7 +322,7 @@ export function recordHarnessToolCalls(sink: CallEventSink, input: RecordHarness
   const role = input.identity.role ?? "worker";
   if (!CALL_ROLES.includes(role)) throw refuse("invalid_identity", "role", `role must be one of ${CALL_ROLES.join("|")}`);
   const observedAt = (input.now ?? new Date()).toISOString();
-  const pairing = pairHarnessToolCalls(input.events, { final: input.final });
+  const pairing = pairHarnessToolCalls(input.events, { final: input.final, carry: input.carry });
   const writes: HarnessCallWrite[] = [];
 
   for (const fact of pairing.facts) {
@@ -314,7 +389,7 @@ export function recordHarnessToolCalls(sink: CallEventSink, input: RecordHarness
     writes.push({ callId, status, eventId: stored.eventId, outcome, failureKind, sourceRef, callDigest });
   }
 
-  return { writes, unpaired: pairing.unpaired, ignored: pairing.ignored, unidentified: pairing.unidentified };
+  return { writes, unpaired: pairing.unpaired, open: pairing.open, ignored: pairing.ignored, unidentified: pairing.unidentified };
 }
 
 /** The one read the producer needs: the attempt's own synchronized events. */
