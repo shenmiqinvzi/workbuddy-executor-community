@@ -15,6 +15,10 @@ import {
 } from "./task-contract.js";
 import type { SendTaskInput } from "./coordinator.js";
 import type { TaskStore } from "./task-store.js";
+import { readQuotaResources } from "./quota-observation.js";
+import { readCreditBalances } from "./credit-balance.js";
+import { readResourceConnections, type ResourceConnectionDocument } from "./resource-connections.js";
+import type { DesktopCatalogSource } from "./desktop-dispatch.js";
 
 /**
  * Saved automation policy (D5-01).
@@ -38,6 +42,7 @@ export const AUTOMATION_ERRORS = Object.freeze({
   policyRevoked: "POLICY_REVOKED",
   decisionMissing: "DECISION_NOT_FOUND",
   schemaUnsupported: "AUTOMATION_SCHEMA_UNSUPPORTED",
+  observationUnavailable: "OBSERVATION_UNAVAILABLE",
   invalid: "INVALID_AUTOMATION",
 });
 
@@ -134,6 +139,8 @@ export interface AutomationProbeExecutor {
   dispatchable: boolean;
   evidence: string;
   observedAt: string;
+  /** What the source says this executor can do; absent means "not reported", not "nothing". */
+  capabilities?: string[];
 }
 
 /** A read-only catalog/quota observation. The default probe reports no cost evidence at all. */
@@ -141,6 +148,54 @@ export interface AutomationProbeResult {
   observedAt: string;
   executors: AutomationProbeExecutor[];
   models: AutomationProbeModel[];
+}
+
+/**
+ * D02 — the formal read-only observation.
+ *
+ * A decision may only be made from an observation somebody else can re-read. Every read surface
+ * this probe touches is a *saved or declared* local resource, and each one reports its own state:
+ * a surface that was never configured, never collected, or is too old is reported as such instead
+ * of being folded into "no data" or, worse, into "free". Nothing here logs in, calls a model, or
+ * writes to the database.
+ */
+export const AUTOMATION_PROBE_VERSION = "workbuddy-executor/automation-probe-1";
+
+export type AutomationProbeSourceName = "connections" | "quota" | "credit" | "catalog" | "liveness";
+
+export type AutomationProbeSourceStatus = "ok" | "not_declared" | "missing" | "unreadable" | "stale" | "unavailable" | "unwired";
+
+export interface AutomationProbeSourceState {
+  source: AutomationProbeSourceName;
+  status: AutomationProbeSourceStatus;
+  /** When the *source* said it observed something; null when nothing was observed. */
+  observedAt: string | null;
+  expiresAt: string | null;
+  entries: number;
+  detail: string;
+  limitations: string[];
+}
+
+export interface AutomationProbeCoverage {
+  /** `observed` only when a live executor read produced the row; a declaration is never enough. */
+  executors: "observed" | "unavailable";
+  /** `observed` = a catalog read listed the exact model; `declared_only` = an operator declared it. */
+  catalog: "observed" | "declared_only" | "missing";
+  /** Where the price/limit evidence came from. A pool snapshot is not a per-task attribution. */
+  costEvidence: "executor_catalog" | "gateway_pool" | "unavailable";
+  tokenEstimates: "observed" | "unavailable";
+  creditCache: "observed" | "stale" | "unavailable";
+  taskAttribution: "unavailable";
+}
+
+export interface AutomationProbeReport extends AutomationProbeResult {
+  probeVersion: string;
+  readOnly: true;
+  /** The exact policy revision this observation was taken for. */
+  policy: { policyId: string; revision: string; version: string };
+  sources: AutomationProbeSourceState[];
+  coverage: AutomationProbeCoverage;
+  limitations: string[];
 }
 
 export interface AutomationCandidate {
@@ -166,6 +221,14 @@ export interface AutomationEvaluation {
   expiresAt: string;
   observedAt: string;
   probeObservedAt: string;
+  /** Which read surfaces produced this evaluation and whether they failed. Read-only record. */
+  probe: {
+    probeVersion: string;
+    observedAt: string;
+    sources: AutomationProbeSourceState[];
+    coverage: AutomationProbeCoverage | null;
+    limitations: string[];
+  };
 }
 
 export interface AutomationDecision {
@@ -192,7 +255,9 @@ export interface AutomationDecision {
 export interface AutomationServiceOptions {
   /** Same guarded entry a manual dispatch uses; the automation path never calls an adapter directly. */
   send?: (input: SendTaskInput) => Promise<unknown>;
-  probe?: (policy: AutomationPolicy) => Promise<AutomationProbeResult> | AutomationProbeResult;
+  probe?: (policy: AutomationPolicy) => Promise<AutomationProbeReport | AutomationProbeResult> | AutomationProbeReport | AutomationProbeResult;
+  /** Says which read surface the probe is, so the panel never presents a file snapshot as live. */
+  probeKind?: "read_only_local" | "snapshot_file" | "injected";
   now?: () => Date;
   /** Default false: this line ships an unwired automation path until an operator arms it. */
   armed?: boolean;
@@ -211,8 +276,16 @@ function validId(value: unknown): value is string {
 function fail(code: string, message: string): never {
   throw new AdmissionError(code, message);
 }
+/**
+ * Identifier minting. Every generated id is checked again by a validator on the way back in:
+ * this module's own `ID` pattern (`[A-Za-z0-9][A-Za-z0-9._:@-]*`) and the collaboration service's
+ * `validId` (`[a-zA-Z0-9][a-zA-Z0-9._:-]*`), which the automatic plan binding must satisfy.
+ * base64url emits `_`, which neither pattern accepts, so a base64url id could mint itself and then
+ * be refused by its own guard (an intermittent PLAN_CONFIRMATION_REQUIRED / INVALID_AUTOMATION on
+ * dispatch). Hex keeps 144 bits of entropy inside both alphabets.
+ */
 function token(): string {
-  return randomBytes(18).toString("base64url");
+  return randomBytes(18).toString("hex");
 }
 function sameSelection(left: ExecutionSelection, right: ExecutionSelection): boolean {
   return left.executorId === right.executorId && left.connectionId === right.connectionId && left.providerId === right.providerId &&
@@ -365,13 +438,76 @@ export class AutomationService {
       armed: this.options.armed === true,
       dispatcherWired: typeof this.options.send === "function",
       probe: this.options.probe ? "injected" : "saved_snapshot_none",
+      probeKind: this.options.probeKind ?? (this.options.probe ? "injected" : "none"),
       writeEntry: "local_cli_only",
       httpWrites: false,
+      // D01: the six layers are reported separately so "enabled", "armed", "authorized",
+      // "chosen", "decided" and "dispatched" can never be read as one another.
+      layers: this.layers(),
       limits: [
         "A policy only narrows dispatch; it never grants commit, push, deploy or native-approval rights.",
         "Capacity stays a single shared slot owned by the operation layer.",
         "An enabled policy does not arm dispatch; the running process must also be armed.",
+        "A saved policy does not choose a model for a future task: each new real task still needs its own executor/model/reasoning selection confirmed by the user.",
       ],
+    };
+  }
+
+  /**
+   * The six automation layers, each with its own source of truth. Reading this must never require
+   * a dispatch, a probe or a model call: it is a projection of saved state plus this process.
+   */
+  private layers(): Record<string, unknown> {
+    const counted = this.database().prepare("SELECT status, COUNT(*) AS total FROM automation_decisions GROUP BY status").all() as Array<{ status?: string; total?: number }>;
+    const byStatus: Record<string, number> = {};
+    for (const row of counted) byStatus[String(row.status ?? "unknown")] = Number(row.total ?? 0);
+    return {
+      installation: {
+        layer: "installation_enabled",
+        enabled: this.meta().enabled,
+        source: "automation_meta.enabled",
+        changeEntry: "scripts/automation.mjs enable|disable --source user:NAME",
+        httpWrites: false,
+      },
+      process: {
+        layer: "process_armed",
+        armed: this.options.armed === true,
+        dispatcherWired: typeof this.options.send === "function",
+        probeKind: this.options.probeKind ?? (this.options.probe ? "injected" : "none"),
+        source: "constructed options of this process",
+        note: "Armed is a process flag; it is never persisted and never implied by an enabled installation.",
+      },
+      authorization: {
+        layer: "policy_authorization",
+        writeEntry: "local_cli_only",
+        acceptedSources: ["user:", "local-operator:", "desktop:"],
+        refusedSources: ["agent:", "http:", "model:", "automation:", "empty"],
+        policiesCurrent: this.listPolicies(200).length,
+        httpWrites: false,
+        mcpWrites: false,
+        note: "A caller string in a CLI argument is not authorization; only a saved policy from a trusted source authorizes narrowing.",
+      },
+      taskSelection: {
+        layer: "per_task_selection",
+        mode: "per_task_confirmed",
+        note: "Controlled policy execution: the policy pins one already-chosen executor/model/reasoning, but it never chooses a model for a future task. Every new real task still needs its own selection confirmed by the user.",
+      },
+      decision: {
+        layer: "recorded_decision",
+        pending: byStatus.pending ?? 0,
+        blocked: byStatus.blocked ?? 0,
+        executing: byStatus.executing ?? 0,
+        dispatched: byStatus.dispatched ?? 0,
+        outcomeUnknown: byStatus.outcome_unknown ?? 0,
+        revoked: byStatus.revoked ?? 0,
+      },
+      dispatch: {
+        layer: "actual_dispatch",
+        guardedService: "TaskApplicationService.send",
+        capacity: "single_shared_slot",
+        effectBoundary: "one effect per decision, bound to its own operationId",
+        plan: "plan/policy/capacity/native-identity/scope rechecked inside the pre-effect transaction",
+      },
     };
   }
 
@@ -461,6 +597,21 @@ export class AutomationService {
         this.appendAudit({
           action: "revoke_after_dispatch_intent", actor: context.actor, source: context.source, policyId, decisionId: row.decision_id,
           detail: { note: "The decision had already passed its pre-dispatch recheck; observe that operation instead of re-dispatching." },
+        });
+      }
+      // A decision that was recorded but never dispatched is retired by the same revocation: its
+      // stored rows keep their identity, and `execute` reports POLICY_REVOKED instead of a race.
+      const pending = this.database().prepare("SELECT decision_id FROM automation_decisions WHERE policy_id=? AND status='pending'").all(policyId) as Array<{ decision_id: string }>;
+      for (const row of pending) {
+        const recorded = this.getDecision(row.decision_id);
+        const at = iso(this.now());
+        this.writeDecision({
+          ...recorded, status: "revoked", updatedAt: at,
+          blockedCode: AUTOMATION_ERRORS.policyRevoked, blockedMessage: "The saved policy was revoked before this decision dispatched.",
+        });
+        this.appendAudit({
+          action: "decision_revoked", actor: context.actor, source: context.source, policyId, decisionId: row.decision_id,
+          detail: { revision: current.revision, policyVersion: current.version, note: "Recorded but never dispatched; retirement is not a dispatch." },
         });
       }
     });
@@ -609,8 +760,26 @@ export class AutomationService {
         .run(decisionId, policy.policyId, policy.revision, record.status, contract.taskId, null, null, createdAt, createdAt, digestOf(record), JSON.stringify(record));
       this.appendAudit({
         action: record.status === "pending" ? "decision_pending" : "decision_blocked",
-        actor: actor || "agent", source: "automation", policyId: policy.policyId, decisionId,
-        detail: { taskId: contract.taskId, blocks: record.evaluation.blocks.map((block) => block.code), limits: record.evaluation.limits },
+        actor: actor || "agent", source: `automation:${policy.policyId}`, policyId: policy.policyId, decisionId,
+        // D05: the audit answers who triggered it, which policy revision and terms applied, which
+        // observation was used, and why nothing was dispatched — without copying the task body.
+        detail: {
+          taskId: contract.taskId,
+          requestedBy: actor || "agent",
+          policyRevision: policy.revision,
+          policyVersion: policy.version,
+          authorizationSource: policy.authorizationSource,
+          costMode: policy.cost.mode,
+          expiresAt: policy.expiresAt,
+          probe: {
+            probeVersion: record.evaluation.probe.probeVersion,
+            observedAt: record.evaluation.probe.observedAt,
+            sources: record.evaluation.probe.sources.map((source) => `${source.source}:${source.status}`),
+            coverage: record.evaluation.probe.coverage,
+          },
+          blocks: record.evaluation.blocks.map((block) => ({ code: block.code, field: block.field, message: block.message })),
+          limits: record.evaluation.limits,
+        },
       });
       return record;
     });
@@ -675,7 +844,12 @@ export class AutomationService {
       this.writeDecision(updated);
       this.appendAudit({
         action: "decision_dispatch_intent", actor: input.actor ?? "automation", source: `automation:${policy.policyId}`,
-        policyId: policy.policyId, decisionId, detail: { planId: authorized.planId, operationId: input.operationId, taskId: decision.taskId },
+        policyId: policy.policyId, decisionId,
+        detail: {
+          planId: authorized.planId, operationId: input.operationId, taskId: decision.taskId,
+          policyRevision: policy.revision, policyVersion: policy.version,
+          probeObservedAt: evaluation.probeObservedAt, requestedBy: input.actor ?? "automation",
+        },
       });
       return { planId: authorized.planId, taskId: decision.taskId, contract: bound };
     });
@@ -701,7 +875,11 @@ export class AutomationService {
         this.writeDecision({ ...current, status: "dispatched", updatedAt: iso(this.now()), result: sent ?? null });
         this.appendAudit({
           action: "decision_dispatched", actor: input.actor ?? "automation", source: `automation:${policy.policyId}`,
-          policyId: policy.policyId, decisionId, detail: { planId: intent.planId, operationId: input.operationId, taskId: decision.taskId },
+          policyId: policy.policyId, decisionId,
+          detail: {
+            planId: intent.planId, operationId: input.operationId, taskId: decision.taskId,
+            policyRevision: policy.revision, policyVersion: policy.version, requestedBy: input.actor ?? "automation",
+          },
         });
       });
       return { ok: true, replay: false, decisionId, status: "dispatched", planId: intent.planId, taskId: decision.taskId, operationId: input.operationId, result: sent ?? null };
@@ -781,6 +959,8 @@ export class AutomationService {
     return {
       schemaVersion: meta.schemaVersion, enabled: meta.enabled, armed: this.options.armed === true,
       writeEntry: "local_cli_only", httpWrites: false,
+      probeKind: this.options.probeKind ?? (this.options.probe ? "injected" : "none"),
+      layers: this.layers(),
       policies: this.listPolicies(50).map((record) => ({
         policyId: record.policy.policyId, revision: record.policy.revision, status: record.status,
         workspaceId: record.policy.workspaceId, executor: record.policy.executor, cost: record.policy.cost,
@@ -795,6 +975,8 @@ export class AutomationService {
         blocks: decision.evaluation.blocks, limits: decision.evaluation.limits, cost: decision.evaluation.cost,
         rounds: decision.evaluation.rounds, planId: decision.planId, operationId: decision.operationId,
         createdAt: decision.createdAt, updatedAt: decision.updatedAt, blockedCode: decision.blockedCode,
+        probeObservedAt: decision.evaluation.probeObservedAt ?? null,
+        probe: decision.evaluation.probe ?? null,
       })),
       audit: this.audit(25),
     };
@@ -818,18 +1000,52 @@ export class AutomationService {
     return { contract, policy: record.policy };
   }
 
-  private async runProbe(policy: AutomationPolicy): Promise<AutomationProbeResult> {
-    if (this.options.probe) return await this.options.probe(policy);
+  private async runProbe(policy: AutomationPolicy): Promise<AutomationProbeReport> {
+    if (this.options.probe) {
+      const observed = await this.options.probe(policy);
+      // An injected observation is normalised, never trusted to describe itself: fields the
+      // assessment depends on are defaulted here so a partial snapshot cannot imply a fresher
+      // reading than it is.
+      if ("sources" in observed && Array.isArray((observed as AutomationProbeReport).sources)) return observed as AutomationProbeReport;
+      return {
+        ...observed,
+        probeVersion: AUTOMATION_PROBE_VERSION,
+        readOnly: true,
+        policy: { policyId: policy.policyId, revision: policy.revision, version: policy.version },
+        sources: [{
+          source: "catalog", status: "ok", observedAt: observed.observedAt ?? null, expiresAt: null,
+          entries: observed.models?.length ?? 0, detail: "The caller supplied this observation; it is not a local read of this process.",
+          limitations: ["caller_supplied_observation"],
+        }],
+        coverage: {
+          executors: observed.executors?.length ? "observed" : "unavailable",
+          catalog: observed.models?.length ? "observed" : "missing",
+          costEvidence: observed.models?.some((row) => row.valueKind === "reported") ? "executor_catalog" : "unavailable",
+          tokenEstimates: observed.models?.some((row) => row.unit === "tokens" && row.valueKind !== "unavailable") ? "observed" : "unavailable",
+          creditCache: "unavailable",
+          taskAttribution: "unavailable",
+        },
+        limitations: ["caller_supplied_observation"],
+      };
+    }
+    // No read surface is wired into this process. The executor is NOT assumed dispatchable and
+    // the model is NOT assumed to cost nothing: this snapshot exists so the panel and the audit
+    // can say why nothing was decided, not so a policy can proceed on an empty reading.
     const observedAt = iso(this.now());
     return {
+      probeVersion: AUTOMATION_PROBE_VERSION,
+      readOnly: true,
       observedAt,
-      executors: [{ executorId: policy.executor.executorId, connectionId: policy.executor.connectionId, providerId: policy.executor.providerId, online: true, dispatchable: true, evidence: "saved_policy_only", observedAt }],
-      models: [{
-        executorId: policy.executor.executorId, connectionId: policy.executor.connectionId, providerId: policy.executor.providerId,
-        modelId: policy.executor.modelId, reasoningEfforts: policy.executor.reasoningEffort === null ? [null] : [policy.executor.reasoningEffort],
-        credits: null, remaining: null, unit: policy.cost.unit, valueKind: "unavailable", freshness: "unavailable",
-        hardCap: "unsupported", catalogState: "available", observedAt, expiresAt: null,
+      policy: { policyId: policy.policyId, revision: policy.revision, version: policy.version },
+      executors: [],
+      models: [],
+      sources: [{
+        source: "catalog", status: "unwired", observedAt: null, expiresAt: null, entries: 0,
+        detail: "No read-only catalog observation is wired into this process; the saved policy is not evidence that its executor is dispatchable.",
+        limitations: ["no_catalog_reader"],
       }],
+      coverage: { executors: "unavailable", catalog: "missing", costEvidence: "unavailable", tokenEstimates: "unavailable", creditCache: "unavailable", taskAttribution: "unavailable" },
+      limitations: ["no_catalog_reader", "saved_policy_is_not_an_observation"],
     };
   }
 
@@ -907,6 +1123,18 @@ export class AutomationService {
     if (!Number.isFinite(probeAt) || nowMs - probeAt > PROBE_FRESH_MS || probeAt - nowMs > PROBE_FUTURE_MS) {
       block("MODEL_UNVERIFIED", "probe.observedAt", "The executor/catalog observation is stale or from the future.");
     }
+    // A read surface that failed is its own reason. Folding it into "model missing" would hide
+    // the difference between "the catalog does not list this model" and "nothing could be read".
+    const probeReport = probe as AutomationProbeReport;
+    for (const source of probeReport.sources ?? []) {
+      if (source.source !== "catalog" || source.status === "ok") continue;
+      const field = `probe.${source.source}`;
+      if (blocks.some((entry) => entry.field === field)) continue;
+      blocks.push({
+        code: AUTOMATION_ERRORS.observationUnavailable, field,
+        message: `The executor/model catalog was not observed (${source.status}): ${source.detail}`,
+      });
+    }
     const executorRow = probe.executors.find((row) => row.executorId === policy.executor.executorId && row.connectionId === policy.executor.connectionId && row.providerId === policy.executor.providerId);
     if (!executorRow) block("EXECUTOR_UNAVAILABLE", "executor", "The saved executor/connection is not in the current catalog.");
     else if (!executorRow.online || !executorRow.dispatchable) block("EXECUTOR_UNAVAILABLE", "executor", `The saved executor is not dispatchable (${executorRow.evidence}).`);
@@ -971,6 +1199,13 @@ export class AutomationService {
       history: { requireFree: livePolicy.requireFree, selectionMode: livePolicy.selectionMode ?? "allowlist", allowed: livePolicy.allowed.length, source: "live_policy", blocked: historyBlocked },
       scope: { workspaceId: contract.workspaceId, workspaceRealPath, allowedChanges: policy.scope.allowedChanges, permittedMetadata: policy.scope.permittedMetadata },
       expiresAt: policy.expiresAt, observedAt: iso(now), probeObservedAt: probe.observedAt,
+      probe: {
+        probeVersion: probeReport.probeVersion ?? AUTOMATION_PROBE_VERSION,
+        observedAt: probe.observedAt,
+        sources: probeReport.sources ?? [],
+        coverage: probeReport.coverage ?? null,
+        limitations: probeReport.limitations ?? [],
+      },
     };
   }
 
@@ -1048,3 +1283,278 @@ export class AutomationService {
 }
 
 export type { AutomationPlanBinding };
+
+// ------------------------------------------------------------------ D02 probe
+
+/**
+ * The read surfaces the probe composes. Each one is optional on purpose: a composition root that
+ * cannot offer a surface must say so, and the probe reports `unwired` instead of inventing a value.
+ */
+export interface AutomationProbeCatalogReader {
+  (): DesktopCatalogSource | Promise<DesktopCatalogSource>;
+}
+
+export interface AutomationReadOnlyProbeOptions {
+  /** The existing visible executor/model catalog. The CLI passes desktopModelCatalog(config, env). */
+  catalog?: AutomationProbeCatalogReader;
+  /** SQLite handle that holds the saved quota/credit resource tables (the task database in production). */
+  db?: DatabaseSync;
+  env?: NodeJS.ProcessEnv;
+  now?: () => Date;
+  /** Optional live executor read. A saved resource declaration is never promoted into liveness. */
+  liveness?: () => AutomationProbeExecutor[] | Promise<AutomationProbeExecutor[]>;
+}
+
+export interface AutomationReadOnlyProbe {
+  (policy: AutomationPolicy): Promise<AutomationProbeReport>;
+  readonly kind: "read_only_local";
+}
+
+const describeError = (error: unknown): string => (error instanceof Error ? error.message : String(error)).slice(0, 300);
+
+/**
+ * Compose one read-only observation out of the evidence this machine already has.
+ *
+ * Rules the implementation keeps, because the assessment trusts its output:
+ *   - Only a catalog read may say an executor is dispatchable. A declared resource connection is a
+ *     declaration (`declaration_only`, `no_upstream_probe`), so it never becomes an executor row.
+ *   - Only the exact model id may receive a pool number. A quota row for another model is not
+ *     "close enough", and an unavailable value is not zero.
+ *   - Every row keeps the time its *source* observed it, so an old snapshot cannot be presented as
+ *     a live reading: the assessment compares each row's own timestamp against its freshness bound.
+ *   - A failed surface stays in `sources` with its reason, so the decision can say why it waited.
+ */
+export function createReadOnlyProbe(options: AutomationReadOnlyProbeOptions = {}): AutomationReadOnlyProbe {
+  const read = async (policy: AutomationPolicy): Promise<AutomationProbeReport> => {
+    const now = options.now?.() ?? new Date();
+    const at = iso(now);
+    const env = options.env ?? process.env;
+    const sources: AutomationProbeSourceState[] = [];
+    const limitations: string[] = [];
+
+    // 1. Declared resource connections. Declaration only: it says what exists, never that it works.
+    let declared: ResourceConnectionDocument | null = null;
+    try {
+      declared = readResourceConnections(env);
+      const declaredOk = declared.status === "declared";
+      sources.push({
+        source: "connections",
+        status: declaredOk ? "ok" : declared.status === "invalid_file" ? "unreadable" : "not_declared",
+        observedAt: at, expiresAt: null, entries: declared.connections.length,
+        detail: declaredOk
+          ? `${declared.connections.length} resource connection(s) declared via ${declared.declaredVia}; a declaration does not verify routing or availability.`
+          : declared.status === "invalid_file"
+            ? `The resource-connection document could not be used (${declared.fileDiagnostics.map((item) => item.code).join(",") || "no diagnostic"}).`
+            : `No resource connection is declared via ${declared.declaredVia}.`,
+        limitations: [...declared.limitations],
+      });
+      if (declared.conflicts.length) limitations.push("resource_connection_conflicts");
+      if (declared.connections.some((item) => item.status !== "declared")) limitations.push("resource_connection_not_clean");
+    } catch (error) {
+      sources.push({
+        source: "connections", status: "unreadable", observedAt: null, expiresAt: null, entries: 0,
+        detail: `The resource-connection registry could not be read: ${describeError(error)}`, limitations: ["registry_unreadable"],
+      });
+      limitations.push("resource_connection_registry_unreadable");
+    }
+
+    // 2 + 3. Saved token estimates and the saved credit cache. Both come from the same database and
+    // both refuse to translate a missing table into "no quota configured".
+    let quota: ReturnType<typeof readQuotaResources> | null = null;
+    let credit: ReturnType<typeof readCreditBalances> | null = null;
+    if (!options.db) {
+      for (const source of ["quota", "credit"] as const) {
+        sources.push({
+          source, status: "unwired", observedAt: null, expiresAt: null, entries: 0,
+          detail: "No resource database handle is available in this composition root.", limitations: ["no_resource_database"],
+        });
+      }
+      limitations.push("cost_evidence_unavailable_no_resource_database");
+    } else {
+      try {
+        quota = readQuotaResources(options.db);
+        const fresh = quota.connections.filter((item) => item.freshness === "fresh");
+        sources.push({
+          source: "quota", status: quota.observations.length ? (fresh.length ? "ok" : "stale") : quota.connections.length ? "missing" : "not_declared",
+          observedAt: fresh[0]?.sourceObservedAt ?? fresh[0]?.collectedAt ?? null,
+          expiresAt: fresh[0]?.expiresAt ?? null,
+          entries: quota.observations.length,
+          detail: quota.observations.length
+            ? `${quota.observations.length} saved token estimate(s) across ${quota.connections.length} connection(s); attribution=${quota.attribution}.`
+            : "No saved token estimate exists; this is not a zero balance.",
+          limitations: ["shared_pool", "budget_estimated", "task_attribution_unavailable"],
+        });
+        if (quota.observations.length && !fresh.length) limitations.push("token_estimates_stale");
+      } catch (error) {
+        sources.push({
+          source: "quota", status: "unreadable", observedAt: null, expiresAt: null, entries: 0,
+          detail: `Saved token estimates could not be read: ${describeError(error)}`, limitations: ["quota_storage_unreadable"],
+        });
+        limitations.push("token_estimates_unreadable");
+      }
+      try {
+        credit = readCreditBalances(options.db);
+        const observed = credit.connections.filter((item) => item.status === "observed");
+        const fresh = observed.filter((item) => item.cacheFreshness === "fresh");
+        sources.push({
+          source: "credit",
+          status: credit.balances.length ? (fresh.length ? "ok" : "stale") : credit.connections.length ? "missing" : "not_declared",
+          observedAt: credit.balances[0]?.latestMemberObservedAt ?? credit.balances[0]?.collectedAt ?? null,
+          expiresAt: credit.balances[0]?.cacheExpiresAt ?? null,
+          entries: credit.balances.length,
+          detail: credit.balances.length
+            ? `${credit.balances.length} saved region credit cache row(s); coverage in the source is ${credit.balances[0]?.coverage ?? "unknown"}.`
+            : "No saved credit balance exists; unknown price is not a zero price.",
+          limitations: ["shared_region_pool", "routing_unverified", "task_attribution_unavailable"],
+        });
+        if (credit.balances.length && !fresh.length) limitations.push("credit_cache_stale");
+      } catch (error) {
+        sources.push({
+          source: "credit", status: "unreadable", observedAt: null, expiresAt: null, entries: 0,
+          detail: `Saved credit balances could not be read: ${describeError(error)}`, limitations: ["credit_storage_unreadable"],
+        });
+        limitations.push("credit_balance_unreadable");
+      }
+    }
+
+    // 4. The executor/model catalog: the only surface allowed to make an executor dispatchable.
+    let catalog: DesktopCatalogSource | null = null;
+    if (!options.catalog) {
+      sources.push({
+        source: "catalog", status: "unwired", observedAt: null, expiresAt: null, entries: 0,
+        detail: "No catalog reader is wired into this composition root; nothing here may claim the executor is dispatchable.",
+        limitations: ["no_catalog_reader"],
+      });
+      limitations.push("no_catalog_reader");
+    } else {
+      try {
+        catalog = await options.catalog();
+        const rows = Array.isArray(catalog.models) ? catalog.models : [];
+        sources.push({
+          source: "catalog", status: rows.length ? "ok" : "missing", observedAt: at, expiresAt: null, entries: rows.length,
+          detail: rows.length
+            ? `${rows.length} catalog row(s); pricing verified for ${rows.filter((row) => row.pricingVerified).length}.`
+            : `The catalog returned no model; diagnostics: ${(catalog.diagnostics ?? []).map((item) => `${item.source}/${item.code}`).join(",") || "none"}.`,
+          limitations: rows.some((row) => !row.pricingVerified) ? ["pricing_unverified_for_some_rows"] : [],
+        });
+        for (const diagnostic of catalog.diagnostics ?? []) limitations.push(`catalog_diagnostic:${diagnostic.source}:${diagnostic.code}`);
+        if (!rows.length) limitations.push("catalog_empty");
+      } catch (error) {
+        sources.push({
+          source: "catalog", status: "unavailable", observedAt: null, expiresAt: null, entries: 0,
+          detail: `The executor/model catalog could not be read: ${describeError(error)}`, limitations: ["catalog_unavailable"],
+        });
+        limitations.push("catalog_unavailable");
+      }
+    }
+
+    const poolFor = (modelId: string): { unit: "credit" | "tokens"; valueKind: "reported" | "estimated"; remaining: number | null; observedAt: string; expiresAt: string | null; evidence: string } | null => {
+      // An exact model id match on a fresh saved estimate. Never another model's number.
+      for (const row of quota?.observations ?? []) {
+        if (row.modelId !== modelId || row.valueKind === "unavailable") continue;
+        const connection = quota?.connections.find((item) => item.connectionId === row.connectionId);
+        if (connection && connection.freshness !== "fresh") continue;
+        return {
+          unit: "tokens", valueKind: "estimated", remaining: row.remaining,
+          observedAt: row.sourceObservedAt ?? row.collectedAt, expiresAt: connection?.expiresAt ?? null,
+          evidence: `quota:${row.connectionId}`,
+        };
+      }
+      // A complete, fresh region credit cache, but only for a model the same connection declares.
+      for (const balance of credit?.balances ?? []) {
+        if (balance.coverage !== "complete" || balance.balance === null) continue;
+        const connection = credit?.connections.find((item) => item.connectionId === balance.connectionId);
+        if (!connection || connection.cacheFreshness !== "fresh") continue;
+        const declaration = declared?.connections.find((item) => item.connectionId === balance.connectionId);
+        if (!declaration?.models?.includes(modelId)) continue;
+        return {
+          unit: "credit", valueKind: "reported", remaining: balance.balance,
+          observedAt: balance.latestMemberObservedAt ?? balance.collectedAt, expiresAt: balance.cacheExpiresAt,
+          evidence: `credit:${balance.connectionId}`,
+        };
+      }
+      return null;
+    };
+
+    const models: AutomationProbeModel[] = [];
+    const executors: AutomationProbeExecutor[] = [];
+    const seenExecutors = new Set<string>();
+    for (const row of catalog?.models ?? []) {
+      const execution = row.execution;
+      const executorKey = `${execution.executorId}:${execution.connectionId}:${execution.providerId}`;
+      if (!seenExecutors.has(executorKey)) {
+        seenExecutors.add(executorKey);
+        executors.push({
+          executorId: execution.executorId, connectionId: execution.connectionId, providerId: execution.providerId,
+          online: true, dispatchable: true,
+          evidence: `${execution.executorId === "dsh" ? "dsh_catalog" : "workbuddy_catalog"}:read_only`,
+          observedAt: at,
+          capabilities: execution.executorId === "dsh" ? ["dsh_bridge_prompt", "per_host_session"] : ["desktop_queue_send", "native_session"],
+        });
+      }
+      const pool = poolFor(execution.modelId);
+      models.push({
+        executorId: execution.executorId, connectionId: execution.connectionId, providerId: execution.providerId,
+        modelId: execution.modelId, reasoningEfforts: [execution.reasoningEffort],
+        credits: typeof row.credits === "string" ? row.credits : null,
+        remaining: pool?.remaining ?? null,
+        unit: pool?.unit ?? policy.cost.unit,
+        valueKind: row.pricingVerified && typeof row.credits === "string" ? "reported" : pool ? pool.valueKind : "unavailable",
+        freshness: "fresh",
+        hardCap: "unsupported",
+        catalogState: "available",
+        observedAt: pool?.observedAt ?? at,
+        expiresAt: pool?.expiresAt ?? null,
+      });
+    }
+
+    if (options.liveness) {
+      try {
+        const live = await options.liveness();
+        for (const row of live) {
+          const key = `${row.executorId}:${row.connectionId}:${row.providerId}`;
+          const index = executors.findIndex((item) => `${item.executorId}:${item.connectionId}:${item.providerId}` === key);
+          if (index >= 0) executors[index] = row; else executors.push(row);
+        }
+        sources.push({
+          source: "liveness", status: live.length ? "ok" : "missing", observedAt: at, expiresAt: null, entries: live.length,
+          detail: live.length ? `${live.length} live executor row(s) from the local executor registry.` : "The executor registry reported no live host.",
+          limitations: [],
+        });
+        if (!live.length) limitations.push("no_live_executor_registered");
+      } catch (error) {
+        sources.push({
+          source: "liveness", status: "unavailable", observedAt: null, expiresAt: null, entries: 0,
+          detail: `The executor registry could not be read: ${describeError(error)}`, limitations: ["liveness_unavailable"],
+        });
+        limitations.push("liveness_unavailable");
+      }
+    }
+
+    const catalogRows = catalog?.models ?? [];
+    const costEvidence: AutomationProbeCoverage["costEvidence"] =
+      catalogRows.some((row) => row.pricingVerified && typeof row.credits === "string") ? "executor_catalog"
+        : (quota?.observations.length ?? 0) + (credit?.balances.length ?? 0) > 0 ? "gateway_pool" : "unavailable";
+    if (costEvidence === "gateway_pool") limitations.push("cost_evidence_is_a_shared_pool_not_task_attribution");
+
+    return {
+      probeVersion: AUTOMATION_PROBE_VERSION,
+      readOnly: true,
+      observedAt: at,
+      policy: { policyId: policy.policyId, revision: policy.revision, version: policy.version },
+      executors,
+      models,
+      sources,
+      coverage: {
+        executors: executors.length ? "observed" : "unavailable",
+        catalog: catalogRows.length ? "observed" : declared?.connections.length ? "declared_only" : "missing",
+        costEvidence,
+        tokenEstimates: (quota?.observations.length ?? 0) > 0 ? "observed" : "unavailable",
+        creditCache: (credit?.balances.length ?? 0) === 0 ? "unavailable" : credit!.connections.some((item) => item.cacheFreshness === "fresh") ? "observed" : "stale",
+        taskAttribution: "unavailable",
+      },
+      limitations: [...new Set(limitations)],
+    };
+  };
+  return Object.assign(read, { kind: "read_only_local" as const });
+}
