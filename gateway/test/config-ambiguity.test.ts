@@ -61,7 +61,7 @@ test("the ambiguity refusal names every candidate and the variable that resolves
 test("an ambiguous executable alone is enough to refuse, and the message stays about the executable", () => {
   const message = ambiguityMessage({
     executable: { source: "ambiguous", candidates: ["C:\\A\\WorkBuddy.exe", "C:\\B\\WorkBuddyAI.exe"] },
-    config: { source: "detected", value: "C:\\Users\\x\\.workbuddy-ai", candidates: ["C:\\Users\\x\\.workbuddy-ai"] },
+    config: { source: "detected", value: "C:\\Users\\example\\.workbuddy-ai", candidates: ["C:\\Users\\example\\.workbuddy-ai"] },
   });
   assert.match(message, /C:\\A\\WorkBuddy\.exe/);
   assert.match(message, /C:\\B\\WorkBuddyAI\.exe/);
