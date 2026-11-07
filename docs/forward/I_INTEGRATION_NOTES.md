@@ -12,7 +12,7 @@
 | IR-A2 `package.json` 加 `readiness` / `bootstrap` 别名 | 接受 | `gateway/package.json` scripts | `npm run` 可解析（见候选验证） |
 | IR-A3 两脚本是否入候选包清单 | 接受：`scripts/readiness.mjs`、`scripts/bootstrap.mjs` 进入候选包 | `gateway/scripts/package.mjs` 文件清单 → 受管文件数 696 → 698 | `verify-release.mjs` 报 `verifiedFiles: 698` |
 | IR-A4 就绪报告走只读 GET | 已接 | `gateway/src/workbench-http.ts` `READINESS_PATH`；`gateway/src/workbench-entry.ts` | `test/workbench-readiness-route.test.ts` 5/5；本机降级启动实跑 |
-| IR-A5 不可读 journal 的 UI 语义 | 未接（本轮不做） | 需要动 `workbench/app.mjs` 的任务详情分支，与 B 线恢复体验耦合 | 无；记为遗留 |
+| IR-A5 不可读 journal 的 UI 语义 | 已接（本轮补做） | `gateway/workbench/attention.mjs`：新增 `UNREADABLE_JOURNAL = 'journal_unreadable'` 与独立 `attentionReason` 分支（标题「这一轮的执行记录读不出来」，正文声明「既不是任务完成，也不是任务失败」、不重派/不重试/不关闭、指向 `unreadable-journal` 来源）；卡片加 `data-retryable="false"`/`data-dismissible="false"` | `npm run test:workbench` 165/165（新增 `IR-A5 an unreadable journal…`） |
 | IR-A6 `respond()` 重复回答映射 409 语义 | 接受（MCP 侧以稳定错误码表达，HTTP 侧无该路由） | `gateway/src/server.ts` `workbuddy_respond_task` 包装：`INPUT_ALREADY_ANSWERED` | `test/run-journal.test.ts`（A 侧断言）+ `tsc` |
 | IR-A7 `publishFileSync` 重试 | 仅告知，无需接线 | — | A 侧三条用例 |
 
@@ -44,7 +44,7 @@ C 线仍在收尾，未回执。已由 I 侧先行落地、C 不需要再动的�
 | --- | --- | --- |
 | D-1 工作台进程内正式只读 probe | 接受 | `gateway/src/server.ts`：`TaskApplicationService` 第 6 参 `{ probe: createReadOnlyProbe({db, env, catalog}), probeKind:"read_only_local", armed:false }` |
 | D-2 导航与 405 覆盖自动化路径 | 已满足 | `gateway/src/workbench-http.ts:390-391` 已含 `AUTOMATION_PATH` 与其子路径；`handleAutomationRequest` 在 `:423-428` 接入 |
-| D-3 `automation_*` 四表入统一迁移 | 未接（本轮不做） | 四表由 `automation.ts` 自己的幂等建表路径保证；统一迁移改写会触碰既有安装根，风险大于收益，记为遗留 |
+| D-3 `automation_*` 四表入统一迁移 | 裁定为 **(b) 模块自建 + 显式声明版本**，不并入统一迁移；升级/幂等/回滚/旧库补表四种语义写进 `docs/AUTOMATION_SCHEMA_OWNERSHIP.md` | 决定与理由：`docs/AUTOMATION_SCHEMA_OWNERSHIP.md`；证据：`test/automation-policy.test.ts:348`（更高版本在建表前拒绝）、`:365`（同连接幂等） |
 | D-4 组合根用真实 config/env | 已满足 | `gateway/scripts/workbench-desktop-host.mjs`、`gateway/src/workbench-entry.ts` 均从 `loadConfig()` / `process.env` 取值 |
 | D-5 页面保留「受控政策执行，仍需每任务确认」 | B 侧页面文案已含；I 侧未改 | `gateway/workbench/automation.mjs` |
 

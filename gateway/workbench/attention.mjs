@@ -57,6 +57,12 @@ function reviewBlocking(view, review) {
     return `当前版本 ${view?.revision ?? '未提供'} 已有独立审查且检查项全部通过${started}；确认验收需要由人来提交。`;
 }
 
+/** IR-A5: a damaged run journal is its own reason, never a generic block.
+ * The record says why this attempt's events cannot be read; the card must not
+ * suggest a retry or a close, because either one would turn "unknown" into a
+ * conclusion the evidence does not support. */
+export const UNREADABLE_JOURNAL = 'journal_unreadable';
+
 /** Which saved fact puts this task here, in the reader's words. */
 export function attentionReason(record) {
     const view = record?.view;
@@ -77,7 +83,19 @@ export function attentionReason(record) {
     if (display === 'waiting_stop') return { code: 'stop_unconfirmed', title: '报告已到，原生停止未确认', why: `执行报告已记录（认证：${reportAuthentication(record)}），但停止证据缺失：停止记录时间 ${timeOrMissing(view.timing?.nativeStoppedAt)}。停止未确认时，返工、审查与验收都不能提交。`, next: near.stop_unconfirmed };
     if (display === 'waiting_input') return { code: 'input_waiting', title: '执行器在等待输入', why: '原会话停在等待输入，没有继续执行；这里没有替它作答的入口。', next: near.input_waiting };
     if (info.key === 'inconsistent') return { code: 'stop_unconfirmed', title: '待验收记录缺少停止证明', why: '记录写着待验收，但原生停止没有确认；这两个事实不能互相顶替。', next: near.stop_unconfirmed };
-    if (business === 'blocked' || info.key === 'blocked') return { code: 'blocked', title: '任务受阻', why: `已记录阻塞原因：${record.presentation?.blockingReason || '未提供'}。`, next: near.blocked };
+    if (business === 'blocked' || info.key === 'blocked') {
+        if (String(record.presentation?.blockingReason ?? '').trim() === UNREADABLE_JOURNAL) {
+            return {
+                code: UNREADABLE_JOURNAL,
+                title: '这一轮的执行记录读不出来',
+                why: '这一轮的事件记录损坏，读不到内容——这既不是任务完成，也不是任务失败。记录不可读时不能重派、不能重试、也不能关闭任务，那样会把「不知道」写成结论。',
+                next: '按原目录人工检查该轮次的事件文件（来源 unreadable-journal），确认发生了什么之后再决定是否重开一轮；本页不提供重试或关闭入口。',
+                retryable: false,
+                dismissible: false,
+            };
+        }
+        return { code: 'blocked', title: '任务受阻', why: `已记录阻塞原因：${record.presentation?.blockingReason || '未提供'}。`, next: near.blocked };
+    }
     if (info.key === 'needs_review') return { code: 'review_pending', title: stopMissing ? '待复核，但停止证据不完整' : '等待独立验收', why: reviewBlocking(view, review), next: stopMissing ? near.review_pending_unstopped : near.review_pending };
     if (info.key === 'failed' || info.key === 'expired') return { code: 'failed', title: info.label || '执行未完成', why: '本轮以未完成收场，执行容量与工作区需要按证据核对。', next: near.failed };
     if (ATTENTION_DISPLAY.includes(display) || ['unknown', 'inconsistent'].includes(info.key)) return { code: 'unknown_state', title: '状态无法判定', why: '状态与停止证明不一致或缺少必要记录；界面不替它选择一种解释。', next: near.unknown_state };
@@ -99,7 +117,11 @@ const FACT_LABELS = {
 export function renderAttention(record, { refresh } = {}) {
     const reason = attentionReason(record);
     if (!reason) return null;
-    const root = el('section', { class: 'attention-card', 'aria-label': '待处理原因与核对入口', 'data-reason': reason.code });
+    const root = el('section', {
+        class: 'attention-card', 'aria-label': '待处理原因与核对入口', 'data-reason': reason.code,
+        ...(reason.retryable === false ? { 'data-retryable': 'false' } : {}),
+        ...(reason.dismissible === false ? { 'data-dismissible': 'false' } : {}),
+    });
     root.append(el('h3', {}, reason.title), el('p', { class: 'attention-why' }, reason.why), el('p', { class: 'attention-next' }, '下一步：' + reason.next));
     const facts = el('div', { class: 'attention-facts', hidden: true });
     const button = el('button', { class: 'button', type: 'button', onclick: async () => {

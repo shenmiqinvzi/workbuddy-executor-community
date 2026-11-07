@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { attentionItems, attentionReason, offersDeclaration, evidenceFacts, reportAuthentication } from '../attention.mjs';
+import { attentionItems, attentionReason, offersDeclaration, evidenceFacts, reportAuthentication, UNREADABLE_JOURNAL } from '../attention.mjs';
 
 // The real panel record keeps the report on `presentation.report` (see
 // model.mjs proofs()); an authentication field on `view` does not exist, so
@@ -168,4 +168,15 @@ test('reportAuthentication reads only the recorded presentation shape', () => {
     assert.equal(reportAuthentication(record({}, { presentation: { report: { authentication: 'weird' } } })), 'weird');
     assert.equal(reportAuthentication(null), '未提供');
     assert.equal(reportAuthentication({ view: { reportAuthentication: 'authenticated' } }), '未提供');
+});
+
+test('IR-A5 an unreadable journal is its own reason and offers neither retry nor close', () => {
+    const reason = attentionReason(record({ displayState: 'blocked', businessState: 'blocked' }, { presentation: { blockingReason: 'journal_unreadable' } }));
+    assert.equal(reason.code, UNREADABLE_JOURNAL);
+    assert.equal(reason.retryable, false);
+    assert.equal(reason.dismissible, false);
+    // It must not read as an outcome: the record is missing, not the work.
+    assert.match(reason.why, /既不是任务完成，也不是任务失败/);
+    assert.match(reason.next, /不提供重试或关闭入口/);
+    assert.match(reason.next, /unreadable-journal/);
 });
