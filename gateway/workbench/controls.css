@@ -33,7 +33,9 @@
 .attention-fact-value {font-family:var(--mono,ui-monospace,SFMono-Regular,Menlo,monospace)}
 .attention-error {font-size:13px;line-height:1.65;margin:0;color:var(--text)}
 .attention-declare {margin-top:16px;padding-top:14px;border-top:1px solid var(--border)}
-.attention-declare summary {font-size:13px;font-weight:600;cursor:pointer}
+/* A disclosure target keeps a 24px hit area: at 13px type the bare line is a
+   20px target, which a mouse or a thumb misses on a small screen. */
+.attention-declare summary {font-size:13px;font-weight:600;cursor:pointer;padding:3px 0}
 .attention-label {display:block;font-size:12px;color:var(--muted);margin:12px 0 6px}
 .attention-declare textarea,.attention-declare input {display:block;width:100%;margin-top:8px;padding:9px 12px;border:1px solid var(--control);border-radius:var(--radius);background:var(--surface);color:var(--text);font:inherit;line-height:1.55}
 .attention-declare textarea {min-height:72px;resize:vertical;caret-color:var(--accent)}

@@ -96,7 +96,16 @@ export function renderDesktopControls(record,{refresh}) {
         return receipt.message||messages[receipt.state]||'操作状态待核查。';
     }
     async function loadReceipts() {
-        try {receipts=await desktopRequest('control_list',{taskId,attemptId});if(!root.isConnected)return;setBusy(busy);if(receipts.length)status.textContent=describe(receipts[0]);}
+        try {
+            // A readable command can still answer with nothing (an older host, or a
+            // record whose control journal was pruned). That is "no receipt yet", not
+            // a crash: keep an empty list so the buttons stay usable.
+            const list=await desktopRequest('control_list',{taskId,attemptId});
+            receipts=Array.isArray(list)?list:[];
+            if(!root.isConnected)return;
+            setBusy(busy);
+            if(receipts.length)status.textContent=describe(receipts[0]);
+        }
         catch(error){if(root.isConnected)status.textContent=error.message||'回执暂不可用，请稍后刷新。';}
     }
     async function observe() {

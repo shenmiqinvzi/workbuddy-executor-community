@@ -29,8 +29,10 @@
 .dispatch-notice {padding:12px 16px;margin-bottom:24px;border:1px solid var(--control);border-radius:var(--radius);color:var(--muted);overflow-wrap:anywhere}
 .dispatch-notice.is-error {color:var(--negative);border-color:var(--negative)}
 .dispatch-advanced {padding:14px 0;border-top:1px solid var(--border)}
-.dispatch-advanced summary {cursor:pointer;font-weight:500}
-.dispatch-advanced[open] summary {margin-bottom:18px}
+/* The disclosure target keeps a 24px hit area at every width: it is the only
+   control that carries the task identity, and on a phone a 21px line is a miss. */
+.dispatch-advanced summary {cursor:pointer;font-weight:500;padding:4px 0}
+.dispatch-advanced[open] summary {margin-bottom:14px}
 .dispatch-objective {white-space:pre-wrap;max-width:72ch;line-height:1.75;margin-bottom:24px}
 .dispatch-facts {display:grid;grid-template-columns:100px minmax(0,1fr);gap:12px 18px;line-height:1.65;margin:24px 0}
 .dispatch-facts dt {color:var(--muted)}
@@ -71,7 +73,7 @@
 .plan-resource-facts dt {color:var(--muted)}
 .plan-resource-facts dd {margin:0;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
 .plan-resource-limits {font-size:12px;line-height:1.65;color:var(--muted)}
-.plan-resource-limits summary {cursor:pointer;color:var(--text)}
+.plan-resource-limits summary {cursor:pointer;color:var(--text);padding:3px 0}
 .plan-resource-limits[open] summary {margin-bottom:8px}
 .plan-resource-limits ul {margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px}
 .plan-resource-limits li {overflow-wrap:anywhere}

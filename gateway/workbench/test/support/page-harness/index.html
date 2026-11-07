@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>任务工作台 · 隔离页面验证</title>
+<link rel="stylesheet" href="../../../style.css">
+<link rel="stylesheet" href="../../../dispatch.css">
+<link rel="stylesheet" href="../../../controls.css">
+</head>
+<body>
+<!-- An isolated page: the real stylesheets and the real page modules, with a
+     stubbed host. It is not the desktop window; it only proves what the page
+     itself renders at a given viewport. -->
+<input id="data-source" value="live" type="hidden">
+<main class="sheet">
+  <div class="page-heading">
+    <h1 id="page-title">任务工作台</h1>
+    <p class="page-intro">执行有记录，交付有依据。</p>
+    <div class="heading-tools"></div>
+  </div>
+  <section id="panel-slot" aria-label="任务记录"></section>
+  <section id="attention-slot" aria-label="需要人工核对的记录"></section>
+  <section id="controls-slot" aria-label="任务操作示例"></section>
+</main>
+<script type="module" src="./boot.mjs"></script>
+</body>
+</html>
