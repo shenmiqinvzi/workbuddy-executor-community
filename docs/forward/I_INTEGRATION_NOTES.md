@@ -56,6 +56,19 @@ C 线仍在收尾，未回执。已由 I 侧先行落地、C 不需要再动的�
 4. `gateway/package.json`：`readiness`、`bootstrap`、`probe:pages` 三个别名（A-2、B-5）。
 5. `gateway/test/desktop-command-template.test.ts`：新增 5 条合成断言。
 6. `gateway/test/productivity-service.test.ts`：导出夹具补真实三条事件（原夹具只给游标，计数改为「实际读取条数」后必然为 0）。
+7. `gateway/src/read-only-probe.ts`：read-only probe 的门面（新增）。`server.ts` 只能从这里拿到不可派工的观测接口，自动化模块的名字不再出现在 MCP 入口——`test/automation-policy.test.ts:340` 那条「server.ts 不得暴露自动化写工具」的断言就是这么守住的，改回直接 import `./automation.js` 会立刻红。
+8. `gateway/scripts/package.mjs` + `gateway/test/package.test.ts`：候选包必须带 `scripts/readiness.mjs`、`scripts/bootstrap.mjs`、`src/readiness.ts`、`dist/readiness.js`、`src/installation-bootstrap.ts`、`dist/installation-bootstrap.js`；打包夹具同步补齐，否则发布包在别人机器上无法自诊断也无法自举依赖。
+
+## IR-C 处置（C 线在合入后补齐）
+
+| 请求 | 结论 | 落点 | 验证 |
+| --- | --- | --- | --- |
+| C-1 quota 文档契约升版 | 接受：`QUOTA_RESOURCE_SCHEMA` 升 `workbuddy-executor/quota-2`，逐来源 `readings[]` 必填并逐项校验；`workbuddy-executor/quota-1` 作为旧文档只声明「没有逐来源读数」，不伪造 | `gateway/src/quota-observation.ts`、`gateway/workbench/resources-model.mjs`、`gateway/src/statistics-contract.ts` | `test/desktop-readonly-resources.test.ts` 27/27、`test/workbench-http.test.ts`、`workbench/test/resources-model.test.mjs` |
+| C-2 `tool_call_finished` 生产端 | 接受：接在 `gateway/src/dsh-coordinator.ts` 的 `sync()` 末端，只从真实 Harness 事件流产出，`observeOnly` 不写 | `gateway/src/dsh-coordinator.ts`、`gateway/src/statistics-harness-calls.ts` | `test/dsh-harness-call-events.test.ts`、`test/statistics-harness-calls.test.ts` |
+| C-3 打包守卫夹具 | 已改 `example`，勿回滚 | `gateway/test/statistics-call-events.test.ts:78` | 11/11 |
+| C-4 `docs/RESOURCE_DOCUMENT_CONTRACT.md` | 接受 | 见该文件 | — |
+
+> 合入期还发现一条**构建纪律**：`gateway/scripts/workbench-read-store.mjs:7` 从 `../dist/quota-observation.js` 读，源码改了不 `npm run build`，桌面只读路径就会读出版本漂移（本轮真的发生过，`desktop-readonly-resources` 报 `quota-1` vs `quota-2`）。所以「改 `src` → `npm run build` → 再跑该文件」是硬顺序，已写进 `TOTAL_RECEIPT.md` §4.1。
 
 ## 仍然缺口（不得在本轮被读成已完成）
 
