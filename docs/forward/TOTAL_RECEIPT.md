@@ -10,7 +10,7 @@
 | 集成树 | `E:\javaproject\workbuddy-forward-20261107\I-integration` |
 | 分支 | `integration/forward-delivery` |
 | 起点 | `134cdc7febbf858e89fb1010cf6b9d72da5edbe7`（`workbuddy-finish\R-review-fixes`，分支 `fix/delivery-review-r1-r4`） |
-| 本轮最新提交 | 见 §3 表末行 |
+| 本轮最新提交 | `9759288`（代码提交止于 `21764ec`；`9759288` 只改 `docs/forward/**`，不进发布包，见 §5 可复现性） |
 | 证据根 | `E:\javaproject\outputs\forward-delivery-20261107\`（`A/ B/ C/ D/ I/ shared/`） |
 | 续接入口 | `docs/forward/I_CHECKPOINT_2.md`、证据根 `RESUME.md` |
 | 计划包 | `E:\javaproject\workbuddy-development-plan-20261107\`（10 个 md） |
@@ -100,6 +100,8 @@
 
 > 更早两个中间包 `outputs\candidate-cp2`（734 文件 / `61dc0456…`）与 `outputs\candidate-final`（745 文件 / `b3a8a86a…`）、`candidate-final2`（`49c8ba09…`）只保留作对照，**不是**本轮候选。
 
+**可复现性**：同一 tree 重新打包得到同一 SHA-256。`21764ec` 与 `9759288`（只加文档）两次打包均为 `86018f5d…`，字节数均 2,481,829——`scripts/package.mjs` 固定条目时间 1980-01-01 与压缩参数；`docs/forward/**` 不在发布包白名单。对照包 `I\candidate-repro-check`，说明 `I\candidate-reproducibility.md`。
+
 ## 6. 本轮新增能力（每条都在 §4 有测试）
 
 1. **`local_check_finished` 真实生产**：`TaskReviews.publishCallFact` 在 `checks()`/`runCommand()` 里写真实检查事实，去重键 `review-call:*`，字节取自真实输出文件，未测不写 0。契约 `docs/CALL_EVENT_CONTRACT.md`。
@@ -133,15 +135,23 @@
 
 ```powershell
 cd E:\javaproject\workbuddy-forward-20261107\I-integration
-git log --oneline -8
+git log --oneline -10
+git status --porcelain          # 期望为空
 cd gateway
 npx tsc --noEmit -p tsconfig.json
+npm run typecheck:task-view
 $env:WORKBUDDY_CONFIG_DIR='C:\Users\LENOVO\.workbuddy-ai'
 npx tsx --test test/check-call-events.test.ts test/config-ambiguity.test.ts test/readiness.test.ts test/workbench-readiness-route.test.ts
-npx tsx --test test/desktop-readonly-resources.test.ts test/workbench-http.test.ts
+npx tsx --test test/dsh-adapter.test.ts test/statistics.test.ts test/desktop-readonly-resources.test.ts test/workbench-http.test.ts
+npx tsx --test --test-concurrency=1 test/**/*.test.ts   # 串行才是干净基线；默认并发每轮会有 1 枚争用失败
 npm run test:workbench
 npm run desktop:test
 node scripts/readiness.mjs        # 未设 config：exit 1 + 候选清单，不写配置
+
+# 候选包复算（期望 ZIP SHA-256 86018F5D0EE0AE84B966A0D6B9D830099CC0D4B19F4E200DC5837FCEF9369593）
+npm run build
+node scripts/package.mjs E:\javaproject\outputs\forward-delivery-20261107\I\repro-review
+Get-FileHash E:\javaproject\outputs\forward-delivery-20261107\I\repro-review\codex-workbuddy-gateway-v0.7.1.zip -Algorithm SHA256
 ```
 
-只看结论的读者：先读本文件 §2，再读 `docs/forward/SCENARIO_INDEX.md` 的「总读法」，其余按需展开。
+不看源码只看证据的读者：`E:\javaproject\outputs\forward-delivery-20261107\RESUME.md`（续接入口）→ 本文件 §2（状态分档）→ `SCENARIO_INDEX.md`（53 项）→ `TASK_LEDGER.md`（31 项）→ `I\ENV_FINDINGS.md`（环境噪声 E1–E5）→ `I\candidate-reproducibility.md`。
