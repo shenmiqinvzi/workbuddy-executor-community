@@ -156,10 +156,18 @@ test("a saved token pool reaches only its exact model, and can carry a known-cos
   assert.equal(report.coverage.costEvidence, "gateway_pool");
   assert.ok(report.limitations.includes("cost_evidence_is_a_shared_pool_not_task_attribution"));
 
+  // R2: a saved gateway pool is a shared estimate without verified routing, so it reaches the report
+  // but cannot stand behind a known-cost decision. The number is shown, never spent.
+  const balance = report.models[0]?.balance;
+  assert.equal(balance?.kind, "estimated");
+  assert.equal(balance?.unit, "tokens");
+  assert.equal(balance?.remaining, 1000);
+  assert.equal(balance?.routing, "unverified");
+  assert.match(balance?.source ?? "", /^quota:/);
   const evaluation = await automation.evaluate({ proposal: fixture.proposal() });
-  assert.equal(evaluation.decision, "delegate", JSON.stringify(evaluation.blocks));
-  assert.equal(evaluation.cost.evidence, "estimated");
-  assert.equal(evaluation.cost.remaining, 1000);
+  assert.equal(evaluation.decision, "wait", JSON.stringify(evaluation.blocks));
+  assert.ok(evaluation.blocks.some((block) => block.code === "COST_CONTROL_UNAVAILABLE" && block.field === "cost.routing"), JSON.stringify(evaluation.blocks));
+  assert.equal(evaluation.cost.remaining, 1000, "the observed number is still reported");
 });
 
 test("a stale saved pool is not presented as a live reading", async (t) => {

@@ -129,6 +129,17 @@ export interface AutomationProbeModel {
   catalogState: "available" | "missing";
   observedAt: string;
   expiresAt: string | null;
+  /**
+   * R2 — a catalog multiplier is a *rate*, not a balance: `credits` proves what one unit costs, it
+   * never proves how much is left. Kept separate so `known_cost` cannot read a rate as a balance.
+   */
+  rate?: { kind: "reported" | "unavailable"; value: string | null };
+  /**
+   * R2 — the balance surface, with the two facts a cost threshold needs: the unit it is counted in
+   * and whether the source routes the number to *this* executor/connection/model. A shared pool
+   * reports `routing: "unverified"`, so it can never satisfy `known_cost`.
+   */
+  balance?: { kind: "reported" | "estimated" | "unavailable"; unit: "credit" | "tokens"; remaining: number | null; routing: "verified" | "unverified"; source: string | null };
 }
 
 export interface AutomationProbeExecutor {
@@ -1185,34 +1196,81 @@ export class AutomationService {
     const executorRow = probe.executors.find((row) => row.executorId === policy.executor.executorId && row.connectionId === policy.executor.connectionId && row.providerId === policy.executor.providerId);
     if (!executorRow) block("EXECUTOR_UNAVAILABLE", "executor", "The saved executor/connection is not in the current catalog.");
     else if (!executorRow.online || !executorRow.dispatchable) block("EXECUTOR_UNAVAILABLE", "executor", `The saved executor is not dispatchable (${executorRow.evidence}).`);
-    const modelRow = probe.models.find((row) => row.executorId === policy.executor.executorId && row.connectionId === policy.executor.connectionId &&
+    // R3: a catalog lists the same model once per reported reasoning effort. Picking the first row
+    // by model identity and then asking whether *that* row mentions the saved effort makes the
+    // decision depend on catalog order, and silently substitutes a neighbour effort. Group by model
+    // identity first, keep every row as its own evidence, then resolve the saved effort.
+    const identityRows = probe.models.filter((row) => row.executorId === policy.executor.executorId && row.connectionId === policy.executor.connectionId &&
       row.providerId === policy.executor.providerId && row.modelId === policy.executor.modelId);
-    if (!modelRow) block("MODEL_UNVERIFIED", "model", "The exact model is not in the current catalog.");
+    const availableEfforts = [...new Set(identityRows.flatMap((row) => row.reasoningEfforts))];
+    const effortMatched = policy.executor.reasoningEffort === null
+      ? identityRows.length > 0
+      : identityRows.some((row) => row.reasoningEfforts.includes(policy.executor.reasoningEffort));
+    const modelRow = identityRows.find((row) => row.reasoningEfforts.includes(policy.executor.reasoningEffort)) ?? identityRows[0];
+    if (!identityRows.length) block("MODEL_UNVERIFIED", "model", "The exact model is not in the current catalog.");
     else {
-      if (modelRow.catalogState !== "available") block("MODEL_UNVERIFIED", "model", "The exact model is missing from the catalog.");
-      if (policy.executor.reasoningEffort !== null && !modelRow.reasoningEfforts.includes(policy.executor.reasoningEffort)) {
-        block("MODEL_UNVERIFIED", "executor.reasoningEffort", "The model does not report the saved reasoning effort.");
+      if (!modelRow || modelRow.catalogState !== "available") block("MODEL_UNVERIFIED", "model", "The exact model is missing from the catalog.");
+      if (!effortMatched) {
+        block("MODEL_UNVERIFIED", "executor.reasoningEffort",
+          `The model does not report the saved reasoning effort${policy.executor.reasoningEffort === null ? "" : ` (${policy.executor.reasoningEffort})`}; reported: ${availableEfforts.map((value) => value ?? "none").join(", ") || "none"}.`);
       }
-      const modelAt = Date.parse(modelRow.observedAt);
+      const modelAt = Date.parse(modelRow?.observedAt ?? "");
       if (!Number.isFinite(modelAt) || nowMs - modelAt > PROBE_FRESH_MS) block("QUOTA_UNAVAILABLE", "cost.observedAt", "The quota observation is stale.");
-      if (modelRow.expiresAt && Date.parse(modelRow.expiresAt) <= nowMs) block("QUOTA_UNAVAILABLE", "cost.expiresAt", "The quota observation expired.");
+      if (modelRow?.expiresAt && Date.parse(modelRow.expiresAt) <= nowMs) block("QUOTA_UNAVAILABLE", "cost.expiresAt", "The quota observation expired.");
     }
 
-    const evidence = !modelRow || modelRow.freshness === "unavailable" || modelRow.valueKind === "unavailable" ? "unavailable" as const : modelRow.valueKind;
-    const remaining = modelRow?.remaining ?? null;
+    // R2: rate, balance and hard cap are three different capabilities. A catalog multiplier proves a
+    // rate; it says nothing about how much is left. Only a balance that names its unit, and whose
+    // source routes the number to this executor/connection/model, may stand behind a cost threshold.
+    const rate = modelRow?.rate ?? {
+      kind: (typeof modelRow?.credits === "string" ? "reported" : "unavailable") as "reported" | "unavailable",
+      value: typeof modelRow?.credits === "string" ? modelRow.credits : null,
+    };
+    const balance = modelRow?.balance ?? (modelRow && modelRow.remaining !== null
+      ? {
+        kind: (modelRow.valueKind === "reported" ? "reported" : modelRow.valueKind === "estimated" ? "estimated" : "unavailable") as "reported" | "estimated" | "unavailable",
+        unit: modelRow.unit,
+        remaining: modelRow.remaining,
+        routing: (modelRow.valueKind === "reported" ? "verified" : "unverified") as "verified" | "unverified",
+        source: modelRow.valueKind === "reported" ? "probe" : null,
+      }
+      : { kind: "unavailable" as const, unit: modelRow?.unit ?? policy.cost.unit, remaining: null as number | null, routing: "unverified" as const, source: null as string | null });
+    const evidence = balance.kind === "unavailable" ? "unavailable" as const : balance.kind;
+    const remaining = balance.remaining;
     const hardCapSupported = modelRow?.hardCap === "reported";
+    const unitMatches = Boolean(modelRow) && balance.unit === policy.cost.unit;
+    const verifiedBalances = identityRows.filter((row) => row.balance?.routing === "verified" && row.balance.remaining !== null);
+    const distinctBalances = new Set(verifiedBalances.map((row) => `${row.balance!.source ?? "unknown"}:${row.balance!.remaining}`));
     let note = "";
     if (policy.cost.mode === "free_only") {
       note = "free_only proves a reported x0.00 rate for the exact model.";
-      if (!modelRow || modelRow.valueKind === "unavailable" || modelRow.freshness !== "fresh") block("QUOTA_UNAVAILABLE", "cost", "A free-only policy needs a fresh reported rate.");
-      else if (!FREE_CREDITS.test(modelRow.credits ?? "")) block("MODEL_UNVERIFIED", "cost.credits", "The model rate is not a proven x0.00.");
+      if (!modelRow || rate.kind === "unavailable" || modelRow.freshness !== "fresh") block("QUOTA_UNAVAILABLE", "cost", "A free-only policy needs a fresh reported rate.");
+      else if (!FREE_CREDITS.test(rate.value ?? "")) block("MODEL_UNVERIFIED", "cost.credits", "The model rate is not a proven x0.00.");
+      if (modelRow && !unitMatches) {
+        block("COST_CONTROL_UNAVAILABLE", "cost.unit", `The saved balance is in ${balance.unit} while the policy is in ${policy.cost.unit}; the two numbers are not comparable.`);
+        limits.push("cost_unit_mismatch");
+      }
     } else if (policy.cost.mode === "known_cost") {
-      note = "known_cost needs a reported balance and a hard cap when one was requested.";
-      if (!modelRow || evidence === "unavailable" || modelRow.freshness !== "fresh") block("QUOTA_UNAVAILABLE", "cost", "A known-cost policy needs a fresh reported balance.");
+      note = "known_cost needs a reported per-model balance with a named unit and verified routing; a catalog multiplier is only a rate.";
+      if (!modelRow || balance.kind === "unavailable" || remaining === null || modelRow.freshness !== "fresh") {
+        block("QUOTA_UNAVAILABLE", "cost", "A known-cost policy needs a fresh reported balance for this exact model; a multiplier alone is not a balance.");
+      }
+      if (balance.routing !== "verified") {
+        block("COST_CONTROL_UNAVAILABLE", "cost.routing", "The saved balance is not routed to this executor/connection/model; a shared pool cannot satisfy known_cost.");
+        limits.push("cost_routing_unverified");
+      }
+      if (modelRow && !unitMatches) {
+        block("COST_CONTROL_UNAVAILABLE", "cost.unit", `The saved balance is in ${balance.unit} while the policy is in ${policy.cost.unit}; the two numbers are not compared.`);
+        limits.push("cost_unit_mismatch");
+      }
+      if (distinctBalances.size > 1) {
+        block("COST_CONTROL_UNAVAILABLE", "cost.source", "More than one verified balance claims this model; name one source before a known-cost decision.");
+        limits.push("cost_source_ambiguous");
+      }
       if (policy.cost.requiresHardCap && !hardCapSupported) block("COST_CONTROL_UNAVAILABLE", "cost.hardCap", "The source cannot enforce a hard spending cap for this model.");
       if (policy.cost.requiresHardCap && !hardCapSupported && modelRow?.hardCap === "unsupported") limits.push("paid_source_without_hard_cap_refused");
       if (remaining !== null && remaining <= 0) block("QUOTA_EXHAUSTED", "cost.remaining", "The reported balance is exhausted.");
-      else if (remaining !== null && policy.cost.ceiling !== null && remaining < policy.cost.ceiling) {
+      else if (remaining !== null && unitMatches && policy.cost.ceiling !== null && remaining < policy.cost.ceiling) {
         block("QUOTA_EXHAUSTED", "cost.remaining", "The reported balance cannot cover the per-task ceiling.");
       }
     } else {
@@ -1220,8 +1278,8 @@ export class AutomationService {
       limits.push("cost_unknown_not_a_hard_cap");
       if (policy.cost.requiresHardCap) block("COST_CONTROL_UNAVAILABLE", "cost.hardCap", "An unknown price cannot satisfy a requested hard cap.");
       if (remaining !== null && remaining <= 0) block("QUOTA_EXHAUSTED", "cost.remaining", "The reported balance is exhausted.");
+      if (modelRow && !unitMatches) limits.push("cost_unit_mismatch");
     }
-    if (policy.cost.unit !== (modelRow?.unit ?? policy.cost.unit)) limits.push("cost_unit_mismatch");
 
     const candidate: AutomationCandidate = {
       execution, status: blocks.length === 0 ? "candidate" : "excluded", blocks: blocks.slice(), limits: limits.slice(),
@@ -1530,18 +1588,25 @@ export function createReadOnlyProbe(options: AutomationReadOnlyProbeOptions = {}
         });
       }
       const pool = poolFor(execution.modelId);
+      const reportedRate = row.pricingVerified && typeof row.credits === "string";
       models.push({
         executorId: execution.executorId, connectionId: execution.connectionId, providerId: execution.providerId,
         modelId: execution.modelId, reasoningEfforts: [execution.reasoningEffort],
         credits: typeof row.credits === "string" ? row.credits : null,
         remaining: pool?.remaining ?? null,
         unit: pool?.unit ?? policy.cost.unit,
-        valueKind: row.pricingVerified && typeof row.credits === "string" ? "reported" : pool ? pool.valueKind : "unavailable",
+        valueKind: reportedRate ? "reported" : pool ? pool.valueKind : "unavailable",
         freshness: "fresh",
         hardCap: "unsupported",
         catalogState: "available",
         observedAt: pool?.observedAt ?? at,
         expiresAt: pool?.expiresAt ?? null,
+        // A verified multiplier is a rate. A saved pool is a balance, but it is a shared gateway
+        // pool without verified routing, so it can never satisfy `known_cost` on its own.
+        rate: { kind: reportedRate ? "reported" : "unavailable", value: typeof row.credits === "string" ? row.credits : null },
+        balance: pool
+          ? { kind: pool.valueKind, unit: pool.unit, remaining: pool.remaining, routing: "unverified", source: pool.evidence }
+          : { kind: "unavailable", unit: policy.cost.unit, remaining: null, routing: "unverified", source: null },
       });
     }
 
