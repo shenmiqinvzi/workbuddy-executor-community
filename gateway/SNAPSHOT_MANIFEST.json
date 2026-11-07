@@ -525,8 +525,8 @@
     },
     {
       "path": "scripts/workbench-desktop-host.mjs",
-      "sha256": "0b9cd57884689357fa0be1f483d2fa220b4599f433ae0fde4da14f5e461f856a",
-      "bytes": 5955
+      "sha256": "b0d4c0551e657fe690b4d127fa291f609f59fb4895893c6a36e9797f2e8993c6",
+      "bytes": 6251
     },
     {
       "path": "scripts/workbench-dispatch-worker.mjs",

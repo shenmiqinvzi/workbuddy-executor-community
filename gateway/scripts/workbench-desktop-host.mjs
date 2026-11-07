@@ -12,6 +12,9 @@ import { TaskStore } from '../dist/task-store.js';
 import { readRunSnapshot } from '../dist/native-stop-declaration.js';
 import { WorkbenchHttpServer, workbenchHealth } from '../dist/workbench-http.js';
 import { runtimeVersion } from '../dist/runtime-version.js';
+// The window is the place where "why is nothing dispatchable" gets asked, so the same
+// read-only five-layer diagnosis the CLI prints has to answer here too. It only reads.
+import { observeReadiness } from '../dist/readiness.js';
 import { runsDirectory } from '../dist/run-journal.js';
 import { loadDotEnv } from '../dist/env.js';
 import { createDesktopDispatchSession, desktopJournal } from '../dist/desktop-dispatch-runtime.js';
@@ -47,6 +50,7 @@ const server = new WorkbenchHttpServer({
     health: () => workbenchHealth({ runtime: runtimeVersion }),
     statistics: statisticsSources(store),
     productivity: productivity.sources,
+    readiness: { observe: () => observeReadiness({ config }) },
 });
 try {
     const port = await server.listen(0);
