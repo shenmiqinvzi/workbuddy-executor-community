@@ -69,6 +69,10 @@ export const USAGE_LIMITATIONS = [
   "partial_stream",
   "price_unknown",
   "reasoning_time_unavailable",
+  // Added with the C03 observation adapter: the upstream publishes a request id
+  // but no amount, and an attempt binding can be genuinely absent.
+  "no_measured_amount",
+  "attempt_binding_incomplete",
 ] as const;
 
 export type UsageLimitation = (typeof USAGE_LIMITATIONS)[number];
@@ -739,4 +743,235 @@ export function attributeTaskUsageFromLedger(input: {
 }): TaskUsageAttribution {
   const read = readUsageRecordsFromFile(input.file, { taskId: input.taskId });
   return attributeTaskUsage({ taskId: input.taskId, records: read.records, attemptIds: input.attemptIds, maxRefs: input.maxRefs });
+}
+
+// ---------------------------------------------------------------------------
+// Request observation adapter (C03: the trusted write path into the ledger)
+// ---------------------------------------------------------------------------
+
+/**
+ * What the gateway itself observes when it starts one upstream request.
+ *
+ * Every field here is read from a real object the gateway holds at dispatch
+ * time: the harness `prompt` reply (request id), the attempt binding (task,
+ * attempt, session), the declared connection/model/reasoning choice, and the
+ * dispatch clock. Nothing is parsed out of model prose.
+ */
+export const REQUEST_OBSERVATION_SCHEMA = "workbuddy-executor/request-observation-1";
+
+/** Units this adapter may write. It never invents a price, so no currency row. */
+export const REQUEST_OBSERVATION_UNITS: readonly UsageUnit[] = ["tokens", "credits"];
+
+export type RequestObservationRejection =
+  | { field: string; code: "unsupported_schema" | "invalid_observation" | "unit_not_observed" };
+
+export interface RequestObservation {
+  schemaVersion?: typeof REQUEST_OBSERVATION_SCHEMA;
+  /** The upstream request id returned when the prompt was accepted. */
+  requestId: string;
+  taskId?: string | null;
+  attemptId?: string | null;
+  sessionId?: string | null;
+  executorId: string;
+  runtimeSource?: string | null;
+  connectionId?: string | null;
+  providerId?: string | null;
+  /** Model the gateway actually selected, when a selection exists. */
+  modelId?: string | null;
+  reasoningEffort?: string | null;
+  role: UsageRole;
+  /** When the request was accepted by the upstream. */
+  occurredAt: string;
+  /** When the gateway recorded the observation; defaults to now. */
+  observedAt?: string;
+  retryOf?: string | null;
+  retryIndex?: number;
+  scopeKind: UsageScopeKind;
+  scopeId?: string | null;
+  /** Why no amount is attached; recorded on every row as its method. */
+  method?: string | null;
+}
+
+export interface RequestObservationRows {
+  schemaVersion: typeof REQUEST_OBSERVATION_SCHEMA;
+  /** Rows are always `valueKind: "unavailable"` with `value: null`. */
+  records: UpstreamUsageRecord[];
+  limitations: UsageLimitation[];
+  rejected: RequestObservationRejection[];
+}
+
+const OBSERVATION_METHOD = "harness_does_not_report_usage";
+
+/**
+ * Turn one observed request into ledger rows that cannot overclaim.
+ *
+ * The upstream harness publishes a request id but never a token, credit or
+ * currency amount, so each row says `unavailable` with `value: null`. Writing
+ * `0` here would be read downstream as "this request cost nothing", which is a
+ * different claim from "this build cannot see the cost".
+ */
+export function buildRequestObservationRows(observation: RequestObservation, now: Date = new Date()): RequestObservationRows {
+  const rejected: RequestObservationRejection[] = [];
+  const limitations = new Set<UsageLimitation>(["no_measured_amount", "task_attribution_inferred"]);
+  if (observation.schemaVersion !== undefined && observation.schemaVersion !== REQUEST_OBSERVATION_SCHEMA) {
+    rejected.push({ field: "schemaVersion", code: "unsupported_schema" });
+    return { schemaVersion: REQUEST_OBSERVATION_SCHEMA, records: [], limitations: [...limitations], rejected };
+  }
+  if (observation.scopeKind === "gateway_pool") limitations.add("shared_pool");
+  if (observation.retryOf !== null && observation.retryOf !== undefined) limitations.add("request_retried");
+  if (observation.attemptId === null || observation.attemptId === undefined) limitations.add("attempt_binding_incomplete");
+
+  const rows: UpstreamUsageRecord[] = [];
+  for (const unit of REQUEST_OBSERVATION_UNITS) {
+    rows.push({
+      requestId: observation.requestId,
+      retryOf: observation.retryOf ?? null,
+      retryIndex: observation.retryIndex ?? (observation.retryOf ? 1 : 0),
+      occurredAt: observation.occurredAt,
+      observedAt: observation.observedAt ?? now.toISOString(),
+      executorId: observation.executorId,
+      runtimeSource: observation.runtimeSource ?? null,
+      connectionId: observation.connectionId ?? null,
+      providerId: observation.providerId ?? null,
+      modelId: observation.modelId ?? null,
+      reasoningEffort: observation.reasoningEffort ?? null,
+      sessionId: observation.sessionId ?? null,
+      taskId: observation.taskId ?? null,
+      attemptId: observation.attemptId ?? null,
+      role: observation.role,
+      unit,
+      currency: null,
+      scopeKind: observation.scopeKind,
+      scopeId: observation.scopeId ?? null,
+      value: null,
+      valueKind: "unavailable",
+      method: observation.method ?? OBSERVATION_METHOD,
+      limitations: [...limitations].sort(),
+    });
+  }
+  return { schemaVersion: REQUEST_OBSERVATION_SCHEMA, records: rows, limitations: [...limitations].sort(), rejected };
+}
+
+export interface RequestObservationWrite {
+  requestId: string;
+  writeout: UsageWriteOutcome[];
+}
+
+/**
+ * Validate every row through the strict parser before it can reach the ledger,
+ * then write it. A row that fails validation is reported, never repaired.
+ */
+export function recordRequestObservation(
+  ledger: UsageLedger,
+  observation: RequestObservation,
+  sourceScope: string,
+  now: Date = new Date(),
+): { ok: boolean; outcomes: UsageWriteOutcome[]; rejected: RequestObservationRejection[] } {
+  const built = buildRequestObservationRows(observation, now);
+  if (built.rejected.length > 0) return { ok: false, outcomes: [], rejected: built.rejected };
+  const outcomes: UsageWriteOutcome[] = [];
+  for (const [index, row] of built.records.entries()) {
+    const parsed = parseUpstreamUsageEnvelope({
+      schemaVersion: UPSTREAM_USAGE_SCHEMA,
+      generatedAt: null,
+      records: [row],
+      limitations: [],
+    });
+    if (!parsed.ok) {
+      return { ok: false, outcomes, rejected: [{ field: `records[${index}].${parsed.field}`, code: "invalid_observation" }] };
+    }
+    const [record] = parsed.envelope.records;
+    if (!record) return { ok: false, outcomes, rejected: [{ field: `records[${index}]`, code: "invalid_observation" }] };
+    outcomes.push(ledger.record(record, sourceScope));
+  }
+  return { ok: true, outcomes, rejected: [] };
+}
+
+/**
+ * A request the gateway observed but could not bind to a task.
+ *
+ * The ledger keeps the row (it is real consumption) and this summary names why
+ * it will never appear under a task: silently dropping it would make task
+ * totals look complete.
+ */
+export type UnallocatedReason = "no_task" | "no_attempt" | "task_mismatch";
+
+export interface UnallocatedSummary {
+  records: number;
+  byReason: Record<UnallocatedReason, number>;
+  /** Requests, not rows: one request can produce several unit rows. */
+  requests: number;
+}
+
+export function summarizeUnallocated(records: readonly UpstreamUsageRecord[], taskId: string): UnallocatedSummary {
+  const requests = new Set<string>();
+  const byReason: Record<UnallocatedReason, number> = { no_task: 0, no_attempt: 0, task_mismatch: 0 };
+  let counted = 0;
+  for (const record of records) {
+    if (record.taskId === taskId) continue;
+    counted += 1;
+    requests.add(`${record.requestId}\u0000${record.occurredAt}`);
+    if (record.taskId === null) byReason.no_task += 1;
+    else byReason.task_mismatch += 1;
+    if (record.attemptId === null) byReason.no_attempt += 1;
+  }
+  return { records: counted, byReason, requests: requests.size };
+}
+
+export interface RequestCoverage {
+  status: "complete" | "partial" | "unknown";
+  /** Numerator: requests this gateway observed for the scope. */
+  observedRequests: number;
+  /** Of those, how many carry both a task and an attempt binding. */
+  attributedRequests: number;
+  /** Denominator, only when the upstream publishes a request count. */
+  totalRequests: number | null;
+  /** null while `totalRequests` is null: an unknown denominator is not 100%. */
+  ratio: number | null;
+  unknownReason: "upstream_does_not_publish_request_count" | null;
+  limitations: string[];
+}
+
+/**
+ * Coverage with an explicit denominator.
+ *
+ * The harness replies with one request id per prompt and no count of the
+ * requests the account made elsewhere, so `totalRequests` stays null and the
+ * status stays `unknown`. A caller that passes a count gets a real ratio and
+ * the numerator/denominator it was computed from.
+ */
+export function summarizeRequestCoverage(input: {
+  observedRequests: number;
+  attributedRequests: number;
+  totalRequests?: number | null;
+}): RequestCoverage {
+  const observed = Math.max(0, Math.floor(input.observedRequests));
+  const attributed = Math.max(0, Math.floor(input.attributedRequests));
+  const total = input.totalRequests === undefined || input.totalRequests === null ? null : Math.floor(input.totalRequests);
+  const limitations = ["attribution_scope_is_gateway_observation"];
+  if (total === null) {
+    return {
+      status: "unknown",
+      observedRequests: observed,
+      attributedRequests: attributed,
+      totalRequests: null,
+      ratio: null,
+      unknownReason: "upstream_does_not_publish_request_count",
+      limitations: [...limitations, "denominator_unknown"],
+    };
+  }
+  if (total < observed) {
+    return {
+      status: "unknown",
+      observedRequests: observed,
+      attributedRequests: attributed,
+      totalRequests: total,
+      ratio: null,
+      unknownReason: "upstream_does_not_publish_request_count",
+      limitations: [...limitations, "denominator_smaller_than_numerator"],
+    };
+  }
+  const ratio = total === 0 ? null : observed / total;
+  const status = total === 0 ? "unknown" : observed === total && attributed === total ? "complete" : "partial";
+  return { status, observedRequests: observed, attributedRequests: attributed, totalRequests: total, ratio, unknownReason: null, limitations };
 }
