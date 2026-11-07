@@ -1565,8 +1565,8 @@
     },
     {
       "path": "test/package.test.ts",
-      "sha256": "a4f4d203a9cf6d15a19c2e2f079de97c85a3381e97c74e87bc25302bc6c6cc74",
-      "bytes": 24656
+      "sha256": "2843c0c2c5da23e64e6221249d2c6d4d2d81b725a9bc0fa2de742b7db3f5c676",
+      "bytes": 24681
     },
     {
       "path": "test/persistent-service.test.ts",
