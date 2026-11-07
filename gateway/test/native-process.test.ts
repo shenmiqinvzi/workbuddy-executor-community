@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import test from "node:test";
-import { windowsProcessTable, windowsPowerShellPath } from "../src/native-process.js";
+import { ProcessTableUnavailableError, windowsProcessTable, windowsPowerShellPath } from "../src/native-process.js";
 
 test("Windows ancestry uses the absolute OS PowerShell, never PATH or a shell shim", () => {
   let calls = 0;
@@ -21,11 +21,31 @@ test("Windows ancestry uses the absolute OS PowerShell, never PATH or a shell sh
   assert.equal(calls, 1);
 });
 
-test("failed ancestry inspection propagates the error without an unsafe fallback or retry loop", () => {
+test("a failed process inspection is retried a bounded number of times, then fails by name instead of falling back to no processes", () => {
   let calls = 0;
   const run = (() => { calls++; throw Object.assign(new Error("EBUSY fixture"), { code: "EBUSY" }); }) as typeof execFileSync;
-  assert.throws(() => windowsProcessTable(run), /EBUSY/);
-  assert.equal(calls, 1);
+  assert.throws(
+    () => windowsProcessTable(run, { attempts: 3, backoffMs: 0 }),
+    (error: unknown) => error instanceof ProcessTableUnavailableError
+      && /could not be read after 3 attempts/.test(error.message)
+      && /nothing was assumed about any process/.test(error.message),
+  );
+  // Three attempts, and the failure is never turned into an empty table: an
+  // unreadable process table is not the same fact as "no process is running".
+  assert.equal(calls, 3);
+});
+
+test("a transient WMI failure is absorbed by the retry instead of aborting the operation", () => {
+  let calls = 0;
+  const run = (() => {
+    calls += 1;
+    // WMI answers 0x80004005 (an unspecified error) under contention.
+    if (calls < 3) throw new Error("Get-CimInstance : 未指定的错误 HRESULT 0x80004005");
+    return JSON.stringify([{ ProcessId: 321, ParentProcessId: 12, ExecutablePath: "C:\\WorkBuddy.exe" }]);
+  }) as typeof execFileSync;
+  const rows = windowsProcessTable(run, { attempts: 3, backoffMs: 0 });
+  assert.deepEqual(rows, [{ pid: 321, ppid: 12, exe: "C:\\WorkBuddy.exe", commandLine: undefined }]);
+  assert.equal(calls, 3);
 });
 
 test("hidden Windows process inspection preserves Chinese executable paths with a legacy console encoding", { skip: process.platform !== "win32" }, () => {

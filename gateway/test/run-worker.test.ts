@@ -91,6 +91,31 @@ test("a pending single-action permission can be answered after the MCP client is
   assert.equal(journal.snapshot()?.status, "needs_review");
 });
 
+test("a repeated input request is never satisfied by an earlier answer", async (t) => {
+  const { config, id, journal } = fixture(t);
+  const answers: Array<Record<string, unknown> | undefined> = [];
+  const pending = path.join(journal.dir, "pending-input.json");
+  const params = { options: [{ kind: "allow_once", optionId: "first-edit" }, { kind: "reject_once", optionId: "decline" }] };
+  const transport: WorkerTransport = {
+    async run(_prompt, _sessionId, _timeout, options) {
+      options.onSession({ sessionId: "desktop-test", desktopVisible: true });
+      answers.push(await options.onRequest({ id: 7, method: "session/request_permission", params }));
+      answers.push(await options.onRequest({ id: 7, method: "session/request_permission", params }));
+      return { text: "Finished edit", stopReason: "end_turn" };
+    }, async cancel() {},
+  };
+  const running = runWorker(config.runsDir, id, config, transport);
+  await until(() => journal.snapshot()?.waitingInput === true);
+  new DurableRuns(config).respond(id, "allow_once");
+  // Same request id again: the answer already consumed must not settle it.
+  await until(() => answers.length === 1 && fs.existsSync(pending));
+  new DurableRuns(config).respond(id, "reject_once");
+  await running;
+  assert.deepEqual(answers[0], { outcome: { outcome: "selected", optionId: "first-edit" } });
+  assert.deepEqual(answers[1], { outcome: { outcome: "selected", optionId: "decline" } });
+  assert.deepEqual(fs.readdirSync(journal.dir).filter((name) => name.startsWith("input-")), []);
+});
+
 test("an actual detached worker survives its launcher exiting and writes its final evidence", async (t) => {
   const { dir, config, id, journal } = fixture(t);
   // Only a fixture ACP server is used here. No WorkBuddy application or model is invoked.
