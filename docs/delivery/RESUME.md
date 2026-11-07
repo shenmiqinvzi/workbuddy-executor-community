@@ -1,5 +1,12 @@
 # RESUME：断线续跑状态
 
+> **本轮（forward 20261107）状态入口已前移**：`docs/forward/README.md` 与
+> `docs/forward/I_CHECKPOINT_2.md` 是本轮的唯一现状入口；证据根在
+> `E:\javaproject\outputs\forward-delivery-20261107\`（含 `RESUME.md`）。
+> 本文件往下是 2026-11-06 收口轮的历史记录，其中的树路径与 HEAD 不再代表当前开发树
+> （本轮开发树为 `E:\javaproject\workbuddy-forward-20261107\I-integration`，分支
+> `integration/forward-delivery`，起点 `134cdc7febbf858e89fb1010cf6b9d72da5edbe7`）。
+
 更新时间：2026-11-06（收口轮）
 
 ## 1. 树与分支

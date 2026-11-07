@@ -1,5 +1,13 @@
 # 最终交付检查与复核索引
 
+> **本轮（forward 20261107）入口在前**：当前开发树为
+> `E:\javaproject\workbuddy-forward-20261107\I-integration`（分支
+> `integration/forward-delivery`，起点 `134cdc7febbf858e89fb1010cf6b9d72da5edbe7`），
+> 现状见 `docs/forward/I_CHECKPOINT_2.md`，31 项台账见 `docs/forward/TASK_LEDGER.md`，
+> 53 项本轮口径见 `docs/forward/SCENARIO_INDEX.md`，证据根
+> `E:\javaproject\outputs\forward-delivery-20261107\`。下方「收口轮」表格是
+> 2026-11-06 的历史状态，其树路径、HEAD 与结论不再代表本轮。
+
 本文件是交付的唯一入口。**顶部是收口轮（2026-11-06）的当前状态**；从「判读约定」开始到 §14 是第 11 线在提交 `06d52b1` / RC2 上的历史记录，保留原文不再更新；读到旧 SHA 与旧结论时以顶部为准。
 
 ## 当前状态（收口轮，2026-11-06）
