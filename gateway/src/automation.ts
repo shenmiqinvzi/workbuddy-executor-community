@@ -941,6 +941,50 @@ export class AutomationService {
     return { ...body, status: row.status as AutomationDecisionStatus, planId: row.plan_id ?? null, operationId: row.effect_operation ?? null };
   }
 
+  /**
+   * Read-only view of the guarded dispatcher's own record for this decision's operation.
+   *
+   * Automation never writes here and never re-dispatches from it: after an attempt whose effect is
+   * unknown, observing the original operation is the only permitted move (`OUTCOME_UNKNOWN`), and
+   * this method exists so a reader can do exactly that instead of guessing from the decision row.
+   */
+  operationFor(decisionId: string): {
+    decisionId: string;
+    status: AutomationDecisionStatus;
+    operationId: string | null;
+    operation: {
+      operationId: string; kind: string; state: string; taskId: string; attemptId: string | null;
+      effectStartedAt: string | null; createdAt: string; updatedAt: string; error: { code: string; message: string } | null;
+    } | null;
+    note: string;
+  } {
+    const decision = this.getDecision(decisionId);
+    if (!decision.operationId) {
+      return { decisionId, status: decision.status, operationId: null, operation: null, note: "This decision never reserved an operation, so there is nothing to observe." };
+    }
+    const record = this.store.operations.get(decision.operationId);
+    if (!record) {
+      return { decisionId, status: decision.status, operationId: decision.operationId, operation: null, note: "The reserved operation is not in this database; observe the original task and do not re-dispatch." };
+    }
+    return {
+      decisionId,
+      status: decision.status,
+      operationId: decision.operationId,
+      operation: {
+        operationId: record.operationId,
+        kind: record.kind,
+        state: record.state,
+        taskId: record.taskId,
+        attemptId: record.attemptId,
+        effectStartedAt: record.effectStartedAt ?? null,
+        createdAt: record.createdAt,
+        updatedAt: record.updatedAt,
+        error: record.error ? { code: record.error.code, message: record.error.message } : null,
+      },
+      note: "Read-only. The state of this operation is the only evidence of what actually happened.",
+    };
+  }
+
   listDecisions(limit = 50): AutomationDecision[] {
     const rows = this.database().prepare("SELECT decision_id FROM automation_decisions ORDER BY rowid DESC LIMIT ?").all(Math.max(1, Math.min(200, limit))) as Array<{ decision_id: string }>;
     return rows.map((row) => this.getDecision(row.decision_id));

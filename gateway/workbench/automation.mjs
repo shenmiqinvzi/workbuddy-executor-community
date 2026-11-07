@@ -196,6 +196,19 @@ export function taskLink(taskId) {
   return `#taskId=${encodeURIComponent(taskId)}`;
 }
 
+/**
+ * The guarded dispatcher's record for the original operation, if there is one.
+ * This is the only evidence of what actually happened; the decision row is not.
+ */
+export function operationLine(record) {
+  if (!record || typeof record !== "object") return "没有查询到原操作。";
+  const operation = record.operation && typeof record.operation === "object" ? record.operation : null;
+  if (!operation) return `没有原操作可查：${record.note ?? "记录未说明原因。"}`;
+  const started = operation.effectStartedAt ? ` · 生效开始 ${operation.effectStartedAt}` : "";
+  const error = operation.error?.code ? ` · 错误 ${operation.error.code}` : "";
+  return `操作 ${operation.operationId ?? NA} · ${operation.state ?? NA} · ${operation.kind ?? NA} · 任务 ${operation.taskId ?? NA}${started}${error}`;
+}
+
 function h(tag, props = {}, ...children) {
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(props)) {
@@ -350,12 +363,31 @@ export function mountAutomation({ root, fetchJson }) {
       const probe = decision.probe ?? evaluation.probe ?? null;
       const sources = probeSourceLines(probe);
       const link = taskLink(decision.taskId);
+      const operationHost = h("div", { class: "automation-operation" });
       decisionDetail.replaceChildren(
         h("h3", { class: "automation-subheading", text: `决定 ${decisionId}` }),
         h("p", { class: "automation-item-text", text: `${decision.taskId ?? NA} · ${decisionStatusLabel(decision.status)}` }),
         h("p", { class: "automation-item-text", text: `政策 ${decision.policyId ?? NA}@${decision.policyRevision ?? NA} · 评估 ${evaluation.decision ?? NA}` }),
         h("p", { class: "automation-item-text", text: costLine(evaluation.cost) }),
         h("p", { class: "automation-item-text", text: `方案 ${decision.planId ?? NA} · 操作 ${decision.operationId ?? NA}` }),
+        decision.operationId
+          ? h("button", {
+            type: "button",
+            class: "automation-link",
+            text: "查询原操作",
+            "aria-label": `查看决定 ${decisionId} 的原操作状态`,
+            onclick: async () => {
+              try {
+                const record = await fetchJson(`${ROOT}/decisions/${encodeURIComponent(decisionId)}/operation`);
+                operationHost.replaceChildren(h("p", { class: "automation-item-text", text: operationLine(record) }));
+              }
+              catch (error) {
+                operationHost.replaceChildren(h("p", { class: "automation-issue", text: `原操作读取失败：${error?.message ?? "未知错误"}` }));
+              }
+            },
+          })
+          : null,
+        operationHost,
         link ? h("p", { class: "automation-item-text" }, h("a", { class: "automation-link", href: link, text: "查看原任务" })) : null,
         h("p", { class: "automation-item-text", text: `实际请求身份 ${decision.requestedBy ?? NA}` }),
         h("h3", { class: "automation-subheading", text: "等待条件" }),

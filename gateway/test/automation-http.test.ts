@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import http from "node:http";
+import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { workbenchHealth, WorkbenchHttpServer } from "../src/workbench-http.js";
 import { automationPaths } from "../src/automation-http.js";
@@ -93,6 +94,33 @@ test("recorded decisions and their audit trail are visible without dispatching",
   assert.equal(audit.status, 200);
   assert.ok((json(audit.body).audit as Array<{ action: string }>).some((entry) => entry.action === "decision_pending"));
   assert.equal(fixture.store.listTasks().length, 0);
+  fixture.close();
+});
+
+test("the original operation is readable, and a decision without one says so", async (t) => {
+  const fixture = automationFixture(t);
+  const service = fixture.armed({});
+  const saved = fixture.savePolicy(service);
+  const decision = await service.decide({ proposal: fixture.proposal("auto-http-operation"), policyId: saved.policy.policyId }, "synthetic-operator");
+  const port = await start(t, fixture, true, service);
+
+  const before = json((await request(port, { path: `/workbench/v1/automation/decisions/${encodeURIComponent(decision.decisionId)}/operation` })).body);
+  assert.equal(before.readOnly, true);
+  assert.equal(before.operationId, null);
+  assert.match(String(before.note), /never reserved an operation/);
+
+  const operationId = randomUUID();
+  service.setEnabled(true, operator);
+  const executed = await service.execute(decision.decisionId, { operationId });
+  assert.equal(executed.replay, false);
+
+  const after = json((await request(port, { path: `/workbench/v1/automation/decisions/${encodeURIComponent(decision.decisionId)}/operation` })).body);
+  const operation = after.operation as { operationId: string; state: string; kind: string; taskId: string };
+  assert.equal(operation.operationId, operationId);
+  assert.equal(operation.state, "succeeded");
+  assert.equal(operation.kind, "send");
+  assert.equal(operation.taskId, "auto-http-operation");
+  assert.equal(after.status, "dispatched");
   fixture.close();
 });
 

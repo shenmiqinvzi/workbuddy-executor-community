@@ -12,7 +12,7 @@ import { createHost, installMiniDom } from './support/mini-dom.mjs';
 installMiniDom();
 const {
     mountAutomation, auditLine, blockLines, costLine, decisionLine, decisionStatusLabel, layerLine, layerLines,
-    policyLine, policyStatusLabel, probeLine, probeSourceLines, taskLink, waitingLine,
+    operationLine, policyLine, policyStatusLabel, probeLine, probeSourceLines, taskLink, waitingLine,
 } = await import('../automation.mjs');
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -269,4 +269,53 @@ test('the view shows the layers, the observation and the original task link with
     assert.equal(link.getAttribute('href'), '#taskId=task-demo');
     assert.equal(host.querySelectorAll('input').length, 0);
     assert.equal(host.querySelectorAll('form').length, 0);
+});
+
+test('an original operation line reports its state, and says so when there is none', () => {
+    assert.match(
+        operationLine({
+            operationId: 'operation-demo',
+            operation: {
+                operationId: 'operation-demo', kind: 'send', state: 'succeeded', taskId: 'task-demo', attemptId: 'attempt-1',
+                effectStartedAt: '2026-11-07T00:00:00.000Z', createdAt: '2026-11-07T00:00:00.000Z', updatedAt: '2026-11-07T00:00:01.000Z', error: null,
+            },
+        }),
+        /操作 operation-demo · succeeded · send · 任务 task-demo · 生效开始 2026-11-07T00:00:00.000Z/,
+    );
+    assert.match(operationLine({ operationId: null, operation: null, note: 'This decision never reserved an operation.' }), /没有原操作可查：This decision never reserved an operation/);
+    assert.equal(operationLine(null), '没有查询到原操作。');
+});
+
+test('the decision detail can ask the read-only prefix for the original operation', async () => {
+    const requested = [];
+    const host = createHost();
+    const decision = { ...snapshot().decisions[0], operationId: 'operation-demo', status: 'outcome_unknown' };
+    mountAutomation({
+        root: host,
+        fetchJson: async path => {
+            requested.push(path);
+            if (path === '/workbench/v1/automation') return snapshot();
+            if (path.endsWith('/operation')) {
+                return {
+                    readOnly: true,
+                    decisionId: 'decision-demo',
+                    status: 'outcome_unknown',
+                    operationId: 'operation-demo',
+                    operation: { operationId: 'operation-demo', kind: 'send', state: 'unknown', taskId: 'task-demo', attemptId: 'attempt-1', effectStartedAt: '2026-11-07T00:00:00.000Z', createdAt: '2026-11-07T00:00:00.000Z', updatedAt: '2026-11-07T00:00:02.000Z', error: { code: 'ERESET', message: 'socket reset' } },
+                    note: 'Read-only.',
+                };
+            }
+            return { decision: { ...decision, evaluation: { decision: 'wait', blocks: [], limits: [], cost: { mode: 'unknown_allowed' } } } };
+        },
+    });
+    await tick();
+    host.descendants().find(node => node.textContent === '决定详情').click();
+    await tick();
+    const button = host.descendants().find(node => node.textContent === '查询原操作');
+    assert.ok(button, 'a decision with an operation offers its operation state');
+    button.click();
+    await tick();
+    assert.ok(requested.includes('/workbench/v1/automation/decisions/decision-demo/operation'));
+    assert.match(host.textContent, /操作 operation-demo · unknown · send · 任务 task-demo/);
+    assert.match(host.textContent, /错误 ERESET/);
 });
