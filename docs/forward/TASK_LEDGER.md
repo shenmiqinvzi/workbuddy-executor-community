@@ -32,7 +32,7 @@
 | D6-03 模板实例化 | 版本化模板 + 真实实例化接线 + 预算裁剪 | source | `test/project-template.test.ts`、`test/desktop-command-template.test.ts` | 未在真实窗口实例化 |
 | D6-04 通知/脱敏导出 | 导出统计整事件流、bytes 与预览一致；通知失败原因透传 | source | `test/delivery-export.test.ts`、`test/notification-center.test.ts` | 窗口未就绪不写通过 |
 | D6-05 统计页面 | 样本/时间窗/覆盖/检查器错误显示 | source | `test/statistics-page.test.ts`、`test/statistics.test.ts` | 无实证省钱结论仍禁止 |
-| D7-01 打包/安装/回退 | 最终候选 745 条目 / ZIP `86018f5d…` / manifest `420372ed…`、`verify-release` 744/744 hashesMatch、安装前置自检 `ok:true`（totalBytes 8,120,343）；桌面包 752 文件 / `cb3effed…`；隔离安装根 drill/upgrade-drill 全 exit 0 | machine | `I\candidate-final3-verify.txt`、`I\candidate-final3-check.json`、`I\candidate-final3-manifest.json`、`I\workbuddy-desktop-v0.7.1-t7d-desktop-preview.zip(.sha256)`、`A\drill\` | 未真实安装、未升级旧安装 |
+| D7-01 打包/安装/回退 | 最终候选 745 条目 / ZIP `5a791d66…` / manifest `aa83d492…`、`verify-release` 744/744 hashesMatch、安装前置自检 `ok:true`（totalBytes 8,121,633）；桌面包 752 文件 / `cb3effed…`；隔离安装根 drill/upgrade-drill 全 exit 0 | machine | `I\candidate-final4-verify.txt`、`I\candidate-final4-check.json`、`I\candidate-final4-manifest.json`、`I\workbuddy-desktop-v0.7.1-t7d-desktop-preview.zip(.sha256)`、`A\drill\` | 未真实安装、未升级旧安装 |
 | D7-02 异机 | 未做 | — | — | 需第二台 Windows 与独立操作者（A8） |
 | D7-03 许可与授权说明 | 未做 | — | — | 需权利人决定（A9） |
 | D7-04 CI 与远端 | 未做 | — | — | 未获推送/CI 授权 |

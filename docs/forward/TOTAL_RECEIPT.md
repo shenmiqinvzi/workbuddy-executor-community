@@ -10,7 +10,7 @@
 | 集成树 | `E:\javaproject\workbuddy-forward-20261107\I-integration` |
 | 分支 | `integration/forward-delivery` |
 | 起点 | `134cdc7febbf858e89fb1010cf6b9d72da5edbe7`（`workbuddy-finish\R-review-fixes`，分支 `fix/delivery-review-r1-r4`） |
-| 本轮最新提交 | `eaadd53`（代码提交止于 `21764ec`；其后 `9759288`/`cf7241a`/`eaadd53` 只改 `docs/forward/**` 与证据说明，不进发布包，见 §5 可复现性） |
+| 本轮最新提交 | `c299e7b`（代码最后改动是 `cd631b3` 的 `workbench/attention.mjs`；其后均为文档，不进发布包，见 §5 可复现性） |
 | 证据根 | `E:\javaproject\outputs\forward-delivery-20261107\`（`A/ B/ C/ D/ I/ shared/`） |
 | 续接入口 | `docs/forward/I_CHECKPOINT_2.md`、证据根 `RESUME.md` |
 | 计划包 | `E:\javaproject\workbuddy-development-plan-20261107\`（10 个 md） |
@@ -37,7 +37,7 @@
 | B-product | 9 提交（`19ef402` `bd6f3c1` `4e63b7a` `e26fe7a` `2cdb97b` `da5c43d` `58813cc` `4e22c2e` `bd9d632`） | 派工三结局、面板恢复、模板期限裁剪、导出比对、五尺寸探针、文档 |
 | C-data | 10 提交（`b6edd38` `25787e8` `e49c5ea` `9e00fee` `7af4515` `9dcad9f` `a08fbc3` 等） | 来源能力声明、路由歧义、harness 调用事实、统计契约、quota-2 升版与 DSH sync 生产接线、导出路由 |
 | D-automation | 8 提交（`6267e05` `8e35607` `07f7b79` `d50ae78` `70b1803` `ee1cfcc` `a162469` 等） | 六层披露、只读 probe、操作只读路由、幂等派工、socket 修复、文档 |
-| I 集成 | `caa7a5fa` `15e23ae` `387a6f6` `02e7de8` `6774476` `804ce30` `1e0597c` `4b04bfa` `65c1d7a` `9898edb` `f47fb4b` `4c2bc16` `6f67b5d` `5ff65f5` `21764ec` `9759288` `cf7241a` `eaadd53` + 9 个 merge | local_check 生产端、歧义文案、就绪只读路由、降级启动、产品面接线、打包白名单、MCP 入口隔离、交付入口前移、清理误入日志、总回执与证据、请求归因账本接线、串行基线与可复现候选、桌面成品、九次合并 |
+| I 集成 | `caa7a5fa` `15e23ae` `387a6f6` `02e7de8` `6774476` `804ce30` `1e0597c` `4b04bfa` `65c1d7a` `9898edb` `f47fb4b` `4c2bc16` `6f67b5d` `5ff65f5` `21764ec` `9759288` `cf7241a` `eaadd53` `79e8ba9` `7eee0fa` `cd631b3` `c299e7b` + 9 个 merge | local_check 生产端、歧义文案、就绪只读路由、降级启动、产品面接线、打包白名单、MCP 入口隔离、交付入口前移、清理误入日志、总回执与证据、请求归因账本接线、串行基线与可复现候选、桌面成品、IR-A5 记录损坏语义、IR-D3 表归属裁定、九次合并 |
 
 ## 4. 验证（真实输出，命令与日志）
 
@@ -90,19 +90,19 @@
 
 | 项 | 值 |
 |---|---|
-| 路径 | `E:\javaproject\outputs\forward-delivery-20261107\I\candidate-final3\codex-workbuddy-gateway-v0.7.1.zip` |
-| 字节 | 2,481,829 |
+| 路径 | `E:\javaproject\outputs\forward-delivery-20261107\I\candidate-final4\codex-workbuddy-gateway-v0.7.1.zip` |
+| 字节 | 2,482,365 |
 | 条目数 | 745（`candidate-installation` 计 744 个受管文件，`verify-release` 校验 744） |
-| ZIP SHA-256 | `86018f5d0ee0ae84b966a0d6b9d830099cc0d4b19f4e200dc5837fcef9369593` |
-| manifest | 120,216 B / SHA-256 `420372ed45adddaa2dbce5d1a5ca0a6c318ec6aff680296a4f8256dd530ff9cc` → 副本 `I\candidate-final3-manifest.json` |
-| `verify-release.mjs` | `{"version":"0.7.1","verifiedFiles":744,"hashesMatch":true}` → `I\candidate-final3-verify.txt` |
-| `candidate-installation.mjs check` | `ok:true`、`problems:[]`、`totalBytes 8120343` → `I\candidate-final3-check.json` |
-| 对应提交 | `21764ec`（含账本接线；`git status` 除文档外干净） |
+| ZIP SHA-256 | `5a791d66896b85464087a38d358c9a5ff73e937574085a195a2aea809d39621a` |
+| manifest | 120,216 B / SHA-256 `aa83d4929a83d32d00ed8fc46987c85bc7d78513d80677b53099c7aecef7875e` → 副本 `I\candidate-final4-manifest.json` |
+| `verify-release.mjs` | `{"version":"0.7.1","verifiedFiles":744,"hashesMatch":true}` → `I\candidate-final4-verify.txt` |
+| `candidate-installation.mjs check` | `ok:true`、`problems:[]`、`totalBytes 8121633` → `I\candidate-final4-check.json` |
+| 对应提交 | `c299e7b`（含 IR-A5 的 `workbench/attention.mjs` 改动；`git status` 干净） |
 | 桌面成品 | **本轮新生成**：`npm run desktop:build`（exit 0，`desktop/app/` 出 `WorkBuddy.Workbench.exe` + `WorkBuddy.Workbench.dll` + WebView2 DLL 与 `runtimes/win-x64/native/WebView2Loader.dll`）→ `npm run desktop:package`（exit 0）→ `workbuddy-desktop-v0.7.1-t7d-desktop-preview.zip`，**752 文件 / 2,903,333 B / SHA-256 `cb3effed00af5e259fca41593a490df2ea2f63ea72fef1c5f8c49e560912c216`**（证据副本 `I\workbuddy-desktop-v0.7.1-t7d-desktop-preview.zip` + `.sha256`，日志 `I\desktop-build.log`、`I\desktop-package.log`）。重打包得到同一 SHA（确定性）。**边界**：只证明「能构建、能打包、包内是本机 Release 产物」，不证明「装上能起窗口」——窗口层仍是 0（WebView 初始化失败、无普通桌面会话）。<br>注：`package-desktop.mjs:17` 有「拒绝覆盖已有桌面包」的守卫，重复执行同一路径会 exit 1 并打印 `Refusing to replace a desktop archive or checksum.`——这是设计，不是失败 |
 
-> 更早两个中间包 `outputs\candidate-cp2`（734 文件 / `61dc0456…`）与 `outputs\candidate-final`（745 文件 / `b3a8a86a…`）、`candidate-final2`（`49c8ba09…`）只保留作对照，**不是**本轮候选。
+> 更早的中间包 `outputs\candidate-cp2`（734 文件 / `61dc0456…`）、`candidate-final`（745 文件 / `b3a8a86a…`）、`candidate-final2`（`49c8ba09…`）、`candidate-final3`（745 文件 / `86018f5d…`，对应 `21764ec`）只保留作对照，**不是**本轮候选。final4 与 final3 的差异只有一处源码：`workbench/attention.mjs` 的「记录损坏」独立原因（IR-A5），其余为文档。
 
-**可复现性**：同一 tree 重新打包得到同一 SHA-256。`21764ec` 与 `9759288`（只加文档）两次打包均为 `86018f5d…`，字节数均 2,481,829——`scripts/package.mjs` 固定条目时间 1980-01-01 与压缩参数；`docs/forward/**` 不在发布包白名单。对照包 `I\candidate-repro-check`，说明 `I\candidate-reproducibility.md`。
+**可复现性**：同一 tree 重新打包得到同一 SHA-256（条目时间固定 1980-01-01，压缩参数固定；`docs/forward/**` 不在发布包白名单）。对照包 `I\candidate-repro-check`，说明 `I\candidate-reproducibility.md`。
 
 ## 6. 本轮新增能力（每条都在 §4 有测试）
 
@@ -114,6 +114,8 @@
 6. **C 线两项**：quota 文档升 `workbuddy-executor/quota-2` 并兼容 quota-1（旧文档不伪造逐来源读数）；`tool_call_finished` 从真实 DSH `sync()` 事件流生产。
 7. **请求归因账本真实接线**：`TaskStore.usage` 懒建（首次写入才建表，保持"从未记录 → 报告不存在"的语义）；`DshTaskCoordinator` 在派工被确认接受（`result.accepted === true` 且 `requestId` 匹配）之后写一条请求观测，每行 `valueKind="unavailable"`、`value=null`——上游从不发 token/credit，所以宁可标"没测到"也不写 0；账本写失败不把已接受的派工改成不确定。测试 `test/dsh-adapter.test.ts` 两条（已确认→两行、未确认→零行）。
 8. **桌面成品可构建、可打包**：`desktop:build` → `desktop:package` 两条都 exit 0，产物含 `WorkBuddy.Workbench.exe`/`.dll` 与 WebView2 运行时 DLL（752 文件 / 2,903,333 B / `cb3effed…`）。仍**不**等于能起窗口：窗口层 0 未动。
+9. **「记录损坏」在界面上是独立原因**（IR-A5）：任务的事件日志读不出来时，卡片标题写「这一轮的执行记录读不出来」，正文声明这既不是完成也不是失败、不重派/不重试/不关闭，并指向 `unreadable-journal` 来源；卡片带 `data-retryable="false"`/`data-dismissible="false"`。测试 `workbench/test/attention.test.mjs` 的 `IR-A5 an unreadable journal…`（工作台 165/165）。
+10. **自动化表归属裁定**（IR-D3，选 b）：四张 `automation_*` 表仍由模块自建并自带 `AUTOMATION_SCHEMA_VERSION`；升级路径（更高版本**在建任何表之前**拒绝）、幂等、回滚、旧库补表四种语义写进 `docs/AUTOMATION_SCHEMA_OWNERSHIP.md`，引 `test/automation-policy.test.ts:348`/`:365` 为证。
 
 ## 7. 未满足项（逐条给阻塞原因）
 
@@ -151,7 +153,7 @@ npm run test:workbench
 npm run desktop:test
 node scripts/readiness.mjs        # 未设 config：exit 1 + 候选清单，不写配置
 
-# 候选包复算（期望 ZIP SHA-256 86018F5D0EE0AE84B966A0D6B9D830099CC0D4B19F4E200DC5837FCEF9369593）
+# 候选包复算（期望 ZIP SHA-256 5A791D66896B85464087A38D358C9A5FF73E937574085A195A2AEA809D39621A）
 npm run build
 node scripts/package.mjs E:\javaproject\outputs\forward-delivery-20261107\I\repro-review
 Get-FileHash E:\javaproject\outputs\forward-delivery-20261107\I\repro-review\codex-workbuddy-gateway-v0.7.1.zip -Algorithm SHA256

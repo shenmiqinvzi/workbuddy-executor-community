@@ -71,5 +71,5 @@
 | F16 界面分区展示 | 未动 | source | 实窗 |
 | F17 四尺寸 + 等待审查页 | B 线 1440×900/1280×720/768×1024/390×844 探针通过 | source + synthetic | **无窗口** |
 | F18 键盘主路径/200% | 未实测 | — | **无窗口** |
-| F19 最终 SHA 的构建与包 | 最终候选 744 受管文件 / ZIP SHA-256 `86018f5d…f9369593`、manifest `420372ed…`，`verify-release` 744/744 hashesMatch，安装前置自检 `ok:true`；同 tree 重打包字节一致 | machine | 发行（未安装、未推送） |
+| F19 最终 SHA 的构建与包 | 最终候选 744 受管文件 / ZIP SHA-256 `5a791d66…9d39621a`、manifest `aa83d492…`，`verify-release` 744/744 hashesMatch，安装前置自检 `ok:true`；同 tree 重打包字节一致 | machine | 发行（未安装、未推送） |
 | F20 交接材料 | 本文件 + `TOTAL_RECEIPT.md` + `RESUME.md` | source | 范围与许可 |
