@@ -54,6 +54,23 @@
 1. **配置目录歧义**：不设 `WORKBUDDY_CONFIG_DIR` 时本机同时存在 `%USERPROFILE%\.workbuddy-ai` 与 `%USERPROFILE%\.workbuddy`，`loadConfig()` 按设计抛错，180 条用例构造即失败（起点树同样失败，已证非本轮回归）。本文件所有全量数字都在固定 `WORKBUDDY_CONFIG_DIR` 下取得。
 2. **`dist` 陈旧**：`scripts/workbench-read-store.mjs:7` 从 `../dist/quota-observation.js` 读，源码改了不重建 `dist` 会让桌面只读路径读出版本漂移（本轮确实出现过，`npm run build` 后消失）。因此「改了 `src` 就要 build 再跑该文件」。
 
+### 4.2 本机真实运行证据（machine 档，合并后复跑）
+
+| 端点 | 结果 | 证据 |
+|---|---|---|
+| 进程 | 不退出，stdout `{"ok":false,"event":"workbench_http_degraded","port":18999,"code":"CONFIG_UNRESOLVED","readOnly":true}` | `shared\degraded-entry-final.log` |
+| `GET /workbench/v1/health` | 200，`ready:false`、`degraded.code=CONFIG_UNRESOLVED`、`capabilities.taskEventsHttp:false` | `shared\degraded-health-final.json` |
+| `GET /workbench/v1/readiness` | 200，`selection.state=ambiguous`、候选 `%USERPROFILE%\.workbuddy-ai` 与 `%USERPROFILE%\.workbuddy`、五层 unknown/absent | `shared\degraded-readiness-final.json` |
+| `GET /workbench/v1/tasks` | 503 `SURFACE_DEGRADED`，正文就是新的歧义文案（点名候选与两个环境变量、声明不代选不回退） | `shared\degraded-tasks-503-final.json` |
+| `node scripts/readiness.mjs`（独立进程） | exit 1，分层状态 + 候选 + 4 条 `Suggested` 命令，未写任何配置文件 | `I\readiness-ambiguous.txt` |
+| 同命令固定 `WORKBUDDY_CONFIG_DIR` | exit 1，`backend: desktop-queue`、`config: environment`，`nativeOnline=absent`、`desktopPageReady=absent` | `I\readiness-pinned.txt` |
+
+边界：以上**不**证明桌面壳页面渲染了这些数据（窗口一档仍是 0）。
+
+### 4.3 没跑的门，以及为什么
+
+`npm run verification:preflight` 在未配置的树上直接 `ERR_SQLITE_ERROR: unable to open database file`（`scripts/verification-preflight.mjs:22`）。它按设计要连已配置的库，而本机未安装本轮候选，固定 `WORKBUDDY_CONFIG_DIR` 去跑会打开真实数据目录并可能建表——这属于安装/真实环境动作（外部条件 A2），本轮不越界，记为未跑。
+
 ## 5. 候选包（本机生成，非发行）
 
 | 项 | 值 |
