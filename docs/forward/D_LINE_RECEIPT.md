@@ -3,7 +3,7 @@
 - 轮次：`forward-delivery-20261107`
 - 工作树：`E:\javaproject\workbuddy-forward-20261107\D-automation`
 - 分支：`feat/forward-automation-readiness`，起点 `134cdc7febbf858e89fb1010cf6b9d72da5edbe7`
-- 本轮 HEAD：`899bed7`（6 个提交，未推送、未合入 main、未 reset/clean/stash/rebase）
+- 本轮 HEAD：`ee1cfcc`（含起点共 7 个提交，未推送、未合入 main、未 reset/clean/stash/rebase）
 - 未写 `E:\javaproject\workbuddy-finish\R-review-fixes`；未安装、未 arm 真实政策、未产生真实模型调用与费用
 
 ## 0. 一句话结论
@@ -24,7 +24,7 @@
 | 4 | `d50ae78` | test(automation): pin the probe to decide to dispatch chain through the CLI root | 1 file, +300 |
 | 5 | `70b1803` | test(automation): read the layers and the observation through the HTTP projection | 1 file, +31/−2 |
 | 6 | `899bed7` | feat(automation): let the page observe the original operation, read-only | 5 files, +158/−1 |
-| 7 | HEAD | docs + fix: 本回执、集成请求，以及 HTTP 测试连接池偶发 `ECONNRESET` 的修复 | 4 files（含 2 份文档） |
+| 7 | `ee1cfcc` | docs(forward): D line receipt and integration request | 4 files（含 2 份文档） |
 
 合计 `8 files changed, +1507/−20`（相对起点）。改动文件：
 `gateway/src/automation.ts`、`gateway/src/automation-cli.ts`、`gateway/src/automation-http.ts`、
