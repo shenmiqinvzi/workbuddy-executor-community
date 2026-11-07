@@ -10,6 +10,12 @@ export interface QuotaObservation {
   used: number | null; budget: number | null; remaining: number | null; resetAt: string | null;
   method: string; limitations: string[];
 }
+/** One connection's own reading of a scope, kept next to the merged row. */
+export interface QuotaSourceReading {
+  connectionId: string; snapshotId: string; realm: string;
+  availability: "available" | "exhausted" | "unknown";
+  sourceObservedAt: string | null; used: number | null; budget: number | null; remaining: number | null;
+}
 export interface QuotaSnapshot {
   snapshotId: string; connectionId: string; collectedAt: string; sourceObservedAt: string | null; expiresAt: string;
   observations: QuotaObservation[];
@@ -79,8 +85,25 @@ export function readQuotaResources(db: DatabaseSync, options: { connectionId?: s
     if (!a.sourceObservedAt && b.sourceObservedAt) return 1;
     return (b.sourceObservedAt ?? b.collectedAt).localeCompare(a.sourceObservedAt ?? a.collectedAt);
   });
-  const unique = new Map<string, (typeof candidates)[number] & { connectionIds: string[] }>();
-  for (const item of candidates) { const key = `${item.scopeId}:${item.modelId}`; const prior = unique.get(key); if (prior) prior.connectionIds.push(item.connectionId); else unique.set(key, { ...item, connectionIds: [item.connectionId] }); }
+  const unique = new Map<string, (typeof candidates)[number] & { connectionIds: string[]; readings: QuotaSourceReading[] }>();
+  for (const item of candidates) {
+    const key = `${item.scopeId}:${item.modelId}`;
+    // Two connections reporting the same scope are a pool merge, so the
+    // individual readings travel with the merged row: a caller that needs to
+    // know whether the sources agreed cannot recover that from the winner.
+    const reading: QuotaSourceReading = {
+      connectionId: item.connectionId, snapshotId: item.snapshotId, realm: item.realm,
+      availability: item.availability, sourceObservedAt: item.sourceObservedAt,
+      used: item.used, budget: item.budget, remaining: item.remaining,
+    };
+    const prior = unique.get(key);
+    if (prior) { prior.connectionIds.push(item.connectionId); prior.readings.push(reading); }
+    else unique.set(key, { ...item, connectionIds: [item.connectionId], readings: [reading] });
+  }
+  for (const item of unique.values()) {
+    item.readings.sort((a, b) => a.connectionId.localeCompare(b.connectionId));
+    item.connectionIds.sort();
+  }
   const observations = [...unique.values()].sort((a, b) => `${a.scopeId}:${a.modelId}`.localeCompare(`${b.scopeId}:${b.modelId}`));
   // Explicitly partial; no pool total or spendable balance is inferred.
   return { schemaVersion: QUOTA_RESOURCE_SCHEMA, readOnly: true as const, connections, observations: observations.slice(0, limit), truncated: observations.length > limit,
