@@ -1,0 +1,69 @@
+name: Forward gate
+
+# This workflow encodes the gate the forward round verified by hand on one
+# machine (see docs/forward/TOTAL_RECEIPT.md §4). It exists so the same gate can
+# run on a second machine or in CI; until it has actually run there, the CI tier
+# of the evidence is empty and the receipt says so.
+#
+# Two environment facts it pins on purpose:
+#  - WORKBUDDY_CONFIG_DIR: the gateway refuses to guess between several data
+#    directories. Tests build their own fixtures, so the gate points the default
+#    config at an empty directory it creates itself and never at a user profile.
+#  - Serial concurrency: the suite shares one machine profile (SQLite, process
+#    table, named pipes). Three flaps were observed under parallel agents; the
+#    candidate baseline is the serial run.
+
+on:
+  workflow_dispatch:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: gateway
+    env:
+      WORKBUDDY_CONFIG_DIR: ${{ runner.temp }}\workbuddy-gate-config
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: gateway/package-lock.json
+      - name: Verify source snapshot
+        run: node verify-snapshot.mjs
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Prepare an empty configuration directory
+        run: |
+          New-Item -ItemType Directory -Force -Path $env:WORKBUDDY_CONFIG_DIR | Out-Null
+          "config dir: $env:WORKBUDDY_CONFIG_DIR"
+      - name: Build the gateway
+        run: npm run build
+      - name: Type check the TaskView contract
+        run: npm run typecheck:task-view
+      - name: Backend suite, serial
+        run: |
+          npx tsx --test --test-concurrency=1 test/**/*.test.ts
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Workbench frontend tests
+        run: npm run test:workbench
+      - name: Desktop policy tests
+        run: npm run desktop:test
+      - name: Package the candidate from the fresh build
+        run: |
+          node scripts/package.mjs "$env:RUNNER_TEMP\forward-candidate"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $zip = Join-Path "$env:RUNNER_TEMP\forward-candidate" 'codex-workbuddy-gateway-v0.7.1.zip'
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          "candidate sha256: $hash"
+          node scripts/candidate-installation.mjs check --package $zip --expect-sha256 $hash
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Read-only workbench HTTP smoke
+        run: node scripts/workbench-smoke.mjs
