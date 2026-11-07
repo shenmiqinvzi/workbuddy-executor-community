@@ -1,7 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 import { PROJECT_ROOT } from "./env.js";
-import { discoverDesktopPaths } from "./deployment-paths.js";
+import { discoverDesktopPaths, type DetectedPath } from "./deployment-paths.js";
 
 function optional(name: string): string | undefined {
   const value = process.env[name]?.trim();
@@ -39,6 +39,22 @@ export interface Config {
   serviceConfigFile?: string;
 }
 
+/**
+ * Two installations or two data directories are a real ambiguity, not a
+ * preference: the process refuses rather than guessing. The refusal is useless
+ * if it does not say what it found, so the message names every candidate and
+ * the exact variable that resolves it, and states that nothing is guessed or
+ * rolled back.
+ */
+export function ambiguityMessage(desktop: { executable: DetectedPath; config: DetectedPath }): string {
+  const parts: string[] = [];
+  if (desktop.executable.source === "ambiguous") parts.push(`可执行文件候选：${desktop.executable.candidates.join("、")}`);
+  if (desktop.config.source === "ambiguous") parts.push(`配置目录候选：${desktop.config.candidates.join("、")}`);
+  return `Multiple WorkBuddy installations or data directories found; set WORKBUDDY_CLI_ELECTRON and WORKBUDDY_CONFIG_DIR explicitly. 检测到${parts.join("；")}。` +
+    `请设置 WORKBUDDY_CLI_ELECTRON=<WorkBuddy 可执行文件> 与/或 WORKBUDDY_CONFIG_DIR=<配置目录> 后重试。` +
+    `本服务不会替你挑选其中一个，也不会回退到其他目录或磁盘上的旧状态。`;
+}
+
 export function loadConfig(): Config {
   const configuredBackend = optional("WORKBUDDY_BACKEND");
   const backend = configuredBackend === "api"
@@ -52,7 +68,7 @@ export function loadConfig(): Config {
           : "desktop-queue";
   const desktop = discoverDesktopPaths({ runningExecutables: () => [] });
   if (["desktop-queue", "desktop-acp"].includes(backend) && (desktop.executable.source === "ambiguous" || desktop.config.source === "ambiguous")) {
-    throw new Error("Multiple WorkBuddy installations or data directories found; set WORKBUDDY_CLI_ELECTRON and WORKBUDDY_CONFIG_DIR explicitly.");
+    throw new Error(ambiguityMessage(desktop));
   }
   return {
     backend,
