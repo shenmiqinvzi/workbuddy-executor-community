@@ -7,7 +7,7 @@
 
 | 档位 | 本线状态 |
 | --- | --- |
-| 实现（代码在分支上） | 达到：`1e9108b`、`ee96277`、`b6edd38`、`25787e8`、`e49c5ea`、`9e00fee`、`7af4515` |
+| 实现（代码在分支上） | 达到：`1e9108b`、`ee96277`、`b6edd38`、`25787e8`、`e49c5ea`、`9e00fee`、`7af4515`、`9dcad9f`；回执修订 `dc34044` |
 | 合成（夹具真跑，含真实子进程/真实 sqlite/真实 HTTP 回环） | 达到：见第 3 节每个命令的 tests/pass/fail |
 | 窗口（本机固定窗口跑一遍） | 部分达到：资源/统计端点回环 GET 与 `dsh-coordinator.sync` 夹具运行；没有真实派工窗口 |
 | 真实（真实来源/真实模型请求） | **未达到**：没有真实来源授权、没有真实模型调用、没有真实派工 |
@@ -80,7 +80,7 @@
 - 缺口：统计只有页面视图，没有给 B/D 的只读契约；覆盖率、新鲜度、未知原因没有机器可读表达；窗口语义只有代码里隐含。
 - 实现：`gateway/src/statistics-contract.ts`（`STATISTICS_EXPORT_SCHEMA="workbuddy-executor/statistics-export-1"`、`STATISTICS_EXPORT_CONTRACT="statistics-export-contract-1"`、`STATISTICS_WINDOW_SEMANTICS="task_created_at_utc_start_inclusive_end_exclusive"`）；`coverageOf()`/`usageCoverage()`（requests 分母恒 `null` + `upstream_does_not_publish_request_count`；tokens `token_count_not_published`；amounts `price_not_published`）；`freshnessOf()`（默认 900 s，`fresh|stale|unknown`）；`buildStatisticsExport()` 输出 schema/contractVersion/readOnly/snapshotOnly/window/windowSemantics/freshness/coverage/totals/limitations/claims（`savings:null`、`superiority:null`）/consumerRules；`describeStatisticsExportContract()` 给 B/D。
 - 既有指标语义保持冻结（未改 `task-metrics.ts`）：wall time、排队/输入等待/报告到停止/停止到验收、返工轮次、恢复事件、人工 episode、检查器失败（`checker_error`）分开计数，未知不填 0。
-- 复验：`npx tsx --test test/statistics-contract.test.ts` → **6/6**；`test/statistics.test.ts test/statistics-page.test.ts` 在回归批中通过（见下）。
+- 复验：`npx tsx --test test/statistics-contract.test.ts` → **7/7**（含导出路由一条：`?limit=5` → 200 且 `coverage.requests.status==="unknown"`、`?limit=0` → 400、GET 前后任务库字节不变）；`test/statistics.test.ts test/statistics-page.test.ts` 在回归批中通过（见下）。
 
 ### C06 联合故障
 - 缺口：只有单个故障点的手工说法，没有「来源挂起 + 缓存损坏 + 字段变化」与任务侧并发的用例。
@@ -110,7 +110,7 @@
 | `recordNativeToolObservation()` | 桥接前不可用，**不接线**，抛 `native_unbridged` |
 | `observeAttemptHarnessCalls()` | 便捷读取封装，**src 无调用者**（`sync()` 直接用 `recordHarnessToolCalls`） |
 | `recordRequestObservation()` | 库函数存在，**src 无调用者**（见 I-3） |
-| `buildStatisticsExport()` | 契约实现完成，**无 HTTP 端点调用**（见 I-4） |
+| `buildStatisticsExport()` | 契约 + 只读路由处理器完成（`handleStatisticsRequest` 的 `/workbench/v1/statistics/export` 分支），**`workbench-http.ts` 的挂载未做**（I-4） |
 
 ## 5. 上游根本不提供的数据（能力不支持，不是「等接 Key」）
 
@@ -133,8 +133,8 @@
 
 | 命令 | 结果 |
 | --- | --- |
-| `npx tsc --noEmit -p tsconfig.json` | exit 0 |
-| `npx tsx --test test/statistics-call-events.test.ts test/statistics-harness-calls.test.ts test/dsh-harness-call-events.test.ts test/usage-attribution-adapter.test.ts test/resource-source-capability.test.ts test/resource-routing-ambiguity.test.ts test/statistics-contract.test.ts` | tests 51 / pass 51 / fail 0 |
+| `npx tsc --noEmit -p tsconfig.json` | exit 0（输出 0 行；`tsc.txt` 记 `tsc_exit=0`） |
+| `npx tsx --test test/statistics-call-events.test.ts test/statistics-harness-calls.test.ts test/dsh-harness-call-events.test.ts test/usage-attribution-adapter.test.ts test/resource-source-capability.test.ts test/resource-routing-ambiguity.test.ts test/statistics-contract.test.ts` | tests 52 / pass 52 / fail 0 |
 | `npx tsx --test-force-exit --test test/statistics.test.ts test/statistics-page.test.ts test/resource-routing.test.ts test/resource-routing-consistency.test.ts test/quota-observation.test.ts test/credit-balance.test.ts test/resource-fault-isolation.test.ts test/desktop-readonly-resources.test.ts test/resource-connections.test.ts test/resource-attribution.test.ts test/resource-snapshot-store.test.ts test/resource-trust-http.test.ts` | tests 140 / pass 140 / fail 0 |
 | `npx tsx --test test/quota-observation.test.ts test/desktop-readonly-resources.test.ts test/resource-routing.test.ts` | tests 42 / pass 42 / fail 0 |
 | `npx tsx --test-force-exit --test test/dsh-adapter.test.ts test/deepseek-coordinator.test.ts test/check-call-events.test.ts test/task-reviews.test.ts` | tests 90 / pass 90 / fail 0 |
@@ -149,9 +149,26 @@
 - 不成立：「calls 已经完整」。`local_check` 与 DSH Harness 两半有了；WorkBuddy 原生工具调用与 MCP 工具通道仍未接入，`channel:"mcp"` 为零。
 - 不成立：「归因已真实接线」。适配器与账本逻辑完成，但请求发出点（`dsh-coordinator.dispatch` 的 `client.prompt()`）尚未调用 `recordRequestObservation`。
 - 不成立：「真实来源已验证」。只有回环夹具；没有真实 Key、没有真实派工窗口。
-- 不成立：「导出契约已对外可用」。`buildStatisticsExport()` 没有 HTTP 端点，B/D 暂时读不到。
+- 不成立：「导出契约已对外可用」。`buildStatisticsExport()` 现在有了只读路由处理器（`statistics-http.ts` 的 `STATISTICS_EXPORT_PATH="/workbench/v1/statistics/export"`，已测 7/7 中的 1 例），但 `gateway/src/workbench-http.ts` 由 I 属主，路由挂载尚未落地（见 I-4），B/D 暂时读不到。
 
-## 9. 提交
+## 9. 关键证据定位（两个必看的行为）
+
+- **quota-1 旧文档兼容**：`gateway/workbench/test/resources-model.test.mjs:119` 的用例「quota-1：旧文档照常可读，但明确没有逐来源读数」——`schemaVersion` 回显 `workbuddy-executor/quota-1`、`readings` 为 `null`、`readingsMissing:true`、文案匹配 `/quota-1/`；该文件在 42/42 的批里通过。生产端 `gateway/src/quota-observation.ts` 用 `QUOTA_LEGACY_SCHEMAS` 声明只读兼容，不迁移、不重写。
+- **`observeOnly` 不写事实**：`gateway/test/dsh-harness-call-events.test.ts:126` 的用例「a read-only sync reads the same page without writing any call fact」——同一页数据用 `sync(taskId, 100, true)` 跑完后 `task_events` 里 `tool_call_finished` 数量为 0；生产分支被 `if (!observeOnly && page.events.length > 0)` 挡住。同文件 `:63` 证明正常 `sync` 写一条、二次 sync 不新增，`:92` 证明未终止不写、`:111` 证明 `isError` 记失败。
+
+## 10. 证据文件（`E:\javaproject\outputs\forward-delivery-20261107\C\`）
+
+| 文件 | 内容 |
+| --- | --- |
+| `test-c-new-suites.txt` | 本线七个新测试文件，tests 52 / pass 52 / fail 0 |
+| `test-c-regression-suites.txt` | 十二个既有资源/统计套件，tests 140 / pass 140 / fail 0 |
+| `test-c-quota-document.txt` | quota 文档三文件，tests 42 / pass 42 / fail 0 |
+| `test-c-dsh-integration.txt` | dsh-adapter + deepseek-coordinator + check-call-events + task-reviews，tests 90 / pass 90 / fail 0 |
+| `test-c-workbench-resources.txt` | 工作台 resources 四个 mjs，tests 42 / pass 42 / fail 0 |
+| `tsc.txt` | `tsc_exit=0` |
+| `C_LINE_RECEIPT.md`、`INTEGRATION_REQUEST_C.md`、`RESOURCE_DOCUMENT_CONTRACT.md` | 本回执与两份文档的副本 |
+
+## 11. 提交
 
 ```
 1e9108b  feat(statistics): produce trusted call facts from bounded commands and the DSH harness stream
@@ -162,4 +179,5 @@ e49c5ea  feat(statistics): read one attempt harness batch in a single idempotent
 9e00fee  feat(statistics): export a versioned, coverage-labelled contract and prove resource faults stay isolated
 7af4515  feat(resources): version the quota document as quota-2 and produce call facts from the DSH sync path
 f831924  chore: drop scratch files a test run left in the gateway directory
+9dcad9f  feat(statistics): serve the versioned export and document the resource document contract
 ```
