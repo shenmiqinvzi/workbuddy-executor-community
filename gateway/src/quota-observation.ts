@@ -2,7 +2,12 @@ import { createHash, createHmac, randomBytes } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { LocalStatisticsClient, StatisticsSourceError, type StatisticsErrorCode } from "./local-statistics-client.js";
 
-export const QUOTA_RESOURCE_SCHEMA = "workbuddy-executor/quota-1";
+/** quota-2 adds each source's own reading to a merged pool row, so a caller can
+ *  see whether the sources agreed instead of trusting the winner. */
+export const QUOTA_RESOURCE_SCHEMA = "workbuddy-executor/quota-2";
+/** Documents written before per-source readings existed; still readable, and a
+ *  reader is told the readings are absent rather than handed invented ones. */
+export const QUOTA_LEGACY_SCHEMAS = ["workbuddy-executor/quota-1"] as const;
 type QuotaErrorCode=StatisticsErrorCode|"source_configuration_invalid";
 export interface QuotaObservation {
   scopeId: string; scopeKind: "gateway_pool"; shared: true; modelId: string; realm: string;

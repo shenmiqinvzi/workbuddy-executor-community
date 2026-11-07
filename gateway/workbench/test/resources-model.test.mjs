@@ -22,6 +22,10 @@ const quotaFixture = () => ({
         connectionId: 'conn-a', snapshotId: SNAPSHOT,
         sourceObservedAt: '2026-11-04T07:59:00.000Z', collectedAt: '2026-11-04T08:00:00.000Z',
         connectionIds: ['conn-a'],
+        readings: [{
+            connectionId: 'conn-a', snapshotId: SNAPSHOT, realm: 'cn', availability: 'available',
+            sourceObservedAt: '2026-11-04T07:59:00.000Z', used: 1000, budget: 5000, remaining: 4000,
+        }],
     }],
     truncated: false, attribution: 'connection_only', actualTaskCredits: null, actualTaskTokens: null,
 });
@@ -44,7 +48,7 @@ const creditFixture = () => ({
     actualTaskCredits: null, attribution: 'connection_only',
 });
 
-test('quota-1：解析真实结构并保留连接与统计', () => {
+test('quota-2：解析真实结构并保留连接与统计', () => {
     const document = parseQuotaDocument(quotaFixture());
     const view = buildQuotaView(document);
     assert.equal(view.schemaVersion, QUOTA_SCHEMA);
@@ -57,7 +61,7 @@ test('quota-1：解析真实结构并保留连接与统计', () => {
     assert.equal(view.rows[0].remainingText, formatTokens(4000));
 });
 
-test('quota-1：null 保持未提供，不补零', () => {
+test('quota-2：null 保持未提供，不补零', () => {
     const raw = quotaFixture();
     raw.observations[0].used = null;
     raw.observations[0].budget = null;
@@ -74,7 +78,7 @@ test('quota-1：null 保持未提供，不补零', () => {
     assert.equal(view.rows[0].resetText, NULL_TEXT);
 });
 
-test('quota-1：真零与 null 分开', () => {
+test('quota-2：真零与 null 分开', () => {
     const raw = quotaFixture();
     raw.observations[0].remaining = 0;
     const view = buildQuotaView(parseQuotaDocument(raw));
@@ -82,7 +86,7 @@ test('quota-1：真零与 null 分开', () => {
     assert.notEqual(view.rows[0].remainingText, NULL_TEXT);
 });
 
-test('quota-1：已证实耗尽、未知与可用三种状态文案不同', () => {
+test('quota-2：已证实耗尽、未知与可用三种状态文案不同', () => {
     const labels = new Set();
     for (const availability of ['available', 'unknown', 'exhausted']) {
         const raw = quotaFixture();
@@ -97,10 +101,13 @@ test('quota-1：已证实耗尽、未知与可用三种状态文案不同', () =
     assert.match(buildQuotaView(parseQuotaDocument(exhausted)).rows[0].availabilityLabel, /耗尽/);
 });
 
-test('quota-1：未知 schema 版本与未知字段都被拒绝', () => {
+test('quota-2：未知 schema 版本与未知字段都被拒绝', () => {
     const wrongVersion = quotaFixture();
-    wrongVersion.schemaVersion = 'workbuddy-executor/quota-2';
+    wrongVersion.schemaVersion = 'workbuddy-executor/quota-9';
     assert.throws(() => parseQuotaDocument(wrongVersion), error => error instanceof ResourceSchemaError && error.code === 'UNKNOWN_SCHEMA');
+    const missingReadings = quotaFixture();
+    delete missingReadings.observations[0].readings;
+    assert.throws(() => parseQuotaDocument(missingReadings), ResourceSchemaError);
     const extra = quotaFixture();
     extra.observations[0].region = 'cn';
     assert.throws(() => parseQuotaDocument(extra), ResourceSchemaError);
@@ -109,7 +116,21 @@ test('quota-1：未知 schema 版本与未知字段都被拒绝', () => {
     assert.throws(() => parseQuotaDocument(missing), ResourceSchemaError);
 });
 
-test('quota-1：未识别的限制代码不冒充已知限制', () => {
+test('quota-1：旧文档照常可读，但明确没有逐来源读数', () => {
+    const legacy = quotaFixture();
+    legacy.schemaVersion = 'workbuddy-executor/quota-1';
+    delete legacy.observations[0].readings;
+    const view = buildQuotaView(parseQuotaDocument(legacy));
+    assert.equal(view.schemaVersion, 'workbuddy-executor/quota-1');
+    // 旧文档没有 per-source readings：视图如实标注缺失，不补一条假的读数。
+    assert.deepEqual(view.rows[0].readings, []);
+    assert.equal(view.rows[0].readingsMissing, true);
+    assert.match(view.rows[0].readingsMissingText, /quota-1/);
+    // 其余字段仍按原文解析。
+    assert.equal(view.rows[0].remainingText, formatTokens(4000));
+});
+
+test('quota-2：未识别的限制代码不冒充已知限制', () => {
     const raw = quotaFixture();
     raw.observations[0].limitations = ['routing_unverified', 'future_limit_code'];
     const limits = buildQuotaView(parseQuotaDocument(raw)).rows[0].limitations;

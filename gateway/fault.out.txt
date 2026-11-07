@@ -1,0 +1,5 @@
+✖ a hanging source times out and leaves task reads, supervision and statistics untouched (319.4641ms)
+✖ a corrupt cache is unreadable, not an empty pool, and does not touch the task side (141.1824ms)
+✖ renamed source fields are rejected and the previous snapshot stays stale, not zero (131.6303ms)
+✔ a statistics GET never writes: same bytes before and after (115.3575ms)
+✖ resource faults do not stop a second, healthy source from being read (236.6567ms)

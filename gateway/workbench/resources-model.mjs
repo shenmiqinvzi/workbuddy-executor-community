@@ -7,7 +7,10 @@
  * 成功读取的快照，绝不猜测字段、绝不把 null 补成 0。
  */
 
-export const QUOTA_SCHEMA = 'workbuddy-executor/quota-1';
+export const QUOTA_SCHEMA = 'workbuddy-executor/quota-2';
+/** quota-1 documents were written before per-source readings existed. They stay
+ *  readable, and every row read from one says so instead of inventing readings. */
+export const QUOTA_LEGACY_SCHEMAS = ['workbuddy-executor/quota-1'];
 export const CREDIT_SCHEMA = 'workbuddy-executor/credit-balance-1';
 
 /** 缺值统一写法：null 就是“没有这个读数”，不是零。 */
@@ -28,6 +31,9 @@ export class ResourceSchemaError extends Error {
 const QUOTA_TOP_KEYS = ['schemaVersion', 'readOnly', 'connections', 'observations', 'truncated', 'attribution', 'actualTaskCredits', 'actualTaskTokens'];
 const QUOTA_CONNECTION_KEYS = ['connectionId', 'status', 'errorCode', 'snapshotId', 'collectedAt', 'sourceObservedAt', 'expiresAt', 'freshness'];
 const QUOTA_OBSERVATION_KEYS = ['scopeId', 'scopeKind', 'shared', 'modelId', 'realm', 'unit', 'valueKind', 'availability', 'used', 'budget', 'remaining', 'resetAt', 'method', 'limitations', 'connectionId', 'snapshotId', 'sourceObservedAt', 'collectedAt', 'connectionIds'];
+/** quota-2 adds the per-source readings a merged pool row was built from. */
+const QUOTA_OBSERVATION_KEYS_V2 = [...QUOTA_OBSERVATION_KEYS, 'readings'];
+const QUOTA_READING_KEYS = ['connectionId', 'snapshotId', 'realm', 'availability', 'sourceObservedAt', 'used', 'budget', 'remaining'];
 const CREDIT_TOP_KEYS = ['schemaVersion', 'readOnly', 'connections', 'balances', 'actualTaskCredits', 'attribution'];
 const CREDIT_CONNECTION_KEYS = ['connectionId', 'status', 'errorCode', 'snapshotId', 'collectedAt', 'cacheFreshness'];
 const CREDIT_BALANCE_KEYS = ['snapshotId', 'connectionId', 'scopeId', 'realm', 'unit', 'valueKind', 'balance', 'accountsEnabled', 'accountsWithData', 'coverage', 'latestMemberObservedAt', 'collectedAt', 'cacheExpiresAt', 'errorCode', 'connectionIds', 'shared', 'scopeKind', 'balanceFreshness', 'limitations'];
@@ -280,8 +286,22 @@ function parseQuotaConnection(raw, path) {
     };
 }
 
-function parseQuotaObservation(raw, path) {
-    const value = expectExactKeys(expectObject(raw, path), QUOTA_OBSERVATION_KEYS, path);
+function parseQuotaReading(raw, path) {
+    const value = expectExactKeys(expectObject(raw, path), QUOTA_READING_KEYS, path);
+    return {
+        connectionId: expectString(value.connectionId, path + '.connectionId'),
+        snapshotId: expectString(value.snapshotId, path + '.snapshotId'),
+        realm: expectString(value.realm, path + '.realm'),
+        availability: expectEnum(value.availability, AVAILABILITY, path + '.availability'),
+        sourceObservedAt: expectNullableTime(value.sourceObservedAt, path + '.sourceObservedAt'),
+        used: expectInteger(value.used, path + '.used', { allowNull: true }),
+        budget: expectInteger(value.budget, path + '.budget', { allowNull: true }),
+        remaining: expectInteger(value.remaining, path + '.remaining', { allowNull: true }),
+    };
+}
+
+function parseQuotaObservation(raw, path, { readingsRequired }) {
+    const value = expectExactKeys(expectObject(raw, path), readingsRequired ? QUOTA_OBSERVATION_KEYS_V2 : QUOTA_OBSERVATION_KEYS, path);
     return {
         scopeId: expectString(value.scopeId, path + '.scopeId', { pattern: SCOPE_ID_PATTERN }),
         scopeKind: expectEnum(value.scopeKind, ['gateway_pool'], path + '.scopeKind'),
@@ -302,19 +322,24 @@ function parseQuotaObservation(raw, path) {
         sourceObservedAt: expectNullableTime(value.sourceObservedAt, path + '.sourceObservedAt'),
         collectedAt: expectNullableTime(value.collectedAt, path + '.collectedAt'),
         connectionIds: expectStringList(value.connectionIds, path + '.connectionIds'),
+        readings: readingsRequired
+            ? expectArray(value.readings, path + '.readings').map((item, index) => parseQuotaReading(item, path + '.readings[' + index + ']'))
+            : null,
+        readingsSource: readingsRequired ? 'document' : 'legacy_document',
     };
 }
 
 export function parseQuotaDocument(raw) {
     const value = expectExactKeys(expectObject(raw, 'quota'), QUOTA_TOP_KEYS, 'quota');
-    if (value.schemaVersion !== QUOTA_SCHEMA) fail('quota.schemaVersion', '不是 ' + QUOTA_SCHEMA);
+    const current = value.schemaVersion === QUOTA_SCHEMA;
+    if (!current && !QUOTA_LEGACY_SCHEMAS.includes(value.schemaVersion)) fail('quota.schemaVersion', '不是 ' + QUOTA_SCHEMA);
     expectBoolean(value.readOnly, 'quota.readOnly', true);
     expectNull(value.actualTaskCredits, 'quota.actualTaskCredits');
     expectNull(value.actualTaskTokens, 'quota.actualTaskTokens');
     const connections = expectArray(value.connections, 'quota.connections').map((item, index) => parseQuotaConnection(item, 'quota.connections[' + index + ']'));
-    const observations = expectArray(value.observations, 'quota.observations').map((item, index) => parseQuotaObservation(item, 'quota.observations[' + index + ']'));
+    const observations = expectArray(value.observations, 'quota.observations').map((item, index) => parseQuotaObservation(item, 'quota.observations[' + index + ']', { readingsRequired: current }));
     return {
-        schemaVersion: QUOTA_SCHEMA,
+        schemaVersion: value.schemaVersion,
         readOnly: true,
         connections,
         observations,
@@ -463,12 +488,27 @@ export function buildQuotaView(document, { now = Date.now } = {}) {
             freshness,
             freshnessLabel: freshnessLabel(freshness),
             freshnessTone: freshnessTone(freshness),
+            readings: (observation.readings ?? []).map(reading => ({
+                connectionId: reading.connectionId,
+                realm: reading.realm,
+                realmLabel: realmLabel(reading.realm),
+                availability: reading.availability,
+                availabilityLabel: availabilityLabel(reading.availability),
+                availabilityTone: availabilityTone(reading.availability),
+                remaining: reading.remaining,
+                remainingText: formatTokens(reading.remaining),
+                sourceObservedAt: reading.sourceObservedAt,
+                sourceObservedAtText: formatStamp(reading.sourceObservedAt),
+            })),
+            readingsSource: observation.readingsSource ?? 'document',
+            readingsMissing: observation.readings === null,
+            readingsMissingText: observation.readings === null ? '旧文档（quota-1）没有逐来源读数，合并行为单一读数' : null,
             limitations: describeLimitations(observation.limitations),
             routingVerified: false,
         };
     }));
     return {
-        schemaVersion: QUOTA_SCHEMA,
+        schemaVersion: document.schemaVersion,
         readOnly: true,
         attribution: document.attribution,
         attributionText: '按连接归因：网关汇总，未归因到任务',
