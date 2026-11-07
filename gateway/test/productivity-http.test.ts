@@ -9,7 +9,8 @@ import { openProductivityRuntime } from "../src/productivity-runtime.js";
 import { workbenchHealth, WorkbenchHttpServer } from "../src/workbench-http.js";
 import type { TaskApplicationService } from "../src/task-application-service.js";
 import type { DeliveryExportStore } from "../src/delivery-export.js";
-import type { NotificationStore } from "../src/notification-center.js";
+import type { NotificationStore, PendingNotification } from "../src/notification-center.js";
+import type { NotificationSnapshotView } from "../src/productivity-service.js";
 import type { StoredTask } from "../src/task-store.js";
 
 const task: StoredTask = {
@@ -130,4 +131,61 @@ test("productivity http: without sources the routes do not exist", async (t) => 
   const port = await start(t, false);
   const response = await request(port, { path: "/workbench/v1/templates" });
   assert.equal(response.status, 404);
+});
+
+test("productivity http: a saved delivery failure is reported with its reason, and a never-attempted episode is not counted", async (t) => {
+  const { runtime } = fixture(t);
+  const pending = [
+    {
+      episodeKey: "task-1|input_requested|event:3",
+      reason: "input_requested",
+      taskId: "task-1",
+      taskTitle: "示例任务",
+      state: "waiting_input",
+      anchor: { kind: "event", eventId: 3 },
+      occurredAt: "2026-11-05T08:00:00.000Z",
+      readyAt: null,
+      lastFailure: { message: "native presenter is not available", at: "2026-11-05T08:01:00.000Z", attempts: 2 },
+    },
+    {
+      episodeKey: "task-1|needs_review|event:4",
+      reason: "needs_review",
+      taskId: "task-1",
+      taskTitle: "示例任务",
+      state: "needs_review",
+      anchor: { kind: "event", eventId: 4 },
+      occurredAt: "2026-11-05T08:02:00.000Z",
+      readyAt: null,
+    },
+  ] as unknown as PendingNotification[];
+  const notifications = {
+    pending: () => pending,
+    config: () => runtime.sources.notifications.config(),
+    issues: () => [] as string[],
+  } as unknown as typeof runtime.sources.notifications;
+  const server = new WorkbenchHttpServer({
+    service: {} as unknown as TaskApplicationService,
+    health: () => workbenchHealth({ runtime: { release: "test", packageVersion: "0.0.0", startedAt: "2026-11-05T00:00:00.000Z" } }),
+    productivity: { ...runtime.sources, notifications },
+  });
+  const port = await server.listen(0);
+  t.after(async () => {
+    await server.close();
+  });
+  const response = await request(port, { path: "/workbench/v1/notifications" });
+  assert.equal(response.status, 200);
+  const body = JSON.parse(response.body) as NotificationSnapshotView;
+  assert.equal(body.pending.length, 2);
+  assert.equal(body.limits.pendingReturned, 2);
+  // Only the episode whose own ledger entry records a thrown attempt counts.
+  assert.equal(body.deliveryFailures, 1);
+  assert.equal(body.failures.length, 1);
+  assert.equal(body.failures[0]!.episodeKey, "task-1|input_requested|event:3");
+  assert.equal(body.failures[0]!.reason, "input_requested");
+  assert.equal(body.failures[0]!.message, "native presenter is not available");
+  assert.equal(body.failures[0]!.attempts, 2);
+  assert.equal(body.failures[0]!.at, "2026-11-05T08:01:00.000Z");
+  // A preview, not a delivery: reading it twice cannot swallow an episode.
+  const again = await request(port, { path: "/workbench/v1/notifications" });
+  assert.deepEqual(JSON.parse(again.body), JSON.parse(response.body));
 });

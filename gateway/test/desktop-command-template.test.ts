@@ -68,3 +68,25 @@ test("a malformed workspace or template identity is refused before any read", as
   await assert.rejects(() => (handler(template))("productivity_template_instantiate", { templateId: "not-a-template", workspaceId: "ws-1" }));
   await assert.rejects(() => (handler(template))("productivity_template_instantiate", { templateId: template.templateId, workspaceId: "" }));
 });
+
+test("preview and status return the session value untouched, warnings and retryable included", async () => {
+  const warnings = [{ code: "scope_not_declared", message: "允许修改范围为空：派工后按只读执行。" }];
+  const draft = { draftId: "draft-1", digest: "a".repeat(64), draft: { contract: { timeoutSeconds: 300 }, warnings } };
+  const receipt = { requestId: "req-1", taskId: "task-1", operationId: "op-1", state: "failed", code: "DESKTOP_PROMPT_NOT_SENT", message: "连接断开，未派工。", retryable: true };
+  const session = {
+    preview: (parameters: unknown) => ({ ...draft, echoed: parameters }),
+    receipt: (requestId: string) => ({ ...receipt, requestId }),
+    catalog: async () => ({ policy: { maxAttempts: 3, maxTimeoutSeconds: 300 } }),
+  };
+  const route = desktopCommandHandler(session as never, null, null, null, null, null);
+  const previewed = await route("preview", { taskId: "task-1" }) as typeof draft & { echoed: unknown };
+  // The transport must not reshape: a warning dropped here is a warning the user
+  // never sees, and a receipt without `retryable` invites a blind resend.
+  assert.deepEqual(previewed.draft.warnings, warnings);
+  assert.deepEqual(previewed.echoed, { taskId: "task-1" });
+  const status = await route("status", { requestId: "req-1" }) as typeof receipt;
+  assert.equal(status.retryable, true);
+  assert.equal(status.code, "DESKTOP_PROMPT_NOT_SENT");
+  assert.equal(status.requestId, "req-1");
+  await assert.rejects(() => route("status", {}));
+});
