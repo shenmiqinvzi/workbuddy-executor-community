@@ -10,6 +10,7 @@ import { RunJournal, hasNativeStopEvidence, type RunSnapshot, writePrivateJson }
 import { parseReport, runEvidenceDigestOf } from "./coordinator.js";
 import { reportDigest } from "./report-authentication.js";
 import { DeepSeekRpcError } from "./deepseek-client.js";
+import { recordRequestObservation } from "./usage-attribution.js";
 import { harnessEventLikes, recordHarnessToolCalls, type HarnessEventLike } from "./statistics-harness-calls.js";
 import { readTaskProjection } from "./task-view-reader.js";
 
@@ -153,6 +154,21 @@ export class DshTaskCoordinator {
       const result = await this.client.prompt({ hostId: binding.hostId, sessionId: binding.sessionId, requestId: binding.requestId, expectedSelection: expected,
         text: `Task ${task.taskId}; attempt ${binding.attemptId}.\n${task.objective}\n${(task.constraints ?? []).join("\n")}\n${scopeInstructions}\nRequired checks: ${JSON.stringify(task.acceptanceCommands ?? [])}\nDeadline: ${deadline}. Do not extend or auto-retry. Use bounded foreground tools only; do not create background jobs, subagents or codex_workflow requests. Resolve permissions in the native UI; do not change permission policies. Return actual changes, checks and limitations; wait for independent review.${feedback ? `\nReview feedback: ${feedback}` : ""}` });
       if (result.requestId !== binding.requestId || result.accepted !== true) throw Error("unconfirmed");
+      // The upstream accepted the request, so the request itself is a real
+      // observation. What it cost is not: this harness publishes no token or
+      // credit amount, so every ledger row says `unavailable` with a null value
+      // instead of a zero that would read as "free". A ledger fault must never
+      // turn an accepted dispatch into an uncertain one, so it is contained
+      // here and stays visible as a coverage gap rather than a silent success.
+      try {
+        recordRequestObservation(this.store.usage, {
+          requestId: binding.requestId, taskId: task.taskId, attemptId: binding.attemptId,
+          sessionId: binding.sessionId, executorId: "dsh", runtimeSource: "dsh",
+          connectionId: binding.execution.connectionId ?? null, providerId: binding.execution.providerId ?? null,
+          modelId: binding.execution.modelId ?? null, reasoningEffort: binding.execution.reasoningEffort ?? null,
+          role: "worker", occurredAt: new Date().toISOString(), scopeKind: "unverified",
+        }, "dsh", new Date());
+      } catch { /* keep the accepted dispatch; the missing row shows up as unrecorded coverage */ }
       this.store.atomic(() => {
         const current = this.store.dshBindings.get(binding.attemptId)!;
         if (current.runOpen) this.store.dshBindings.update({ ...current, dispatch: "accepted", ...(result.turnId ? { turnId: result.turnId } : {}) });

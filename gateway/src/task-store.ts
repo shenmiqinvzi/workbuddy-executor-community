@@ -6,6 +6,7 @@ import type { LocalMessage } from "./workbuddy-client.js";
 import { persistedTaskContract, validateSupportedTaskContract, verifyPersistedContract, type PersistedTaskContract, type TaskContractIntegrity, type TaskContractPolicy, type TaskContractRejection } from "./task-contract.js";
 import { AdmissionError, CollaborationRegistry, enforceModelPolicy, verifySelectedModel, type ModelPolicy, type ModelObservation } from "./collaboration.js";
 import { QuotaStore } from "./quota-observation.js";
+import { UsageLedger } from "./usage-attribution.js";
 import { CreditBalanceStore } from "./credit-balance.js";
 import { OperationAdmission } from "./operation-admission.js";
 import { TaskReviews } from "./task-reviews.js";
@@ -157,6 +158,20 @@ export class TaskStore {
   readonly collaboration: CollaborationRegistry;
   readonly quotas: QuotaStore;
   readonly creditBalances: CreditBalanceStore;
+  /**
+   * The upstream usage ledger. It records what a request was, never how much it
+   * cost: this build cannot see token or credit amounts, so a row says
+   * `unavailable` with a null value instead of inventing a zero.
+   *
+   * Created on first use, not at open: a store whose owner never dispatches must
+   * keep reporting "no ledger" to the read-only statistics path instead of
+   * materialising the table on every open.
+   */
+  private usageLedger?: UsageLedger;
+  get usage(): UsageLedger {
+    this.usageLedger ??= new UsageLedger(this.db);
+    return this.usageLedger;
+  }
   readonly dshBindings: DshBindingStore;
   readonly operations: OperationAdmission;
   readonly recoveries: RecoveryStore;

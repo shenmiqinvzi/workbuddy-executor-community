@@ -75,7 +75,7 @@ test("GET resource snapshots never invoke the source and return no false task co
     const result=await response.json() as {schemaVersion:string;observations:Array<{readings:unknown[]}>};
     assert.equal(result.schemaVersion,"workbuddy-executor/quota-2");
     // The merged row still carries the reading of the source it came from.
-    assert.equal(result.observations[0].readings.length,1);
+    assert.equal(result.observations[0]?.readings?.length,1);
     await fetch(`http://127.0.0.1:${port}/workbench/v1/resources/quotas`);assert.equal(calls,1);assert.deepEqual(fs.readFileSync(f.store.file),before);assert.deepEqual(f.store.get("unrelated-task"),task);
     assert.equal((await fetch(`http://127.0.0.1:${port}/workbench/v1/resources/quotas`,{method:"POST"})).status,405);
     assert.equal((await fetch(`http://127.0.0.1:${port}/workbench/v1/resources/quotas?url=http://example.com`)).status,400);

@@ -19,6 +19,7 @@ import { RunJournal } from "../src/run-journal.js";
 import { readTaskProjection } from "../src/task-view-reader.js";
 import { workBuddyDshFreeRateVerifier, workBuddyDshRateObserver } from "../src/dsh-rate-verifier.js";
 import { DeepSeekRpcError, type DeepSeekEvent } from "../src/deepseek-client.js";
+import { readUsageRecords } from "../src/usage-attribution.js";
 
 
 function fixture(t: { after: (fn: () => void | Promise<void>) => void }, chosenModel = "deepseek-v4.1-flash") {
@@ -437,4 +438,33 @@ test("bound source observer reports paid and unknown prices without claiming fre
   const selection = { executorId: "dsh" as const, providerId: "provider", connectionId: "host", modelId: "chosen-model", reasoningEffort: null };
   assert.equal((await observe(selection)).credits, "x2.50"); credits = null; assert.equal((await observe(selection)).credits, null);
   await assert.rejects(observe({ ...selection, providerId: "other" }), { code: "MODEL_BINDING_CHANGED" });
+});
+
+test("an accepted DSH prompt records the request and never invents an amount", async t => {
+  const f = fixture(t);
+  await f.send();
+  const db = new DatabaseSync(f.store.file);
+  try {
+    const ledger = readUsageRecords(db, { taskId: "dsh-task" });
+    assert.equal(ledger.present, true, "the ledger table exists once the store is open");
+    assert.deepEqual(ledger.records.map(record => record.unit).sort(), ["credits", "tokens"], "one request, one row per unit");
+    for (const record of ledger.records) {
+      assert.equal(record.valueKind, "unavailable");
+      assert.equal(record.value, null, "an unseen amount is null, never 0");
+      assert.equal(record.taskId, "dsh-task");
+      assert.equal(record.attemptId, f.store.get("dsh-task")!.attemptId);
+      assert.equal(record.executorId, "dsh");
+    }
+  } finally { db.close(); }
+});
+
+test("a prompt whose acceptance was never confirmed records no usage row", async t => {
+  const f = fixture(t);
+  f.setPromptError(new Error("socket offline"));
+  await f.send();
+  const db = new DatabaseSync(f.store.file);
+  try {
+    const ledger = readUsageRecords(db, { taskId: "dsh-task" });
+    assert.equal(ledger.records.length, 0, "an unconfirmed request is not a recorded request");
+  } finally { db.close(); }
 });
