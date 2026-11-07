@@ -10,7 +10,7 @@
 | 集成树 | `E:\javaproject\workbuddy-forward-20261107\I-integration` |
 | 分支 | `integration/forward-delivery` |
 | 起点 | `134cdc7febbf858e89fb1010cf6b9d72da5edbe7`（`workbuddy-finish\R-review-fixes`，分支 `fix/delivery-review-r1-r4`） |
-| 本轮最新提交 | 见 §3 末行（提交后如需精确 HEAD，用 `git rev-parse HEAD`；代码最后改动是 `cd631b3` 的 `workbench/attention.mjs` 与 `a44a80c` 的两条测试，其后为文档与 CI 文件，均不进发布包，见 §5 可复现性） |
+| 本轮最新提交 | **代码与测试冻结于 `1143d65`**（其后只改 `docs/forward/**`，不在发布包白名单）；精确 HEAD 请跑 `git rev-parse HEAD`，工作区应为空 |
 | 证据根 | `E:\javaproject\outputs\forward-delivery-20261107\`（`A/ B/ C/ D/ I/ shared/`） |
 | 续接入口 | `docs/forward/I_CHECKPOINT_2.md`、证据根 `RESUME.md` |
 | 计划包 | `E:\javaproject\workbuddy-development-plan-20261107\`（10 个 md） |
@@ -24,7 +24,7 @@
 | 本机（machine） | 局部 | 降级启动真跑、就绪诊断真跑、候选包生成与自检真跑 |
 | 窗口（window） | **无** | 桌面壳 WebView 初始化失败，页面渲染/四尺寸/200%/读屏全部未实测 |
 | 真实（live） | **无** | 本轮无真实派工、无真实模型调用 |
-| 安装（installed） | **隔离根内成立** | 候选 final4 在 `I\candidate-final4-drill` 完成 install / upgrade / rollback-plan，`version-check` 744/744 `exact:true`；用户本机安装仍未做 |
+| 安装（installed） | **隔离根内成立** | 候选 final5 在 `I\candidate-final5-drill` 完成 install（含 6 条负例）/upgrade/rollback-plan，`version-check` 744/744 `exact:true`；用户本机安装仍未做 |
 | 发行（release） | **无** | 未推送、未合 main、未加许可宣示 |
 
 结论口径：**M1-D（开发就绪）达成；M1-L（实际可用）未达成；M2-D 部分达成；M2-L 未达成；R 未开始。**
@@ -48,13 +48,13 @@
 | 工作台 | `npm run test:workbench` | 165 tests / 165 pass / 0 fail（含 IR-A5 的 `IR-A5 an unreadable journal…`） | 终端 |
 | 桌面策略 | `npm run desktop:test` | 122 pass / 0 fail | `A\desktop-policy-tests.log` |
 | 类型 | `npx tsc --noEmit -p tsconfig.json`、`npm run typecheck:task-view` | 均 exit 0 | 终端 |
-| 构建 | `npm run build` | exit 0 | `I\build-final4.log` |
-| 候选复算（同一 tree 重打包） | `node scripts/package.mjs <tmp>` | ZIP SHA-256 = `5a791d66…9d39621a`（与候选一致） | `I\repro-head.log` |
+| 构建 | `npm run build` | exit 0 | `I\build-final5.log` |
+| 候选复算（同一 tree 重打包） | `node scripts/package.mjs <tmp>` | ZIP SHA-256 = `da0f35d1…250eb426`（与候选 final5 一致） | `I\repro-final.log` |
 | CI 配置 | `.github/workflows/forward-gate.yml`（本轮新增，未执行） | **未跑**：需要推送或第二台机器；不据此声明 CI 档 | — |
-| 候选安装演练（隔离根） | `node scripts/candidate-installation.mjs drill --package <final4> --drill-root I\candidate-final4-drill --apply` | exit 0，`ok:true`；含 `truncated_archive`、`digest_mismatch_reported`、`unconfirmed_stop_blocks_install` 等负例全 ok | `I\candidate-final4-drill.log` |
-| 候选升级演练 | `… upgrade-drill --package <final4> --drill-root <同上> --apply` | exit 0，`ok:true` | `I\candidate-final4-upgrade.log` |
-| 候选回退计划 | `… rollback-plan --package <final4> --to <final3> --install-root <drill> --codex-home <drill>\codex-home` | exit 0，`ok:true`，给出步骤表 | `I\candidate-final4-rollback.log` |
-| 安装根版本一致性 | `… version-check --install-root I\candidate-final4-drill\installation --package <final4>` | exit 0，`matched 744 / differing [] / missing [] / exact true / matches true` | `I\candidate-final4-version.log` |
+| 候选安装演练（隔离根） | `node scripts/candidate-installation.mjs drill --package <final5> --drill-root I\candidate-final5-drill --apply` | exit 0，`ok:true`；含 `truncated_archive`、`digest_mismatch_reported`、`unconfirmed_stop_blocks_install` 等负例全 ok | `I\candidate-final5-drill.log` |
+| 候选升级演练 | `… upgrade-drill --package <final5> --drill-root <同上> --apply` | exit 0，`ok:true` | `I\candidate-final5-upgrade.log` |
+| 候选回退计划 | `… rollback-plan --package <final5> --to <final4> --install-root <drill> --codex-home <drill>\codex-home` | exit 0，`ok:true`，给出步骤表 | `I\candidate-final5-rollback.log` |
+| 安装根版本一致性 | `… version-check --install-root I\candidate-final5-drill\installation --package <final5>` | exit 0，`matched 744 / differing [] / missing [] / exact true / matches true` | `I\candidate-final5-version.log` |
 
 ### 4.1 全量后端套件的两个已知非回归噪声
 
@@ -96,28 +96,28 @@
 
 | 项 | 值 |
 |---|---|
-| 路径 | `E:\javaproject\outputs\forward-delivery-20261107\I\candidate-final4\codex-workbuddy-gateway-v0.7.1.zip` |
-| 字节 | 2,482,365 |
+| 路径 | `E:\javaproject\outputs\forward-delivery-20261107\I\candidate-final5\codex-workbuddy-gateway-v0.7.1.zip` |
+| 字节 | 2,483,527 |
 | 条目数 | 745（`candidate-installation` 计 744 个受管文件，`verify-release` 校验 744） |
-| ZIP SHA-256 | `5a791d66896b85464087a38d358c9a5ff73e937574085a195a2aea809d39621a` |
-| manifest | 120,216 B / SHA-256 `aa83d4929a83d32d00ed8fc46987c85bc7d78513d80677b53099c7aecef7875e` → 副本 `I\candidate-final4-manifest.json` |
-| `verify-release.mjs` | `{"version":"0.7.1","verifiedFiles":744,"hashesMatch":true}` → `I\candidate-final4-verify.txt` |
-| `candidate-installation.mjs check` | `ok:true`、`problems:[]`、`totalBytes 8121633` → `I\candidate-final4-check.json` |
-| 对应提交 | `c299e7b`（含 IR-A5 的 `workbench/attention.mjs` 改动；`git status` 干净） |
+| ZIP SHA-256 | `da0f35d1e2c7c8a2a57c41a1a0269b9d777602f0643621f6394dd46c250eb426` |
+| manifest | 120,216 B / SHA-256 `8150249b278602d75a9b73d21d117bc41231f58c7976b509454f341424219e88` → 副本 `I\candidate-final5-manifest.json` |
+| `verify-release.mjs` | `{"version":"0.7.1","verifiedFiles":744,"hashesMatch":true}` → `I\candidate-final5-verify.txt` |
+| `candidate-installation.mjs check` | `ok:true`、`problems:[]`、`totalBytes 8125788` → `I\candidate-final5-check.json` |
+| 对应提交 | **代码与测试冻结于 `1143d65`**；包内含 `test/**/*.test.ts`（134 个）与 14 个产品 `docs/*.md` |
 | 桌面成品 | **本轮新生成**：`npm run desktop:build`（exit 0，`desktop/app/` 出 `WorkBuddy.Workbench.exe` + `WorkBuddy.Workbench.dll` + WebView2 DLL 与 `runtimes/win-x64/native/WebView2Loader.dll`）→ `npm run desktop:package`（exit 0）→ `workbuddy-desktop-v0.7.1-t7d-desktop-preview.zip`，**752 文件 / 2,903,333 B / SHA-256 `cb3effed00af5e259fca41593a490df2ea2f63ea72fef1c5f8c49e560912c216`**（证据副本 `I\workbuddy-desktop-v0.7.1-t7d-desktop-preview.zip` + `.sha256`，日志 `I\desktop-build.log`、`I\desktop-package.log`）。重打包得到同一 SHA（确定性）。**边界**：只证明「能构建、能打包、包内是本机 Release 产物」，不证明「装上能起窗口」——窗口层仍是 0（WebView 初始化失败、无普通桌面会话）。<br>注：`package-desktop.mjs:17` 有「拒绝覆盖已有桌面包」的守卫，重复执行同一路径会 exit 1 并打印 `Refusing to replace a desktop archive or checksum.`——这是设计，不是失败 |
 
-> 更早的中间包 `outputs\candidate-cp2`（734 文件 / `61dc0456…`）、`candidate-final`（745 文件 / `b3a8a86a…`）、`candidate-final2`（`49c8ba09…`）、`candidate-final3`（745 文件 / `86018f5d…`，对应 `21764ec`）只保留作对照，**不是**本轮候选。final4 与 final3 的差异只有一处源码：`workbench/attention.mjs` 的「记录损坏」独立原因（IR-A5），其余为文档。
+> 更早的中间包 `outputs\candidate-cp2`（734 文件 / `61dc0456…`）、`candidate-final`（745 / `b3a8a86a…`）、`candidate-final2`（`49c8ba09…`）、`candidate-final3`（745 / `86018f5d…`，对应 `21764ec`）、`candidate-final4`（745 / `5a791d66…`，对应 `c299e7b`）只保留作对照，**不是**本轮候选。
 
-**可复现性**：同一 tree 重新打包得到同一 SHA-256（条目时间固定 1980-01-01，压缩参数固定；`docs/forward/**` 不在发布包白名单）。对照包 `I\candidate-repro-check`，说明 `I\candidate-reproducibility.md`。`27e89fc`（只加文档）与 `1143d65`（只加测试与 CI 文件）两次打包仍为 `5a791d66…`——测试与 CI 不在白名单。
+**可复现性（含一次自我纠错）**：同一 tree 重新打包得到同一 SHA-256（条目时间固定 1980-01-01，压缩参数固定）。我第一次写「测试与 CI 不在发布包白名单」是**错的**：发布白名单里有 `test/**/*.test.ts`（134 个），只有 `docs/forward/**` 与 `.github/**` 不在里面。因此在 `a44a80c` 补两条测试之后，重打包得到的是 `da0f35d1…` 而不是 `5a791d66…`——候选据此重出为 final5，并把这条改正写在这里，而不是把旧包说成新代码的产物。对照包 `I\repro-final`（同 tree 重打包，字节一致），说明 `I\candidate-reproducibility.md`。
 
-**隔离安装根演练**（`I\candidate-final4-drill`，`--apply`；不改用户环境）：
+**隔离安装根演练**（`I\candidate-final5-drill`，`--apply`；不改用户环境）：
 
 | 步 | 命令 | 结果 | 证据 |
 |---|---|---|---|
-| 安装 + 负例 | `drill --package <final4> --drill-root … --apply` | exit 0，`ok:true`；负例 `missing_build`/`persistent_service`/`unclosed_task`/`unconfirmed_stop_blocks_install`/`truncated_archive`/`digest_mismatch_reported` 全 `ok:true` | `I\candidate-final4-drill.log` |
-| 升级 | `upgrade-drill --package <final4> --drill-root … --apply` | exit 0，`ok:true` | `I\candidate-final4-upgrade.log` |
-| 回退计划 | `rollback-plan --package <final4> --to <final3> --install-root <drill> --codex-home <drill>\codex-home` | exit 0，`ok:true`，给出步骤表 | `I\candidate-final4-rollback.log` |
-| 版本一致性 | `version-check --install-root <drill>\installation --package <final4>` | exit 0，`matched 744 / differing [] / missing [] / exact true / matches true` | `I\candidate-final4-version.log` |
+| 安装 + 负例 | `drill --package <final5> --drill-root … --apply` | exit 0，`ok:true`；负例 `missing_build`/`persistent_service`/`unclosed_task`/`unconfirmed_stop_blocks_install`/`truncated_archive`/`digest_mismatch_reported` 全 `ok:true` | `I\candidate-final5-drill.log` |
+| 升级 | `upgrade-drill --package <final5> --drill-root … --apply` | exit 0，`ok:true` | `I\candidate-final5-upgrade.log` |
+| 回退计划 | `rollback-plan --package <final5> --to <final4> --install-root <drill> --codex-home <drill>\codex-home` | exit 0，`ok:true`，给出步骤表 | `I\candidate-final5-rollback.log` |
+| 版本一致性 | `version-check --install-root <drill>\installation --package <final5>` | exit 0，`matched 744 / differing [] / missing [] / exact true / matches true` | `I\candidate-final5-version.log` |
 
 > 记一次自己的错误用法：第一次把 `--install-root` 指到 drill 根（不是 `installation` 子目录），输出 `matched 0` + 744 条 `missing`、exit 1。改成 `installation` 子目录后才是 744/744。这条留在日志里，免得复核方以为安装根本身不一致。
 
@@ -174,7 +174,7 @@ npm run test:workbench
 npm run desktop:test
 node scripts/readiness.mjs        # 未设 config：exit 1 + 候选清单，不写配置
 
-# 候选包复算（期望 ZIP SHA-256 5A791D66896B85464087A38D358C9A5FF73E937574085A195A2AEA809D39621A）
+# 候选包复算（期望 ZIP SHA-256 DA0F35D1E2C7C8A2A57C41A1A0269B9D777602F0643621F6394DD46C250EB426）
 npm run build
 node scripts/package.mjs E:\javaproject\outputs\forward-delivery-20261107\I\repro-review
 Get-FileHash E:\javaproject\outputs\forward-delivery-20261107\I\repro-review\codex-workbuddy-gateway-v0.7.1.zip -Algorithm SHA256
