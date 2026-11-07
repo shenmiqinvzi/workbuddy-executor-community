@@ -10,7 +10,9 @@ const operator = { actor: "synthetic-operator", source: "user:synthetic-operator
 
 function request(port: number, options: { method?: string; path: string }): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: string }> {
   return new Promise((resolve, reject) => {
-    const req = http.request({ host: "127.0.0.1", port, method: options.method ?? "GET", path: options.path, headers: { host: `127.0.0.1:${port}` } }, (response) => {
+    // No pooled socket: the server closes idle keep-alive connections, and a reused socket that the
+    // server already closed surfaces as a spurious ECONNRESET in an unrelated assertion.
+    const req = http.request({ host: "127.0.0.1", port, method: options.method ?? "GET", path: options.path, agent: false, headers: { host: `127.0.0.1:${port}`, connection: "close" } }, (response) => {
       const chunks: Buffer[] = [];
       response.on("data", (chunk: Buffer) => chunks.push(chunk));
       response.on("end", () => resolve({ status: response.statusCode ?? 0, headers: response.headers, body: Buffer.concat(chunks).toString("utf8") }));
