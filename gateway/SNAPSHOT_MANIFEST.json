@@ -204,6 +204,11 @@
       "bytes": 5341
     },
     {
+      "path": "desktop/GatewayDependencies.cs",
+      "sha256": "c2c1709da975d95a90592b2da980f9c6e95f3036d9a5d6d6072a213c88eb5941",
+      "bytes": 4808
+    },
+    {
       "path": "desktop/Program.cs",
       "sha256": "c24787445091bf97c37bfeb805144b38abd8afbd721f5c1792102257f3683236",
       "bytes": 33640
@@ -507,6 +512,11 @@
       "path": "scripts/verification-preflight.mjs",
       "sha256": "bbd076eaf48800b8aa6316c8fa64b3424640e0ae8b5347bdb87a53190d9940af",
       "bytes": 1921
+    },
+    {
+      "path": "scripts/verify-desktop.mjs",
+      "sha256": "c218b49bac3c26268bdf244f177a5bd24b227c22d2e10c84c7a350fc6c6e44c3",
+      "bytes": 3577
     },
     {
       "path": "scripts/verify-release.mjs",
@@ -2217,6 +2227,11 @@
       "path": "workbench/test/task-panel-recovery.test.mjs",
       "sha256": "76754cad1e8ec7baf6d0c6c3643ecf4f533fbccaa523433c55beaaca39899131",
       "bytes": 5893
+    },
+    {
+      "path": "workbench/test/workbench-layout-probe.mjs",
+      "sha256": "534f9c0b50e8e927cbc41b1d5c2c7345c5dfe2bb3a64f681f6dc5587f4b88644",
+      "bytes": 13492
     }
   ]
 }
