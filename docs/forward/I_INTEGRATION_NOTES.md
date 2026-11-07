@@ -33,10 +33,16 @@ B-4 边界：这是「当前仍待办且已保存失败原因」的清单，不�
 
 ## IR-C（资源与真实计量）
 
-C 线仍在收尾，未回执。已由 I 侧先行落地、C 不需要再动的部分：
+C 线已收口（`a08fbc3`，10 提交，回执 `C_LINE_RECEIPT.md`）。逐条处置：
 
-- `local_check_finished` 生产端 = I 侧 `gateway/src/task-reviews.ts`（提交 `caa7a5fa`），契约 `docs/CALL_EVENT_CONTRACT.md`。
-- 待 C 交付：`QUOTA_RESOURCE_SCHEMA` 升 `quota-2` 且消费端同时接受 `quota-1`（当前 `test/desktop-readonly-resources.test.ts` 仍在失败）；`recordHarnessToolCalls` 在 `src` 内 0 调用者，需接在 `gateway/src/dsh-coordinator.ts` 的 `sync()` 末端。
+| 请求 | 结论 | 落点 | 验证 |
+| --- | --- | --- | --- |
+| C-1 配额文档升版 | 接受：`QUOTA_RESOURCE_SCHEMA` 升 `workbuddy-executor/quota-2`，消费端 `workbench/resources-model.mjs` 逐项校验 `readings[]`，同时接受 `quota-1`（旧文档＝「无逐来源读数」，不伪造） | `gateway/src/quota-observation.ts`、`gateway/workbench/resources-model.mjs`、`docs/RESOURCE_DOCUMENT_CONTRACT.md` | `test/quota-observation.test.ts`、`test/desktop-readonly-resources.test.ts`、`test/workbench-http.test.ts` 复跑通过（`npm run build` 之后） |
+| C-2 `recordHarnessToolCalls` 无调用者 | 已由 C 接到真实入口：`gateway/src/dsh-coordinator.ts` `sync()` 末端，`channel:"native"`、`sourceRef` 含 `harnessEventSeq`，`observeOnly` 路径不写 | `gateway/src/dsh-coordinator.ts`（+20 行） | `test/dsh-harness-call-events.test.ts`、`test/statistics-harness-calls.test.ts` |
+| C-3 打包守卫命中夹具 | 已改 `C:\Users\example\repo\a.ts` 并保留断言 | `gateway/test/statistics-call-events.test.ts:78` | 11/11 |
+| C-4 导出路由就绪但挂在 I 线 | 已确认挂好：`workbench-http.ts:384-385` 已知路径覆盖 `/workbench/v1/statistics/`，`:411-415` 调 `handleStatisticsRequest` | `gateway/src/workbench-http.ts`、`gateway/src/workbench-entry.ts:99` | `test/statistics-contract.test.ts`、`test/workbench-http.test.ts` |
+
+C 线自述未取得的档位（如实保留）：真实来源联调、真实请求标识（只能到 `connection_only`）、token/费用实证。
 
 ## IR-D（自动政策与恢复）
 
@@ -46,7 +52,7 @@ C 线仍在收尾，未回执。已由 I 侧先行落地、C 不需要再动的�
 | D-2 导航与 405 覆盖自动化路径 | 已满足 | `gateway/src/workbench-http.ts:390-391` 已含 `AUTOMATION_PATH` 与其子路径；`handleAutomationRequest` 在 `:423-428` 接入 |
 | D-3 `automation_*` 四表入统一迁移 | 裁定为 **(b) 模块自建 + 显式声明版本**，不并入统一迁移；升级/幂等/回滚/旧库补表四种语义写进 `docs/AUTOMATION_SCHEMA_OWNERSHIP.md` | 决定与理由：`docs/AUTOMATION_SCHEMA_OWNERSHIP.md`；证据：`test/automation-policy.test.ts:348`（更高版本在建表前拒绝）、`:365`（同连接幂等） |
 | D-4 组合根用真实 config/env | 已满足 | `gateway/scripts/workbench-desktop-host.mjs`、`gateway/src/workbench-entry.ts` 均从 `loadConfig()` / `process.env` 取值 |
-| D-5 页面保留「受控政策执行，仍需每任务确认」 | B 侧页面文案已含；I 侧未改 | `gateway/workbench/automation.mjs` |
+| D-5 页面保留「受控政策执行，仍需每任务确认」 | 已满足 | `gateway/workbench/automation.mjs:413`（「自动政策只收窄派工范围……也不替代 AGENTS.md 的逐任务选择确认」）、`:418`（六层边界说明） |
 
 ## 本轮 I 侧新增接线一览（供复核）
 
