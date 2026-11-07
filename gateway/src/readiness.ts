@@ -197,15 +197,23 @@ export function isFresh(summary: RuntimeSummary | undefined, now: Date, interval
 }
 
 /** Mirrors DesktopPolicy.InstanceKey so a status read reaches the window this install owns. */
+/**
+ * Mirrors DesktopPolicy.InstanceKey so a status read reaches the window this install owns.
+ * A trailing separator must not change the identity: the launcher passes the gateway directory
+ * without one, while the module root carries one, and the two have to name the same pipe.
+ */
 export function desktopInstanceKey(input: { gatewayDir: string; database: string; runsDir: string }): string {
-  const material = [input.gatewayDir, input.database, input.runsDir].map(value => path.win32.normalize(value).toUpperCase()).join("\n");
+  const material = [input.gatewayDir, input.database, input.runsDir]
+    .map(value => path.win32.normalize(value).replace(/[\\/]+$/, "").toUpperCase())
+    .join("\n");
   return crypto.createHash("sha256").update(material, "utf8").digest("hex").slice(0, 24).toUpperCase();
 }
 
 export function desktopWindowPaths(config: Config, root: string): { gatewayDir: string; database: string; runsDir: string; pipeName: string } {
-  const database = path.win32.normalize(config.dbFile);
-  const runsDir = path.win32.normalize(runsDirectory(config));
-  const gatewayDir = path.win32.normalize(path.join(root));
+  const trim = (value: string) => path.win32.normalize(value).replace(/[\\/]+$/, "");
+  const database = trim(config.dbFile);
+  const runsDir = trim(runsDirectory(config));
+  const gatewayDir = trim(path.join(root));
   return { gatewayDir, database, runsDir, pipeName: `WorkBuddy.Workbench.${desktopInstanceKey({ gatewayDir, database, runsDir })}` };
 }
 

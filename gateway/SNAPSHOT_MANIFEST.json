@@ -995,8 +995,8 @@
     },
     {
       "path": "src/readiness.ts",
-      "sha256": "992fee5bce36c5603efb1a4c358a9b0851db50188d12ebda61cb0c10b0e6be05",
-      "bytes": 31681
+      "sha256": "e8d9a9567729402dc89046c1e0962cb25948f1dfb2c1ea1ef9289976b3caf400",
+      "bytes": 32039
     },
     {
       "path": "src/recommendation.ts",
@@ -1392,6 +1392,11 @@
       "path": "test/desktop-dispatch.test.ts",
       "sha256": "3635d0e20270ef7ba05d2755f395bfc08d1526b9bbf4f81450158959a9dd5caf",
       "bytes": 16650
+    },
+    {
+      "path": "test/desktop-host-wiring.test.ts",
+      "sha256": "009ea411c6c0a4cccbaff1ba471e9f13521ffbc75ba626bc05bebe3f8a327e69",
+      "bytes": 1617
     },
     {
       "path": "test/desktop-productivity.test.ts",
