@@ -24,7 +24,7 @@ const catalog=()=>({catalogId:'catalog-1',models:[wb,dsh],sessions:[{hostId:'syn
     {sourceId:sourceKey(wb.execution),executorId:'workbuddy',connectionId:'local-workbuddy',providerId:'workbuddy-native',label:'WorkBuddy · 本机原生来源',state:'online',stateReason:null,dispatchable:true,stoppable:'unknown',models:[wb]},
     {sourceId:sourceKey(dsh.execution),executorId:'dsh',connectionId:'synthetic-host',providerId:'synthetic-provider',label:'DSH · synthetic-provider · synthetic-host',state:'disabled',stateReason:'DSH 来源未启用；如需使用，请检查现有连接配置。',dispatchable:false,stoppable:'unknown',models:[dsh]}],
   projects:[{projectId,realPath:projectPath,displayName:'project',state:'unverified',observedAt:'2026-11-05T00:00:00.000Z'}],projectIssues:[]});
-const draft=revision=>({draftId:'draft-1',taskId:'desktop-task-1',operationId:'desktop-send-1',revision,projectId,workspace:{realPath:projectPath,device:'1',inode:'2'},sessionId:null,digest:'digest-'+revision,quote:{credits:'x0.00',pricingVerified:true,observedAt:'2026-11-05T00:00:00.000Z'},policyVersion:'policy-1',expiresAt:'2026-11-05T23:59:59.000Z',
+const draft=(revision,warnings=[])=>({draftId:'draft-1',taskId:'desktop-task-1',operationId:'desktop-send-1',revision,projectId,workspace:{realPath:projectPath,device:'1',inode:'2'},sessionId:null,digest:'digest-'+revision,quote:{credits:'x0.00',pricingVerified:true,observedAt:'2026-11-05T00:00:00.000Z'},policyVersion:'policy-1',expiresAt:'2026-11-05T23:59:59.000Z',warnings,
   contract:{schemaVersion:'workbuddy-executor/vnext-2',taskId:'desktop-task-1',workspaceId:'desktop-1',title:'Synthetic scoped task',objective:'Update only the allowed files',execution:wb.execution,collaboration:{planId:'pending',expectedPlanRevision:'pending'},timeoutSeconds:600,maxAttempts:1,scope:{allowedChanges:['src/**'],permittedMetadata:[]},requiredChecks:[{id:'check-1',kind:'semantic',definition:'Independent check'}]}});
 function setup(){body.replaceChildren();const sheet=document.createElement('div');sheet.className='sheet';const heading=document.createElement('div');heading.className='page-heading';const tools=document.createElement('div');tools.className='heading-tools';const title=document.createElement('h1');title.id='page-title';const intro=document.createElement('p');intro.className='page-intro';heading.append(title,intro,tools);sheet.append(heading);body.append(sheet);const source=document.createElement('input');source.id='data-source';source.value='live';body.append(source);}
 const byText=(tag,text)=>body.descendants().filter(node=>node.tagName===tag&&node.textContent.trim()===text);
@@ -33,10 +33,10 @@ function submit(){
     const handlers=[...form.listeners.get('submit')??[]];
     return Promise.all(handlers.map(handler=>handler({type:'submit',preventDefault(){}})));
 }
-async function openEditor(){
+async function openEditor(warnings=[]){
     setup();const calls=[];globalThis.fetch=async(url,init)=>{if(url.endsWith('capabilities'))return new Response(JSON.stringify({ok:true,value:{available:true}}));const action=JSON.parse(init.body).action;calls.push({action,parameters:JSON.parse(init.body).parameters});
         if(action==='latest')return new Response(JSON.stringify({ok:true,value:null}));
-        if(action==='preview'){const revision=(calls.filter(call=>call.action==='preview').length);return new Response(JSON.stringify({ok:true,value:draft(revision)}));}
+        if(action==='preview'){const revision=(calls.filter(call=>call.action==='preview').length);return new Response(JSON.stringify({ok:true,value:draft(revision,warnings)}));}
         return new Response(JSON.stringify({ok:true,value:action==='catalog'?catalog():null}));};
     await mountDesktopDispatch({onTask:async()=>{}});q('new-task').click();await until(()=>q('compose-source')&&!q('compose-source').disabled);
     return calls;
@@ -116,4 +116,23 @@ test('one agreement is confirmed once, and a refusal keeps the exact identity',a
     outcome='consumed';q('confirm-task').click();await until(()=>dispatchCount===2);await until(()=>/同一份任务约定/.test(body.textContent));
     assert.equal(q('confirm-task').disabled,true);
     assert.equal(calls.filter(call=>call.action==='dispatch').length,2);
+});
+
+test('a scope warning is shown on the terms it belongs to and never blocks the review',async()=>{
+    const warnings=[{code:'scope_not_declared',message:'目标看起来要改动文件，但允许修改范围为空。'},
+        {code:'scope_path_not_covered',message:'目标提到 docs/README.md，但它不在允许修改范围里。'}];
+    await openEditor(warnings);
+    q('compose-workspace').value=projectPath;q('compose-workspace').dispatch('input');
+    q('compose-source').value=sourceKey(wb.execution);q('compose-source').dispatch('change');
+    q('compose-model').value='synthetic-model';q('compose-model').dispatch('change');
+    q('compose-effort').value='__none__';q('compose-effort').dispatch('change');
+    q('compose-title').value='Synthetic scoped task';q('compose-objective').value='Update docs/README.md';q('compose-checks').value='Independent check';
+    await submit();await until(()=>q('confirm-task'));
+    assert.match(q('review-warnings').textContent,/正文与允许范围不一致/);
+    assert.match(q('review-warnings').textContent,/docs\/README\.md/);
+    assert.match(q('review-warnings').textContent,/不会扩大范围/);
+    // The warning asks the user to fix the scope; it is not a refusal and it
+    // does not grant anything.
+    assert.equal(q('confirm-task').disabled,false);
+    assert.match(q('review-warnings').textContent,/正文与允许范围不一致/);
 });

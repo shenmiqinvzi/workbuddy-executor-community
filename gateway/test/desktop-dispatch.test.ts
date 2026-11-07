@@ -136,6 +136,31 @@ test("leaseByTask reads the dispatch lease by task id without creating anything 
  // Oversized identifiers read as absent, exactly like the request-id lease path.
  assert.equal(journal.leaseByTask("x".repeat(201)),null);
 });
+test("the objective never widens the scope: unresolved writes are shown as warnings on the drafted terms",async t=>{
+  const f=fixture(t);
+  // A read-only draft whose prose asks for an edit: the warning names the gap
+  // and the contract stays read-only.
+  const readOnly=await draft(f,{objective:"请修改 src/app.ts 里的超时处理",allowedChanges:[]});
+  assert.deepEqual(readOnly.contract.scope.allowedChanges,[]);
+  assert.deepEqual(readOnly.warnings.map(warning=>warning.code),["scope_not_declared","scope_path_not_covered"]);
+  assert.match(readOnly.warnings[1]!.message, /src\/app\.ts/);
+  // Naming a file outside the declared scope is called out per path, and the
+  // scope keeps exactly what the user declared.
+  const partial=await draft(f,{objective:"Update src/app.ts and also docs/README.md",allowedChanges:["src/app.ts"]});
+  assert.deepEqual(partial.warnings.map(warning=>warning.code),["scope_path_not_covered"]);
+  assert.match(partial.warnings[0]!.message,/docs\/README\.md/);
+  assert.deepEqual(partial.contract.scope.allowedChanges,["src/app.ts"]);
+  // A covered path is silent, and directory rules cover their own prefix.
+  const covered=await draft(f,{objective:"Rewrite src/nested/deep/file.ts",allowedChanges:["src/**"]});
+  assert.deepEqual(covered.warnings,[]);
+  // The warning list is part of the reviewed terms, so a revision re-quotes it.
+  const catalog=await f.session.catalog();
+  const revised=await f.session.preview({draftId:partial.draftId,digest:partial.digest,catalogId:catalog.catalogId,modelKey:catalog.models[0]!.key,workspace:f.project,
+    title:partial.contract.title,objective:partial.contract.objective,allowedChanges:["src/app.ts","docs/README.md"],permittedMetadata:[],checks:partial.contract.requiredChecks.map(check=>check.definition),
+    maxAttempts:partial.contract.maxAttempts,timeoutSeconds:partial.contract.timeoutSeconds,sessionId:null});
+  assert.equal(revised.revision,partial.revision+1);assert.deepEqual(revised.warnings,[]);
+  assert.equal(revised.taskId,partial.taskId);assert.equal(f.enqueued,0);
+});
 test("legacy database is refused before migration and its bytes stay unchanged",t=>{
  const f=fixture(t),file=path.join(f.dir,"legacy.sqlite"),db=new DatabaseSync(file);db.exec("CREATE TABLE tasks(task_id TEXT PRIMARY KEY)");db.close();
  const before=fs.readFileSync(file);assert.throws(()=>assertDesktopDispatchDatabase({dbFile:file} as Config),hasCode("GATEWAY_UPGRADE_REQUIRED"));assert.deepEqual(fs.readFileSync(file),before);

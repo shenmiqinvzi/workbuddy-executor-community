@@ -66,7 +66,11 @@ export interface DesktopDraft {
   sessionId: string | null;
   quote: { credits: string | null; pricingVerified: boolean; observedAt: string };
   policyVersion: string;
+  /** Places where the objective and the declared scope disagree. They are
+   * shown for the user to fix; they never widen the scope themselves. */
+  warnings: DesktopDraftWarning[];
 }
+export interface DesktopDraftWarning { code: string; message: string }
 export interface DesktopReceipt {
   requestId: string; taskId: string; operationId: string;
   state: "launch_requested" | "dispatching" | "submitted" | "failed" | "outcome_unknown";
@@ -119,6 +123,40 @@ function text(value: unknown, max: number): string {
 function lines(value: unknown, max: number, itemMax: number): string[] {
   if (!Array.isArray(value) || value.length > max) fail("INVALID_REQUEST", "任务条目超过允许数量。");
   return value.map(item => text(item, itemMax));
+}
+/** The verbs that usually mean "this task will change files". Matching one does
+ * not authorize anything: it only tells the user their scope looks empty. */
+const WRITE_INTENT = /(修改|新建|创建|新增|添加|删除|重命名|移动|重构|写入|改写|生成|实现|修复|更新|替换)/;
+const PATH_TOKEN = /[A-Za-z0-9_.\-]+\/[A-Za-z0-9_.\-/]*\.[A-Za-z0-9]{1,8}/g;
+/** True when a path mentioned in the prose is inside the declared scope. */
+function coveredByScope(target: string, allowed: string[]): boolean {
+  const path = target.replaceAll("\\", "/").replace(/^\.\//, "").toLowerCase();
+  return allowed.some(item => {
+    const rule = item.replaceAll("\\", "/").toLowerCase().replace(/\/+$/, "");
+    if (!rule) return false;
+    if (rule.endsWith("/**")) return path === rule.slice(0, -3) || path.startsWith(rule.slice(0, -2));
+    return path === rule;
+  });
+}
+/**
+ * Points where the objective and the structured scope disagree. The prose is
+ * never read as authorization (F-CONTRACT-1): these warnings ask the user to
+ * fix the scope, and the dispatch stays exactly as narrow as it was declared.
+ */
+function scopeWarnings(objective: string, allowed: string[]): DesktopDraftWarning[] {
+  const warnings: DesktopDraftWarning[] = [];
+  if (!allowed.length && WRITE_INTENT.test(objective)) {
+    warnings.push({ code: "scope_not_declared", message: "目标看起来要改动文件，但允许修改范围为空：派工后按只读执行，越界改动会被拒绝。如果确实要改文件，请在下方的范围里显式填写精确路径或 目录/**。" });
+  }
+  const seen = new Set<string>();
+  for (const raw of objective.match(PATH_TOKEN) ?? []) {
+    if (warnings.length >= 6) break;
+    if (seen.has(raw)) continue;
+    seen.add(raw);
+    if (coveredByScope(raw, allowed)) continue;
+    warnings.push({ code: "scope_path_not_covered", message: `目标提到 ${raw}，但它不在允许修改范围里；正文提到路径不会获得写权限。需要改动时请把该路径加入范围。` });
+  }
+  return warnings;
 }
 export function desktopWorkspace(directory: string) {
   if (!path.isAbsolute(directory)) fail("WORKSPACE_CONFLICT", "请选择已有项目的绝对路径。");
@@ -280,7 +318,8 @@ export class DesktopDispatchSession {
     try { this.dependencies.projects?.remember(project, typeof input.workspace === "string" ? input.workspace : null); } catch { /* the registry is a cache, never the identity */ }
     const value = { draftId: crypto.randomUUID(), taskId: identity.taskId, operationId: identity.operationId, revision: identity.revision, expiresAt: identity.expiresAt ?? catalog.expiresAt,
       projectId: desktopProjectId(project), workspace: project, contract: valid.contract as NormalizedTaskContractV2, sessionId: this.sessionId(input),
-      quote: { credits: model.credits, pricingVerified: model.pricingVerified, observedAt: catalog.observedAt }, policyVersion: catalog.policy.version };
+      quote: { credits: model.credits, pricingVerified: model.pricingVerified, observedAt: catalog.observedAt }, policyVersion: catalog.policy.version,
+      warnings: scopeWarnings((valid.contract as NormalizedTaskContractV2).objective, (valid.contract as NormalizedTaskContractV2).scope.allowedChanges) };
     return { ...value, digest: hash(value) };
   }
   private sessionId(input: Record<string, unknown>): string | null { return input.sessionId === null || input.sessionId === undefined ? null : text(input.sessionId, 512); }
