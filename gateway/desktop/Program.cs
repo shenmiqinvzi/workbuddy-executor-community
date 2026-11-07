@@ -82,8 +82,11 @@ internal sealed class WorkbenchWindow : Form
     private readonly CancellationTokenSource lifetime = new();
     private WebView2 web = CreateWebView();
     private static WebView2 CreateWebView() => new() { Dock = DockStyle.Fill, DefaultBackgroundColor = Color.FromArgb(243, 246, 248) };
-    private readonly Label message = new() { Dock = DockStyle.Fill, Text = "正在连接本地任务记录…", TextAlign = ContentAlignment.MiddleCenter, Font = new Font("Microsoft YaHei UI", 11), ForeColor = Color.FromArgb(65, 82, 95) };
+    private readonly Label message = new() { Dock = DockStyle.Fill, Text = "正在连接本地任务记录…", TextAlign = ContentAlignment.MiddleCenter, Padding = new Padding(40, 32, 40, 32), Font = new Font("Microsoft YaHei UI", 11), ForeColor = Color.FromArgb(65, 82, 95) };
     private readonly Button retry = new() { Text = "重新连接", AutoSize = true, Visible = false, Anchor = AnchorStyles.None };
+    // The retry button lives in its own bottom strip. Floating it over the label made it land on top
+    // of a multi-line dependency message, so the operator read the button and not the instruction.
+    private readonly Panel failureBar = new() { Dock = DockStyle.Bottom, Height = 64, Visible = false, BackColor = Color.FromArgb(243, 246, 248) };
     // Only the process this window started is ever owned here; a retry or an exit event can act on
     // it only while this window still owns it, so an episode cannot stop its replacement.
     private readonly OwnedHost<Process> host = new();
@@ -110,9 +113,9 @@ internal sealed class WorkbenchWindow : Form
         StartPosition = FormStartPosition.CenterScreen;
         Size = new Size(1280, 860); MinimumSize = new Size(800, 600);
         BackColor = Color.FromArgb(243, 246, 248);
-        Controls.Add(web); Controls.Add(message); Controls.Add(retry);
+        Controls.Add(web); Controls.Add(message); Controls.Add(failureBar); failureBar.Controls.Add(retry);
         retry.Click += async (_, _) => await StartAsync();
-        Resize += (_, _) => retry.Location = new Point((ClientSize.Width - retry.Width) / 2, ClientSize.Height / 2 + 52);
+        failureBar.Resize += (_, _) => CenterRetry();
         Shown += async (_, _) => { _ = ListenAsync(); await StartAsync(); };
         FormClosing += (_, _) => { closing = true; lifetime.Cancel(); tray?.Dispose(); tray = null; StopHost(); };
     }
@@ -123,17 +126,22 @@ internal sealed class WorkbenchWindow : Form
         // slow environment cannot be raced by a second host or a second WebView window.
         if (closing || !progress.TryBegin()) return;
         var ownEpisode = ++episode;
-        ready = false; message.Visible = true; retry.Visible = false; message.Text = "正在连接本地任务记录…";
+        ready = false; message.Visible = true; failureBar.Visible = false; retry.Visible = false; message.Text = "正在连接本地任务记录…";
         try
         {
             StopHost();
             if (web.CoreWebView2 is null && web.IsHandleCreated) { Controls.Remove(web); web.Dispose(); web = CreateWebView(); Controls.Add(web); web.SendToBack(); }
             StartupStep.Run(progress, "runtime", () =>
             {
-                if (!File.Exists(options.NodeExecutable) || !File.Exists(Path.Combine(options.GatewayDirectory, "scripts", "workbench-desktop-host.mjs"))) throw new InvalidOperationException("缺少 Node.js 或工作台网关，请检查安装目录。");
+                if (!File.Exists(options.NodeExecutable)) throw new StartupFaultException("NodeMissing", "未找到 Node.js：" + options.NodeExecutable + "。请先安装 Node.js（>=22.13），或用 WORKBUDDY_NODE_EXE 指定 node.exe 的绝对路径，然后点“重新连接”。");
+                if (!File.Exists(Path.Combine(options.GatewayDirectory, "scripts", "workbench-desktop-host.mjs"))) throw new StartupFaultException("GatewayIncomplete", "网关目录不完整：缺少 " + Path.Combine(options.GatewayDirectory, "scripts", "workbench-desktop-host.mjs") + "。请重新解压预览包。");
                 // Detect the runtime without installing it or touching another app's profile.
                 _ = CoreWebView2Environment.GetAvailableBrowserVersionString();
             });
+            // The preview package ships without node_modules by design: name the directory and the
+            // recovery command before a host is started that cannot import its own modules.
+            var dependencies = StartupStep.Run(progress, "dependencies", () => GatewayDependencies.Inspect(options.GatewayDirectory));
+            if (!dependencies.Installed) throw new GatewayDependencyException(dependencies);
             var ownHost = StartupStep.Run(progress, "host", StartHost);
             host.Adopt(ownHost);
             // Drain stderr; never copy possibly sensitive upstream diagnostics into the UI or logs.
@@ -176,6 +184,8 @@ internal sealed class WorkbenchWindow : Form
             Console.WriteLine(JsonSerializer.Serialize(Snapshot("status")));
         }
         catch (WebView2RuntimeNotFoundException error) { progress.Fail("WebView2RuntimeNotFound", "the WebView2 runtime is not installed"); Report(error); StopHost(); ShowFailure("需要 Microsoft Edge WebView2 Runtime。请安装微软官方运行组件后重试。"); }
+        catch (GatewayDependencyException missing) { progress.Fail("GatewayDependenciesMissing", "the gateway node_modules directory is missing or incomplete"); Report(missing); StopHost(); ShowFailure(missing.Message); }
+        catch (StartupFaultException fault) { progress.Fail(fault.Code, "startup precondition failed: " + fault.Code); Report(fault); StopHost(); ShowFailure(fault.Message); }
         catch (UnauthorizedAccessException error) { progress.Fail("UnauthorizedAccessException", "the profile or data directory was refused"); Report(error); StopHost(); ShowFailure("工作台无法创建本地应用数据。请检查当前 Windows 用户的文件夹访问权限，然后重新连接。"); }
         catch (Exception error) { progress.Fail(error.GetType().Name, "startup stopped at stage " + progress.Stage); Report(error); StopHost(); ShowFailure("工作台暂时无法连接。请检查 Node.js、数据目录、网关依赖及 WebView2 Runtime 后重试。"); }
         finally { progress.End(); }
@@ -413,11 +423,13 @@ internal sealed class WorkbenchWindow : Form
         });
     }
 
+    private void CenterRetry() => retry.Location = new Point(Math.Max(0, (failureBar.ClientSize.Width - retry.Width) / 2), Math.Max(8, (failureBar.ClientSize.Height - retry.Height) / 2));
+
     private void ShowFailure(string text)
     {
         if (closing) return;
-        ready = false; message.Text = text; message.Visible = true; message.BringToFront(); retry.Visible = true; retry.BringToFront();
-        retry.Location = new Point((ClientSize.Width - retry.Width) / 2, ClientSize.Height / 2 + 52);
+        ready = false; message.Text = text; message.Visible = true; failureBar.Visible = true; retry.Visible = true; message.BringToFront(); failureBar.BringToFront();
+        CenterRetry();
     }
 
     /// <summary>

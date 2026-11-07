@@ -69,13 +69,26 @@ export async function diagnose(options: DiscoveryOptions & { root?: string; live
     connection, modelPolicy, login: "unknown", quota: "unknown", taskExecutionVerified: false, taskSent: false, nextSteps,
   };
 }
-export async function runDoctor(args = process.argv.slice(2)) {
-  if (args.some(arg => arg !== "--live")) throw new Error("Usage: node scripts/doctor.mjs [--live]");
+export const DOCTOR_USAGE = "Usage: node scripts/doctor.mjs [--live]";
+
+/**
+ * Runs the diagnosis and returns the process exit code: 0 when the diagnosis is ok, 1 otherwise.
+ * An unknown option is reported as its own failure with the real usage, so a typo can never look
+ * like a missing build, a missing dependency or an unhealthy gateway.
+ */
+export async function runDoctor(args = process.argv.slice(2)): Promise<number> {
+  const invalid = args.filter(arg => arg !== "--live");
+  if (invalid.length) {
+    console.error(`Unknown option: ${invalid.join(" ")}\n${DOCTOR_USAGE}`);
+    process.exitCode = 1;
+    return 1;
+  }
   loadDotEnv();
   const result = await diagnose({ live: args.includes("--live") });
   console.log(JSON.stringify(result, null, 2));
   process.exitCode = result.ok ? 0 : 1;
+  return result.ok ? 0 : 1;
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(PROJECT_ROOT, "dist", "doctor.js")) {
-  runDoctor().catch(() => { console.error("Diagnosis failed; inspect local configuration without sharing private data."); process.exitCode = 1; });
+  runDoctor().then(code => { process.exitCode = code; }).catch(() => { console.error("Diagnosis failed; inspect local configuration without sharing private data."); process.exitCode = 1; });
 }

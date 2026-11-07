@@ -1,4 +1,4 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0-windows</TargetFramework><UseWindowsForms>true</UseWindowsForms><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
-  <ItemGroup><Compile Include="../DesktopPolicy.cs" Link="DesktopPolicy.cs" /><Compile Include="../DesktopControlPolicy.cs" Link="DesktopControlPolicy.cs" /><Compile Include="../DesktopCommands.cs" Link="DesktopCommands.cs" /><Compile Include="../StartupProgress.cs" Link="StartupProgress.cs" /></ItemGroup>
+  <ItemGroup><Compile Include="../DesktopPolicy.cs" Link="DesktopPolicy.cs" /><Compile Include="../DesktopControlPolicy.cs" Link="DesktopControlPolicy.cs" /><Compile Include="../DesktopCommands.cs" Link="DesktopCommands.cs" /><Compile Include="../StartupProgress.cs" Link="StartupProgress.cs" /><Compile Include="../GatewayDependencies.cs" Link="GatewayDependencies.cs" /></ItemGroup>
 </Project>

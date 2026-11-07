@@ -205,8 +205,8 @@
     },
     {
       "path": "desktop/Program.cs",
-      "sha256": "cf7066da9579f4313fa29e7f16649b42521b78bb939492293ff257be9efde2bc",
-      "bytes": 31939
+      "sha256": "c24787445091bf97c37bfeb805144b38abd8afbd721f5c1792102257f3683236",
+      "bytes": 33640
     },
     {
       "path": "desktop/StartupProgress.cs",
@@ -235,13 +235,13 @@
     },
     {
       "path": "desktop/test/PolicyTests.csproj",
-      "sha256": "b7af79a7b92fb71535da929d356a01c7ee6fb9101e84a51c39525f352a5b2f17",
-      "bytes": 570
+      "sha256": "6fd03d890142f6ab01b3e15a7e5b82c3f569cd6f0461d1d57597b96cb9a66262",
+      "bytes": 647
     },
     {
       "path": "desktop/test/Program.cs",
-      "sha256": "3767a694ce6859eb59b1f43ef9a9f51f9e1c37553cbb8a8b4c24ca00a269ff7b",
-      "bytes": 23626
+      "sha256": "3b3ae391d74db67e814b5af7aca6165534ec7e18325c362bb2c559fafa775177",
+      "bytes": 27307
     },
     {
       "path": "desktop/workbench.ico",
@@ -425,8 +425,8 @@
     },
     {
       "path": "scripts/doctor.mjs",
-      "sha256": "06523768e22bc8faef89e4bdf210bad9eff9d2e2e371a1ea507aa62f9ff4f5b0",
-      "bytes": 405
+      "sha256": "44100018f663ec0b9047ba3424ca71b3575bbd5be98e82676287de48ddc220fc",
+      "bytes": 1768
     },
     {
       "path": "scripts/dsh-host-check.mjs",
@@ -470,13 +470,13 @@
     },
     {
       "path": "scripts/package-desktop.mjs",
-      "sha256": "fbc988e048cd62a993da6f2af2d84fc664d3bfd68b8c7199600db8126c26593d",
-      "bytes": 3485
+      "sha256": "93a7466d4bd565c84707c5bf6b0a0eb1d8d45e81f9cfcecebd39e19ca6fa126a",
+      "bytes": 6320
     },
     {
       "path": "scripts/package.mjs",
-      "sha256": "a673ab70cd91c5b34f6e824316e89bb8169f6b47540e4e4ae2f749b863035377",
-      "bytes": 19565
+      "sha256": "593a79fb4e0370b115cb80f499f864fe5401612bf4ffe11034eefec0f440fa7e",
+      "bytes": 19605
     },
     {
       "path": "scripts/plan.mjs",
@@ -770,8 +770,8 @@
     },
     {
       "path": "src/doctor.ts",
-      "sha256": "84df4da97642d5b13c2b95446a6abc65a91592aca68639d3a5800fab3ab6aa49",
-      "bytes": 6320
+      "sha256": "67042ac27a162ea4a6bd6fcfd3153feb240bbfa43df423e8ff3c1bdb9066d3d0",
+      "bytes": 6866
     },
     {
       "path": "src/dsh-bindings.ts",
@@ -2070,8 +2070,8 @@
     },
     {
       "path": "workbench/style.css",
-      "sha256": "fa78c31f6987dbdb9ef17122502d97b7eb607e3ad90074f899f4f7190e2a7b77",
-      "bytes": 27979
+      "sha256": "bc400e147bf04ea984b0ade64a9c43484482786834a23deb0c703891ea812f51",
+      "bytes": 28009
     },
     {
       "path": "workbench/task-link.mjs",

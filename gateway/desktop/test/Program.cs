@@ -188,6 +188,49 @@ Check(owned.ReleaseIfOwned(first) is null, "a stale episode cannot release the c
 var released = owned.ReleaseIfOwned(second);
 Check(ReferenceEquals(released, second) && owned.Current is null, "the owning episode releases its own host once");
 
+// The preview package ships without node_modules: the shell must name the directory and the
+// recovery command, and an empty or linked directory must never count as installed.
+var dependencyRoot = Path.Combine(AppContext.BaseDirectory, "dependency-fixture-" + Guid.NewGuid().ToString("N"));
+Directory.CreateDirectory(Path.Combine(dependencyRoot, "gateway", "node_modules"));
+File.WriteAllText(Path.Combine(dependencyRoot, "gateway", "package.json"), "{\"dependencies\":{\"zod\":\"^3\",\"@scope/pkg\":\"^1\"}}");
+var emptyModules = GatewayDependencies.Inspect(Path.Combine(dependencyRoot, "gateway"));
+Check(!emptyModules.Installed, "an empty node_modules directory is not installed dependencies");
+Check(emptyModules.Missing.Count == 2, "every declared dependency is checked, including scoped names");
+Check(emptyModules.OperatorMessage.Contains(Path.Combine(dependencyRoot, "gateway", "node_modules")), "the failure names the dependency directory");
+Check(emptyModules.OperatorMessage.Contains("scripts/bootstrap.mjs --install-root") && emptyModules.OperatorMessage.Contains("npm ci --omit=dev"), "the failure names both recovery entries");
+Check(emptyModules.OperatorMessage.Contains(GatewayDependencies.PreviewGuideFileName), "the failure points at the preview guide");
+Directory.CreateDirectory(Path.Combine(dependencyRoot, "gateway", "node_modules", "zod"));
+var partial = GatewayDependencies.Inspect(Path.Combine(dependencyRoot, "gateway"));
+Check(!partial.Installed && partial.Missing.Contains("zod"), "a dependency without package.json is still missing");
+File.WriteAllText(Path.Combine(dependencyRoot, "gateway", "node_modules", "zod", "package.json"), "{}");
+Directory.CreateDirectory(Path.Combine(dependencyRoot, "gateway", "node_modules", "@scope"));
+File.WriteAllText(Path.Combine(dependencyRoot, "gateway", "node_modules", "@scope", "pkg"), "not a package");
+Check(!GatewayDependencies.Inspect(Path.Combine(dependencyRoot, "gateway")).Installed, "a file where a package belongs is not installed");
+Directory.Delete(Path.Combine(dependencyRoot, "gateway", "node_modules", "@scope"), true);
+Directory.CreateDirectory(Path.Combine(dependencyRoot, "gateway", "node_modules", "@scope", "pkg"));
+File.WriteAllText(Path.Combine(dependencyRoot, "gateway", "node_modules", "@scope", "pkg", "package.json"), "{}");
+Check(GatewayDependencies.Inspect(Path.Combine(dependencyRoot, "gateway")).Installed, "a complete dependency tree is installed");
+var linkedGateway = Path.Combine(dependencyRoot, "linked", "gateway");
+Directory.CreateDirectory(linkedGateway);
+File.WriteAllText(Path.Combine(linkedGateway, "package.json"), "{\"dependencies\":{\"zod\":\"^3\"}}");
+var sharedModules = Path.Combine(dependencyRoot, "shared-modules");
+Directory.CreateDirectory(Path.Combine(sharedModules, "zod"));
+File.WriteAllText(Path.Combine(sharedModules, "zod", "package.json"), "{}");
+var linkCreated = true;
+try { Directory.CreateSymbolicLink(Path.Combine(linkedGateway, "node_modules"), sharedModules); }
+catch (Exception) { linkCreated = false; }
+if (linkCreated)
+{
+    var linked = GatewayDependencies.Inspect(linkedGateway);
+    Check(!linked.Installed && linked.Problem is not null, "a linked node_modules is refused, not read through");
+}
+else Check(true, "a linked node_modules probe needs symlink permission and was skipped");
+var incompleteGateway = Path.Combine(dependencyRoot, "incomplete", "gateway");
+Directory.CreateDirectory(incompleteGateway);
+var incomplete = GatewayDependencies.Inspect(incompleteGateway);
+Check(!incomplete.Installed && incomplete.Problem is not null, "a gateway without package.json is reported as incomplete");
+Directory.Delete(dependencyRoot, true);
+
 Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new { passed, failed = 0 }));
 
 static async Task<int> Park(CancellationToken token) { await Task.Delay(Timeout.Infinite, token); return 1; }
