@@ -66,11 +66,18 @@ export interface DesktopDraft {
   sessionId: string | null;
   quote: { credits: string | null; pricingVerified: boolean; observedAt: string };
   policyVersion: string;
+  /** Places where the objective and the declared scope disagree. They are
+   * shown for the user to fix; they never widen the scope themselves. */
+  warnings: DesktopDraftWarning[];
 }
+export interface DesktopDraftWarning { code: string; message: string }
 export interface DesktopReceipt {
   requestId: string; taskId: string; operationId: string;
   state: "launch_requested" | "dispatching" | "submitted" | "failed" | "outcome_unknown";
   code?: string; message?: string;
+  /** True only when nothing reached an executor and the same plan may be
+   * corrected and checked again under the same task and operation identity. */
+  retryable?: boolean;
 }
 export interface DesktopProjectRegistry {
   candidates(): DesktopProjectCandidate[];
@@ -116,6 +123,40 @@ function text(value: unknown, max: number): string {
 function lines(value: unknown, max: number, itemMax: number): string[] {
   if (!Array.isArray(value) || value.length > max) fail("INVALID_REQUEST", "任务条目超过允许数量。");
   return value.map(item => text(item, itemMax));
+}
+/** The verbs that usually mean "this task will change files". Matching one does
+ * not authorize anything: it only tells the user their scope looks empty. */
+const WRITE_INTENT = /(修改|新建|创建|新增|添加|删除|重命名|移动|重构|写入|改写|生成|实现|修复|更新|替换)/;
+const PATH_TOKEN = /[A-Za-z0-9_.\-]+\/[A-Za-z0-9_.\-/]*\.[A-Za-z0-9]{1,8}/g;
+/** True when a path mentioned in the prose is inside the declared scope. */
+function coveredByScope(target: string, allowed: string[]): boolean {
+  const path = target.replaceAll("\\", "/").replace(/^\.\//, "").toLowerCase();
+  return allowed.some(item => {
+    const rule = item.replaceAll("\\", "/").toLowerCase().replace(/\/+$/, "");
+    if (!rule) return false;
+    if (rule.endsWith("/**")) return path === rule.slice(0, -3) || path.startsWith(rule.slice(0, -2));
+    return path === rule;
+  });
+}
+/**
+ * Points where the objective and the structured scope disagree. The prose is
+ * never read as authorization (F-CONTRACT-1): these warnings ask the user to
+ * fix the scope, and the dispatch stays exactly as narrow as it was declared.
+ */
+function scopeWarnings(objective: string, allowed: string[]): DesktopDraftWarning[] {
+  const warnings: DesktopDraftWarning[] = [];
+  if (!allowed.length && WRITE_INTENT.test(objective)) {
+    warnings.push({ code: "scope_not_declared", message: "目标看起来要改动文件，但允许修改范围为空：派工后按只读执行，越界改动会被拒绝。如果确实要改文件，请在下方的范围里显式填写精确路径或 目录/**。" });
+  }
+  const seen = new Set<string>();
+  for (const raw of objective.match(PATH_TOKEN) ?? []) {
+    if (warnings.length >= 6) break;
+    if (seen.has(raw)) continue;
+    seen.add(raw);
+    if (coveredByScope(raw, allowed)) continue;
+    warnings.push({ code: "scope_path_not_covered", message: `目标提到 ${raw}，但它不在允许修改范围里；正文提到路径不会获得写权限。需要改动时请把该路径加入范围。` });
+  }
+  return warnings;
 }
 export function desktopWorkspace(directory: string) {
   if (!path.isAbsolute(directory)) fail("WORKSPACE_CONFLICT", "请选择已有项目的绝对路径。");
@@ -174,6 +215,12 @@ export class DesktopDispatchSession {
   private readonly inFlight = new Set<string>();
   /** One dispatch per agreed plan: a second task with the same terms is refused. */
   private readonly consumedPlans = new Map<string, { draftId: string; taskId: string }>();
+  /**
+   * Preparation failures that never reached an executor. They are definite, so
+   * the plan claim is released and the same task identity can be corrected and
+   * checked again; an uncertain outcome is never recorded here.
+   */
+  private readonly failures = new Map<string, { taskId: string; operationId: string; code: string; message: string; at: number }>();
   private readonly now: () => number;
   constructor(private readonly dependencies: DesktopDispatchDependencies) { this.now = dependencies.now ?? Date.now; }
   async catalog(): Promise<DesktopCatalog> {
@@ -236,6 +283,9 @@ export class DesktopDispatchSession {
     const value = this.build(merged, { taskId: original.taskId, operationId: original.operationId, revision: original.revision + 1, expiresAt: original.expiresAt });
     this.supersede(identity.draftId, identity.digest);
     this.drafts.set(value.draftId, value);
+    // A corrected revision replaces the earlier preparation failure: the user
+    // is looking at terms that were never handed to an executor.
+    this.failures.delete(identity.draftId);
     return structuredClone(value);
   }
   private create(input: Record<string, unknown>): DesktopDraft {
@@ -243,7 +293,7 @@ export class DesktopDispatchSession {
     if (this.drafts.size >= 16) {
       const oldest = [...this.drafts.keys()].find(id => !this.inFlight.has(id));
       if (!oldest) fail("DRAFT_LIMIT", "请先等待原确认请求返回。");
-      this.drafts.delete(oldest); this.commits.delete(oldest); this.superseded.delete(oldest);
+      this.drafts.delete(oldest); this.commits.delete(oldest); this.superseded.delete(oldest); this.failures.delete(oldest);
     }
     this.drafts.set(value.draftId, value);
     return structuredClone(value);
@@ -268,7 +318,8 @@ export class DesktopDispatchSession {
     try { this.dependencies.projects?.remember(project, typeof input.workspace === "string" ? input.workspace : null); } catch { /* the registry is a cache, never the identity */ }
     const value = { draftId: crypto.randomUUID(), taskId: identity.taskId, operationId: identity.operationId, revision: identity.revision, expiresAt: identity.expiresAt ?? catalog.expiresAt,
       projectId: desktopProjectId(project), workspace: project, contract: valid.contract as NormalizedTaskContractV2, sessionId: this.sessionId(input),
-      quote: { credits: model.credits, pricingVerified: model.pricingVerified, observedAt: catalog.observedAt }, policyVersion: catalog.policy.version };
+      quote: { credits: model.credits, pricingVerified: model.pricingVerified, observedAt: catalog.observedAt }, policyVersion: catalog.policy.version,
+      warnings: scopeWarnings((valid.contract as NormalizedTaskContractV2).objective, (valid.contract as NormalizedTaskContractV2).scope.allowedChanges) };
     return { ...value, digest: hash(value) };
   }
   private sessionId(input: Record<string, unknown>): string | null { return input.sessionId === null || input.sessionId === undefined ? null : text(input.sessionId, 512); }
@@ -317,7 +368,7 @@ export class DesktopDispatchSession {
     // Claimed before the first asynchronous observation can complete, so two
     // confirmations of the same plan cannot both reach an executor.
     this.consumedPlans.set(planKey, { draftId, taskId: original.taskId });
-    const operation = this.commitOnce(reviewed);
+    const operation = this.commitOnce(reviewed, planKey);
     // Any unknown outcome remains bound to this original identity; it is never auto-retried.
     this.commits.set(draftId, operation);
     this.inFlight.add(draftId); void operation.then(() => this.inFlight.delete(draftId), () => this.inFlight.delete(draftId));
@@ -335,7 +386,29 @@ export class DesktopDispatchSession {
     const { taskId, ...rest } = draft.contract;
     return hash({ contract: rest, sessionId: draft.sessionId, credits: draft.quote.credits, pricingVerified: draft.quote.pricingVerified, policyVersion: draft.policyVersion });
   }
-  private async commitOnce(draft: DesktopDraft) {
+  /**
+   * Everything is re-read before the hand-off, and only the hand-off itself can
+   * be uncertain. A refusal here means no executor was asked, so the identity
+   * stays usable: the failure is reported against this exact task and operation
+   * and the plan claim is released for a corrected revision.
+   */
+  private async commitOnce(draft: DesktopDraft, planKey: string): Promise<DesktopReceipt> {
+    try {
+      await this.preflight(draft);
+    } catch (error) {
+      const code = error instanceof AdmissionError ? error.code : "DISPATCH_PREPARATION_FAILED";
+      const message = error instanceof Error && error.message ? error.message : "派工准备没有完成，请修正后重新核对。";
+      this.failures.set(draft.draftId, { taskId: draft.taskId, operationId: draft.operationId, code, message, at: this.now() });
+      if (this.consumedPlans.get(planKey)?.draftId === draft.draftId) this.consumedPlans.delete(planKey);
+      this.commits.delete(draft.draftId);
+      throw error;
+    }
+    const receipt = await this.dependencies.enqueue(draft);
+    // A prepared dispatch supersedes earlier preparation failures.
+    this.failures.clear();
+    return receipt;
+  }
+  private async preflight(draft: DesktopDraft): Promise<void> {
     const current = normalizedDesktopCatalog(await this.dependencies.catalog());
     if (!current.dispatchEnabled) fail("DISPATCH_NOT_ENABLED", "当前安装仅支持查看。派工能力需先完成网关部署核验。");
     const model = current.models.find(candidate => hash(candidate.execution) === hash(draft.contract.execution));
@@ -344,14 +417,19 @@ export class DesktopDispatchSession {
     if (hash(desktopWorkspace(draft.workspace.realPath)) !== hash(draft.workspace)) fail("WORKSPACE_CONFLICT", "项目目录的身份已变化，请重新选择。");
     this.checkSession(current, draft.contract.execution, draft.workspace.realPath, draft.sessionId);
     if (Date.parse(draft.expiresAt) <= this.now()) fail("DRAFT_EXPIRED", "确认时间已过，请重新生成任务约定。");
-    return this.dependencies.enqueue(draft);
   }
   receipt(requestId: string): DesktopReceipt | null {
     const receipt=this.dependencies.receipt(requestId);if(receipt)return receipt;
     const draft=this.drafts.get(requestId);
-    return draft&&this.inFlight.has(requestId)?{requestId,taskId:draft.taskId,operationId:draft.operationId,state:"outcome_unknown",message:"原确认请求仍在处理中。请保留同一编号查询，不要重新派工。"}:null;
+    if(draft&&this.inFlight.has(requestId))return{requestId,taskId:draft.taskId,operationId:draft.operationId,state:"outcome_unknown",message:"原确认请求仍在处理中。请保留同一编号查询，不要重新派工。"};
+    const failure=this.failures.get(requestId);
+    return failure?{requestId,taskId:failure.taskId,operationId:failure.operationId,state:"failed",code:failure.code,message:failure.message,retryable:true}:null;
   }
-  latest(): DesktopReceipt | null { const pending=[...this.inFlight][0]; return pending?this.receipt(pending):this.dependencies.latest?.()??null; }
+  latest(): DesktopReceipt | null {
+    const pending=[...this.inFlight][0]; if(pending)return this.receipt(pending);
+    const failed=[...this.failures.keys()].at(-1); if(failed)return this.receipt(failed);
+    return this.dependencies.latest?.()??null;
+  }
   observe(requestId: string) {
     if (!this.dependencies.observe || this.receipt(requestId)?.state !== "submitted") fail("OPERATION_PENDING", "原派工请求尚未明确，请先查询原回执，不能重派或接管。");
     return this.dependencies.observe(requestId);

@@ -30,6 +30,23 @@ export function operationStateLabel(state) { return { reserved: '已预留', eff
 const leaseLabels = { live: '所有者仍在运行，心跳正常', stuck: '所有者进程仍在，但心跳已停止', abandoned: '所有者进程已退出，未见回执', lease_unavailable: '无租约记录' };
 export function leaseLabel(dispatch) { return !dispatch ? '无记录' : (leaseLabels[dispatch.settlement] || '无租约记录'); }
 export function recoveryConclusionText(conclusion) { return { outcome_unsettled: '效果不可排除：保留原请求与执行容量，由后端按证据判断。', succeeded: '原操作已成功完成。', rejected: '原操作被拒绝，未产生效果。', active: '原操作仍在进行，等待回执。', dispatch_only: '只有派工请求记录，没有原操作记录。' }[conclusion] || '证据不足，请保留原编号。'; }
+/** Refusals the gateway raises before anything was handed to an executor. They
+ * are definite: the terms can be corrected under the same task identity. */
+const definiteRefusals = new Set(['DISPATCH_NOT_ENABLED', 'MODEL_UNVERIFIED', 'MODEL_POLICY_BLOCKED', 'MODEL_SELECTION_REQUIRED', 'QUOTE_CHANGED', 'POLICY_CHANGED', 'WORKSPACE_CONFLICT', 'SESSION_REQUIRED', 'SESSION_AMBIGUOUS', 'DRAFT_EXPIRED', 'DRAFT_CHANGED', 'DRAFT_CONSUMED', 'PLAN_ALREADY_CONSUMED', 'CATALOG_EXPIRED', 'CATALOG_TOO_LARGE', 'BUDGET_EXCEEDED', 'INVALID_REQUEST', 'INVALID_CONTRACT', 'SCOPE_NOT_DECLARED', 'PROJECT_NOT_REGISTERED', 'PROJECT_IDENTITY_CHANGED', 'PROJECT_NOT_FOUND', 'PROJECT_ACCESS_DENIED', 'PROJECT_NOT_DIRECTORY', 'PROJECT_UNREADABLE', 'PROJECT_LINK_UNRESOLVED', 'GATEWAY_UPGRADE_REQUIRED', 'DISPATCH_PREPARATION_FAILED']);
+export function isDefiniteRefusal(code) { return definiteRefusals.has(code); }
+/**
+ * One confirmation has three possible endings, and the page must not blur them:
+ * the user cancelled (nothing sent, the agreement stands), the gateway refused
+ * before the hand-off (nothing sent, same identity, correct and re-check), or
+ * the hand-off may have happened (identity stays spent, query the original).
+ */
+export function confirmFailure(error, identity) {
+    const code = error?.code, message = error?.message;
+    if (code === 'CONFIRMATION_CANCELLED') return { tone: 'info', consumed: false, receipt: false, text: '已在本机确认窗口取消，尚未派工。原约定仍然有效，可以再次打开确认或返回修改。' };
+    if (code === 'PLAN_ALREADY_CONSUMED') return { tone: 'error', consumed: true, receipt: false, text: `同一份任务约定已在任务 ${identity.taskId} 上派工，不能换一个任务身份重复提交。结果不明时按操作编号 ${identity.operationId} 查询原请求。` };
+    if (isDefiniteRefusal(code)) return { tone: 'error', consumed: false, receipt: false, text: `尚未派工：${message || '准备阶段的核验没有通过'}。已保留原任务与操作编号；返回修改后重新核对即可，不会自动换模型、换档位或重试。` };
+    return { tone: 'error', consumed: true, receipt: true, text: `无法确认本次派工是否已经开始：${message || '本地连接中断'}。请按操作编号 ${identity.operationId} 查询原回执或恢复证据，不要重复派工。` };
+}
 const option = (value, text, disabled = false) => el('option', { value, disabled }, text);
 const lineValues = value => value.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
 
@@ -268,6 +285,17 @@ export async function mountDesktopDispatch({ onTask, onResources = null }) {
     const effortSuffix = execution => execution.reasoningEffort ? ` · ${execution.reasoningEffort}` : '';
     const resourceLabel = status => ({ fresh: '资源引用新鲜', stale: '资源引用已过期', unavailable: '无可用资源引用', unverified_claim: '声明关联未被核实' }[status] || '无可用资源引用');
     const candidateText = item => `${item.sourceLabel} / ${item.selection.modelId}${effortSuffix(item.selection)} · ${item.cost.label} · ${resourceLabel(item.resources.status)}`;
+    /** Missing resource facts stay missing: no quality score, no remaining
+     * credits and no balance is invented for a candidate that lacks them. */
+    const resourceDetail = item => {
+        const resources = item.resources || {};
+        const freshness = { fresh: '新鲜', stale: '已过期', unavailable: '不可用' }[resources.quotaFreshness] || '新鲜度未知';
+        const quota = resources.quotaRemaining === null || resources.quotaRemaining === undefined ? '剩余额度未知' : `剩余额度 ${resources.quotaRemaining}（${freshness}）`;
+        const balance = resources.creditBalance === null || resources.creditBalance === undefined ? '余额未知' : `余额 ${resources.creditBalance}`;
+        const limits = Array.isArray(resources.limitations) && resources.limitations.length ? `；${resources.limitations.slice(0, 2).join('、')}` : '';
+        return `${quota} · ${balance}${limits}`;
+    };
+    const costText = item => item.cost.known ? (item.cost.zero ? '已核实零费率' : '费率已知，按实际计费') : '费用未知，可能计费';
     /** The intent and the explicit selection are read from the fields exactly as
      * the user typed them; the panel never invents a scope or a preference. */
     function intentFromForm() {
@@ -293,11 +321,17 @@ export async function mountDesktopDispatch({ onTask, onResources = null }) {
         const reasons = recommended ? recommended.reasons.map(item => el('li', {}, item.message)) : [el('li', {}, result.decisionReason.message)];
         const candidates = result.candidates.slice(0, 8).map(item => el('li', {},
             el('span', {}, `${candidateText(item)} · ${item.reasons.slice(0, 2).map(reason => reason.message).join('；')}`),
+            el('span', { class: 'technical' }, `${costText(item)} · ${resourceDetail(item)}`),
             el('button', { class: 'text-button', type: 'button', onclick: () => applySelection(item.selection) }, '采用此候选')));
+        const requires = Array.isArray(result.authorization?.requires) ? result.authorization.requires : [];
+        const cap = result.constraints?.hardCostCap;
         recommendationBody.replaceChildren(
             el('p', { class: 'dispatch-rate', id: 'recommendation-decision' }, recommended ? `${head} · ${candidateText(recommended)}` : `${head} · ${result.decisionReason.message}`),
             el('ul', { class: 'dispatch-hint', id: 'recommendation-why' }, reasons, el('li', {}, `判定编号：${[result.decisionReason.code, ...result.decisionReason.codes].join('、')}`)),
             el('ul', { class: 'dispatch-recommendation-list', id: 'recommendation-candidates' }, candidates),
+            el('p', { class: 'dispatch-hint', id: 'recommendation-authority' }, `建议不授予派工权：仍需${requires.map(item => ({ preview: '预览', confirmation: '本机确认' }[item] || item)).join('与') || '人工确认'}；这里不会建立执行轮次（记录的执行轮次：${result.attempt === null ? '无' : '有'}，原生派工：${result.nativeAttempt === 'none' ? '未发生' : result.nativeAttempt}）。`),
+            result.decision === 'direct' ? el('p', { class: 'dispatch-hint', id: 'recommendation-direct' }, '建议直接处理：这类任务在本机完成更快，若仍要派工，需自己选择执行器并核对约定。') : null,
+            cap && (cap.status === 'unsupported' || cap.requested) ? el('p', { class: 'dispatch-hint is-error', id: 'recommendation-cost-cap' }, `费用上限：${cap.status === 'unsupported' ? '不支持硬性花费上限' : '未生效'}${cap.message ? `（${cap.message}）` : ''}${cap.requested ? `；请求值 ${cap.requested} 只作为说明` : ''}。`) : null,
             result.excluded.length ? el('p', { class: 'dispatch-hint', id: 'recommendation-excluded' }, `排除 ${result.excluded.length} 项：${result.excluded.slice(0, 3).map(item => `${item.sourceLabel}/${item.selection.modelId}：${item.message}`).join('；')}`) : null,
             el('ul', { class: 'dispatch-hint', id: 'recommendation-missing' }, result.missing.map(item => el('li', {}, `${item.severity === 'blocks' ? '阻断' : '局限'} · ${item.message}`))),
             el('p', { class: 'dispatch-hint', id: 'recommendation-history' }, result.history.status === 'unavailable'
@@ -362,6 +396,7 @@ export async function mountDesktopDispatch({ onTask, onResources = null }) {
         const list = (title, values, empty) => el('section', { class: 'dispatch-review-section' }, el('h3',{},title), values.length?el('ul',{},values.map(value=>el('li',{},value))):el('p',{class:'dispatch-hint'},empty));
         const grid = el('div',{class:'dispatch-grid'},el('div',{class:'dispatch-review'},el('h2',{},c.title),el('p',{class:'dispatch-objective'},c.objective),
             el('p',{class:'dispatch-hint',id:'revision-note'},`第 ${draft.revision} 版任务约定 · 确认时会重新核验项目身份、费率与政策；失败会明确提示，不会静默替换。`),
+            ...(Array.isArray(draft.warnings)&&draft.warnings.length?[el('section',{class:'dispatch-review-section',id:'review-warnings'},el('h3',{},'正文与允许范围不一致'),el('ul',{},draft.warnings.map(warning=>el('li',{},warning.message))),el('p',{class:'dispatch-hint'},'这些提示不会扩大范围：写在正文里的路径不构成写权限，需要改动请在允许修改范围里显式填写。'))]:[]),
             el('dl',{class:'dispatch-facts'},el('dt',{},'项目'),el('dd',{},draft.workspace.realPath),el('dt',{},'执行来源'),el('dd',{},`${e.executorId} / ${e.connectionId} / ${e.providerId}`),el('dt',{},'精确模型'),el('dd',{},e.modelId),el('dt',{},'推理档位'),el('dd',{},e.reasoningEffort??'未提供'),...(draft.sessionId?[el('dt',{},'原会话'),el('dd',{},draft.sessionId)]:[])),
             list('允许修改范围',c.scope.allowedChanges,'只读，不授予文件写权限。'),list('允许的元数据',c.scope.permittedMetadata,'无额外元数据写权限。'),list('独立验收要求',c.requiredChecks.map(check=>check.definition),''),
             el('details', {class:'dispatch-advanced'},el('summary',{},'任务标识'),el('p',{class:'technical'},draft.taskId),el('p',{class:'technical'},draft.operationId),el('p',{class:'technical'},draft.digest))),el('div',{class:'dispatch-resource-slot',id:'plan-resource-slot'}),
@@ -390,7 +425,7 @@ export async function mountDesktopDispatch({ onTask, onResources = null }) {
     async function confirm() {
         if(busy||!draft||isDemo())return;
         const {draftId,digest}=draft;
-        if(consumedDraftId===draftId){showNotice('本方案已提交派工，不能再次确认。结果不明时请按原编号查询回执，不会重复派工。',true);return;}
+        if(consumedDraftId===draftId){showNotice(`本方案已提交派工，不能再次确认。结果不明时请按操作编号 ${draft.operationId} 查询原回执，不会重复派工。`,true);return;}
         if(recommendation){
             // The explanation the user read must still match the snapshot; a
             // changed catalog or policy waits for a new review instead of
@@ -411,11 +446,16 @@ export async function mountDesktopDispatch({ onTask, onResources = null }) {
             // the returned receipt is later found to be uncertain.
             consumedDraftId=draftId;renderReceipt(receipt);showNotice('');
         } catch(error){
-            if(error.code==='CONFIRMATION_CANCELLED'){try{localStorage.removeItem(receiptKey);}catch{}}
-            if(error.code==='PLAN_ALREADY_CONSUMED')consumedDraftId=draftId;
-            showNotice(error.message,true);
+            const outcome=confirmFailure(error,{taskId:draft.taskId,operationId:draft.operationId});
+            if(!outcome.consumed){try{localStorage.removeItem(receiptKey);}catch{}}
+            // A hand-off that may have happened spends the confirmation even
+            // when no readable receipt came back: the page keeps the request
+            // identity and offers queries instead of a second confirm.
+            if(outcome.consumed)consumedDraftId=draftId;
+            if(outcome.receipt)renderReceipt({requestId:draftId,taskId:draft.taskId,operationId:draft.operationId,state:'outcome_unknown',message:outcome.text});
+            else showNotice(outcome.text,outcome.tone==='error');
         }
-        finally{busy=false;sourceChanged();if(stage==='review')button.disabled=!catalog.dispatchEnabled||isDemo()||consumedDraftId===draftId;}
+        finally{busy=false;sourceChanged();if(stage==='review')button.disabled=!catalog.dispatchEnabled||isDemo()||consumedDraftId===draft.draftId;}
     }
     function renderReceipt(receipt) {
         setStage('receipt');clearTimeout(timer);
@@ -424,6 +464,11 @@ export async function mountDesktopDispatch({ onTask, onResources = null }) {
         const signature=JSON.stringify(receipt),unchanged=receiptSignature===signature;receiptSignature=signature;
         if(!unchanged)content.replaceChildren(el('div',{class:'dispatch-receipt'},el('h2',{tabIndex:-1,role:'status'},receiptStatusText(receipt.state)),el('p',{},receipt.message||(receipt.state==='submitted'?'受理回执不代表验收结果，请查看任务详情。':'请求登记不代表原生接单，请保留以下编号。')),
             el('dl',{class:'dispatch-facts'},el('dt',{},'任务编号'),el('dd',{class:'technical'},receipt.taskId),el('dt',{},'操作编号'),el('dd',{class:'technical'},receipt.operationId)),
+            ...(receipt.state==='failed'&&receipt.retryable?[el('section',{'aria-label':'尚未派工的失败'},
+                el('h3',{},'尚未派工，可修正后重新核对'),
+                el('p',{},'这次核验在交给执行器之前就结束了：没有轮次、没有提示词、没有占用执行容量。'),
+                el('p',{},'原任务与操作编号保持不变；修正后重新核对会生成新一版约定，不会自动换模型或换档位。'),
+                ...(draft&&draft.draftId===receipt.requestId?[el('div',{class:'dispatch-actions'},el('button',{type:'button',class:'button',onclick:()=>renderReview()},'回到约定核对'))]:[]))]:[]),
             el('div',{class:'dispatch-actions'},el('button',{type:'button',class:'button',onclick:()=>queryReceipt(receipt.requestId)},'查询原请求'),
                 ...(receipt.state==='submitted'?[el('button',{type:'button',class:'button',onclick:async event=>{event.currentTarget.disabled=true;showNotice('正在观察原执行状态，不会派工或改变模型…');try{await desktopRequest('observe',{requestId:receipt.requestId});close();await onTask(receipt.taskId);}catch(error){showNotice(error.message,true);}finally{event.target.disabled=false;}}},'更新执行状态')]:[]),
                 el('button',{type:'button',class:'button dispatch-primary',onclick:async()=>{close();await onTask(receipt.taskId);}},'查看已保存任务')),

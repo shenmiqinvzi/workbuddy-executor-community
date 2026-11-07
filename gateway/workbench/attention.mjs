@@ -3,7 +3,7 @@
  * work. Both are derived from saved facts only; a missing record is reported as
  * missing, never filled with a guess. */
 import { desktopRequest } from './dispatch.mjs';
-import { stateInfo, currentReview } from './model.mjs';
+import { stateInfo, currentReview, formatTime } from './model.mjs';
 
 const el = (tag, props = {}, ...children) => { const node = document.createElement(tag); for (const [key, value] of Object.entries(props)) { if (key.startsWith('on')) node.addEventListener(key.slice(2), value); else if (key === 'class') node.className = value; else if (key === 'hidden') node.hidden = Boolean(value); else if (key === 'disabled') node.disabled = Boolean(value); else node.setAttribute(key, String(value)); } for (const child of children.flat()) if (child !== null && child !== undefined) node.append(child instanceof Node ? child : document.createTextNode(String(child))); return node; };
 
@@ -32,6 +32,31 @@ export function reportAuthentication(record) {
     return typeof value === 'string' && value.trim() ? value : '未提供';
 }
 
+/** A missing timestamp reads as 无; a value that is present but unparseable is
+ * named as such instead of being echoed raw into a sentence. */
+function timeOrMissing(value) {
+    if (value === null || value === undefined || value === '') return '无';
+    return Number.isFinite(Date.parse(value)) ? formatTime(value) : `无法识别（${String(value).slice(0, 40)}）`;
+}
+
+/** Which saved fact keeps a review from carrying an acceptance. The card names
+ * that one fact instead of a generic "有未通过项": a review of an older
+ * revision is a different problem from a failed check, and a current review
+ * with every check passed is not blocked by the review at all. */
+function reviewBlocking(view, review) {
+    if (!review) return '本轮没有独立审查记录；执行报告的自报不能代替它。';
+    const started = review.basisRevision && review.basisRevision !== view?.revision ? `（审查开始时的版本 ${review.basisRevision}）` : '';
+    if (review.committedRevision && view?.revision && review.committedRevision !== view.revision)
+        return `最近一份审查提交在版本 ${review.committedRevision}${started}，当前记录已是版本 ${view.revision}；需要针对当前版本重新审查。`;
+    const checks = Array.isArray(review.checks) ? review.checks : [];
+    if (!checks.length) return '本轮审查没有保存任何检查项，不能作为验收依据。';
+    const selfReported = checks.filter(check => check.actor === 'worker');
+    if (selfReported.length) return `本轮检查项由执行器自报（${selfReported.map(check => check.checkId).join('、')}），不能算作独立检查。`;
+    const failed = checks.filter(check => check.status !== 'passed');
+    if (failed.length) return `本轮审查有未通过项：${failed.map(check => `${check.checkId}（${check.status}）`).join('、')}；修正后需要重新审查。`;
+    return `当前版本 ${view?.revision ?? '未提供'} 已有独立审查且检查项全部通过${started}；确认验收需要由人来提交。`;
+}
+
 /** Which saved fact puts this task here, in the reader's words. */
 export function attentionReason(record) {
     const view = record?.view;
@@ -46,13 +71,14 @@ export function attentionReason(record) {
     // no receipt means nobody is managing this run, whatever the state says.
     if (view.runOrphaned === true) {
         const lease = view.dispatchLease;
-        return { code: 'run_orphaned', title: '运行已无人管理（派工进程已退出）', why: `派工租约显示主人进程已退出（owner_pid ${lease?.ownerPid ?? '未知'}，心跳 ${lease?.heartbeatAt ?? '无'}），且没有任何回执。这个状态可能出现在报告已到或尚未到时；先核对证据，再决定重派或收口。`, next: near.run_orphaned };
+        const pid = Number.isInteger(view.dispatchLease?.ownerPid) ? view.dispatchLease.ownerPid : '未提供';
+        return { code: 'run_orphaned', title: '运行已无人管理（派工进程已退出）', why: `派工租约显示主人进程已退出（owner_pid ${pid}，心跳 ${timeOrMissing(lease?.heartbeatAt)}），且没有任何回执。这个状态可能出现在报告已到或尚未到时；先核对证据，再决定重派或收口。`, next: near.run_orphaned };
     }
-    if (display === 'waiting_stop') return { code: 'stop_unconfirmed', title: '报告已到，原生停止未确认', why: `执行报告已记录（认证：${reportAuthentication(record)}），但停止证据缺失：停止记录时间 ${view.timing?.nativeStoppedAt ? view.timing.nativeStoppedAt : '为空'}。停止未确认时，返工、审查与验收都不能提交。`, next: near.stop_unconfirmed };
+    if (display === 'waiting_stop') return { code: 'stop_unconfirmed', title: '报告已到，原生停止未确认', why: `执行报告已记录（认证：${reportAuthentication(record)}），但停止证据缺失：停止记录时间 ${timeOrMissing(view.timing?.nativeStoppedAt)}。停止未确认时，返工、审查与验收都不能提交。`, next: near.stop_unconfirmed };
     if (display === 'waiting_input') return { code: 'input_waiting', title: '执行器在等待输入', why: '原会话停在等待输入，没有继续执行；这里没有替它作答的入口。', next: near.input_waiting };
     if (info.key === 'inconsistent') return { code: 'stop_unconfirmed', title: '待验收记录缺少停止证明', why: '记录写着待验收，但原生停止没有确认；这两个事实不能互相顶替。', next: near.stop_unconfirmed };
     if (business === 'blocked' || info.key === 'blocked') return { code: 'blocked', title: '任务受阻', why: `已记录阻塞原因：${record.presentation?.blockingReason || '未提供'}。`, next: near.blocked };
-    if (info.key === 'needs_review') return { code: 'review_pending', title: stopMissing ? '待复核，但停止证据不完整' : '等待独立验收', why: review ? `最近一份审查基于版本 ${review.basisRevision}，与当前记录版本 ${view.revision} 不一致或尚有未通过项。` : '本轮没有独立审查记录；执行报告的自报不能代替它。', next: stopMissing ? near.review_pending_unstopped : near.review_pending };
+    if (info.key === 'needs_review') return { code: 'review_pending', title: stopMissing ? '待复核，但停止证据不完整' : '等待独立验收', why: reviewBlocking(view, review), next: stopMissing ? near.review_pending_unstopped : near.review_pending };
     if (info.key === 'failed' || info.key === 'expired') return { code: 'failed', title: info.label || '执行未完成', why: '本轮以未完成收场，执行容量与工作区需要按证据核对。', next: near.failed };
     if (ATTENTION_DISPLAY.includes(display) || ['unknown', 'inconsistent'].includes(info.key)) return { code: 'unknown_state', title: '状态无法判定', why: '状态与停止证明不一致或缺少必要记录；界面不替它选择一种解释。', next: near.unknown_state };
     return null;

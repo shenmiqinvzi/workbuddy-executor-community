@@ -160,6 +160,30 @@ test("template: instantiation makes fresh identities and carries no authorizatio
   assert.equal(first.draft.budget.clamped, false);
 });
 
+test("template: the deadline preset is clamped to the server policy, not only to the contract limit", (t) => {
+  const dir = tempDir(t);
+  const template = saved(t, dir);
+  const keptWhenPolicyAllows = instantiateTemplate(template, { workspaceId: "ws-1", policyMaxTimeoutSeconds: 1200, now: FIXED_NOW });
+  assert.equal(keptWhenPolicyAllows.ok, true);
+  if (keptWhenPolicyAllows.ok) {
+    assert.equal(keptWhenPolicyAllows.draft.contract.timeoutSeconds, 900, "a policy above the preset keeps the preset");
+    assert.equal(keptWhenPolicyAllows.draft.budget.timeout.clamped, false);
+  }
+  const clamped = instantiateTemplate(template, { workspaceId: "ws-1", policyMaxTimeoutSeconds: 300, now: FIXED_NOW });
+  assert.equal(clamped.ok, true);
+  if (!clamped.ok) return;
+  assert.equal(clamped.draft.contract.timeoutSeconds, 300, "the deadline never exceeds the server policy");
+  assert.deepEqual(clamped.draft.budget.timeout, { requested: 900, policy: 300, applied: 300, clamped: true });
+  assert.ok(clamped.draft.notes.some(note => note.includes("秒时限")), "the clamped deadline is named");
+  // A policy ceiling above the contract limit is itself bounded before use.
+  const wide = instantiateTemplate(template, { workspaceId: "ws-1", policyMaxTimeoutSeconds: 99_999_999, now: FIXED_NOW });
+  assert.equal(wide.ok, true);
+  if (wide.ok) {
+    assert.equal(wide.draft.contract.timeoutSeconds, 900);
+    assert.equal(wide.draft.budget.timeout.policy, 86_400);
+  }
+});
+
 test("template: a template budget never raises the server policy, and policy templates cannot instantiate", (t) => {
   const dir = tempDir(t);
   const template = saved(t, dir);

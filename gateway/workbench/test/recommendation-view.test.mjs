@@ -186,3 +186,38 @@ test('the statistics window and the resource reference reach the panel when avai
     assert.match(q('recommendation-history').textContent,/样本 12 项/);
     assert.match(q('recommendation-history').textContent,/2026-10-01T00:00:00.000Z 至 现在/);
 });
+
+test('missing resource facts stay unknown, and a hard cap is disclosed as unsupported',async()=>{
+    const host=await openEditor({answer:()=>explanation({
+        recommended:candidate(wb2),
+        candidates:[candidate(wb2),candidate(dsh)],
+        constraints:{freeOnly:false,hardCostCap:{status:'unsupported',requested:'x5.00',message:'费率不构成硬性上限'}},
+    })});
+    fillIntent();
+    q('recommendation-refresh').click();
+    await until(()=>q('recommendation-decision'));
+    assert.match(q('recommendation-candidates').textContent,/剩余额度未知/,'a missing quota is not shown as a number');
+    assert.match(q('recommendation-candidates').textContent,/余额未知/);
+    assert.match(q('recommendation-candidates').textContent,/费用未知，可能计费/);
+    assert.match(q('recommendation-authority').textContent,/建议不授予派工权/);
+    assert.match(q('recommendation-authority').textContent,/预览与本机确认/);
+    assert.match(q('recommendation-authority').textContent,/记录的执行轮次：无/);
+    assert.match(q('recommendation-cost-cap').textContent,/不支持硬性花费上限/);
+    assert.match(q('recommendation-cost-cap').textContent,/x5\.00/);
+    assert.equal(/免费|上限已生效/.test(q('recommendation-cost-cap').textContent),false,'an unsupported cap is never presented as a guarantee');
+    assert.equal(host.calls.filter(call=>call.action==='dispatch').length,0);
+    assert.equal(host.calls.filter(call=>call.action==='preview').length,0);
+});
+
+test('a direct decision names the recomposition and still creates no attempt',async()=>{
+    const host=await openEditor({answer:()=>explanation({decision:'direct',recommended:null,candidates:[],excluded:[],
+        decisionReason:{code:'direct_work_is_cheaper',message:'这个任务在本机直接完成更快。',codes:[]}})});
+    fillIntent();
+    q('recommendation-refresh').click();
+    await until(()=>q('recommendation-decision'));
+    assert.match(q('recommendation-decision').textContent,/建议直接处理/);
+    assert.match(q('recommendation-direct').textContent,/建议直接处理/);
+    assert.match(q('recommendation-authority').textContent,/记录的执行轮次：无/);
+    assert.match(q('recommendation-authority').textContent,/原生派工：未发生/);
+    assert.equal(host.calls.filter(call=>call.action==='dispatch').length,0);
+});

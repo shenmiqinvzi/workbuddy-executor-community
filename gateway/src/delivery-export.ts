@@ -39,6 +39,9 @@ export const DELIVERY_EXPORT_LIMITS = {
   noteCharacters: 1000,
   definitionCharacters: 500,
   fileAttempts: 20,
+  /** Bounded walk of the event stream: 20 pages of 500 is 10k events. */
+  eventPages: 20,
+  eventsPerPage: 500,
 } as const;
 
 /**
@@ -228,11 +231,23 @@ export function buildDeliveryExport(
   if (!task) return { ok: false, code: "task_not_found", message: "No saved task with that identity exists." };
   const contract = store.getContract(taskId);
   const attempts = store.listAttempts(taskId).slice(0, 50).map(attempt => ({ attemptId: attempt.attemptId }));
-  // Event ids are monotonic per task, so the cursor after the last event is a
-  // count that does not require reading the whole stream into the export.
+  // Event ids are monotonic per task, so walking pages by id counts the whole
+  // stream without loading it into the export. `nextEventId` is scoped to the
+  // page that was read, so it is a cursor and never a count by itself.
   let eventCount = 0;
   let eventsReadable = true;
-  try { eventCount = store.listTaskEvents(taskId, { limit: 1 }).nextEventId; }
+  let eventsTruncated = false;
+  try {
+    let cursor = 0;
+    for (let page = 0; page < DELIVERY_EXPORT_LIMITS.eventPages; page++) {
+      const read = store.listTaskEvents(taskId, { afterEventId: cursor, limit: DELIVERY_EXPORT_LIMITS.eventsPerPage });
+      eventCount += read.events.length;
+      const last = read.events[read.events.length - 1]?.eventId ?? cursor;
+      if (read.events.length < DELIVERY_EXPORT_LIMITS.eventsPerPage || last <= cursor) break;
+      cursor = last;
+      if (page === DELIVERY_EXPORT_LIMITS.eventPages - 1) eventsTruncated = true;
+    }
+  }
   catch { eventsReadable = false; }
   const reviews = store.reviews.list(taskId);
   const limitations: string[] = [
@@ -243,6 +258,7 @@ export function buildDeliveryExport(
   if (reviews.length > DELIVERY_EXPORT_LIMITS.reviews) limitations.push(`审查记录超过 ${DELIVERY_EXPORT_LIMITS.reviews} 份，仅导出最近的 ${DELIVERY_EXPORT_LIMITS.reviews} 份。`);
   if (contract.state === "integrity_failure") limitations.push("原始约定校验失败，契约部分只标记为不可解释，不复制可疑内容。");
   if (!eventsReadable) limitations.push("事件流当前不可读取；导出里的 events 计为 0，不代表没有事件。");
+  else if (eventsTruncated) limitations.push(`事件流超过 ${DELIVERY_EXPORT_LIMITS.eventPages * DELIVERY_EXPORT_LIMITS.eventsPerPage} 条，events 只计了前 ${eventCount} 条。`);
   const statistics = options.statistics ?? null;
   if (!statistics) limitations.push("未提供统计 coverage；这份导出不包含汇总数字，也不把缺失当作零。");
 
