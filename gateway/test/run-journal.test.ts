@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { loadConfig, type Config } from "../src/config.js";
-import { DurableRuns, RunJournal, writePrivateJson, type RunRequest, type RunSnapshot } from "../src/run-journal.js";
+import { DurableRuns, RunJournal, publishFileSync, writePrivateJson, type RunRequest, type RunSnapshot } from "../src/run-journal.js";
 
 function fixture(t: { after: (fn: () => void) => void }): { dir: string; config: Config; journal: RunJournal; request: RunRequest } {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "workbuddy-journal-"));
@@ -151,6 +151,51 @@ test("a damaged journal is reported as unreadable, never read as absent", (t) =>
   assert.throws(() => new DurableRuns(config).cancel(journal.attemptId), /journal is unreadable/);
   assert.equal(fs.readFileSync(stateFile, "utf8"), "{\"status\":\"working\",");
   assert.equal(fs.existsSync(path.join(journal.dir, "cancel.json")), false);
+});
+
+test("a destination held open by another process is retried, not reported as a lost write", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "wb-publish-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const target = path.join(root, "state.json");
+  fs.writeFileSync(target, "{\"old\":true}");
+  const temp = path.join(root, "state.json.tmp");
+  fs.writeFileSync(temp, "{\"new\":true}");
+  let attempts = 0;
+  // Windows reports EPERM/EBUSY while a reader or a scanner holds the target open.
+  const busyRename = (() => {
+    attempts += 1;
+    if (attempts < 3) throw Object.assign(new Error("EPERM: operation not permitted, rename"), { code: "EPERM" });
+    return fs.renameSync(temp, target);
+  }) as typeof fs.renameSync;
+  publishFileSync(temp, target, { rename: busyRename, attempts: 6, backoffMs: 0 });
+  assert.equal(attempts, 3);
+  assert.equal(fs.readFileSync(target, "utf8"), "{\"new\":true}");
+  assert.equal(fs.existsSync(temp), false);
+});
+
+test("a destination that stays busy keeps the old content and names the real reason", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "wb-publish-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const target = path.join(root, "state.json");
+  fs.writeFileSync(target, "{\"old\":true}");
+  const temp = path.join(root, "state.json.tmp");
+  fs.writeFileSync(temp, "{\"new\":true}");
+  const alwaysBusy = (() => { throw Object.assign(new Error("EBUSY: resource busy or locked, rename"), { code: "EBUSY" }); }) as typeof fs.renameSync;
+  assert.throws(() => publishFileSync(temp, target, { rename: alwaysBusy, attempts: 3, backoffMs: 0 }), /stayed busy \(EBUSY\) after 3 attempts/);
+  // The previous content survives and no half-written temporary file is left behind.
+  assert.equal(fs.readFileSync(target, "utf8"), "{\"old\":true}");
+  assert.equal(fs.existsSync(temp), false);
+});
+
+test("a write that fails for another reason is not retried and keeps its own error", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "wb-publish-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const temp = path.join(root, "state.json.tmp");
+  fs.writeFileSync(temp, "{\"new\":true}");
+  let attempts = 0;
+  const denied = (() => { attempts += 1; throw Object.assign(new Error("ENOENT: no such file or directory, rename"), { code: "ENOENT" }); }) as typeof fs.renameSync;
+  assert.throws(() => publishFileSync(temp, path.join(root, "state.json"), { rename: denied, attempts: 6, backoffMs: 0 }), /ENOENT/);
+  assert.equal(attempts, 1);
 });
 
 test("recovers a truncated last frame without swallowing the subsequent terminal result", (t) => {

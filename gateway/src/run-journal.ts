@@ -107,11 +107,40 @@ export function runsDirectory(config: Config): string {
   return config.runsDir ?? path.join(path.dirname(config.dbFile), "runs");
 }
 
+const BUSY_CODES = new Set(["EPERM", "EACCES", "EBUSY"]);
+function sleepSync(ms: number): void { if (ms > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); }
+
+/**
+ * Publish a fully written temporary file under its final name. Windows reports
+ * EPERM/EBUSY while another process (a reader, a virus scanner, an indexer) has
+ * the destination open, which is transient; every other failure is real and is
+ * rethrown untouched. After the last attempt the temporary file is removed so a
+ * retry starts clean, and the error says what actually happened instead of
+ * surfacing a bare EPERM from somewhere inside a rename.
+ */
+export function publishFileSync(temp: string, file: string, options: { rename?: typeof fs.renameSync; attempts?: number; backoffMs?: number } = {}): void {
+  const rename = options.rename ?? fs.renameSync;
+  const attempts = options.attempts ?? 6;
+  const backoffMs = options.backoffMs ?? 20;
+  let lastCode = "";
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try { rename(temp, file); return; }
+    catch (error) {
+      const code = (error as NodeJS.ErrnoException).code ?? "";
+      if (!BUSY_CODES.has(code)) { try { fs.rmSync(temp, { force: true }); } catch { /* keep the original error */ } throw error; }
+      lastCode = code;
+      if (attempt + 1 < attempts) sleepSync(backoffMs * (attempt + 1));
+    }
+  }
+  try { fs.rmSync(temp, { force: true }); } catch { /* the message below is the point */ }
+  throw new Error(`could not publish ${path.basename(file)}: the destination stayed busy (${lastCode}) after ${attempts} attempts; the previous content is intact and the temporary file was removed, so retry — an open reader or a virus scanner is the usual cause`);
+}
+
 export function writePrivateJson(file: string, value: unknown): void {
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   const temp = `${file}.${process.pid}.${crypto.randomBytes(4).toString("hex")}.tmp`;
   fs.writeFileSync(temp, JSON.stringify(value, null, 2), { mode: 0o600, flag: "wx" });
-  fs.renameSync(temp, file);
+  publishFileSync(temp, file);
 }
 
 /** A journal that exists but cannot be read. Never equal to an absent one. */

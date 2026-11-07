@@ -18,16 +18,42 @@ export function windowsPowerShellPath(): string {
   return path.win32.join(process.env.SystemRoot ?? process.env.WINDIR ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
 }
 
-export function windowsProcessTable(run: typeof execFileSync = execFileSync): NativeProcess[] {
+/** The process table could not be read at all. Never equal to "no processes". */
+export class ProcessTableUnavailableError extends Error {
+  constructor(readonly attempts: number, readonly cause: unknown) {
+    super(`the Windows process table could not be read after ${attempts} attempts (${cause instanceof Error ? cause.message : String(cause)}); nothing was assumed about any process, so no process was treated as started or stopped — retry when the machine is idle`);
+    this.name = "ProcessTableUnavailableError";
+  }
+}
+
+function sleepSync(ms: number): void { if (ms > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); }
+
+export function windowsProcessTable(run: typeof execFileSync = execFileSync, options: { attempts?: number; backoffMs?: number } = {}): NativeProcess[] {
   // Hidden Windows PowerShell may use the system legacy code page. Match the
   // UTF-8 decoder below so non-ASCII executable paths retain their identity.
   const script = "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,ExecutablePath,CommandLine | ConvertTo-Json -Compress -Depth 3";
-  const output = String(run(windowsPowerShellPath(), ["-NoProfile", "-NonInteractive", "-Command", script], {
-    encoding: "utf8",
-    windowsHide: true,
-    timeout: 30_000,
-    maxBuffer: 64 * 1024 * 1024,
-  })).trim();
+  const attempts = options.attempts ?? 3;
+  const backoffMs = options.backoffMs ?? 200;
+  let output = "";
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      output = String(run(windowsPowerShellPath(), ["-NoProfile", "-NonInteractive", "-Command", script], {
+        encoding: "utf8",
+        windowsHide: true,
+        timeout: 30_000,
+        maxBuffer: 64 * 1024 * 1024,
+      })).trim();
+      lastError = undefined;
+      break;
+    } catch (error) {
+      // WMI answers 0x80004005 (an unspecified error) under contention. A short
+      // bounded retry absorbs that; anything persistent still fails loudly.
+      lastError = error;
+      if (attempt + 1 < attempts) sleepSync(backoffMs * (attempt + 1));
+    }
+  }
+  if (lastError) throw new ProcessTableUnavailableError(attempts, lastError);
   if (!output) return [];
   const parsed = JSON.parse(output) as unknown;
   const rows = Array.isArray(parsed) ? parsed : [parsed];
