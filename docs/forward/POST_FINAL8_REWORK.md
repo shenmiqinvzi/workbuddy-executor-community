@@ -54,23 +54,15 @@ DSH 的模型目录写清来自 Harness 自身，不是 `workbuddy_list_models`�
 
 ## 6. 本轮补上的程序级保护（junction）
 
+npm ci 会清空它写入的目录。当安装根的 node_modules 是目录联接时，npm 跟随联接，被清空的是**联接目标**——可能是另一棵树的依赖。
 
-pm ci 会清空它写入的目录。当安装根的 
-ode_modules 是目录联接时，npm 跟随联接，被清空的是**联接目标**——可能是另一棵树的依赖。
-
-现在两个入口都在 
-pm ci 之前拒绝：
+现在两个入口都在 npm ci 之前拒绝：
 
 | 入口 | 位置 | 拒绝方式 |
 |---|---|---|
-| 编译路径 | gateway/src/installation-bootstrap.ts 的 planInstallationBootstrap | blocker 
-ode_modules_link / 
-ode_modules_link_dangling / 
-ode_modules_unverifiable，该步 skipped，runner 不会被调用 |
-| 无 dist 首次运行 | gateway/scripts/bootstrap.mjs | 打印 locked node_modules_link… 与 Refusing to run npm ci through it…，exit 1，在 
-pm ci 之前 |
+| 编译路径 | `gateway/src/installation-bootstrap.ts` 的 `planInstallationBootstrap` | blocker `node_modules_link` / `node_modules_link_dangling` / `node_modules_unverifiable`，该步 skipped，runner 不会被调用 |
+| 无 dist 首次运行 | `gateway/scripts/bootstrap.mjs` | 打印 `blocked node_modules_link…` 与 `Refusing to run npm ci through it…`，exit 1，在 npm ci 之前 |
 
-正常路径不变：真实目录与空安装根照常安装（install-prep-final11 实测 
-pm ci --omit=dev ok、93 包）。
+正常路径不变：真实目录与空安装根照常安装（install-prep-final11 实测 npm ci --omit=dev ok、93 包）。
 
-对照证据：修前 ootstrap-compiled-link-before.log 里联接下 ok npm_ci 且哨兵文件被删；修后 ootstrap-compiled-link-after.log 里 locked node_modules_link 且哨兵完好。
+对照证据：修前 `bootstrap-compiled-link-before.log` 里联接下 ok npm_ci 且哨兵文件被删；修后 `bootstrap-compiled-link-after.log` 里 blocked node_modules_link 且哨兵完好。
