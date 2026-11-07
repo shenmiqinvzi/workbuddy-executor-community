@@ -25,6 +25,7 @@ import { WorkBuddyQuotaCollector } from "./quota-observation.js";
 import { WorkBuddyCreditBalanceCollector } from "./credit-balance.js";
 import { configuredDshCoordinator } from "./dsh-runtime.js";
 import { desktopJournal } from "./desktop-dispatch-runtime.js";
+import { observeReadiness } from "./readiness.js";
 
 const config = loadConfig();
 const store = new TaskStore(config.dbFile);
@@ -58,6 +59,10 @@ const server = new WorkbenchHttpServer({
   // audit trail are readable here. Nothing on this surface writes: the policy and
   // dispatch seam is scripts/automation.mjs, and this entry starts unarmed.
   automation: service.automation,
+  // A01: the same five-layer diagnosis scripts/readiness.mjs prints, observed
+  // again per request. It reads the running process, the runs directory and the
+  // desktop shell's pipe; it prepares no model and writes no configuration.
+  readiness: { observe: () => observeReadiness({ config }) },
   health: () => workbenchHealth({
     runtime: { release: runtimeVersion.release, packageVersion: runtimeVersion.packageVersion, startedAt: runtimeVersion.startedAt },
   }),

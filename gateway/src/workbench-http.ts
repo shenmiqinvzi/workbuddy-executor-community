@@ -151,7 +151,19 @@ interface WorkbenchAdapterOptions {
    * CLI operation, so this surface has no write verb by construction.
    */
   automation?: AutomationService;
+  /**
+   * Read-only runtime readiness. Each GET observes the live process, the runs
+   * directory and the desktop shell again; it prepares no model, opens no
+   * session and writes no configuration. Absent means the route does not exist.
+   */
+  readiness?: { observe: () => Promise<unknown> };
 }
+
+/**
+ * The readiness read: five separate answers (tool, native bridge, project
+ * session, deployed code, desktop page) instead of one "is it working?".
+ */
+const READINESS_PATH = "/workbench/v1/readiness";
 
 /** One {code,message} pair per failure shape, kept stable. */
 function errorBody(code: string, message: string, options: { taskId?: string } = {}) {
@@ -333,6 +345,7 @@ export class WorkbenchHttpServer {
           || pathname.startsWith("/workbench/v1/export-preview/")
           || pathname === AUTOMATION_PATH
           || pathname.startsWith(`${AUTOMATION_PATH}/`)
+          || pathname === READINESS_PATH
           || /^\/workbench\/v1\/tasks\/[^/]+(\/(rework|cancel|reviews|accept|events|export))?$/.test(pathname);
         if (isKnownPath) {
           response.setHeader("allow", "GET, HEAD");
@@ -369,6 +382,20 @@ export class WorkbenchHttpServer {
         // null outside its own prefix, so it cannot capture another route.
         const automation = handleAutomationRequest(this.options.automation, pathname, url.search);
         if (automation) { this.send(response, automation.status, automation.body); return; }
+      }
+      if (pathname === READINESS_PATH && this.options.readiness) {
+        if ([...url.searchParams.keys()].length) {
+          this.refuse(response, 400, "INVALID_READINESS_QUERY", "The readiness report takes no query parameters.");
+          return;
+        }
+        try {
+          this.send(response, 200, { ok: true, value: await this.options.readiness.observe() });
+        } catch {
+          // A failed observation is not a partial success: no layer is reported
+          // as ready and the caller sees an explicit 503 instead of a stale copy.
+          this.refuse(response, 503, "READINESS_UNAVAILABLE", "The readiness report could not be observed; no layer is reported as ready.");
+        }
+        return;
       }
       if (pathname === "/workbench/v1/panel/tasks") {
         const parsed = parseListQuery(url.search);
