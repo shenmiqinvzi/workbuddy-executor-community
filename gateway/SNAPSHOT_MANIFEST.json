@@ -205,8 +205,8 @@
     },
     {
       "path": "desktop/GatewayDependencies.cs",
-      "sha256": "c2c1709da975d95a90592b2da980f9c6e95f3036d9a5d6d6072a213c88eb5941",
-      "bytes": 4808
+      "sha256": "686eb09bdf881483c0fcbf984f1d8d39196ea0995f64a50dcc91d2b72c26c72b",
+      "bytes": 4816
     },
     {
       "path": "desktop/Program.cs",
@@ -245,8 +245,8 @@
     },
     {
       "path": "desktop/test/Program.cs",
-      "sha256": "3b3ae391d74db67e814b5af7aca6165534ec7e18325c362bb2c559fafa775177",
-      "bytes": 27307
+      "sha256": "79cd07de7dcc1b2d8e4ac1fae9c07b2b604fc9164e81e461f8daac814ea9ab28",
+      "bytes": 27455
     },
     {
       "path": "desktop/workbench.ico",
@@ -430,8 +430,8 @@
     },
     {
       "path": "scripts/doctor.mjs",
-      "sha256": "44100018f663ec0b9047ba3424ca71b3575bbd5be98e82676287de48ddc220fc",
-      "bytes": 1768
+      "sha256": "3839e29a9c1dbdedda836d11e1aa47fcba033fa002b99f938d86d78277b2b0ff",
+      "bytes": 1776
     },
     {
       "path": "scripts/dsh-host-check.mjs",
@@ -475,8 +475,8 @@
     },
     {
       "path": "scripts/package-desktop.mjs",
-      "sha256": "93a7466d4bd565c84707c5bf6b0a0eb1d8d45e81f9cfcecebd39e19ca6fa126a",
-      "bytes": 6320
+      "sha256": "67bd3bbf500434934ec8fc84c18e5d16c4b5b2737ab395c6d8a993ed43696585",
+      "bytes": 6990
     },
     {
       "path": "scripts/package.mjs",
@@ -515,8 +515,8 @@
     },
     {
       "path": "scripts/verify-desktop.mjs",
-      "sha256": "c218b49bac3c26268bdf244f177a5bd24b227c22d2e10c84c7a350fc6c6e44c3",
-      "bytes": 3577
+      "sha256": "b4d0913018d5a5d278c0584e089707b57e733195cf2d94470984185233788925",
+      "bytes": 4559
     },
     {
       "path": "scripts/verify-release.mjs",
