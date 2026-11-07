@@ -114,7 +114,9 @@ export function planInstallationBootstrap(input: BootstrapInput): { installRoot:
   if (!hasBuildScript && !buildPresent) blockers.push({ id: "build_script", detail: "package.json declares no build script and dist/ is absent.", remediation: "Use a complete release archive; this step does not synthesise a build." });
 
   const next = blockers.length ? [] : [
-    "node scripts/setup.mjs plan --root <install-root> to review the first-run configuration without writing it",
+    // setup.mjs runs from inside the gateway root it configures and has no --root flag; the
+    // installer names the two paths that decide which WorkBuddy it writes next to.
+    `cd ${installRoot} && node scripts/setup.mjs plan --workbuddy-app <WorkBuddyAI.exe> --workbuddy-config <workbuddy config dir> --codex-home <isolated codex home> to review the first-run configuration without writing it`,
     "node scripts/readiness.mjs to see the five readiness layers for this installation",
   ];
   return { installRoot, blockers, steps, next };

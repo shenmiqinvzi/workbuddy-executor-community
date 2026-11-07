@@ -620,8 +620,8 @@
     },
     {
       "path": "src/automation.ts",
-      "sha256": "d9d7c1041d9f261f391627b80f0d60ccf1e72eab6a68002d1ef79cb3eafcedbe",
-      "bytes": 94367
+      "sha256": "1feaf066e8d18c7378d3525b9d65c78a2ca412a871a1d5ff3056763dc9a35b08",
+      "bytes": 94803
     },
     {
       "path": "src/bounded-command.ts",
@@ -825,8 +825,8 @@
     },
     {
       "path": "src/installation-bootstrap.ts",
-      "sha256": "4e6dc71c5c1aae05b0df69a47f5d811aa2f8f866c33d99d5935997a45ebf73d9",
-      "bytes": 8515
+      "sha256": "28ab958495fb0a1f8b60091fdfe0c7592301a19a43247b8266d8b724c6844e69",
+      "bytes": 8802
     },
     {
       "path": "src/installation-dependencies.ts",
@@ -1225,8 +1225,8 @@
     },
     {
       "path": "test/automation-cli-dispatch.test.ts",
-      "sha256": "91eb07b8d405c9b6ba198b2db14acec79f67099e4a84754c7ef3cb8ef1f25a8e",
-      "bytes": 11600
+      "sha256": "afc2d53d3cc759c360d78c13652bbc4615f926c6a31bc9daea241b8c2008d4c6",
+      "bytes": 14744
     },
     {
       "path": "test/automation-cli.test.ts",
@@ -1260,8 +1260,8 @@
     },
     {
       "path": "test/automation-selection-gate.test.ts",
-      "sha256": "9f63e8f6ed3cdb2e7579c9869300682375017cd5a54398c9bf2fd58239513fec",
-      "bytes": 7949
+      "sha256": "418a247b3d82c2a9409757f41c099c5e6ad489aa508651649cb60adf2071871b",
+      "bytes": 10500
     },
     {
       "path": "test/backend-integration.test.ts",
@@ -1745,8 +1745,8 @@
     },
     {
       "path": "test/support/automation-fixture.ts",
-      "sha256": "5c7c43f91a05c38ee559e875a5bcb7feb24b668477f760a0ab90df352eaaa69b",
-      "bytes": 9939
+      "sha256": "c875ae231fc68b2827ee7d59d889b8755cb76fcbe3c2e7c272f1632ce624d8f1",
+      "bytes": 11213
     },
     {
       "path": "test/support/contract-race-worker.ts",

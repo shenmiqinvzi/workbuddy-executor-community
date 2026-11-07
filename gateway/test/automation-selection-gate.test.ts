@@ -139,3 +139,45 @@ test("R3 a missing effort is named with the reported efforts and is not substitu
   assert.match(block!.message, /high/);
   assert.equal(evaluation.candidates[0]?.execution.reasoningEffort, "medium");
 });
+
+test("P1 a snapshot saved before balances carried routing stays readable but cannot satisfy known_cost", async (t) => {
+  const fixture = automationFixture(t);
+  // Exactly the shape final5 wrote when a catalog multiplier and a shared token pool met on one
+  // model: a reported valueKind, a remaining number from an unrelated connection, and no routing
+  // proof at all. It may be displayed; it may not stand behind a cost threshold.
+  const probe = async () => sample(at(fixture), [row(at(fixture), {
+    credits: "x0.11",
+    remaining: 1000,
+    unit: "tokens",
+    valueKind: "reported",
+  })]);
+  const automation = fixture.automation({ probe });
+  fixture.savePolicy(automation, { cost: { mode: "known_cost", unit: "tokens", ceiling: 10, requiresHardCap: false } });
+
+  const evaluation = await automation.evaluate({ proposal: fixture.proposal("legacy-snapshot-task") });
+
+  assert.equal(evaluation.decision, "wait", JSON.stringify(evaluation.blocks));
+  assert.ok(evaluation.blocks.some((entry) => entry.code === "COST_CONTROL_UNAVAILABLE" && entry.field === "cost.routing"), JSON.stringify(evaluation.blocks));
+  assert.ok(evaluation.limits.includes("cost_routing_unverified"));
+  assert.ok(!evaluation.blocks.some((entry) => entry.field === "cost.remaining" && /cannot cover/.test(entry.message)), "an unrouted number is never compared with the ceiling");
+  assert.equal(evaluation.cost.remaining, 1000, "the saved number is still shown");
+  assert.equal(evaluation.cost.evidence, "reported", "the saved evidence level is still shown");
+});
+
+test("P1 known_cost refuses an estimate explicitly instead of only excluding unavailable", async (t) => {
+  const fixture = automationFixture(t);
+  const probe = async () => sample(at(fixture), [row(at(fixture), {
+    credits: null,
+    balance: { kind: "estimated", unit: "credit", remaining: 4200, routing: "verified", source: "quota:this-model" },
+  })]);
+  const automation = fixture.automation({ probe });
+  fixture.savePolicy(automation, { cost: { mode: "known_cost", unit: "credit", ceiling: 10, requiresHardCap: false } });
+
+  const evaluation = await automation.evaluate({ proposal: fixture.proposal("estimated-balance-task") });
+
+  assert.equal(evaluation.decision, "wait", JSON.stringify(evaluation.blocks));
+  const block = evaluation.blocks.find((entry) => entry.field === "cost");
+  assert.ok(block, JSON.stringify(evaluation.blocks));
+  assert.match(block!.message, /only estimated/);
+  assert.equal(evaluation.cost.evidence, "estimated", "an estimate stays labelled as one");
+});

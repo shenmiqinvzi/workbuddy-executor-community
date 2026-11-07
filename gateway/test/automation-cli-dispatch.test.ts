@@ -196,3 +196,45 @@ test("a revoked policy blocks the next decision before any dispatch", async (t) 
   assert.equal(executed.ok, false);
   assert.equal(env.client.sent.length, 0, "a blocked decision never reaches the transport");
 });
+
+test("P1 a recorded snapshot without routing evidence cannot reach the shared dispatcher", async (t) => {
+  const env = cliEnvironment(t);
+  const observedAt = new Date().toISOString();
+  const legacy = path.join(env.root, "legacy-observation.json");
+  // The final5 shape: one row carries a catalog multiplier and a remaining number that came from a
+  // shared token pool of another connection. No `rate`, no `balance`, no routing proof.
+  fs.writeFileSync(legacy, JSON.stringify({
+    observedAt,
+    executors: [{ executorId: "workbuddy", connectionId: "local-workbuddy", providerId: "workbuddy-native", online: true, dispatchable: true, evidence: "synthetic-catalog", observedAt }],
+    models: [{
+      executorId: "workbuddy", connectionId: "local-workbuddy", providerId: "workbuddy-native", modelId: "synthetic-user-choice",
+      reasoningEfforts: [null], credits: "x0.11", remaining: 1000, unit: "tokens", valueKind: "reported", freshness: "fresh",
+      hardCap: "unsupported", catalogState: "available", observedAt, expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+    }],
+  }, null, 2));
+
+  const policy = await runCli([
+    "policy-create", "--workspace", "project", "--executor", "workbuddy", "--connection", "local-workbuddy",
+    "--provider", "workbuddy-native", "--model", "synthetic-user-choice", "--scope-allow", "src/**",
+    "--max-tasks", "5", "--window-seconds", "3600", "--max-timeout", "1800", "--ttl-hours", "2",
+    "--cost-mode", "known_cost", "--cost-unit", "tokens", "--ceiling", "10",
+    "--source", "user:synthetic-operator", "--actor", "synthetic-operator",
+  ], env.runtime);
+  assert.equal(policy.ok, true, JSON.stringify(policy));
+  const policyId = (policy as { policy: { policyId: string } }).policy.policyId;
+
+  const decided = await runCli(["decide", "--contract", contractFor(env, "legacy-snapshot-task"), "--policy-id", policyId, "--probe", legacy, "--source", "user:synthetic-operator"], env.runtime);
+  assert.equal(decided.ok, true, JSON.stringify(decided));
+  const decision = (decided as { decision: { decisionId: string; status: string; evaluation: { decision: string; blocks: Array<{ code: string; field: string }>; cost: { remaining: number | null } } } }).decision;
+  assert.equal(decision.status, "blocked");
+  assert.equal(decision.evaluation.decision, "wait");
+  assert.ok(decision.evaluation.blocks.some((block) => block.field === "cost.routing"), JSON.stringify(decision.evaluation.blocks));
+  assert.equal(decision.evaluation.cost.remaining, 1000, "the recorded number is still shown");
+
+  const enabled = await runCli(["enable", "--source", "user:synthetic-operator", "--actor", "synthetic-operator"], env.runtime);
+  assert.equal(enabled.ok, true);
+  const executed = await runCli(["execute", decision.decisionId, "--operation-id", "99999999-8888-4777-8666-555555555555", "--enable-dispatch", "--probe", legacy, "--source", "user:synthetic-operator"], env.runtime);
+  assert.equal(executed.ok, false);
+  assert.equal(executed.code, "COST_CONTROL_UNAVAILABLE");
+  assert.equal(env.client.sent.length, 0, "a refused cost decision never reaches the shared dispatcher");
+});

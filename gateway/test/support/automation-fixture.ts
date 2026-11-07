@@ -91,6 +91,26 @@ export function automationFixture(t: { after(fn: () => void): void }, options: {
   const execution = { executorId: "workbuddy" as const, connectionId: "local-workbuddy", providerId: "workbuddy-native", modelId: "synthetic-user-choice", reasoningEffort: null };
   const at = () => new Date(clock.now).toISOString();
 
+  /**
+   * The current probe states a rate and a balance explicitly, including the routing that ties the
+   * number to one executor/connection/model. Fixtures that want a legacy observation (a `valueKind`
+   * with no routing proof) must omit `rate`/`balance` themselves.
+   */
+  function withCostEvidence(model: Record<string, unknown>): Record<string, unknown> {
+    const rate = model.rate === undefined
+      ? { kind: typeof model.credits === "string" ? "reported" : "unavailable", value: typeof model.credits === "string" ? model.credits : null }
+      : model.rate;
+    const remaining = typeof model.remaining === "number" ? model.remaining : null;
+    const unit = (model.unit as "credit" | "tokens" | undefined) ?? "credit";
+    const kind = model.valueKind === "reported" ? "reported" : model.valueKind === "estimated" ? "estimated" : "unavailable";
+    const balance = model.balance === undefined
+      ? (remaining !== null
+        ? { kind, unit, remaining, routing: kind === "reported" ? "verified" : "unverified", source: kind === "reported" ? "probe" : "quota:shared-pool" }
+        : { kind: "unavailable", unit, remaining: null, routing: "unverified", source: null })
+      : model.balance;
+    return { ...model, rate, balance };
+  }
+
   function probe(overrides: Partial<AutomationProbeResult> & { model?: Record<string, unknown>; executor?: Record<string, unknown> } = {}): AutomationProbeResult {
     const observedAt = at();
     return {
@@ -100,12 +120,12 @@ export function automationFixture(t: { after(fn: () => void): void }, options: {
         online: true, dispatchable: true, evidence: "synthetic-catalog", observedAt,
         ...(overrides.executor ?? {}),
       }] as AutomationProbeResult["executors"],
-      models: overrides.models ?? [{
+      models: overrides.models ?? [withCostEvidence({
         executorId: "workbuddy", connectionId: "local-workbuddy", providerId: "workbuddy-native", modelId: "synthetic-user-choice",
         reasoningEfforts: [null], credits: "x0.00", remaining: 1000, unit: "credit", valueKind: "reported", freshness: "fresh",
         hardCap: "reported", catalogState: "available", observedAt, expiresAt: new Date(clock.now + 3_600_000).toISOString(),
         ...(overrides.model ?? {}),
-      }] as AutomationProbeResult["models"],
+      })] as AutomationProbeResult["models"],
     };
   }
 

@@ -10,9 +10,9 @@
 | 集成树 | `E:\javaproject\workbuddy-forward-20261107\I-integration` |
 | 分支 | `integration/forward-delivery` |
 | 起点 | `134cdc7febbf858e89fb1010cf6b9d72da5edbe7`（`workbuddy-finish\R-review-fixes`，分支 `fix/delivery-review-r1-r4`） |
-| 本轮最新提交 | **复核轮（R1–R4）修复在分支 `fix/forward-review-r1-r4`：`39c3d72` / `7ec1486` / `8f3e84f` / `22a4cb3`**；上一轮代码与测试冻结于 `1143d65`。精确 HEAD 请跑 `git rev-parse HEAD`，工作区应为空 |
+| 本轮最新提交 | **final6 复核轮（P1 旧快照费用门槛 + 两种 ZIP 对齐 + A2/A3 操作表）**在本分支上追加；前一轮 R1–R4 修复为 `39c3d72` / `7ec1486` / `8f3e84f` / `22a4cb3`；代码与测试业务冻结点仍是 `1143d65`。精确 HEAD 请跑 `git rev-parse HEAD`，工作区应为空 |
 | 证据根 | `E:\javaproject\outputs\forward-delivery-20261107\`（`A/ B/ C/ D/ I/ shared/`） |
-| 续接入口 | **复核轮（R1–R4）回执：`docs/forward/REVIEW_ROUND_RECEIPT.md`**（本轮最新状态以它为准）、`docs/forward/I_CHECKPOINT_2.md`、证据根 `RESUME.md` |
+| 续接入口 | **final6 复核轮回执：`docs/forward/FINAL6_REVIEW_RECEIPT.md`**（本轮最新状态以它为准）；前一轮 R1–R4 明细在 `docs/forward/REVIEW_ROUND_RECEIPT.md`；更早的检查点见 `docs/forward/I_CHECKPOINT_2.md`；证据根 `RESUME.md` |
 | 计划包 | `E:\javaproject\workbuddy-development-plan-20261107\`（10 个 md） |
 
 ## 2. 交付状态（按档位，不合并表述）

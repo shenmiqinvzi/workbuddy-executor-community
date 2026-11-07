@@ -1226,13 +1226,17 @@ export class AutomationService {
       kind: (typeof modelRow?.credits === "string" ? "reported" : "unavailable") as "reported" | "unavailable",
       value: typeof modelRow?.credits === "string" ? modelRow.credits : null,
     };
+    // P1: an observation saved before balances carried their own routing proof still has to be
+    // readable and displayable, but its `valueKind` never said which model the number belongs to.
+    // The fallback therefore keeps the kind for display and leaves the routing unknown: a legacy
+    // snapshot can show a remaining amount, it cannot stand behind a cost threshold.
     const balance = modelRow?.balance ?? (modelRow && modelRow.remaining !== null
       ? {
         kind: (modelRow.valueKind === "reported" ? "reported" : modelRow.valueKind === "estimated" ? "estimated" : "unavailable") as "reported" | "estimated" | "unavailable",
         unit: modelRow.unit,
         remaining: modelRow.remaining,
-        routing: (modelRow.valueKind === "reported" ? "verified" : "unverified") as "verified" | "unverified",
-        source: modelRow.valueKind === "reported" ? "probe" : null,
+        routing: "unverified" as const,
+        source: null as string | null,
       }
       : { kind: "unavailable" as const, unit: modelRow?.unit ?? policy.cost.unit, remaining: null as number | null, routing: "unverified" as const, source: null as string | null });
     const evidence = balance.kind === "unavailable" ? "unavailable" as const : balance.kind;
@@ -1252,8 +1256,10 @@ export class AutomationService {
       }
     } else if (policy.cost.mode === "known_cost") {
       note = "known_cost needs a reported per-model balance with a named unit and verified routing; a catalog multiplier is only a rate.";
-      if (!modelRow || balance.kind === "unavailable" || remaining === null || modelRow.freshness !== "fresh") {
-        block("QUOTA_UNAVAILABLE", "cost", "A known-cost policy needs a fresh reported balance for this exact model; a multiplier alone is not a balance.");
+      if (!modelRow || balance.kind !== "reported" || remaining === null || modelRow.freshness !== "fresh") {
+        block("QUOTA_UNAVAILABLE", "cost", balance.kind === "unavailable"
+          ? "A known-cost policy needs a reported balance for this exact model; a multiplier alone is not a balance."
+          : `A known-cost policy needs a reported balance for this exact model; this observation is only ${balance.kind}.`);
       }
       if (balance.routing !== "verified") {
         block("COST_CONTROL_UNAVAILABLE", "cost.routing", "The saved balance is not routed to this executor/connection/model; a shared pool cannot satisfy known_cost.");
