@@ -1463,19 +1463,9 @@ export function createReadOnlyProbe(options: AutomationReadOnlyProbeOptions = {}
           evidence: `quota:${row.connectionId}`,
         };
       }
-      // A complete, fresh region credit cache, but only for a model the same connection declares.
-      for (const balance of credit?.balances ?? []) {
-        if (balance.coverage !== "complete" || balance.balance === null) continue;
-        const connection = credit?.connections.find((item) => item.connectionId === balance.connectionId);
-        if (!connection || connection.cacheFreshness !== "fresh") continue;
-        const declaration = declared?.connections.find((item) => item.connectionId === balance.connectionId);
-        if (!declaration?.models?.includes(modelId)) continue;
-        return {
-          unit: "credit", valueKind: "reported", remaining: balance.balance,
-          observedAt: balance.latestMemberObservedAt ?? balance.collectedAt, expiresAt: balance.cacheExpiresAt,
-          evidence: `credit:${balance.connectionId}`,
-        };
-      }
+      // The saved credit cache is a region pool, not a per-model balance: a credit connection may
+      // not even declare a model restriction, so promoting its number onto one model row would
+      // invent an attribution the source never made. It stays a region-level surface instead.
       return null;
     };
 
@@ -1539,6 +1529,8 @@ export function createReadOnlyProbe(options: AutomationReadOnlyProbeOptions = {}
       catalogRows.some((row) => row.pricingVerified && typeof row.credits === "string") ? "executor_catalog"
         : (quota?.observations.length ?? 0) + (credit?.balances.length ?? 0) > 0 ? "gateway_pool" : "unavailable";
     if (costEvidence === "gateway_pool") limitations.push("cost_evidence_is_a_shared_pool_not_task_attribution");
+    // A credit cache is one region-wide pool across accounts; it is reported, never spent as one model's balance.
+    if ((credit?.balances.length ?? 0) > 0) limitations.push("credit_balance_is_a_region_pool_not_a_model_balance");
 
     return {
       probeVersion: AUTOMATION_PROBE_VERSION,
