@@ -250,6 +250,8 @@ export interface AutomationDecision {
   createdAt: string;
   updatedAt: string;
   result: unknown;
+  /** Who triggered the evaluation that produced this row. Absent on rows written before D05. */
+  requestedBy?: string | null;
 }
 
 export interface AutomationServiceOptions {
@@ -754,7 +756,7 @@ export class AutomationService {
         taskId: contract.taskId, status: evaluation.decision === "delegate" ? "pending" : "blocked", evaluation, proposal: contract,
         contractHash, planId: null, operationId: null, effectStartedAt: null,
         blockedCode: evaluation.blocks[0]?.code ?? null, blockedMessage: evaluation.blocks[0]?.message ?? null,
-        createdAt, updatedAt: createdAt, result: null,
+        createdAt, updatedAt: createdAt, result: null, requestedBy: actor || "agent",
       };
       this.database().prepare("INSERT INTO automation_decisions (decision_id,policy_id,policy_revision,status,task_id,plan_id,effect_operation,created_at,updated_at,digest,body_json) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
         .run(decisionId, policy.policyId, policy.revision, record.status, contract.taskId, null, null, createdAt, createdAt, digestOf(record), JSON.stringify(record));
@@ -977,6 +979,7 @@ export class AutomationService {
         createdAt: decision.createdAt, updatedAt: decision.updatedAt, blockedCode: decision.blockedCode,
         probeObservedAt: decision.evaluation.probeObservedAt ?? null,
         probe: decision.evaluation.probe ?? null,
+        requestedBy: decision.requestedBy ?? null,
       })),
       audit: this.audit(25),
     };

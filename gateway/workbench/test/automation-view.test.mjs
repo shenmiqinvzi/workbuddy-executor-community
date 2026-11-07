@@ -11,7 +11,8 @@ import { createHost, installMiniDom } from './support/mini-dom.mjs';
 
 installMiniDom();
 const {
-    mountAutomation, auditLine, blockLines, costLine, decisionLine, decisionStatusLabel, policyLine, policyStatusLabel,
+    mountAutomation, auditLine, blockLines, costLine, decisionLine, decisionStatusLabel, layerLine, layerLines,
+    policyLine, policyStatusLabel, probeLine, probeSourceLines, taskLink, waitingLine,
 } = await import('../automation.mjs');
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -174,4 +175,98 @@ test('a late response after dispose does not paint', async () => {
     await tick();
     assert.doesNotMatch(host.textContent, /本机命令行/);
     assert.doesNotMatch(host.textContent, /policy_created/);
+});
+
+test('the six layers are shown as six separate facts, never folded into one switch', () => {
+    const layers = [
+        { layer: 'installation_enabled', enabled: true, source: 'automation_meta.enabled' },
+        { layer: 'process_armed', armed: false, dispatcherWired: false, probeKind: 'read_only_local' },
+        { layer: 'policy_authorization', writeEntry: 'local_cli_only', acceptedSources: ['user:', 'local-operator:', 'desktop:'], policiesCurrent: 1 },
+        { layer: 'per_task_selection', mode: 'per_task_confirmed', note: 'Controlled policy execution' },
+        { layer: 'recorded_decision', pending: 1, blocked: 2, executing: 0, dispatched: 3, outcomeUnknown: 0, revoked: 1 },
+        { layer: 'actual_dispatch', guardedService: 'TaskApplicationService.send', capacity: 'single_shared_slot' },
+    ];
+    const lines = layerLines({ layers });
+    assert.equal(lines.length, 6);
+    assert.match(lines[0], /① 安装级启用：是/);
+    assert.match(lines[1], /② 进程内武装：武装 否 · 派工器已接 否 · 观测 read_only_local/);
+    assert.match(lines[2], /接受来源 user:\/local-operator:\/desktop:/);
+    assert.match(lines[3], /per_task_confirmed — Controlled policy execution/);
+    assert.match(lines[4], /待派工 1 · 阻塞 2 · 派工中 0 · 已派工 3 · 结果不明 0 · 撤回未派工 1/);
+    assert.match(lines[5], /TaskApplicationService\.send · 容量 single_shared_slot/);
+    assert.deepEqual(layerLines({}), []);
+    assert.equal(layerLine(null), 'NA');
+    assert.equal(layerLine({ layer: 'unknown_layer' }), 'unknown_layer');
+});
+
+test('a waiting condition names what the decision is waiting for, not just a code', () => {
+    assert.match(waitingLine({ blocks: [{ code: 'QUOTA_UNAVAILABLE', field: 'cost' }] }), /等新的额度观测/);
+    assert.match(waitingLine({ evaluation: { blocks: [{ code: 'EXECUTOR_BUSY' }] } }), /等唯一容量位释放/);
+    assert.equal(waitingLine({ blocks: [{ code: 'SOMETHING_NEW' }] }), 'SOMETHING_NEW：等该阻塞原因消失');
+    assert.equal(waitingLine({ blocks: [] }), '没有记录等待条件。');
+    assert.equal(waitingLine(null), '没有记录等待条件。');
+});
+
+test('the observation a decision used is shown with its sources, and an absent one is not free', () => {
+    const probe = {
+        probeVersion: 'workbuddy-executor/automation-probe-1',
+        observedAt: '2026-11-07T00:00:00.000Z',
+        coverage: { executors: 'observed', catalog: 'observed', costEvidence: 'gateway_pool', taskAttribution: 'unavailable' },
+        sources: [{ source: 'catalog', status: 'ok', entries: 2, detail: '2 catalog rows' }, { source: 'quota', status: 'stale', entries: 1, detail: 'old snapshot' }],
+    };
+    assert.match(probeLine(probe), /观测 2026-11-07T00:00:00\.000Z/);
+    assert.match(probeLine(probe), /费用证据 gateway_pool/);
+    assert.match(probeSourceLines(probe)[0], /^catalog：ok（2 条）— 2 catalog rows$/);
+    assert.deepEqual(probeSourceLines(null), []);
+    assert.match(probeLine(null), /未声明的观测不等于免费/);
+});
+
+test('a task link uses the shell deep link form and refuses a non-identifier', () => {
+    assert.equal(taskLink('task-demo'), '#taskId=task-demo');
+    assert.equal(taskLink('task demo/x'), '#taskId=task%20demo%2Fx');
+    assert.equal(taskLink(''), null);
+    assert.equal(taskLink(null), null);
+});
+
+test('the view shows the layers, the observation and the original task link without any write control', async () => {
+    const host = createHost();
+    const decision = {
+        ...snapshot().decisions[0],
+        requestedBy: 'synthetic-operator',
+        probe: {
+            probeVersion: 'workbuddy-executor/automation-probe-1',
+            observedAt: '2026-11-07T00:00:00.000Z',
+            coverage: { executors: 'observed', catalog: 'observed', costEvidence: 'gateway_pool', taskAttribution: 'unavailable' },
+            sources: [{ source: 'catalog', status: 'ok', entries: 1, detail: '1 catalog row' }],
+        },
+    };
+    mountAutomation({
+        root: host,
+        fetchJson: async path => {
+            if (path === '/workbench/v1/automation') {
+                return snapshot({
+                    probeKind: 'read_only_local',
+                    layers: [{ layer: 'installation_enabled', enabled: false, source: 'automation_meta.enabled' }],
+                });
+            }
+            return { decision: { ...decision, evaluation: { decision: 'wait', blocks: decision.blocks, limits: [], cost: { mode: 'known_cost' } } } };
+        },
+    });
+    await tick();
+    assert.match(host.textContent, /六层边界/);
+    assert.match(host.textContent, /① 安装级启用：否/);
+    assert.match(host.textContent, /本机只读组合观测/);
+    const detailButton = host.descendants().find(node => node.textContent === '决定详情');
+    detailButton.click();
+    await tick();
+    assert.match(host.textContent, /实际请求身份 synthetic-operator/);
+    assert.match(host.textContent, /等待条件/);
+    assert.match(host.textContent, /等新的额度观测/);
+    assert.match(host.textContent, /当时的观测/);
+    assert.match(host.textContent, /catalog：ok（1 条）/);
+    const link = host.descendants().find(node => node.tagName === 'A' && node.textContent === '查看原任务');
+    assert.ok(link, 'a recorded decision links to its original task');
+    assert.equal(link.getAttribute('href'), '#taskId=task-demo');
+    assert.equal(host.querySelectorAll('input').length, 0);
+    assert.equal(host.querySelectorAll('form').length, 0);
 });
