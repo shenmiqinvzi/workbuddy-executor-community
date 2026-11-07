@@ -22,6 +22,7 @@
  */
 
 import type { TaskUsageAttribution } from "./usage-attribution.js";
+import { buildStatisticsExport } from "./statistics-contract.js";
 import {
   readStatisticsOverview,
   readTaskStatistics,
@@ -32,6 +33,7 @@ import {
 } from "./statistics-service.js";
 
 export const STATISTICS_PREFIX = "/workbench/v1/statistics";
+export const STATISTICS_EXPORT_PATH = `${STATISTICS_PREFIX}/export`;
 
 export interface StatisticsRouteResponse {
   status: number;
@@ -93,6 +95,17 @@ export function handleStatisticsRequest(sources: StatisticsSources, pathname: st
     const overview = readStatisticsOverview(sources, parsed.query);
     if (!overview.ok) return errorBody(overview.code.toUpperCase(), overview.message);
     return { status: 200, body: { ...overview, schemaVersion: STATISTICS_SCHEMA } };
+  }
+
+  if (pathname === STATISTICS_EXPORT_PATH) {
+    // Same window query as the overview, so a consumer can recompute the export
+    // from the page it already fetched. Read-only and snapshot-only: nothing is
+    // written, no source is contacted.
+    const parsed = parseStatisticsQuery(search);
+    if (!parsed.ok) return errorBody(parsed.code.toUpperCase(), parsed.message);
+    const overview = readStatisticsOverview(sources, parsed.query);
+    if (!overview.ok) return errorBody(overview.code.toUpperCase(), overview.message);
+    return { status: 200, body: buildStatisticsExport(overview, { generatedAt: new Date() }) };
   }
 
   const match = /^\/workbench\/v1\/statistics\/tasks\/([^/]+)$/.exec(pathname);

@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { TaskStore } from "../src/task-store.js";
 import { parseStatisticsQuery, readStatisticsOverview } from "../src/statistics-service.js";
+import { handleStatisticsRequest, STATISTICS_EXPORT_PATH } from "../src/statistics-http.js";
 import {
   buildStatisticsExport,
   coverageOf,
@@ -104,6 +105,26 @@ test("freshness labels an old window stale instead of re-dating it", () => {
   assert.equal(unknown.status, "unknown");
   assert.equal(unknown.ageSeconds, null);
   assert.equal(unknown.reason, "window_end_unknown");
+});
+
+test("the export route answers the same window query as the overview and writes nothing", t => {
+  const store = tempStore(t);
+  seed(store);
+  const before = fs.readFileSync(store.file);
+  const response = handleStatisticsRequest({ store }, STATISTICS_EXPORT_PATH, "?limit=5");
+  assert.ok(response);
+  assert.equal(response.status, 200);
+  const body = response.body as { schemaVersion: string; contractVersion: string; readOnly: boolean; coverage: { requests: { status: string; denominator: number | null } } };
+  assert.equal(body.schemaVersion, STATISTICS_EXPORT_SCHEMA);
+  assert.equal(body.contractVersion, "statistics-export-contract-1");
+  assert.equal(body.readOnly, true);
+  // Nobody publishes a request count, so the total is unknown, never 100%.
+  assert.equal(body.coverage.requests.status, "unknown");
+  assert.equal(body.coverage.requests.denominator, null);
+  assert.deepEqual(fs.readFileSync(store.file), before);
+
+  const bad = handleStatisticsRequest({ store }, STATISTICS_EXPORT_PATH, "?limit=0");
+  assert.equal(bad?.status, 400);
 });
 
 test("the export carries the source limitations instead of summarizing them away", t => {

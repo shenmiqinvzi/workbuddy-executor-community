@@ -41,7 +41,6 @@ export interface UsageGroupLike {
   records?: number;
   measuredRecords?: number;
   amount?: number | null;
-  [key: string]: unknown;
 }
 
 export interface OverviewLike {
@@ -49,21 +48,20 @@ export interface OverviewLike {
   schemaVersion: string;
   readOnly: true;
   snapshotOnly?: true;
-  window: { from: string; to: string } | null;
+  window: { from: string | null; to: string | null } | null;
   coverage: {
     tasksRead: number; tasksIncluded: number; tasksExcludedOutsideWindow: number;
     tasksWithoutEvents: number; tasksIncomplete: number; eventsRead: number;
     tasksTruncated: boolean; eventsTruncated: boolean;
   };
-  totals: { calls?: unknown[]; usage?: UsageGroupLike[]; [key: string]: unknown };
+  totals: { calls?: readonly unknown[]; usage?: readonly UsageGroupLike[] };
   limitations: string[];
   claims?: { savings: null; superiority: null };
-  [key: string]: unknown;
 }
 
 const ABSENT_REQUEST_COUNT = "upstream_does_not_publish_request_count";
 
-function amountOf(groups: UsageGroupLike[], unit: string): UsageGroupLike | undefined {
+function amountOf(groups: readonly UsageGroupLike[], unit: string): UsageGroupLike | undefined {
   return groups.find(group => group.unit === unit);
 }
 
@@ -82,7 +80,7 @@ export function coverageOf(numerator: number | null, denominator: number | null,
 }
 
 /** Request/token/amount coverage, each stated separately. */
-export function usageCoverage(groups: UsageGroupLike[]): { requests: CoverageEntry; tokens: CoverageEntry; amounts: CoverageEntry } {
+export function usageCoverage(groups: readonly UsageGroupLike[]): { requests: CoverageEntry; tokens: CoverageEntry; amounts: CoverageEntry } {
   const requests = coverageOf(groups.length > 0 ? groups.length : 0, null, ABSENT_REQUEST_COUNT);
   const tokens = amountOf(groups, "tokens");
   const amounts = amountOf(groups, "credits") ?? amountOf(groups, "currency");
@@ -112,7 +110,7 @@ export interface StatisticsExport {
   snapshotOnly: true;
   generatedAt: string;
   sourceSchema: string;
-  window: { from: string; to: string } | null;
+  window: { from: string | null; to: string | null } | null;
   windowSemantics: string;
   freshness: ExportFreshness;
   coverage: {
