@@ -10,7 +10,7 @@
 | 集成树 | `E:\javaproject\workbuddy-forward-20261107\I-integration` |
 | 分支 | `integration/forward-delivery` |
 | 起点 | `134cdc7febbf858e89fb1010cf6b9d72da5edbe7`（`workbuddy-finish\R-review-fixes`，分支 `fix/delivery-review-r1-r4`） |
-| 本轮最新提交 | `9759288`（代码提交止于 `21764ec`；`9759288` 只改 `docs/forward/**`，不进发布包，见 §5 可复现性） |
+| 本轮最新提交 | `eaadd53`（代码提交止于 `21764ec`；其后 `9759288`/`cf7241a`/`eaadd53` 只改 `docs/forward/**` 与证据说明，不进发布包，见 §5 可复现性） |
 | 证据根 | `E:\javaproject\outputs\forward-delivery-20261107\`（`A/ B/ C/ D/ I/ shared/`） |
 | 续接入口 | `docs/forward/I_CHECKPOINT_2.md`、证据根 `RESUME.md` |
 | 计划包 | `E:\javaproject\workbuddy-development-plan-20261107\`（10 个 md） |
@@ -35,16 +35,16 @@
 |---|---|---|
 | A-runtime | `11d96a5` `0f0a263` `c1b9f8d` `161097e` `27f92fd` `ecedc5c` `3a33d0a` | 启动阶段拆分、五层就绪诊断、两块生命周期空白、有界安装、两个偶发有界化、文档 |
 | B-product | 9 提交（`19ef402` `bd6f3c1` `4e63b7a` `e26fe7a` `2cdb97b` `da5c43d` `58813cc` `4e22c2e` `bd9d632`） | 派工三结局、面板恢复、模板期限裁剪、导出比对、五尺寸探针、文档 |
-| C-data | 6 提交（`b6edd38` `25787e8` `e49c5ea` `9e00fee` `7af4515` 等） | 来源能力声明、路由歧义、harness 调用事实、统计契约、quota-2 升版与 DSH sync 生产接线 |
+| C-data | 10 提交（`b6edd38` `25787e8` `e49c5ea` `9e00fee` `7af4515` `9dcad9f` `a08fbc3` 等） | 来源能力声明、路由歧义、harness 调用事实、统计契约、quota-2 升版与 DSH sync 生产接线、导出路由 |
 | D-automation | 8 提交（`6267e05` `8e35607` `07f7b79` `d50ae78` `70b1803` `ee1cfcc` `a162469` 等） | 六层披露、只读 probe、操作只读路由、幂等派工、socket 修复、文档 |
-| I 集成 | `caa7a5fa` `15e23ae` `387a6f6` `02e7de8` `6774476` `804ce30` `1e0597c` `4b04bfa` `65c1d7a` `9898edb` `f47fb4b` `4c2bc16` `5ff65f5` `21764ec` + 5 个 merge | local_check 生产端、歧义文案、就绪只读路由、降级启动、产品面接线、打包白名单、MCP 入口隔离、交付入口前移、清理误入日志、总回执与证据、请求归因账本接线、五次合并 |
+| I 集成 | `caa7a5fa` `15e23ae` `387a6f6` `02e7de8` `6774476` `804ce30` `1e0597c` `4b04bfa` `65c1d7a` `9898edb` `f47fb4b` `4c2bc16` `6f67b5d` `5ff65f5` `21764ec` `9759288` `cf7241a` `eaadd53` + 9 个 merge | local_check 生产端、歧义文案、就绪只读路由、降级启动、产品面接线、打包白名单、MCP 入口隔离、交付入口前移、清理误入日志、总回执与证据、请求归因账本接线、串行基线与可复现候选、桌面成品、九次合并 |
 
 ## 4. 验证（真实输出，命令与日志）
 
 | 门 | 命令 | 结果 | 日志 |
 |---|---|---|---|
 | 全量后端（串行，候选基线） | `$env:WORKBUDDY_CONFIG_DIR='C:\Users\LENOVO\.workbuddy-ai'; npx tsx --test --test-concurrency=1 test/**/*.test.ts` | **1442 tests / 1430 pass / 0 fail / 12 skipped**（exit 0） | `I\full-suite-serial.log` |
-| 全量后端（默认并发，三轮） | 同上但不加 `--test-concurrency=1` | 三轮均 **1442 tests / 1429 pass / 1 fail / 12 skipped**，每轮失败的用例不同且都能单跑通过（见 4.3） | `I\full-suite-final3.log`、`I\full-suite-final3b.log`、`I\full-suite-final3c.log` |
+| 全量后端（默认并发，三轮） | 同上但不加 `--test-concurrency=1` | 三轮均 **1442 tests / 1429 pass / 1 fail / 12 skipped**，每轮失败的用例不同且都能单跑通过（见 4.2） | `I\full-suite-final3.log`、`I\full-suite-final3b.log`、`I\full-suite-final3c.log` |
 | 工作台 | `npm run test:workbench` | 164 tests / 164 pass / 0 fail | 终端 |
 | 桌面策略 | `npm run desktop:test` | 122 pass / 0 fail | `A\desktop-policy-tests.log` |
 | 类型 | `npx tsc --noEmit -p tsconfig.json`、`npm run typecheck:task-view` | 均 exit 0 | 终端 |
@@ -55,7 +55,7 @@
 1. **配置目录歧义**：不设 `WORKBUDDY_CONFIG_DIR` 时本机同时存在 `%USERPROFILE%\.workbuddy-ai` 与 `%USERPROFILE%\.workbuddy`，`loadConfig()` 按设计抛错，180 条用例构造即失败（起点树同样失败，已证非本轮回归）。本文件所有全量数字都在固定 `WORKBUDDY_CONFIG_DIR` 下取得。
 2. **`dist` 陈旧**：`scripts/workbench-read-store.mjs:7` 从 `../dist/quota-observation.js` 读，源码改了不重建 `dist` 会让桌面只读路径读出版本漂移（本轮确实出现过，`npm run build` 后消失）。因此「改了 `src` 就要 build 再跑该文件」。
 
-### 4.3 默认并发下的一枚轮转失败（不是逻辑回归）
+### 4.2 默认并发下的一枚轮转失败（不是逻辑回归）
 
 默认并发（每个测试文件一个子进程并行）连跑三轮，每轮都恰好 1 条失败，且三轮各不同：
 
@@ -67,7 +67,7 @@
 
 判定：轮 2/3 属机器级争用（SQLite 写、目录读与 pid 活跃判定的时序），**同一提交在 `--test-concurrency=1` 下 0 失败**。三轮结果与串行结果都保留，不用串行那次掩盖并发的三次红。
 
-### 4.2 本机真实运行证据（machine 档，合并后复跑）
+### 4.3 本机真实运行证据（machine 档，合并后复跑）
 
 | 端点 | 结果 | 证据 |
 |---|---|---|
@@ -80,7 +80,7 @@
 
 边界：以上**不**证明桌面壳页面渲染了这些数据（窗口一档仍是 0）。
 
-### 4.3 没跑的门，以及为什么
+### 4.4 没跑的门，以及为什么
 
 `npm run verification:preflight` 在未配置的树上直接 `ERR_SQLITE_ERROR: unable to open database file`（`scripts/verification-preflight.mjs:22`）。它按设计要连已配置的库，而本机未安装本轮候选，固定 `WORKBUDDY_CONFIG_DIR` 去跑会打开真实数据目录并可能建表——这属于安装/真实环境动作（外部条件 A2），本轮不越界，记为未跑。
 
