@@ -21,7 +21,7 @@ import { registerTaskProjectionTool } from "./task-view-reader.js";
 import { runsDirectory } from "./run-journal.js";
 import { AdmissionError } from "./collaboration.js";
 import { configuredDshCoordinator } from "./dsh-runtime.js";
-import { createReadOnlyProbe } from "./automation.js";
+import { createReadOnlyProbe } from "./read-only-probe.js";
 import { desktopModelCatalog } from "./desktop-dispatch-runtime.js";
 import { DSH_DISCOVERY_SCHEMA_VERSION, dshExecutorSummary, dshSessionsFor, summarizeDshHosts } from "./dsh-discovery.js";
 

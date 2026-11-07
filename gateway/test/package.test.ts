@@ -80,6 +80,11 @@ async function fixture() {
   files["scripts/resource-source-acceptance.mjs"] = "// read-only real-source acceptance fixture\n";
   for (const name of ["candidate-installation", "delivery-baseline", "live-acceptance-fixture", "automation"]) files[`scripts/${name}.mjs`] = "// read-only delivery tool fixture\n";
   for (const [prefix, suffix] of [["src", "ts"], ["dist", "js"], ["dist", "d.ts"]]) files[`${prefix}/installation-readiness.${suffix}`] = "export {};\n";
+  // The installed candidate diagnoses itself and bootstraps its own dependencies,
+  // so both entry points and their sources are part of the release contract.
+  files["scripts/readiness.mjs"] = "// read-only readiness fixture\n";
+  files["scripts/bootstrap.mjs"] = "// bounded bootstrap fixture\n";
+  for (const name of ["readiness", "installation-bootstrap"]) for (const [prefix, suffix] of [["src", "ts"], ["dist", "js"]]) files[`${prefix}/${name}.${suffix}`] = "export {};\n";
   for (const name of ["installation-dependencies", "installation-rollback"]) for (const [prefix, suffix] of [["src", "ts"], ["dist", "js"], ["dist", "d.ts"]]) files[`${prefix}/${name}.${suffix}`] = "export {};\n";
   for (const name of ["automation", "automation-http", "automation-cli"]) for (const [prefix, suffix] of [["src", "ts"], ["dist", "js"]]) files[`${prefix}/${name}.${suffix}`] = "export {};\n";
   for (const name of ["dsh-bindings", "dsh-client", "dsh-coordinator", "dsh-runtime", "dsh-rate-verifier", "dsh-inspect", "plan"]) { files[`src/${name}.ts`] = "export {};\n"; files[`dist/${name}.js`] = "export {};\n"; files[`dist/${name}.d.ts`] = "export {};\n"; }
