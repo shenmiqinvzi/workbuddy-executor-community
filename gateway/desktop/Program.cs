@@ -84,7 +84,13 @@ internal sealed class WorkbenchWindow : Form
     private static WebView2 CreateWebView() => new() { Dock = DockStyle.Fill, DefaultBackgroundColor = Color.FromArgb(243, 246, 248) };
     private readonly Label message = new() { Dock = DockStyle.Fill, Text = "正在连接本地任务记录…", TextAlign = ContentAlignment.MiddleCenter, Font = new Font("Microsoft YaHei UI", 11), ForeColor = Color.FromArgb(65, 82, 95) };
     private readonly Button retry = new() { Text = "重新连接", AutoSize = true, Visible = false, Anchor = AnchorStyles.None };
-    private Process? host;
+    // Only the process this window started is ever owned here; a retry or an exit event can act on
+    // it only while this window still owns it, so an episode cannot stop its replacement.
+    private readonly OwnedHost<Process> host = new();
+    // Stage transitions, per-stage durations and the step currently being waited on. The ledger is
+    // what a status read reports while WebView2 creation is still pending.
+    private readonly StartupProgress progress = new();
+    private int episode;
     private DesktopCommandChannel? commands;
     private NotifyIcon? tray;
     // The native shell remembers which episode it already showed, so a duplicate frame from a
@@ -94,9 +100,7 @@ internal sealed class WorkbenchWindow : Form
     private bool confirming;
     private Uri? origin;
     private string? currentTask;
-    private bool ready, closing, starting;
-    private string? failureCode;
-    private string startupStage = "created";
+    private bool ready, closing;
 
     public WorkbenchWindow(DesktopOptions options)
     {
@@ -115,56 +119,105 @@ internal sealed class WorkbenchWindow : Form
 
     private async Task StartAsync()
     {
-        if (starting || closing) return;
-        starting = true; ready = false; message.Visible = true; retry.Visible = false; message.Text = "正在连接本地任务记录…";
+        // One episode at a time: a retry pressed while a start is still pending starts nothing, so a
+        // slow environment cannot be raced by a second host or a second WebView window.
+        if (closing || !progress.TryBegin()) return;
+        var ownEpisode = ++episode;
+        ready = false; message.Visible = true; retry.Visible = false; message.Text = "正在连接本地任务记录…";
         try
         {
-            failureCode = null; startupStage = "runtime";
             StopHost();
             if (web.CoreWebView2 is null && web.IsHandleCreated) { Controls.Remove(web); web.Dispose(); web = CreateWebView(); Controls.Add(web); web.SendToBack(); }
-            if (!File.Exists(options.NodeExecutable) || !File.Exists(Path.Combine(options.GatewayDirectory, "scripts", "workbench-desktop-host.mjs"))) throw new InvalidOperationException("缺少 Node.js 或工作台网关，请检查安装目录。");
-            // Detect the runtime without installing it or touching another app's profile.
-            _ = CoreWebView2Environment.GetAvailableBrowserVersionString();
-            startupStage = "host";
-            var start = DesktopCommandChannel.StartInfo(options.NodeExecutable, options.GatewayDirectory);
-            start.ArgumentList.Add(Path.Combine(options.GatewayDirectory, "scripts", "workbench-desktop-host.mjs"));
-            start.Environment["WORKBUDDY_DB_FILE"] = options.Database;
-            start.Environment["WORKBUDDY_RUNS_DIR"] = options.RunsDirectory;
-            host = Process.Start(start) ?? throw new InvalidOperationException("本地记录服务没有启动。");
-            var ownHost = host;
-            startupStage = "host_ready";
+            StartupStep.Run(progress, "runtime", () =>
+            {
+                if (!File.Exists(options.NodeExecutable) || !File.Exists(Path.Combine(options.GatewayDirectory, "scripts", "workbench-desktop-host.mjs"))) throw new InvalidOperationException("缺少 Node.js 或工作台网关，请检查安装目录。");
+                // Detect the runtime without installing it or touching another app's profile.
+                _ = CoreWebView2Environment.GetAvailableBrowserVersionString();
+            });
+            var ownHost = StartupStep.Run(progress, "host", StartHost);
+            host.Adopt(ownHost);
             // Drain stderr; never copy possibly sensitive upstream diagnostics into the UI or logs.
             _ = Task.Run(async () => { while (await ownHost.StandardError.ReadLineAsync() is { } diagnostic) { if (Environment.GetEnvironmentVariable("WORKBUDDY_WORKBENCH_DIAGNOSTICS") == "1") Console.Error.WriteLine(diagnostic); } });
-            var line = await ownHost.StandardOutput.ReadLineAsync(lifetime.Token).AsTask().WaitAsync(TimeSpan.FromSeconds(20), lifetime.Token);
+            var line = await StartupStep.RunAsync(progress, "host_ready", StartupProgress.HostReadyBudgetMs, token => ownHost.StandardOutput.ReadLineAsync(token).AsTask(), lifetime.Token);
             if (line is null || line.Length > 4096) throw new InvalidOperationException("本地记录服务启动失败，请核对数据目录和网关版本。");
             using var reply = JsonDocument.Parse(line);
             if (reply.RootElement.GetProperty("event").GetString() != "desktop_host_ready" || !reply.RootElement.GetProperty("port").TryGetInt32(out var port) || port is < 1 or > 65535) throw new InvalidOperationException("本地记录服务的启动回报无效。");
             origin = new Uri("http://127.0.0.1:" + port);
-            startupStage = "webview";
+            progress.Enter("webview");
             commands = new DesktopCommandChannel(ownHost);
             _ = Task.Run(() => ReadHostEventsAsync(ownHost));
             ownHost.EnableRaisingEvents = true;
-            ownHost.Exited += (_, _) => { try { if (!closing && host == ownHost && IsHandleCreated) BeginInvoke(() => ShowFailure("本地记录连接已结束。任务执行仍由原执行器管理，可以重新连接查看。")); } catch (InvalidOperationException) { } };
+            ownHost.Exited += (_, _) => { try { if (!closing && host.Owns(ownHost) && IsHandleCreated) BeginInvoke(() => { progress.Fail("host_exited", "the local recording service ended before the page was ready"); ShowFailure("本地记录连接已结束。任务执行仍由原执行器管理，可以重新连接查看。"); }); } catch (InvalidOperationException) { } };
             if (web.CoreWebView2 is null)
             {
-                Directory.CreateDirectory(options.ProfileDirectory);
+                StartupStep.Run(progress, "profile", () => Directory.CreateDirectory(options.ProfileDirectory));
                 // Diagnostics only: a loopback debugging port stays closed unless the operator opts in,
                 // because any local process could otherwise drive the page.
                 CoreWebView2EnvironmentOptions? environmentOptions = null;
                 if (int.TryParse(Environment.GetEnvironmentVariable("WORKBUDDY_WORKBENCH_DEBUG_PORT"), out var debugPort) && debugPort is > 0 and < 65536)
                     environmentOptions = new CoreWebView2EnvironmentOptions { AdditionalBrowserArguments = "--remote-debugging-port=" + debugPort };
-                var environment = await CoreWebView2Environment.CreateAsync(null, options.ProfileDirectory, environmentOptions);
-                await web.EnsureCoreWebView2Async(environment);
+                // The environment and the controller are separate bounded steps: reporting a single
+                // "webview" stage cannot tell a stuck environment from a stuck controller.
+                var environment = await StartupStep.RunAsync(progress, "webview_environment", StartupProgress.WebViewEnvironmentBudgetMs, _ => CoreWebView2Environment.CreateAsync(null, options.ProfileDirectory, environmentOptions), lifetime.Token);
+                await StartupStep.RunAsync(progress, "controller", StartupProgress.ControllerBudgetMs, _ => web.EnsureCoreWebView2Async(environment), lifetime.Token);
                 ConfigureWebView();
             }
+            progress.Enter("navigate");
             web.CoreWebView2!.Navigate(DesktopOptions.PageUri(origin, currentTask).AbsoluteUri);
-            startupStage = "navigate";
+            _ = WatchNavigationAsync(ownEpisode);
         }
-        catch (OperationCanceledException) when (closing) { }
-        catch (WebView2RuntimeNotFoundException) { StopHost(); ShowFailure("需要 Microsoft Edge WebView2 Runtime。请安装微软官方运行组件后重试。"); }
-        catch (UnauthorizedAccessException error) { failureCode = "UnauthorizedAccessException"; if (Environment.GetEnvironmentVariable("WORKBUDDY_WORKBENCH_DIAGNOSTICS") == "1") Console.Error.WriteLine(error); StopHost(); ShowFailure("工作台无法创建本地应用数据。请检查当前 Windows 用户的文件夹访问权限，然后重新连接。"); }
-        catch (Exception error) { failureCode = error.GetType().Name; if (Environment.GetEnvironmentVariable("WORKBUDDY_WORKBENCH_DIAGNOSTICS") == "1") Console.Error.WriteLine(error); StopHost(); ShowFailure("工作台暂时无法连接。请检查 Node.js、数据目录、网关依赖及 WebView2 Runtime 后重试。"); }
-        finally { starting = false; }
+        catch (OperationCanceledException) when (closing) { progress.Close(); }
+        catch (StartupStepTimeoutException timeout)
+        {
+            // The step already recorded timeout: or interrupted: for its stage; a bound that expired
+            // is never reported as the operator cancelling or as the task stopping.
+            Report(timeout);
+            StopHost(); ShowFailure(TimeoutMessage(timeout));
+            Console.WriteLine(JsonSerializer.Serialize(Snapshot("status")));
+        }
+        catch (WebView2RuntimeNotFoundException error) { progress.Fail("WebView2RuntimeNotFound", "the WebView2 runtime is not installed"); Report(error); StopHost(); ShowFailure("需要 Microsoft Edge WebView2 Runtime。请安装微软官方运行组件后重试。"); }
+        catch (UnauthorizedAccessException error) { progress.Fail("UnauthorizedAccessException", "the profile or data directory was refused"); Report(error); StopHost(); ShowFailure("工作台无法创建本地应用数据。请检查当前 Windows 用户的文件夹访问权限，然后重新连接。"); }
+        catch (Exception error) { progress.Fail(error.GetType().Name, "startup stopped at stage " + progress.Stage); Report(error); StopHost(); ShowFailure("工作台暂时无法连接。请检查 Node.js、数据目录、网关依赖及 WebView2 Runtime 后重试。"); }
+        finally { progress.End(); }
+    }
+
+    private Process StartHost()
+    {
+        var start = DesktopCommandChannel.StartInfo(options.NodeExecutable, options.GatewayDirectory);
+        start.ArgumentList.Add(Path.Combine(options.GatewayDirectory, "scripts", "workbench-desktop-host.mjs"));
+        start.Environment["WORKBUDDY_DB_FILE"] = options.Database;
+        start.Environment["WORKBUDDY_RUNS_DIR"] = options.RunsDirectory;
+        return Process.Start(start) ?? throw new InvalidOperationException("本地记录服务没有启动。");
+    }
+
+    private static void Report(Exception error)
+    {
+        if (Environment.GetEnvironmentVariable("WORKBUDDY_WORKBENCH_DIAGNOSTICS") == "1") Console.Error.WriteLine(error);
+    }
+
+    private static string TimeoutMessage(StartupStepTimeoutException timeout)
+    {
+        var waited = timeout.BoundMs / 1000;
+        return timeout.Stage switch
+        {
+            "host_ready" => $"本地记录服务在 {waited} 秒内没有回报就绪。可以重新连接；若重复出现，请保留阶段名 host_ready 与诊断日志。",
+            "webview_environment" => $"网页运行环境（WebView2 environment）在 {waited} 秒内没有创建成功。可以重新连接；若重复出现，请保留阶段名 webview_environment 与诊断日志。",
+            "controller" => $"网页运行环境已创建，但控制器在 {waited} 秒内没有就绪。可以重新连接；若重复出现，请保留阶段名 controller 与诊断日志。",
+            _ => $"工作台在 {timeout.Stage} 阶段等待 {waited} 秒仍未返回。可以重新连接；若重复出现，请保留阶段名 {timeout.Stage} 与诊断日志。",
+        };
+    }
+
+    /// <summary>
+    /// A page that never reports a successful navigation would otherwise sit on the navigate stage
+    /// forever. The watchdog records an explicit timeout for that stage instead.
+    /// </summary>
+    private async Task WatchNavigationAsync(int ownEpisode)
+    {
+        try { await Task.Delay(StartupProgress.NavigationBudgetMs, lifetime.Token); } catch (OperationCanceledException) { return; }
+        if (closing || ready || ownEpisode != episode || progress.IsFailed) return;
+        progress.TimeOut("navigate", StartupProgress.NavigationBudgetMs, "the page did not report a successful navigation within its bound");
+        StopHost(); ShowFailure($"工作台页面在 {StartupProgress.NavigationBudgetMs / 1000} 秒内没有报告载入完成。可以重新连接；若重复出现，请保留阶段名 navigate 与诊断日志。");
+        Console.WriteLine(JsonSerializer.Serialize(Snapshot("status")));
     }
 
     private void ConfigureWebView()
@@ -197,8 +250,11 @@ internal sealed class WorkbenchWindow : Form
         core.NavigationCompleted += (_, e) =>
         {
             if (closing) return;
-            if (!e.IsSuccess) { ShowFailure("工作台页面没有载入，可以重新连接。"); return; }
+            if (!e.IsSuccess) { progress.Fail("navigation", "the page reported a failed navigation"); ShowFailure("工作台页面没有载入，可以重新连接。"); return; }
+            // A page that loads after the recording service already ended is not a working page.
+            if (host.Current is not { HasExited: false }) { progress.Fail("host_gone", "the local recording service was no longer running when the page loaded"); ShowFailure("本地记录连接已结束。任务执行仍由原执行器管理，可以重新连接查看。"); return; }
             ready = true; message.Visible = false; retry.Visible = false; web.BringToFront();
+            progress.Ready();
             Console.WriteLine(JsonSerializer.Serialize(Snapshot("ready")));
         };
     }
@@ -364,7 +420,12 @@ internal sealed class WorkbenchWindow : Form
         retry.Location = new Point((ClientSize.Width - retry.Width) / 2, ClientSize.Height / 2 + 52);
     }
 
-    private object Snapshot(string state) => new { status = state, pid = Environment.ProcessId, windowHandle = Handle.ToInt64(), gatewayPid = host is { HasExited: false } ? host.Id : (int?)null, ready, taskId = currentTask, page = origin is null ? null : DesktopOptions.PageUri(origin, currentTask).AbsoluteUri, startupStage, failureCode };
+    /// <summary>
+    /// The status reply. <c>startupStage</c> and <c>failureCode</c> keep their previous meaning;
+    /// <c>startup</c> adds the bounded facts (per-stage durations, the step being waited on and its
+    /// bound) so a pending WebView2 step is distinguishable from a stopped shell.
+    /// </summary>
+    private object Snapshot(string state) => new { status = state, pid = Environment.ProcessId, windowHandle = Handle.ToInt64(), gatewayPid = host.Current is { HasExited: false } running ? running.Id : (int?)null, ready, taskId = currentTask, page = origin is null ? null : DesktopOptions.PageUri(origin, currentTask).AbsoluteUri, startupStage = progress.Stage, failureCode = progress.FailureCode, startup = progress.Describe() };
 
     private async Task ListenAsync()
     {
@@ -400,7 +461,8 @@ internal sealed class WorkbenchWindow : Form
     private void StopHost()
     {
         commands?.Dispose(); commands = null;
-        var own = host; host = null;
+        // Only a host this window still owns is stopped; an episode's replacement is never touched.
+        var own = host.Current is { } running ? host.ReleaseIfOwned(running) : null;
         if (own is null) return;
         try { if (!own.HasExited) { try { own.StandardInput.Close(); } catch (IOException) { } if (!own.WaitForExit(2500)) own.Kill(); } }
         catch (InvalidOperationException) { }

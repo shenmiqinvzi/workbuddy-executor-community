@@ -111,4 +111,88 @@ using (var child = System.Diagnostics.Process.Start(start)!)
     child.StandardInput.Close();
     await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
 }
+// --- Startup stages, bounds and host ownership ----------------------------------------------
+// These doubles exercise the stage machine without a desktop session: no WebView2 environment is
+// created, no host process is started, and no profile is touched.
+var syntheticNow = 0L;
+var episode = new StartupProgress(() => syntheticNow);
+Check(episode.TryBegin(), "the first startup episode is claimed");
+Check(!episode.TryBegin(), "a retry pressed during an episode starts nothing");
+Check(episode.Outcome == StartupOutcome.Starting, "a claimed episode reports starting, not ready");
+episode.End();
+Check(episode.TryBegin(), "an episode can be claimed again after it ends");
+StartupStep.Run(episode, "runtime", () => syntheticNow += 17);
+StartupStep.Run(episode, "host", () => syntheticNow += 1000);
+StartupStep.Run(episode, "profile", () => syntheticNow += 40);
+var hangs = new TaskCompletionSource<object?>();
+var expired = (StartupStepTimeoutException?)null;
+var lifetime = new CancellationTokenSource();
+try { await StartupStep.RunAsync(episode, "host_ready", 50, _ => hangs.Task, lifetime.Token); }
+catch (StartupStepTimeoutException error) { expired = error; }
+Check(expired is { BoundMs: 50 } && expired.Stage == "host_ready", "an expired bound names the stage and its budget");
+Check(episode.Outcome == StartupOutcome.TimedOut, "an expired bound is a timeout, not a cancellation");
+Check(episode.FailureCode == "timeout:host_ready", "the timeout keeps its stage in the failure code");
+Check(episode.Stage == "host_ready", "the stage that hung stays current instead of advancing");
+Check(!episode.FailureCode!.Contains("cancel", StringComparison.OrdinalIgnoreCase), "a timeout is not reported as cancelled");
+Check(episode.FailureCode != "stopped" && !episode.FailureDetail!.Contains("stopped"), "a timeout is not reported as stopped");
+Check(episode.Transitions.Select(item => item.Stage).SequenceEqual(["runtime", "host", "profile", "host_ready"]), "stages keep their entered order");
+Check(episode.Transitions[1].ElapsedMs == 17 && episode.Transitions[2].ElapsedMs == 1017 && episode.Transitions[3].ElapsedMs == 1057, "each stage records when it was entered");
+Check(episode.Transitions[3].BoundMs == 50, "the step that hung carries its own bound");
+
+var waiting = new StartupProgress(() => syntheticNow);
+syntheticNow = 0;
+waiting.TryBegin();
+waiting.Enter("webview");
+waiting.Await("webview_environment", StartupProgress.WebViewEnvironmentBudgetMs);
+syntheticNow += 33_000;
+var pending = System.Text.Json.JsonSerializer.Serialize(waiting.Describe());
+Check(pending.Contains("\"awaitingStage\":\"webview_environment\"", StringComparison.Ordinal), "a status read during a hang names the awaited stage");
+Check(pending.Contains("\"awaitingMs\":33000", StringComparison.Ordinal), "the reported wait keeps growing while the step hangs");
+Check(pending.Contains("\"awaitingBoundedMs\":30000", StringComparison.Ordinal), "the bound is reported beside the wait");
+Check(pending.Contains("\"outcome\":\"starting\"", StringComparison.Ordinal), "a pending step is not reported as failed or stopped");
+Check(StartupProgress.WebViewEnvironmentBudgetMs == 30_000 && StartupProgress.ControllerBudgetMs == 30_000, "the environment and the controller have separate, explicit bounds");
+
+var selfCancelled = new StartupProgress();
+selfCancelled.TryBegin();
+var openWindow = new CancellationTokenSource();
+var interrupted = (StartupStepTimeoutException?)null;
+try { await StartupStep.RunAsync(selfCancelled, "controller", 5_000, _ => Task.FromException<int>(new OperationCanceledException("synthetic self cancel")), openWindow.Token); }
+catch (StartupStepTimeoutException error) { interrupted = error; }
+Check(interrupted?.Stage == "controller", "a step cancelling itself is recorded against its stage");
+Check(selfCancelled.Outcome == StartupOutcome.Interrupted, "a self-cancelled step is an interruption, not the operator stopping the shell");
+Check(selfCancelled.FailureCode == "interrupted:controller" && selfCancelled.FailureCode != "timeout:controller", "an interruption is distinct from an expired bound");
+Check(!selfCancelled.FailureCode!.Contains("stopped", StringComparison.OrdinalIgnoreCase), "an interruption is not reported as stopped");
+
+var closedWindow = new StartupProgress();
+closedWindow.TryBegin();
+var shut = new CancellationTokenSource(); shut.Cancel();
+var closedByOperator = false;
+try { await StartupStep.RunAsync(closedWindow, "controller", 5_000, Park, shut.Token); }
+catch (OperationCanceledException) { closedByOperator = true; }
+Check(closedByOperator && closedWindow.Outcome == StartupOutcome.Closed, "closing the window is recorded as closed");
+Check(closedWindow.FailureCode is null, "a closed window is not given a failure code");
+Check(System.Text.Json.JsonSerializer.Serialize(closedWindow.Describe()).Contains("\"outcome\":\"closed\"", StringComparison.Ordinal), "the snapshot reports the closed outcome");
+
+var finished = new StartupProgress();
+finished.TryBegin(); finished.Ready(); finished.End();
+Check(finished.Outcome == StartupOutcome.Ready, "finishing an episode does not erase a ready outcome");
+var retried = new StartupProgress();
+retried.TryBegin(); retried.TimeOut("navigate", StartupProgress.NavigationBudgetMs, "synthetic"); retried.End();
+Check(retried.TryBegin() && retried.FailureCode is null && retried.Transitions.Count == 0, "a retry clears the previous episode's failure");
+
+var owned = new OwnedHost<SyntheticHost>();
+var first = new SyntheticHost(); var second = new SyntheticHost();
+owned.Adopt(first); owned.Adopt(second);
+Check(owned.Owns(second) && !owned.Owns(first), "only the newest host is owned by the window");
+Check(owned.ReleaseIfOwned(first) is null, "a stale episode cannot release the current host");
+var released = owned.ReleaseIfOwned(second);
+Check(ReferenceEquals(released, second) && owned.Current is null, "the owning episode releases its own host once");
+
 Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new { passed, failed = 0 }));
+
+static async Task<int> Park(CancellationToken token) { await Task.Delay(Timeout.Infinite, token); return 1; }
+
+internal sealed class SyntheticHost : IDisposable
+{
+    public void Dispose() { }
+}
