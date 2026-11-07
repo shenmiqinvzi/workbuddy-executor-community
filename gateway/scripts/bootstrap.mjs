@@ -49,6 +49,44 @@ function npmRun(args, budget = timeoutMs) {
 const planner = path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1")), "..", "dist", "installation-bootstrap.js");
 const hasPlanner = fs.existsSync(planner);
 
+// npm ci deletes whatever node_modules points at. When that path is a link, npm
+// follows it and empties the target — possibly another checkout's dependencies.
+// The compiled planner refuses the same way; this first-run branch has to check
+// on its own because it runs before dist/ exists.
+function nodeModulesEntry() {
+  const target = path.join(root, "node_modules");
+  let stat;
+  try {
+    stat = fs.lstatSync(target); // does not follow the link, so junctions show up here
+  } catch (error) {
+    if (error && error.code === "ENOENT") return { state: "absent", target: null };
+    return { state: "unverifiable", target: null, detail: `${error && error.code ? error.code : "unknown"}` };
+  }
+  if (stat.isSymbolicLink()) {
+    let resolved = null;
+    try { resolved = fs.realpathSync.native(target); } catch { resolved = null; }
+    let readable = resolved;
+    if (!readable) { try { readable = fs.readlinkSync(target); } catch { readable = null; } }
+    return { state: resolved && fs.existsSync(resolved) ? "link" : "link_dangling", target: readable };
+  }
+  if (stat.isDirectory()) return { state: "directory", target: null };
+  return { state: "unverifiable", target: null, detail: "node_modules is neither a directory nor a link" };
+}
+
+function refuseLinkedNodeModules(entry) {
+  if (entry.state === "directory" || entry.state === "absent") return;
+  const where = entry.target ?? "an unreadable target";
+  const id = entry.state === "link" ? "node_modules_link" : entry.state === "link_dangling" ? "node_modules_link_dangling" : "node_modules_unverifiable";
+  console.error(`blocked  ${id}: ${path.join(root, "node_modules")} is ${entry.state === "link" ? `a link to ${where}` : entry.state === "link_dangling" ? `a link whose target ${where} does not exist` : `not verifiable (${entry.detail ?? "unknown reason"})`}.`);
+  console.error(`Refusing to run npm ci through it: npm ci empties that path, so a link would empty its target instead of installing into ${root}.`);
+  console.error(`Remove or rename ${path.join(root, "node_modules")} (keep ${where} untouched) and run again; this root gets its own dependency directory.`);
+  console.error(`Nothing was installed.`);
+  process.exit(1);
+}
+
+const nodeModules = nodeModulesEntry();
+if (!hasPlanner) refuseLinkedNodeModules(nodeModules);
+
 if (!hasPlanner) {
   const manifest = path.join(root, "package.json");
   const lockfile = path.join(root, "package-lock.json");

@@ -390,8 +390,8 @@
     },
     {
       "path": "scripts/bootstrap.mjs",
-      "sha256": "47cfef30ad75be3429d7ccc802cb5ffe8826a7352c00e36fee4ed34a0a76a075",
-      "bytes": 5239
+      "sha256": "b353437098332f39bbeaaebf38b17035883d419e78a9906c15b95d6beb0d3934",
+      "bytes": 7548
     },
     {
       "path": "scripts/bounded-job.ps1",
@@ -825,8 +825,8 @@
     },
     {
       "path": "src/installation-bootstrap.ts",
-      "sha256": "28ab958495fb0a1f8b60091fdfe0c7592301a19a43247b8266d8b724c6844e69",
-      "bytes": 8802
+      "sha256": "a83080a32a78b7b8fff050a9b0954cae23aa6967e085ae7b4717a69bb4521ba1",
+      "bytes": 12613
     },
     {
       "path": "src/installation-dependencies.ts",
@@ -1490,8 +1490,8 @@
     },
     {
       "path": "test/installation-bootstrap.test.ts",
-      "sha256": "e916e358cec671fccc490d80c0d08b773648fde28f0515117d04952d779b9a41",
-      "bytes": 5153
+      "sha256": "5efbca13409fcb48c8b74eddfecf4b5711bb46fe59d4b9f4da6e435ca22a8089",
+      "bytes": 9611
     },
     {
       "path": "test/installation-dependencies.test.ts",

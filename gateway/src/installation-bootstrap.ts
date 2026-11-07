@@ -45,9 +45,80 @@ export interface BootstrapInput {
   apply?: boolean;
   run?: BootstrapRunner;
   timeoutMs?: number;
+  /** Overridable so a test can prove the refusal without a real link on disk. */
+  inspectNodeModules?: (installRoot: string) => NodeModulesEntry;
 }
 
 export interface BootstrapBlocker { id: string; detail: string; remediation: string }
+
+/**
+ * What `node_modules` is before a dependency install runs.
+ *
+ * `npm ci` deletes the contents of `node_modules` and reinstalls them. If that
+ * path is a link, npm follows it and empties the target — which may be another
+ * checkout's dependency tree that this installer was never given. Only a real
+ * directory (or nothing at all) is safe to install into.
+ */
+export type NodeModulesEntryState = "absent" | "directory" | "link" | "link_dangling" | "unverifiable";
+
+export interface NodeModulesEntry {
+  state: NodeModulesEntryState;
+  path: string;
+  target: string | null;
+  detail?: string;
+}
+
+function readLinkTarget(link: string): string | null {
+  try { return fs.readlinkSync(link); } catch { return null; }
+}
+
+export function inspectNodeModulesEntry(installRoot: string): NodeModulesEntry {
+  const target = path.join(path.resolve(installRoot), "node_modules");
+  let stat: fs.Stats;
+  try {
+    // lstat does not follow the link, so a junction is visible as a link here.
+    stat = fs.lstatSync(target);
+  } catch (error) {
+    const failure = error as NodeJS.ErrnoException;
+    if (failure.code === "ENOENT") return { state: "absent", path: target, target: null };
+    return { state: "unverifiable", path: target, target: null, detail: `${failure.code ?? "unknown"}: ${failure.message}` };
+  }
+  if (stat.isSymbolicLink()) {
+    let resolved: string | null = null;
+    try { resolved = fs.realpathSync.native(target); } catch { resolved = null; }
+    const readable = resolved ?? readLinkTarget(target);
+    if (resolved && fs.existsSync(resolved)) return { state: "link", path: target, target: resolved };
+    return { state: "link_dangling", path: target, target: readable };
+  }
+  if (stat.isDirectory()) return { state: "directory", path: target, target: null };
+  return { state: "unverifiable", path: target, target: null, detail: "node_modules exists but is neither a directory nor a link." };
+}
+
+function nodeModulesBlocker(entry: NodeModulesEntry): BootstrapBlocker | null {
+  const target = entry.target ?? "an unreadable target";
+  if (entry.state === "link") {
+    return {
+      id: "node_modules_link",
+      detail: `${entry.path} is a link to ${target}. Installing through a link empties that target, so this step refuses to run npm ci here.`,
+      remediation: `Remove or rename the link ${entry.path} (keep the target ${target} untouched), then run again; this root gets its own dependency directory. If the target has to be shared, install in the target's own root instead of through this link.`,
+    };
+  }
+  if (entry.state === "link_dangling") {
+    return {
+      id: "node_modules_link_dangling",
+      detail: `${entry.path} is a link whose target ${target} does not exist. Nothing can be verified about where npm ci would write.`,
+      remediation: `Delete the dangling link ${entry.path} and run again; npm ci will create a real directory in this root.`,
+    };
+  }
+  if (entry.state === "unverifiable") {
+    return {
+      id: "node_modules_unverifiable",
+      detail: `${entry.path} cannot be inspected${entry.detail ? ` (${entry.detail})` : ""}, so it is not possible to prove npm ci would stay inside this root.`,
+      remediation: `Inspect ${entry.path} by hand; this step does not run npm ci when it cannot prove the dependency directory is real.`,
+    };
+  }
+  return null;
+}
 
 export interface BootstrapReport {
   schemaVersion: typeof BOOTSTRAP_SCHEMA;
@@ -55,6 +126,7 @@ export interface BootstrapReport {
   installRoot: string;
   ok: boolean;
   blockers: BootstrapBlocker[];
+  nodeModules?: NodeModulesEntry;
   steps: BootstrapStepResult[];
   diagnosis: ReturnType<typeof diagnoseInstallationDependencies> | null;
   next: string[];
@@ -101,6 +173,10 @@ export function planInstallationBootstrap(input: BootstrapInput): { installRoot:
   if (!exists(manifest)) blockers.push({ id: "package_json", detail: "package.json is missing.", remediation: "Point --install-root at the unpacked gateway directory that contains package.json." });
   if (!exists(lockfile)) blockers.push({ id: "package_lock", detail: "package-lock.json is missing, so no dependency set can be reproduced.", remediation: "Use a release archive that carries package-lock.json; this step never guesses versions with npm install." });
 
+  const entry = (input.inspectNodeModules ?? inspectNodeModulesEntry)(installRoot);
+  const entryBlocker = nodeModulesBlocker(entry);
+  if (entryBlocker) blockers.push(entryBlocker);
+
   const buildPresent = exists(path.join(installRoot, "dist", "server.js"));
   const hasBuildScript = (() => {
     try { return typeof (JSON.parse(fs.readFileSync(manifest, "utf8")) as { scripts?: Record<string, string> }).scripts?.build === "string"; }
@@ -124,6 +200,7 @@ export function planInstallationBootstrap(input: BootstrapInput): { installRoot:
 
 export function runInstallationBootstrap(input: BootstrapInput): BootstrapReport {
   const plan = planInstallationBootstrap(input);
+  const nodeModules = (input.inspectNodeModules ?? inspectNodeModulesEntry)(plan.installRoot);
   const run = input.run ?? defaultRunner();
   const env = input.env ?? process.env;
   const apply = Boolean(input.apply);
@@ -151,6 +228,6 @@ export function runInstallationBootstrap(input: BootstrapInput): BootstrapReport
   return {
     schemaVersion: BOOTSTRAP_SCHEMA, apply, installRoot: plan.installRoot,
     ok: plan.blockers.length === 0 && results.every(step => step.status !== "failed" && step.status !== "skipped"),
-    blockers: plan.blockers, steps: results, diagnosis, next: [...new Set(next)],
+    blockers: plan.blockers, nodeModules, steps: results, diagnosis, next: [...new Set(next)],
   };
 }
