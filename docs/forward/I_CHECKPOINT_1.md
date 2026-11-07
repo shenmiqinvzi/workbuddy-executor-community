@@ -54,8 +54,34 @@
 1. `npm run package` 会先检查 `dist` 是否比 `src` 新，未 `npm run build` 时直接失败（`scripts/package.mjs:125`）。顺序必须是 build → package。
 2. 打包会检查"私有机器路径"（`scripts/package.mjs:185` `assertSafeContent`）。我最初的测试夹具写了 `C:\Users\x\`，被打包拦下。规则只接受 `example` / `YOUR_NAME` / `Public` / `<...>` 这类占位名，已改为 `C:\Users\example\`。这条守卫是有效的，不改它。
 
-## 5. 本检查点仍未满足的（不许写进"已完成"）
+## 5. 降级启动（本机真实运行证据）
+
+`6774476 feat(workbench): start degraded instead of dying when the config cannot resolve`
+
+本机正好是"两套 WorkBuddy 数据目录并存"的机器，因此这条路径是**实跑**出来的，不是构造的：
+
+```
+node dist/workbench-entry.js            # 不设 WORKBUDDY_CONFIG_DIR，WORKBUDDY_WORKBENCH_PORT=18999
+stdout: {"ok":false,"event":"workbench_http_degraded","port":18999,"code":"CONFIG_UNRESOLVED","readOnly":true}
+stderr: {"event":"workbench_config_unresolved","message":"Multiple WorkBuddy installations or data directories found;
+        set WORKBUDDY_CLI_ELECTRON and WORKBUDDY_CONFIG_DIR explicitly. 检测到配置目录候选：C:\Users\<account>\.workbuddy-ai、
+        C:\Users\<account>\.workbuddy。…本服务不会替你挑选其中一个，也不会回退到其他目录或磁盘上的旧状态。"}
+```
+
+三个路由的真实响应（原始 JSON 存 `E:\javaproject\outputs\forward-delivery-20261107\shared\degraded-{health,readiness}.json`）：
+
+| 路由 | 状态 | 关键内容 |
+| --- | --- | --- |
+| `GET /workbench/v1/health` | 200 | `ready:false`、`degraded.code="CONFIG_UNRESOLVED"`、`degraded.reason` 含两个候选路径与要设的变量、`capabilities.taskEventsHttp:false` |
+| `GET /workbench/v1/readiness` | 200 | `selection.state="ambiguous"`、候选已按 `%USERPROFILE%` 掩码、`suggested` 四条只打印不落盘、五层逐项 `unknown` 而非回退磁盘版本 |
+| `GET /workbench/v1/tasks` | 503 | `SURFACE_DEGRADED`（不读未打开的库） |
+
+这条证据的**边界**：它证明"进程不会因配置歧义而死、壳能拿到原因"，**不**证明桌面壳页面把这段 JSON 渲染出来了——页面渲染属于 B 线 B03/B05 的范围，本轮未验证，不算通过。
+
+桌面策略测试在同一次集成树上：`npm run desktop:test` → `{"passed":122,"failed":0}`（含 A02 新增的 30 条启动阶段用例）。
+
+## 6. 本检查点仍未满足的（不许写进"已完成"）
 
 - **启动阶段的可诊断性只到管道层**：`scripts/readiness.mjs` 与 HTTP 路由都能报出 `startup.outcome/awaitingStage/awaitingMs`，但桌面壳本身卡在 WebView 初始化时，宿主进程之外的失败点仍无观测（A02 只覆盖到 `navigation` 阶段）。真实窗口是否 ready 未在本轮验证。
-- **配置无法解析时进程仍会退出**：`workbench-entry.ts` 顶层 `loadConfig()` 抛错即退出，因此"配置歧义"时没有 HTTP 表面可以承载诊断（CLI 可以）。这是下一步要接的（需要一个不依赖 `TaskApplicationService` 的降级表面），本轮未做。
+- **配置无法解析时的进程存活已解决，但页面渲染未验证**：见 §5 边界。桌面壳是否把 `degraded.reason` 显示给用户，本轮没有证据。
 - **B/C/D 未合入**，因此 53 项场景与 31 项任务台账在本检查点不更新。
