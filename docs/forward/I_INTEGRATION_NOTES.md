@@ -23,9 +23,9 @@ A5 说明：MCP/HTTP 没有独立的「回答」写路由，重复回答在 MCP 
 | 请求 | 结论 | 落点 | 验证 |
 | --- | --- | --- | --- |
 | B-1 `instantiateTemplate` 的 `policyMaxTimeoutSeconds` 需要调用方 | 接受并接线：新增桌面命令 `productivity_template_instantiate`，时限取自 **stored collaboration policy**，不接受请求体覆盖 | `gateway/scripts/workbench-desktop-commands.mjs`（新分支） | `test/desktop-command-template.test.ts` 5/5（policy 300 夹取 900 → 300；请求带 `timeoutSeconds`/`policyMaxTimeoutSeconds` 直接拒绝） |
-| B-2 `draft.warnings[]` / `receipt.retryable` 透传 | 已天然满足：桌面命令把 `session.preview` / `session.receipt` 的返回值原样放进 `value` | `gateway/scripts/workbench-desktop-commands.mjs` `preview` / `status` 分支 | `test/desktop-dispatch.test.ts` 12/12（B 侧），`test/desktop-command-template.test.ts` 证明同一通道不裁剪字段 |
+| B-2 `draft.warnings[]` / `receipt.retryable` 透传 | 已天然满足：桌面命令把 `session.preview` / `session.receipt` 的返回值原样放进 `value`；本轮补一条测试把这个「原样」锁住 | `gateway/scripts/workbench-desktop-commands.mjs` `preview` / `status` 分支 | `test/desktop-command-template.test.ts` 6/6（新增 `preview and status return the session value untouched, warnings and retryable included`），`test/desktop-dispatch.test.ts` 12/12（B 侧） |
 | B-3 `renderControlUnavailable()` 可能返回 `null` | 已满足 | `gateway/workbench/app.mjs:358` 已有 `if (unavailable)` | `node --test workbench/test/controls-render.test.mjs` |
-| B-4 通知投递失败可查 | 接受：只读快照新增 `deliveryFailures` 与 `failures[]`，只来自已保存的账本条目 | `gateway/src/productivity-service.ts` `NotificationSnapshotView` / `readNotificationSnapshot` | `test/productivity-service.test.ts`、`test/notification-center.test.ts`、`test/notification-persistent.test.ts` 全绿 |
+| B-4 通知投递失败可查 | 接受：只读快照新增 `deliveryFailures` 与 `failures[]`，只来自已保存的账本条目；本轮补 HTTP 层测试 | `gateway/src/productivity-service.ts` `NotificationSnapshotView` / `readNotificationSnapshot` | `test/productivity-http.test.ts` 6/6（新增 `a saved delivery failure is reported with its reason…`：两条待办里只有真正失败过的那条计入 `deliveryFailures`，且 `pending` 不被消费）、`test/productivity-service.test.ts`、`test/notification-center.test.ts`、`test/notification-persistent.test.ts` 全绿 |
 | B-5 `probe:pages` 脚本登记 | 接受 | `gateway/package.json` | `npm run probe:pages` → `{"ok":true,"sizes":5,"failures":[]}`（B 侧实跑） |
 | B-6 `stateInfo().label` 不二次加工 | 已满足 | `gateway/workbench/app.mjs:51` 直接用 `info.label` | `npm run test:workbench` |
 
@@ -65,6 +65,8 @@ C 线自述未取得的档位（如实保留）：真实来源联调、真实请
 7. `gateway/src/read-only-probe.ts`：read-only probe 的门面（新增）。`server.ts` 只能从这里拿到不可派工的观测接口，自动化模块的名字不再出现在 MCP 入口——`test/automation-policy.test.ts:340` 那条「server.ts 不得暴露自动化写工具」的断言就是这么守住的，改回直接 import `./automation.js` 会立刻红。
 8. `gateway/scripts/package.mjs` + `gateway/test/package.test.ts`：候选包必须带 `scripts/readiness.mjs`、`scripts/bootstrap.mjs`、`src/readiness.ts`、`dist/readiness.js`、`src/installation-bootstrap.ts`、`dist/installation-bootstrap.js`；打包夹具同步补齐，否则发布包在别人机器上无法自诊断也无法自举依赖。
 9. `gateway/src/task-store.ts` + `gateway/src/dsh-coordinator.ts`：请求归因账本真实接线（I-3）。`TaskStore.usage` 改成**懒建**（`private usageLedger?: UsageLedger; get usage()`）——eager 构造会建 `usage_records` 表，破坏「从未记录过用量时读取路径报告不存在」的既有语义（`test/statistics.test.ts:304` 立刻红）。`DshTaskCoordinator` 只在 `result.accepted === true` 且 `requestId` 匹配之后写观测行，每行 `valueKind:"unavailable"`、`value:null`；写入失败被吞掉，不让已接受的派工变成不确定。测试：`test/dsh-adapter.test.ts` 两条（已确认→`credits`/`tokens` 两行；`setPromptError` 未确认→零行）。
+10. `gateway/test/productivity-http.test.ts`、`gateway/test/desktop-command-template.test.ts`：把「传输层不许吃掉字段」写成断言（B-2 `draft.warnings` / `receipt.retryable`；B-4 `deliveryFailures` / `failures[]` 只计真正失败过的待办）。
+11. `.github/workflows/forward-gate.yml`（新增，**未执行**）：把本轮手工门（verify-snapshot → `npm ci` → build → `typecheck:task-view` → 串行全量 → 工作台 → 桌面策略 → 打包 + `candidate-installation check` → workbench smoke）写成工作流，并把 `WORKBUDDY_CONFIG_DIR` 指向 runner 上自建的空目录。它一次都没跑过——不构成 CI 档证据，只为「第二台机器/远端 CI」准备好入口。
 
 ## IR-C 处置（C 线在合入后补齐）
 
@@ -83,4 +85,4 @@ C 线自述未取得的档位（如实保留）：真实来源联调、真实请
 - 真实派工：RC6 之后没有新的真实执行器任务；`live` 一档仍是 RC1/RC2 的旧记录。
 - 安装：只做了隔离安装根与候选包自检，未在这台机器上安装 RC6/本轮候选。
 - 自动模式：`armed` 未开，`hardCap` 恒 `unsupported`，逐任务选择层与容量层仍是常量声明。
-- 异机 / CI / 许可 / 发行：全部未做。
+- 异机 / 许可 / 发行：全部未做。CI 只写好了工作流（`1143d65`），一次都没跑过。
