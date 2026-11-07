@@ -29,6 +29,22 @@ function capacityNote(capacity,taskId){
     return{code:'capacity_occupied_other',text:`执行容量同一时间只允许一项任务，当前由任务 ${occupant.taskId} 占用；这不表示本条任务仍在运行。`};
 }
 
+const CHECKS={failed:'未通过',unknown:'未知',not_applicable:'不适用',checker_error:'检查器错误'};
+/** A review that exists but cannot carry an acceptance is a different fact
+ * from a missing review, and both differ from a review of an older revision.
+ * The text names which one it is; nothing is inferred from an absent record. */
+function reviewBlockText(record){
+    const view=record?.view,review=currentReview(record);
+    if(!review)return '本轮没有针对当前版本的独立审查记录；执行报告的自报不能代替它，因此没有可确认的验收。';
+    if(review.committedRevision&&view?.revision&&review.committedRevision!==view.revision)return `最近一次审查基于版本 ${review.committedRevision}，当前记录为版本 ${view.revision}；需要针对当前版本重新审查后才能确认验收。`;
+    const checks=Array.isArray(review.checks)?review.checks:[];
+    if(!checks.length)return '本轮审查没有保存任何检查项，因此不能作为验收依据。';
+    const selfReported=checks.filter(check=>check.actor==='worker');
+    if(selfReported.length)return `本轮审查的检查项由执行器自报（${selfReported.map(check=>check.checkId).join('、')}），不能算作独立检查。`;
+    const failed=checks.filter(check=>check.status!=='passed');
+    if(failed.length)return `本轮审查有未通过项：${failed.map(check=>`${check.checkId}（${CHECKS[check.status]||check.status}）`).join('、')}；修正后需要重新审查。`;
+    return '本轮审查不满足确认验收的条件，请核对检查项与执行身份。';
+}
 /** Why there is nothing to click. Every reason names evidence that is already
  * recorded; an absent record never becomes a guess about the original task. */
 export function unavailableReasons(record,{desktopAvailable=true,live=true,capacity=null}={}) {
@@ -44,7 +60,7 @@ export function unavailableReasons(record,{desktopAvailable=true,live=true,capac
     const state=view.businessState;
     if(['needs_review','blocked'].includes(state)&&view.remoteStopped!==true)reasons.push({code:'native_stop_unconfirmed',text:`当前状态为「${stateLabel(state)}」，但尚未确认原生停止；返工、独立审查与验收要等停止确认后才能提交。`});
     else if(['queued','working'].includes(state))reasons.push({code:'already_stopped',text:'原生停止已确认，因此没有可提交的停止请求；刷新执行状态以核对结果。'});
-    else if(state==='needs_review')reasons.push({code:'review_incomplete',text:'本轮没有满足条件的最新审查，或审查中存在未通过项，因此没有可确认的验收。'});
+    else if(state==='needs_review')reasons.push({code:'review_incomplete',text:reviewBlockText(record)});
     else reasons.push({code:'state_not_actionable',text:`当前状态为「${stateLabel(state)}」，没有可提交的停止、返工、审查或验收操作。`});
     return reasons;
 }

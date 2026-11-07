@@ -19,7 +19,14 @@ export function stateInfo(record) {
     if (view.displayState === 'needs_review' && view.remoteStopped !== true)
         return { key: 'inconsistent', label: '数据需核查', tone: 'warning', description: '待验收状态缺少对应停止证明，不能据此认定交付已就绪。' };
     const key = Object.hasOwn(STATES, view.displayState) ? view.displayState : 'unknown';
-    const [label, tone, description] = STATES[key];
+    let [label, tone, description] = STATES[key];
+    // A report can arrive before the native run stops. That is progress, not a
+    // result: the row says so, and the accept/rework entries stay closed until
+    // the stop is confirmed.
+    if (['queued', 'running', 'waiting_input'].includes(key) && record.presentation?.report) {
+        label = key === 'queued' ? '报告已到，仍在排队' : '报告已到，尚未确认停止';
+        description = `${description} 报告已记录，但原生停止未确认，验收与返工入口保持关闭。`;
+    }
     return { key, label, tone, description };
 }
 export function taskName(record) { return record.presentation?.title || '未命名任务'; }
