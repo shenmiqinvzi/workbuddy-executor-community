@@ -47,6 +47,16 @@
 
 路径、范围与检查定义必须替换为实际约定；只支持精确文件或 directory/**。非契约 send 的 scope 仍受支持，但 acceptanceCommands 属于命令要求，不能用自然语言的“测试通过”替代可匹配的机器记录。原有用户修改即便落在范围内也不能覆盖。给 worker 的回报及停止约定见[执行规范](execution.md)。
 
+`acceptanceCommands` 的每个元素必须是一段 **JSON 文本**（CommandSpec），不是命令行字符串：
+
+```json
+"acceptanceCommands": [
+  "{\"executable\":\"F:/node.exe\",\"args\":[\"-p\",\"require('fs').readFileSync('RESULT.md','utf8')\"],\"cwd\":\"E:/work/workspace\",\"timeoutSeconds\":60,\"inputs\":[\"RESULT.md\"]}"
+]
+```
+
+五个键 `executable`/`args`/`cwd`/`timeoutSeconds`/`inputs` 缺一不可，`inputs` 不能为空、`cwd` 必须在工作区内、路径用正斜杠。写成裸命令不会在派工时被拒，但 check_task 对它的判断永远是 `unknown`，accept 报 `CHECKS_REQUIRED`：`unknown`、`failed`、`checker_error`、`not_applicable` 都不能接受。发现写错时不要改键绕过——cancel 后以新的 taskId 重提，旧的 blocked/cancelled 记录留作证据。
+
 ## 指定 DSH 执行器
 
 Codex 可以把任务摊派给 DeepSeek Harness，但要走三步，缺一步就会被拒。

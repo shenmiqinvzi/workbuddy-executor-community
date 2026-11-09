@@ -585,8 +585,8 @@
     },
     {
       "path": "skills/workbuddy-executor/SKILL.md",
-      "sha256": "5a485af7e8bd0a4339bef7ec926600dd13bfbc7dc1ba981fa239c05b670e42a6",
-      "bytes": 13978
+      "sha256": "d107a261658639ad9f970645e2a429ce6c4d3776405f0143711608aeb396954b",
+      "bytes": 14630
     },
     {
       "path": "skills/workbuddy-executor/agents/openai.yaml",
@@ -600,8 +600,8 @@
     },
     {
       "path": "skills/workbuddy-executor/references/dispatch.md",
-      "sha256": "7f63edf88666716e104c7f628d402b7fb199f2c3d9a000d486df3b9f9d49139b",
-      "bytes": 15333
+      "sha256": "bd89d7f5c48ea2c0df5eed3dd033bdde17871049a5ca2d676eb5c1655220e328",
+      "bytes": 16159
     },
     {
       "path": "skills/workbuddy-executor/references/execution.md",
