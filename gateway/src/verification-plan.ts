@@ -196,6 +196,9 @@ export function allowedClaims(evidence: readonly VerificationEvidence[], context
 
 export interface PreflightInput {
   readonly occupant: { taskId: string; executor: string; operationId: string } | null;
+  /** 占用者的任务是否已经关闭。关闭的槽位会被下一次 claim 释放，
+   *  因此它不构成 blocker，只是还没被收回的旧事实。 */
+  readonly occupantClosed?: boolean;
   readonly dispatchEnabled: boolean;
   readonly databasePath: string;
   /** 账本里是否真的有一张可读的 workflow_capacity 表；
@@ -215,7 +218,8 @@ export interface PreflightReport {
 
 export function preflightReport(input: PreflightInput): PreflightReport {
   const blockers: string[] = [];
-  if (input.occupant) blockers.push(`capacity_held_by_another_task: ${input.occupant.taskId} (${input.occupant.operationId})`);
+  const occupantLive = Boolean(input.occupant) && !input.occupantClosed;
+  if (occupantLive && input.occupant) blockers.push(`capacity_held_by_another_task: ${input.occupant.taskId} (${input.occupant.operationId})`);
   if (input.databasePath && !input.capacityTable) blockers.push(`capacity_table_missing: ${input.databasePath} (workflow_capacity 表不存在或不可读)`);
   if (!input.dispatchEnabled) blockers.push("dispatch_not_enabled: WORKBUDDY_DESKTOP_DISPATCH_ENABLED 未设为 1");
   if (!input.workspaceWritable) blockers.push(`workspace_not_writable: ${input.workspace}`);
@@ -225,11 +229,13 @@ export function preflightReport(input: PreflightInput): PreflightReport {
     ready: blockers.length === 0,
     blockers,
     observed: {
-      capacity: input.occupant
-        ? `occupied by ${input.occupant.taskId}`
-        : !input.databasePath
-          ? "unknown (database missing)"
-          : input.capacityTable ? "free" : "unknown (workflow_capacity missing)",
+      capacity: occupantLive
+        ? `occupied by ${input.occupant!.taskId}`
+        : input.occupant
+          ? `released on the next send (${input.occupant.taskId} is closed)`
+          : !input.databasePath
+            ? "unknown (database missing)"
+            : input.capacityTable ? "free" : "unknown (workflow_capacity missing)",
       dispatch: input.dispatchEnabled ? "enabled" : "disabled",
       database: input.databasePath || "missing",
       workspace: input.workspace || "missing",

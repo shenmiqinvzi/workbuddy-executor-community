@@ -7,7 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import { checkNativeSchema } from "./doctor.js";
 import { discoverDesktopPaths, supportedNode, type DiscoveryOptions } from "./deployment-paths.js";
 import { PROJECT_ROOT } from "./env.js";
-import { readCapacityOccupant } from "./operation-admission.js";
+import { capacityClosure, readCapacityOccupant, type CapacityClosure } from "./operation-admission.js";
 import { preflightReport } from "./verification-plan.js";
 import { readServiceRegistration } from "./persistent-service.js";
 import { runsDirectory } from "./run-journal.js";
@@ -330,6 +330,7 @@ export async function observeReadiness(options: ReadinessOptions = {}): Promise<
   const databaseExists = hasFile(databasePath);
   let capacityTable = false;
   let occupant: { taskId: string; executor: string; operationId: string } | null = null;
+  let occupantClosure: CapacityClosure | null = null;
   let capacityReadable = false;
   let capacityReason: string | undefined;
   if (databaseExists && databasePath) {
@@ -337,23 +338,30 @@ export async function observeReadiness(options: ReadinessOptions = {}): Promise<
     try {
       db = new DatabaseSync(databasePath, { readOnly: true });
       occupant = readCapacityOccupant(db);
+      // A slot whose owner is closed is released by the next claim, so it is a
+      // stale fact rather than a reason to refuse. Read the same evidence the
+      // claim uses; anything unproven stays a live occupant.
+      occupantClosure = occupant ? capacityClosure(db, occupant.taskId) : null;
       capacityTable = true; capacityReadable = true;
     } catch (error) {
       capacityReason = (error as Error)?.message === "resource_storage_missing:workflow_capacity"
         ? "the task store has no workflow_capacity table" : "the shared capacity slot could not be read";
     } finally { db?.close(); }
   }
+  const occupantLive = Boolean(occupant) && !(occupantClosure?.closed ?? false);
   const sessions = countSessions(discovery?.config.value);
   const dispatchEnabled = env.WORKBUDDY_DESKTOP_DISPATCH_ENABLED === "1";
   const preflight = preflightReport({
     occupant,
+    occupantClosed: occupantClosure?.closed ?? false,
     dispatchEnabled, databasePath: databasePath ?? "", capacityTable,
     workspace: path.basename(root), workspaceWritable: writable(root),
   });
   const sessionReadable = sessions.state === "known";
   const dispatchFacts: ReadinessLayer["facts"] = {
-    databasePresent: databaseExists, capacityTable, capacityState: !databaseExists ? "unknown (database missing)" : capacityReadable ? (occupant ? `occupied by ${occupant.taskId}` : "free") : "unknown (unreadable)",
-    occupantTask: occupant?.taskId ?? null, dispatchEnabled, sessions: sessionReadable ? (sessions.state === "known" ? sessions.count : 0) : "unreadable",
+    databasePresent: databaseExists, capacityTable, capacityState: !databaseExists ? "unknown (database missing)" : capacityReadable ? (!occupant ? "free" : occupantLive ? `occupied by ${occupant.taskId}` : `released on the next send (${occupant.taskId} is ${occupantClosure?.taskState ?? "closed"})`) : "unknown (unreadable)",
+    occupantTask: occupant?.taskId ?? null, occupantLive, occupantTaskState: occupantClosure?.taskState ?? null,
+    dispatchEnabled, sessions: sessionReadable ? (sessions.state === "known" ? sessions.count : 0) : "unreadable",
     preflightReady: preflight.ready, blockers: preflight.blockers.slice(0, 5).join(" | ") || null,
   };
   const dispatchMissing: string[] = [];
@@ -369,7 +377,7 @@ export async function observeReadiness(options: ReadinessOptions = {}): Promise<
     : configBroken ? "unknown"
       : !databaseExists ? "absent"
         : !capacityTable || !capacityReadable ? "blocked"
-          : occupant ? "blocked"
+          : occupantLive ? "blocked"
             : !sessionReadable ? "unknown"
               : sessions.state === "known" && sessions.count === 0 ? "blocked"
                 : !dispatchEnabled ? "blocked"
@@ -378,7 +386,7 @@ export async function observeReadiness(options: ReadinessOptions = {}): Promise<
     : configBroken ? options.configError
       : !databaseExists ? "no task database was found; no empty database was created"
     : !capacityReadable ? capacityReason
-      : occupant ? `the shared capacity slot belongs to ${occupant.taskId}; unknown or occupied slots are never treated as free`
+      : occupantLive ? `the shared capacity slot belongs to ${occupant!.taskId}; unknown or occupied slots are never treated as free`
         : !sessionReadable ? (sessions as { reason: string }).reason
           : sessions.state === "known" && sessions.count === 0 ? "no project session is registered"
             : !dispatchEnabled ? "WORKBUDDY_DESKTOP_DISPATCH_ENABLED is not 1, so nothing may be dispatched" : undefined;

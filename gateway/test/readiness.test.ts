@@ -73,6 +73,19 @@ function occupy(dbFile: string, taskId: string): void {
   db.close();
 }
 
+/** The slot row plus the task row and closure event that make it provably closed. */
+function occupyClosed(dbFile: string, taskId: string, state = "accepted"): string {
+  const db = new DatabaseSync(dbFile);
+  db.exec("CREATE TABLE tasks (task_id TEXT PRIMARY KEY, state TEXT, attempt_id TEXT, run_evidence_digest TEXT)");
+  db.exec("CREATE TABLE task_events (task_id TEXT, attempt_id TEXT, type TEXT, source_ref TEXT)");
+  const attempt = `run-${taskId}`;
+  db.prepare("INSERT INTO tasks VALUES (?,?,?,?)").run(taskId, state, attempt, JSON.stringify({ stopped: true, attemptId: attempt, nativeStopSource: "native_idle", reportedStatus: "completed" }));
+  db.prepare("INSERT INTO task_events VALUES (?,?,?,?)").run(taskId, attempt, "task_closed", `${attempt}:task_closed`);
+  db.prepare("INSERT INTO workflow_capacity VALUES (1,?,?,?)").run(taskId, "workbuddy", `operation-${taskId}`);
+  db.close();
+  return attempt;
+}
+
 /** Probe pair that reports both live layers as reachable. */
 const readyProbes = { tool: async () => ({ responsive: true }), native: async () => ({ bridgeReady: true }) };
 
@@ -128,6 +141,35 @@ test("an occupied shared slot blocks dispatch and names the occupant", async t =
   assert.equal(dispatch.facts.occupantTask, "d1-workbuddy-2cc8e262");
   assert.match(dispatch.reason!, /never treated as free/);
   assert.match(report.nextAction!.action, /d1-workbuddy-2cc8e262/);
+});
+
+test("a closed occupant is released on the next send, not reported as a blocker", async t => {
+  const fx = fixture(t); occupyClosed(fx.dbFile, "live-loop-20261108-07");
+  const dispatch = fx.layer(await fx.report({ probes: readyProbes }), "projectSessionDispatchable");
+  assert.equal(dispatch.facts.occupantLive, false, "a closed owner is not a live occupant");
+  assert.equal(dispatch.facts.occupantTask, "live-loop-20261108-07");
+  assert.equal(dispatch.facts.occupantTaskState, "accepted");
+  assert.match(String(dispatch.facts.capacityState), /released on the next send/);
+  assert.equal(dispatch.state, "ready");
+  assert.doesNotMatch(String(dispatch.facts.blockers ?? ""), /capacity_held_by_another_task/);
+});
+
+test("an accepted occupant without its closure event is still live", async t => {
+  const fx = fixture(t); occupyClosed(fx.dbFile, "no-closure");
+  const db = new DatabaseSync(fx.dbFile); db.exec("DELETE FROM task_events"); db.close();
+  const dispatch = fx.layer(await fx.report({ probes: readyProbes }), "projectSessionDispatchable");
+  assert.equal(dispatch.facts.occupantLive, true, "a terminal state alone never proves the slot is free");
+  assert.equal(dispatch.state, "blocked");
+  assert.match(dispatch.reason!, /belongs to no-closure/);
+});
+
+test("an occupant that is still working keeps blocking and reports its state", async t => {
+  const fx = fixture(t); occupyClosed(fx.dbFile, "still-running", "working");
+  const dispatch = fx.layer(await fx.report({ probes: readyProbes }), "projectSessionDispatchable");
+  assert.equal(dispatch.facts.occupantLive, true);
+  assert.equal(dispatch.facts.occupantTaskState, "working");
+  assert.equal(dispatch.state, "blocked");
+  assert.match(dispatch.reason!, /belongs to still-running/);
 });
 
 test("a missing capacity table is blocked, never free", async t => {

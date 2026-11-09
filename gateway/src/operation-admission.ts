@@ -59,6 +59,39 @@ export function readCapacityOccupant(db: DatabaseSync): { taskId: string; execut
   return row ? { taskId: String(row.task_id), executor: String(row.executor), operationId: String(row.operation_id) } : null;
 }
 
+export interface CapacityClosure { closed: boolean; taskState: string | null; attemptId: string | null }
+
+/** The closure evidence a claim would accept, read without writing anything.
+ *
+ * `claim` releases a slot whose previous owner is closed, so a reader that
+ * reports the slot as a blocker has to apply the same rule. Reading the task
+ * row and its closure event is what makes "closed" provable; a missing table,
+ * a missing attempt or a missing stop fact stays unproven and keeps blocking.
+ */
+export function capacityClosure(db: DatabaseSync, taskId: string): CapacityClosure {
+  let row: Record<string, unknown> | undefined;
+  try {
+    row = db.prepare("SELECT state, attempt_id, run_evidence_digest FROM tasks WHERE task_id=?").get(taskId) as Record<string, unknown> | undefined;
+  } catch { return { closed: false, taskState: null, attemptId: null }; }
+  if (!row) return { closed: false, taskState: null, attemptId: null };
+  const taskState = row.state == null ? null : String(row.state);
+  const attemptId = row.attempt_id == null ? null : String(row.attempt_id);
+  if (!attemptId || !["accepted", "cancelled", "failed"].includes(taskState ?? "")) return { closed: false, taskState, attemptId };
+  const closedEvent = (sourceRef?: string): boolean => {
+    try {
+      return sourceRef === undefined
+        ? Boolean(db.prepare("SELECT 1 FROM task_events WHERE task_id=? AND attempt_id=? AND type='task_closed'").get(taskId, attemptId))
+        : Boolean(db.prepare("SELECT 1 FROM task_events WHERE task_id=? AND attempt_id=? AND type='task_closed' AND source_ref=?").get(taskId, attemptId, sourceRef));
+    } catch { return false; }
+  };
+  if (closedEvent(`never_dispatched:${attemptId}`)) return { closed: true, taskState, attemptId };
+  try {
+    const evidence = JSON.parse(String(row.run_evidence_digest ?? "")) as { stopped?: unknown; attemptId?: unknown };
+    if (evidence?.stopped === true && evidence?.attemptId === attemptId && closedEvent()) return { closed: true, taskState, attemptId };
+  } catch { /* an unreadable digest is unproven closure */ }
+  return { closed: false, taskState, attemptId };
+}
+
 /** SQLite is the arbiter. The local promises only let same-process callers await a receipt. */
 export class OperationAdmission {
   private readonly pending = new Map<string, Promise<unknown>>();
