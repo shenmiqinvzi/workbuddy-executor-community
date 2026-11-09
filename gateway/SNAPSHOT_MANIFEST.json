@@ -444,6 +444,11 @@
       "bytes": 3257
     },
     {
+      "path": "scripts/init-state.mjs",
+      "sha256": "7b98603f5b158f6908f4d080946e69438685cd482347e1160d34e77ad4c10306",
+      "bytes": 1403
+    },
+    {
       "path": "scripts/install-deepseek-plugin.mjs",
       "sha256": "efd5e734271d710a780298fc2983e6f39f7ebab13c73d6f65a1c6140ed003742",
       "bytes": 4647
@@ -640,8 +645,8 @@
     },
     {
       "path": "src/brief-result.ts",
-      "sha256": "531a199c0c592094ae93ea6ae3518ccde9a4104ee1306b9e9fa6ac23d10a8d3e",
-      "bytes": 5745
+      "sha256": "dcb97b2f5ad8df19dab4a80784fdbd2b37f6cbc471276b6a28af1d5ecf993d4e",
+      "bytes": 5770
     },
     {
       "path": "src/capacity-view.ts",
@@ -710,8 +715,8 @@
     },
     {
       "path": "src/deployment-paths.ts",
-      "sha256": "5b53ea7eccc52d6e326702f4e55525f3ef815aa45ce5b6889e9f0c9a3c161371",
-      "bytes": 3554
+      "sha256": "a84d41948fb42c124df1ea75e06871ab4ab108ac51be011bd2361089cf516aee",
+      "bytes": 3861
     },
     {
       "path": "src/deployment-safety.ts",
@@ -1115,8 +1120,8 @@
     },
     {
       "path": "src/task-application-service.ts",
-      "sha256": "fc27fe9444f633a3fb297f8f4cab9a56b05692c293ccbea7f356a68999625a47",
-      "bytes": 32494
+      "sha256": "eb5c357d751416cea3882bb6b700d4f59a97992e6f6759e4f66a7451eea2cb36",
+      "bytes": 32769
     },
     {
       "path": "src/task-contract.ts",
@@ -1304,14 +1309,19 @@
       "bytes": 5217
     },
     {
+      "path": "test/closeout-defects.test.ts",
+      "sha256": "1dfe3a9845efde59a868e907c4711d784115fd2b3bed717f690d8bc74b6986bb",
+      "bytes": 2188
+    },
+    {
       "path": "test/command-cleanup.test.ts",
       "sha256": "677d4fa0d05b88723b1b317711d41c4e4f5875e8326917be6c9d332c8f5af196",
       "bytes": 3537
     },
     {
       "path": "test/config-ambiguity.test.ts",
-      "sha256": "53a2c0c08b0b76e340c5e1b090c8ef0830314c7f93eaf31323ac377137b901c8",
-      "bytes": 3878
+      "sha256": "88a20eb76ad68771843ee492c6b2797135eafb23154a2dad41e16d2c6acd7db5",
+      "bytes": 5434
     },
     {
       "path": "test/coordinator.test.ts",
@@ -1489,6 +1499,11 @@
       "bytes": 12331
     },
     {
+      "path": "test/first-run-database.test.ts",
+      "sha256": "4512b6bc78c13cea30516e52385530f1123f9aa25d9f4c22887da7249f8529e2",
+      "bytes": 3416
+    },
+    {
       "path": "test/fixtures/task-view-samples.ts",
       "sha256": "143d97c964a0ee2c82097aa391c5bddf4c79cb9f805b93d9ed0b3f5d78af536b",
       "bytes": 40727
@@ -1519,6 +1534,16 @@
       "bytes": 3831
     },
     {
+      "path": "test/ledger-advance-and-reclaim.test.ts",
+      "sha256": "47f509474d6008f7456c4abf837cbb86000c0819a99884b4a4d49816c2b05761",
+      "bytes": 10486
+    },
+    {
+      "path": "test/ledger-advance-integration.test.ts",
+      "sha256": "2c2f721a1344c27c5bf4a58d0425d1c22b435f9f3bbd256c380118d9b0ed870d",
+      "bytes": 9537
+    },
+    {
       "path": "test/live-acceptance-fixture.test.ts",
       "sha256": "94c32990def33f00767cbbfc23166c7be621cf7c048f3e3c2264e057acd89b92",
       "bytes": 6138
@@ -1537,6 +1562,11 @@
       "path": "test/native-failure-diagnostic.test.ts",
       "sha256": "fcefdd345d40e9a4fa6c2fd97236c9f57f4cb87b8a981bec1cb4fccdfed44115",
       "bytes": 2167
+    },
+    {
+      "path": "test/native-health-diagnostics.test.ts",
+      "sha256": "232b9efc0fcc67875171f82e29239bc1342824b3c407fc0224183261ac7ef6e5",
+      "bytes": 4381
     },
     {
       "path": "test/native-process.test.ts",
@@ -1932,6 +1962,11 @@
       "path": "test/workspace-protection.test.ts",
       "sha256": "893fc19412dfbfddca4d67fc34333d75a259a6372ade7f44a074b20487d7fd19",
       "bytes": 29021
+    },
+    {
+      "path": "test/workspace-worker-reclaim.test.ts",
+      "sha256": "37754f2a61e87ceb4749f8f23fc9a1ec3e10c8f3e1aef0d9491580a469ab420d",
+      "bytes": 9897
     },
     {
       "path": "test/workspace-workers.test.ts",
