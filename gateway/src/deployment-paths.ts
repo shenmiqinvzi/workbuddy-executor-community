@@ -29,10 +29,13 @@ function choose(explicit: string | undefined, candidates: string[]): DetectedPat
 }
 
 /** Query executable paths only, never command lines, chat history or settings. */
-function runningWorkBuddyExecutables(): string[] {
+export function runningWorkBuddyExecutables(): string[] {
   if (process.platform !== "win32") return [];
   try {
-    const script = "Get-CimInstance Win32_Process -Filter \"Name='WorkBuddy.exe' OR Name='WorkBuddyAI.exe'\" | Select-Object -ExpandProperty ExecutablePath -Unique | ConvertTo-Json -Compress";
+    // Hidden Windows PowerShell may use the system legacy code page. Match the
+    // UTF-8 decoder below so a non-ASCII install path keeps its identity; a
+    // mangled path is not a missing executable, it is an unreadable one.
+    const script = "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); Get-CimInstance Win32_Process -Filter \"Name='WorkBuddy.exe' OR Name='WorkBuddyAI.exe'\" | Select-Object -ExpandProperty ExecutablePath -Unique | ConvertTo-Json -Compress";
     const text = String(execFileSync(windowsPowerShellPath(), ["-NoProfile", "-NonInteractive", "-Command", script], {
       encoding: "utf8", timeout: 4000, maxBuffer: 64 * 1024, windowsHide: true, stdio: ["ignore", "pipe", "pipe"],
     })).trim();

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { discoverDesktopPaths } from "../src/deployment-paths.js";
+import { discoverDesktopPaths, runningWorkBuddyExecutables } from "../src/deployment-paths.js";
 import { ambiguityMessage } from "../src/config.js";
 
 /**
@@ -66,4 +66,32 @@ test("an ambiguous executable alone is enough to refuse, and the message stays a
   assert.match(message, /C:\\A\\WorkBuddy\.exe/);
   assert.match(message, /C:\\B\\WorkBuddyAI\.exe/);
   assert.doesNotMatch(message, /配置目录候选/, "a detected config directory is not reported as a conflict");
+});
+
+/**
+ * F-DEPLOY-1: readiness reported `executable: missing` on a machine where the
+ * app was installed under a non-ASCII directory and running. Hidden Windows
+ * PowerShell writes its output in the system legacy code page, so decoding it
+ * as UTF-8 turned `新建文件夹 (2)` into replacement characters; the discovered
+ * path then failed the is-a-file check and the executable was reported absent.
+ * A path that cannot be read is not the same finding as an app that is absent.
+ */
+test("a non-ASCII install path is discovered, not reported as a missing executable", t => {
+  const root = home(t);
+  const install = path.join(root, "新建文件夹 (2)", "WorkBuddy");
+  fs.mkdirSync(install, { recursive: true });
+  const exe = path.join(install, "WorkBuddyAI.exe");
+  fs.writeFileSync(exe, "");
+  const desktop = discoverDesktopPaths({ env: {}, home: root, platform: "win32", runningExecutables: () => [exe] });
+  assert.equal(desktop.executable.source, "detected");
+  assert.equal(desktop.executable.value, exe);
+});
+
+test("every executable the process query reports is a real file, never a mangled path", { skip: process.platform !== "win32" }, () => {
+  const discovered = runningWorkBuddyExecutables();
+  for (const file of discovered) {
+    assert.ok(path.isAbsolute(file), `a discovered path must be absolute: ${file}`);
+    assert.doesNotMatch(file, /\uFFFD/, `a discovered path must survive decoding: ${file}`);
+    assert.ok(fs.statSync(file).isFile(), `a discovered executable must exist: ${file}`);
+  }
 });
