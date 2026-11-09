@@ -289,10 +289,21 @@ export interface NativeDesktopProcessControl {
   pause(milliseconds: number): Promise<void>;
 }
 
+/** A desktop launch must not inherit the CLI's Electron-as-Node switch.
+ * The gateway sets ELECTRON_RUN_AS_NODE=1 when it uses the same executable as a
+ * headless Node host; a GUI launch that inherits it starts as a bare runtime,
+ * exits 0 before the first window, and leaves no startup log behind — which is
+ * indistinguishable from "the desktop refused to start". */
+export function desktopLaunchEnv(cdpPort: number, base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...base, WORKBUDDY_REMOTE_DEBUGGING_PORT: String(cdpPort) };
+  delete env.ELECTRON_RUN_AS_NODE;
+  return env;
+}
+
 const DEFAULT_PROCESS_CONTROL: NativeDesktopProcessControl = {
   run: (file,args,timeoutMs) => execFileSync(file,args,{encoding:"utf8",timeout:timeoutMs,windowsHide:true}),
   launch(executable,cdpPort) {
-    const child=spawn(executable,[],{detached:true,stdio:"ignore",windowsHide:true,env:{...process.env,WORKBUDDY_REMOTE_DEBUGGING_PORT:String(cdpPort)}});
+    const child=spawn(executable,[],{detached:true,stdio:"ignore",windowsHide:true,env:desktopLaunchEnv(cdpPort)});
     child.on("error",()=>undefined);child.unref();
   },
   pause: milliseconds => new Promise(resolve=>setTimeout(resolve,milliseconds)),

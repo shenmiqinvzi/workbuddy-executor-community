@@ -7,7 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import vm from "node:vm";
 import type { Config } from "../src/config.js";
-import { NativeDesktopRpcTrigger, RENDERER_BRIDGE, nativeModelPolicy, rendererBridgeForFreeModel, type NativeDesktopProcessControl } from "../src/native-desktop-trigger.js";
+import { NativeDesktopRpcTrigger, RENDERER_BRIDGE, desktopLaunchEnv, nativeModelPolicy, rendererBridgeForFreeModel, type NativeDesktopProcessControl } from "../src/native-desktop-trigger.js";
 
 type Envelope = { id: string; type: string; channel: string; args: unknown[]; result?: unknown; error?: { message: string } };
 type Frame = { kind: string; json?: Envelope; text?: string };
@@ -756,4 +756,18 @@ test("native cancellation targets only the verified latest session turn",async()
  f.event(`session:event:${f.sessionId}`,{sessionId:f.sessionId,update:{sessionUpdate:"user_message_chunk",content:[{type:"text",text:"manual unrelated task"}]}});await new Promise(r=>setTimeout(r,0));
  await assert.rejects(()=>(f.bridge as any).cancelAttempt(f.sessionId,wake,f.workspace),/user turn changed/);
  assert.equal(f.requests.filter(r=>r.channel==="session:cancel").length,1);f.close();
+});
+
+test("a desktop launch drops the CLI Electron-as-Node switch", () => {
+  const env = desktopLaunchEnv(18491, { ELECTRON_RUN_AS_NODE: "1", PATH: "C:\\Windows", WORKBUDDY_CONFIG_DIR: "C:/cfg" });
+  assert.equal(env.ELECTRON_RUN_AS_NODE, undefined);
+  assert.equal(env.WORKBUDDY_REMOTE_DEBUGGING_PORT, "18491");
+  assert.equal(env.PATH, "C:\\Windows");
+  assert.equal(env.WORKBUDDY_CONFIG_DIR, "C:/cfg");
+});
+
+test("a desktop launch always states the port it was asked for", () => {
+  const env = desktopLaunchEnv(9333, {});
+  assert.deepEqual(Object.keys(env), ["WORKBUDDY_REMOTE_DEBUGGING_PORT"]);
+  assert.equal(env.WORKBUDDY_REMOTE_DEBUGGING_PORT, "9333");
 });
