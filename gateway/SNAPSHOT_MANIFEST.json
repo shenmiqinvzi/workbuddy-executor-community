@@ -865,8 +865,8 @@
     },
     {
       "path": "src/native-desktop-trigger.ts",
-      "sha256": "2463d323d3ae701928bb4266c27faf0613072d111d8f34baa858b825afbaa520",
-      "bytes": 42392
+      "sha256": "cc0cc2fed4864c98199b17e4edf1077edb5de286a5cae408bc2d725f5affc312",
+      "bytes": 42987
     },
     {
       "path": "src/native-ownership.ts",
@@ -1555,8 +1555,8 @@
     },
     {
       "path": "test/native-desktop-trigger.test.ts",
-      "sha256": "114fa4924e374e3cd4ee5dc688c192b8e97288416ab89a22caf353c7622bc7f4",
-      "bytes": 42513
+      "sha256": "4b0a8007c1aa5497b6707bf7ea244841e079bee76eee3ede9a029d37d5197b56",
+      "bytes": 43194
     },
     {
       "path": "test/native-failure-diagnostic.test.ts",
