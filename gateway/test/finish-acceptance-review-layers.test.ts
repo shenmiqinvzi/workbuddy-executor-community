@@ -159,6 +159,18 @@ test("L08 a cancelled workflow cannot be reviewed, accepted or re-dispatched by 
   assert.equal(f.current().state, "cancelled");
   assert.throws(() => f.service.acceptReview({ ...f.op(), reviewId: review.reviewId }), { code: "REVIEW_REQUIRED" });
   assert.equal(f.current().state, "cancelled");
+  // F-CAP-2: the cancellation reconciles the stop it collected, so this cancelled
+  // workflow is closed here — with its native stop proven — and its shared
+  // capacity slot is free for the next task. The old reading (still open after a
+  // confirmed stop) is exactly what left the slot occupied forever.
+  assert.equal(f.store().operations.isClosed(f.current()), true);
+});
+
+test("F-CAP-2 a cancelled workflow without stop proof keeps its capacity slot", async t => {
+  const f = await acceptanceFixture(t, "workbuddy", { semantic: true });
+  await f.finish(false);
+  await f.service.cancel("l08-task", "Synthetic user cancellation");
+  assert.equal(f.current().state, "cancelled");
   assert.equal(f.store().operations.isClosed(f.current()), false);
 });
 
@@ -171,5 +183,30 @@ test("L08 review refuses a fabricated authenticated report; the missing native s
   await f.service.sync("l08-task");
   const batch = f.checks();
   assert.equal(batch.checks.find(check => check.checkId === "$provenance")!.status, "passed");
+});
+
+// F-REVIEW-1: the tools take three flat fields while the status view used to
+// print the same values only nested, so a reviewer copying the view had to guess
+// the flattening. Both spellings now carry one set of values.
+test("F-REVIEW-1 the status view exposes the review reference flat and nested", async t => {
+  const f = await acceptanceFixture(t, "workbuddy", { semantic: true });
+  await f.finish();
+  const task = f.current();
+  const view = f.service.statusView(task);
+  assert.equal(view.expectedRevision, task.revision);
+  assert.equal(view.expectedAttemptId, task.attemptId);
+  assert.deepEqual(view.reviewOperation, { operationId: null, expectedRevision: task.revision, expectedAttemptId: task.attemptId });
+});
+
+// F-CAP-3: a task that crossed its deadline is blocked, and a blocked attempt
+// could never close, so one stall occupied the single dispatch slot forever.
+test("F-CAP-3 a blocked attempt cancelled after its stop proof closes and frees its slot", async t => {
+  const f = await acceptanceFixture(t, "workbuddy", { semantic: true });
+  await f.finish();
+  f.store().update("l08-task", { state: "blocked", blockingReason: "the task deadline passed", cancelNote: "synthetic user cancellation" });
+  assert.equal(f.store().operations.isClosed(f.current()), false);
+  await f.service.sync("l08-task");
+  assert.equal(f.current().state, "cancelled");
+  assert.equal(f.store().operations.isClosed(f.current()), true);
 });
 

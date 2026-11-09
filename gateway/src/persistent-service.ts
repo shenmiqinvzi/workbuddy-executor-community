@@ -12,6 +12,7 @@ import { WorkspaceWorkers } from "./workspace-workers.js";
 import { readNativeTurnFailure } from "./native-turn-failure.js";
 import {reconcileOwnedCommands} from "./command-cleanup.js";
 import { latestNativeWake } from "./native-ownership.js";
+import { sameWorkspacePath } from "./native-process.js";
 
 /** This adapter may wake the native chat; it must never execute the queue task. */
 export interface NativeObservation {
@@ -21,6 +22,14 @@ export interface NativeObservation {
   activityAt?: number;
   latestWakeId?: string | null;
   failure?: { wakeId: string; error: string; observedAt: string; phase?: "session:sendMessage" | "native_history" };
+  /** Additive description of why the native session is not idle. Diagnostics
+   * only: it never feeds the stop decision. */
+  diagnostics?: {
+    stillBusy?: string[];
+    pendingToolCalls?: Array<{ toolCallId: string; status: string }>;
+    observedAt?: string;
+    requiredUpstreamEvidence?: string[];
+  };
 }
 export interface NativeDesktopTrigger {
   listModels?(sessionId?: string): Promise<{ models: Array<{ id: string; credits?: unknown }>; currentModel?: string; sessionId?: string }>;
@@ -166,7 +175,7 @@ export async function recoverExpiredAttempt(config: Config, registration: Servic
     if (!input.reason.trim()) throw new Error("Describe the inspected native failure before recovery");
     if (new DesktopQueue(bound).listeners().some((listener) => listener.sessionId === registration.sessionId)) throw new Error("A native helper is still waiting; recovery refused");
     const native = await trigger.inspect(registration.sessionId);
-    if (native.state !== "idle" || native.workspace !== registration.workspace) throw new Error(`Native session must be verified idle in the original workspace; observed ${native.state}`);
+    if (native.state !== "idle" || !sameWorkspacePath(native.workspace, registration.workspace)) throw new Error(`Native session must be verified idle in the original workspace; observed ${native.state}`);
     const result = new DesktopQueue(bound).confirmExpiredStop({ ...input, sessionId: registration.sessionId, workspace: registration.workspace, observedAt: new Date().toISOString() });
     return { ...result, taskId: input.taskId, attemptId: input.attemptId, sessionId: registration.sessionId, state: "blocked", taskCompleted: false, next: "Use continue_task with specific recovery feedback, preserving valid existing artifacts." };
   } finally { lock.close(); }
@@ -186,7 +195,7 @@ export async function reconcileReportedAttempt(config: Config, registration: Ser
     const queue = new DesktopQueue(bound);
     if (queue.listeners().some(listener=>listener.sessionId === registration.sessionId)) throw Error("A native helper is still waiting; reconciliation refused");
     const native = await bounded(trigger.inspect(registration.sessionId,{readOnly:true}),7000);
-    if (native.state !== "idle" || native.workspace !== registration.workspace) throw Error(`Report reconciliation requires current native idle in the original workspace; observed ${native.state}${native.reason ? ": " + native.reason : ""}`);
+    if (native.state !== "idle" || !sameWorkspacePath(native.workspace, registration.workspace)) throw Error(`Report reconciliation requires current native idle in the original workspace; observed ${native.state}${native.reason ? ": " + native.reason : ""}`);
     if (!native.failure) native.failure = readNativeTurnFailure(bound.workbuddyConfigDir,registration.sessionId,wake);
     if (latestNativeWake(bound.workbuddyConfigDir, registration.sessionId) !== wake.wakeId) throw Error("Native turn ownership changed during reconciliation");
     return {...queue.reconcileReportedFailure({...input,sessionId:registration.sessionId,workspace:registration.workspace},native),
@@ -297,12 +306,12 @@ export class PersistentDesktopService {
       return this.result("stop_unconfirmed", {...identity,reason:error ?? "Native stop has not been confirmed"});
     };
     if (task?.attemptId !== journal.attemptId || task.sessionId !== this.registration.sessionId || snapshot.sessionId !== task.sessionId ||
-        request.taskId !== task.taskId || request.sessionId !== task.sessionId || request.workspace !== this.registration.workspace ||
+        request.taskId !== task.taskId || request.sessionId !== task.sessionId || !sameWorkspacePath(request.workspace, this.registration.workspace) ||
         (wake && (wake.attemptId !== journal.attemptId || wake.sessionId !== task.sessionId || wake.wakeId !== `wake-${journal.attemptId}`))) return remember("Stop identity mismatch; no native cancellation was sent");
     // One durable issue marker survives MCP/service reconnects. A timed-out RPC is uncertain, never blindly replayed.
     try {
       const native = await this.inspectAttempt(journal);
-      if (native.state === "offline" || native.workspace !== this.registration.workspace) return remember(native.reason ?? "Native session unavailable or binding changed");
+      if (native.state === "offline" || !sameWorkspacePath(native.workspace, this.registration.workspace)) return remember(native.reason ?? "Native session unavailable or binding changed");
       if ((native.state !== "idle" || snapshot.nativeFailure) && !control.issuedAt) {
         if (!wake || !this.trigger.cancelAttempt) return remember("Native stop API or exact wake evidence unavailable");
         control = {...control,issuedAt:new Date().toISOString(),state:"requested"};
@@ -317,7 +326,7 @@ export class PersistentDesktopService {
       // Never count the pre-cancellation observation as post-cancellation proof.
       let observed = control.acknowledgedAt ? await this.inspectAttempt(journal) : native;
       do {
-        if (observed.state === "offline" || observed.workspace !== this.registration.workspace) return remember(observed.reason ?? "Native session unavailable or binding changed during stop confirmation");
+        if (observed.state === "offline" || !sameWorkspacePath(observed.workspace, this.registration.workspace)) return remember(observed.reason ?? "Native session unavailable or binding changed during stop confirmation");
         if (snapshot.nativeFailure && observed.latestWakeId !== wake?.wakeId) return remember("Latest native turn changed or is unknown after cancellation; stop is unconfirmed");
         if (observed.state === "idle") {
           const cleanup=reconcileOwnedCommands(path.join(journal.dir,"commands"));
@@ -351,12 +360,14 @@ export class PersistentDesktopService {
         const native = await this.inspectAttempt(journal);
         const identity = { attemptId: active.attemptId };
         if (native.state === "offline") return this.result("unavailable", { ...identity, reason: native.reason });
-        if (native.workspace !== this.registration.workspace) return this.result("binding_mismatch", identity);
+        if (!sameWorkspacePath(native.workspace, this.registration.workspace)) return this.result("binding_mismatch", identity);
         if(native.state==="idle")reconcileOwnedCommands(path.join(journal.dir,"commands"));
         const observed = new DesktopQueue(this.config).observeNative(active.attemptId, native);
         if (observed.nativeFailure && !hasNativeStopEvidence(observed)) return this.stopAttempt(journal);
         if (observed.waitingInput) return this.result("waiting_input", { ...identity, reason: native.reason });
-        if (hasNativeStopEvidence(observed)) return this.result(["cancelled", "needs_review"].includes(observed.status) ? "stop_confirmed" : "native_blocked", { ...identity, reason: observed.error });
+        if (hasNativeStopEvidence(observed)) {
+          return this.result(["cancelled", "needs_review"].includes(observed.status) ? "stop_confirmed" : "native_blocked", { ...identity, reason: observed.error });
+        }
         if (observed.status === "blocked") return this.result("native_blocked", { ...identity, reason: observed.error });
         return this.result("active_lease", identity);
       }

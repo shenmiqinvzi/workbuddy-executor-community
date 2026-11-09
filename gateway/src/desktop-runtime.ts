@@ -2,8 +2,18 @@ import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
+/**
+ * Three answers, not two (F-WORKER-2). "absent" is a negative finding backed by
+ * a readable registry; "unverifiable" means the registry could not answer at
+ * all (missing file, unreadable or corrupted database, failed query). Callers
+ * may treat unverifiable as "not registered" only where the consequence is a
+ * refusal; nothing may be created on the strength of it.
+ */
+export type DesktopSessionState = "registered" | "absent" | "unverifiable";
+
 export interface DesktopSessionEvidence {
   registered: boolean;
+  state: DesktopSessionState;
   isPlayground?: boolean;
   cwd?: string;
   reason?: string;
@@ -23,15 +33,17 @@ export function listDesktopSessions(configDir: string, limit = 20): Array<{sessi
 /** Read native desktop registration; never create or repair WorkBuddy database rows. */
 export function readDesktopSession(configDir: string, sessionId: string): DesktopSessionEvidence {
   const filename = path.join(configDir, "workbuddy.db");
-  if (!fs.existsSync(filename)) return { registered: false, reason: "WorkBuddy desktop history database was not found" };
+  // A missing registry is not evidence of absence: the configured directory may
+  // itself be wrong, and a session created there would be a second one.
+  if (!fs.existsSync(filename)) return { registered: false, state: "unverifiable", reason: "WorkBuddy desktop history database was not found" };
   let database: DatabaseSync | undefined;
   try {
     database = new DatabaseSync(filename, { readOnly: true });
     const row = database.prepare("SELECT cwd, is_playground, deleted_at FROM sessions WHERE id = ?").get(sessionId);
-    if (!row || row.deleted_at !== null) return { registered: false, reason: "The session is not registered in WorkBuddy desktop history" };
-    return { registered: true, isPlayground: Number(row.is_playground) === 1, cwd: typeof row.cwd === "string" ? row.cwd : undefined };
+    if (!row || row.deleted_at !== null) return { registered: false, state: "absent", reason: "The session is not registered in WorkBuddy desktop history" };
+    return { registered: true, state: "registered", isPlayground: Number(row.is_playground) === 1, cwd: typeof row.cwd === "string" ? row.cwd : undefined };
   } catch {
-    return { registered: false, reason: "WorkBuddy desktop history could not be verified; this version may use an incompatible schema" };
+    return { registered: false, state: "unverifiable", reason: "WorkBuddy desktop history could not be verified; this version may use an incompatible schema" };
   } finally { database?.close(); }
 }
 

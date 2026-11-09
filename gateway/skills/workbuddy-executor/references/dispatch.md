@@ -53,7 +53,7 @@ Codex 可以把任务摊派给 DeepSeek Harness，但要走三步，缺一步就
 
 1. 确认能接：`workbuddy_list_executors` 看到 `dsh.reason = "ready"`，再用 `workbuddy_list_dsh_sessions({"workspace":"项目的绝对路径"})` 拿到 `matched` 的真实 sessionId。`ambiguous` 让用户指定，`no_matching_live_session` 就是该项目现在没有活着的会话，不要自己造一个。
 2. 起草 vnext-2 提案并让用户确认模型：`execution` 里 `executorId: "dsh"`、`connectionId` 用 `hosts[].hostId` 的实际值、`providerId`/`modelId`/`reasoningEffort` 必须是该 host 目录里真实存在的组合（`workbuddy_list_executors` 不报费率，费用仍要单独确认）。
-3. 由本机操作者授权计划，再派工：把提案写成文件后运行（`scripts/plan.mjs` 随网关发布包提供，路径是网关安装目录下的 `scripts/plan.mjs`；只安装了技能说明的话，用它指向你实际安装的网关目录）
+3. 由本机操作者授权计划，再派工。提案仍须是完整的 vnext-2 对象，创建前用 `"collaboration":{"planId":"proposal-only","expectedPlanRevision":"pending-local-authorization"}` 作占位。把提案保存为 `proposal.json`，在配套网关目录运行以下命令。
 
 ```
 node scripts/plan.mjs create --contract @proposal.json --reason "用户在本轮对话里确认的模型与范围"

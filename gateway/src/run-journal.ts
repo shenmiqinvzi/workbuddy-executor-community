@@ -60,7 +60,12 @@ export interface RunSnapshot {
   stopControl?: { requestedAt: string; issuedAt?: string; acknowledgedAt?: string; checkedAt?: string; error?: string; state: "requested" | "stop_unconfirmed" | "stopped" };
   progress?: { stage: string; completed: string; running: string; blocker: string; lastMeaningfulAt: string; reportedAt: string };
   reportBy?: string;
-  nativeHealth?: {state:string;observedAt:string;reason?:string};
+  nativeHealth?: {
+    state:string;observedAt:string;reason?:string;
+    /** Additive diagnostics: which signals kept the session busy and what the
+     * queue still needs before it may claim a stop. Never stop evidence. */
+    diagnostics?: {stillBusy?:string[];pendingToolCalls?:Array<{toolCallId:string;status:string}>;observedAt?:string;requiredUpstreamEvidence?:string[]};
+  };
   updatedAt: string;
 }
 export interface RunEvent {

@@ -4,11 +4,11 @@ import crypto from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import type { Config } from "./config.js";
 import { AdmissionError } from "./collaboration.js";
-import { readDesktopSession, waitForDesktopSession } from "./desktop-runtime.js";
+import { readDesktopSession, waitForDesktopSession, type DesktopSessionEvidence } from "./desktop-runtime.js";
 import { runsDirectory } from "./run-journal.js";
 import { PreparationJournal } from "./preparation-journal.js";
 import type { PreparationProbeInput, PreparationProbeRecord } from "./preparation-protocol.js";
-
+import { sameWorkspacePath } from "./native-process.js";
 export interface WorkspaceWorker {
   sessionId: string;
   workspace: string;
@@ -26,6 +26,26 @@ export interface NativeWorkerCreator {
 }
 type Row = Omit<WorkspaceWorker, "selected"> & { selected: number };
 function decode(row: Row): WorkspaceWorker {return {...row,selected:row.selected===1,error:row.error??undefined};}
+
+/**
+ * How long a non-ready reservation keeps the workspace wedged. A creator that
+ * died between reserve() and its own settle() leaves state='creating' forever
+ * (F-WORKER-1); after this bound the row is reclaimable when the native app
+ * never registered that session.
+ */
+export const CREATION_STALE_MS = 10 * 60_000;
+
+/**
+ * Pure staleness rule for a reservation, exported so the reclaim policy can be
+ * checked without a ledger. A ready row is never stale; an unparseable stamp is
+ * treated as ancient because no live creator wrote it.
+ */
+export function isStaleReservation(worker: { state: string; updatedAt: string }, now = Date.now()): boolean {
+  if (worker.state === "ready") return false;
+  const stamp = Date.parse(worker.updatedAt);
+  const age = Number.isFinite(stamp) ? now - stamp : Number.POSITIVE_INFINITY;
+  return age >= CREATION_STALE_MS;
+}
 
 export function readWorkspaceWorkers(config: Config, fallback?: {workspace:string;sessionId:string}): WorkspaceWorker[] {
   const file=path.join(runsDirectory(config),"workspace-workers.sqlite");
@@ -103,7 +123,7 @@ export class WorkspaceWorkers {
     // A native session may only ever project one workspace. The refusal keeps a
     // stable code so a blocked task can show what to fix instead of a bare
     // "contract preparation failed" (live acceptance R6, 2026-11-06).
-    if(existing && existing.workspace !== workspace)throw new AdmissionError("WORKSPACE_CONFLICT","This native session is already registered for another workspace");
+    if(existing && !sameWorkspacePath(String(existing.workspace), workspace))throw new AdmissionError("WORKSPACE_CONFLICT","This native session is already registered for another workspace");
     const now = new Date().toISOString();
     this.db.exec("BEGIN IMMEDIATE");
     try {
@@ -123,7 +143,13 @@ export class WorkspaceWorkers {
     this.db.exec("BEGIN IMMEDIATE");
     try {
       if (workerKey) {
-        if (this.keyed(workspace, workerKey)) throw new Error("Worker key already reserved");
+        // Re-read the key inside the write transaction (F-WORKER-2). A mapping
+        // whose worker row no longer exists is an orphan left by an older
+        // reclaim; it is replaced here, atomically with the new reservation.
+        const mapped = this.db.prepare("SELECT k.sessionId AS sessionId, w.sessionId AS live FROM worker_keys k LEFT JOIN workers w ON w.sessionId=k.sessionId WHERE k.workspace=? AND k.workerKey=?")
+          .get(workspace, workerKey) as {sessionId: string; live: string | null} | undefined;
+        if (mapped && mapped.live) throw new Error("Worker key already reserved");
+        if (mapped) this.db.prepare("DELETE FROM worker_keys WHERE workspace=? AND workerKey=? AND sessionId=?").run(workspace, workerKey, mapped.sessionId);
         this.db.prepare("UPDATE workers SET selected=0 WHERE workspace=?").run(workspace);
       }
       this.db.prepare("INSERT INTO workers VALUES (?, ?, 'creating', 1, ?, ?, NULL)").run(sessionId, workspace, now, now);
@@ -135,10 +161,21 @@ export class WorkspaceWorkers {
     }
     return this.selected(workspace)!;
   }
-  private verify(worker: {workspace: string; sessionId: string}): boolean {
+  /**
+   * Read the native registry for one reserved identity and reject a workspace
+   * mismatch. Returns the raw evidence so callers can tell "absent" (a readable
+   * registry said no) from "unverifiable" (the registry could not answer).
+   */
+  private evidenceOf(worker: {workspace: string; sessionId: string}): DesktopSessionEvidence {
     const evidence = readDesktopSession(this.config.workbuddyConfigDir, worker.sessionId);
-    if(evidence.registered && evidence.cwd && path.resolve(evidence.cwd)!==worker.workspace)throw new Error("Native session workspace differs from the requested project");
-    return evidence.registered && Boolean(evidence.cwd);
+    // A registered row without a usable project directory is not a verifiable
+    // identity: the native registry can hold a row whose cwd is null or stale,
+    // and binding that row would attach the task to an unknown directory.
+    if(evidence.registered) {
+      if(!evidence.cwd) throw new Error("The chosen WorkBuddy session has no recorded project directory, so it cannot be bound; no native session was created or replaced");
+      if(!sameWorkspacePath(evidence.cwd, worker.workspace)) throw new Error("Native session workspace differs from the requested project");
+    }
+    return evidence;
   }
   async ensure(input: {workspace: string; sessionId?: string; title?: string; model?:string; workerKey?: string}, native: NativeWorkerCreator): Promise<{created: boolean; worker: WorkspaceWorker; model?:string}> {
     if(!path.isAbsolute(input.workspace)||!fs.statSync(input.workspace).isDirectory())throw new Error("workspace must be an existing absolute directory");
@@ -155,23 +192,77 @@ export class WorkspaceWorkers {
       if(actual.sessionId!==sessionId||actual.model!==input.model)throw new Error("Native model selection returned a different identity or model");
     };
     if(input.sessionId) {
-      if(!this.verify({workspace,sessionId:input.sessionId}))throw new Error("The chosen WorkBuddy session is not registered; supply a real existing session or omit sessionId for native creation");
+      const evidence = this.evidenceOf({workspace,sessionId:input.sessionId});
+      if(!evidence.registered) throw new Error(evidence.state === "unverifiable"
+        ? "The WorkBuddy desktop history could not be read, so that session cannot be confirmed; no native session was created or replaced"
+        : "The chosen WorkBuddy session is not registered; supply a real existing session or omit sessionId for native creation");
       await configure(input.sessionId);
       checkSelection();
       return {created:false,worker:this.select(workspace,input.sessionId),model:input.model};
     }
     const previous = input.workerKey ? this.keyed(workspace, input.workerKey) : this.selected(workspace);
     if(previous) {
-      if(this.verify(previous)){await configure(previous.sessionId);checkSelection();return {created:false,worker:this.select(workspace,previous.sessionId),model:input.model};}
+      const evidence = this.evidenceOf(previous);
+      if(evidence.registered){await configure(previous.sessionId);checkSelection();return {created:false,worker:this.select(workspace,previous.sessionId),model:input.model};}
+      // An unreadable registry is not a negative finding. Creating here would
+      // produce a second native session next to one that may still exist.
+      if(evidence.state === "unverifiable") throw new Error(`The WorkBuddy desktop history could not be read (${evidence.reason ?? "unknown reason"}); the reserved identity ${previous.sessionId} was kept and no second native session was created. Repair the desktop directory or point WORKBUDDY_CONFIG_DIR at the real one, then retry with the same worker key`);
       if(previous.state!=='ready')await this.safeProbe(previous,native);
+      const reclaim = this.reclaimStale(previous, workspace);
+      if(reclaim === "reclaimed") return this.create(workspace, input, native, configure, checkSelection);
+      if(reclaim === "changed") {
+        // Another writer advanced this reservation between our read and the
+        // write transaction; decide again from what is on disk now.
+        const current = input.workerKey ? this.keyed(workspace, input.workerKey) : this.selected(workspace);
+        if(!current) return this.create(workspace, input, native, configure, checkSelection);
+        const currentEvidence = this.evidenceOf(current);
+        if(currentEvidence.registered){await configure(current.sessionId);checkSelection();return {created:false,worker:this.select(workspace,current.sessionId),model:input.model};}
+        if(currentEvidence.state === "unverifiable") throw new Error(`The WorkBuddy desktop history could not be read (${currentEvidence.reason ?? "unknown reason"}); the reserved identity ${current.sessionId} was kept and no second native session was created`);
+      }
       throw new Error(previous.state==='ready' ? "The registered WorkBuddy session was deleted or is unavailable; select another real session explicitly" : "Native creation is in progress or uncertain; inspect the reserved session before retrying. No second session was created");
     }
+    return this.create(workspace, input, native, configure, checkSelection);
+  }
+  /**
+   * Reclaim a reservation whose creator died before it could settle (F-WORKER-1).
+   * Only a stale row whose native session the readable registry reports as absent
+   * is reclaimed; a registered row is a real conflict, an unreadable registry is
+   * no evidence at all, and a row that changed since we read it belongs to
+   * another writer. The worker row is kept (with an error note); its key mapping
+   * is released in the same transaction so the same worker key can be retried
+   * (F-WORKER-2).
+   */
+  private reclaimStale(worker: WorkspaceWorker, workspace: string): "reclaimed" | "not-stale" | "changed" | "registered" | "unverifiable" {
+    if (!isStaleReservation(worker)) return "not-stale";
+    const evidence = readDesktopSession(this.config.workbuddyConfigDir, worker.sessionId);
+    if (evidence.state === "registered") return "registered";
+    if (evidence.state === "unverifiable") return "unverifiable";
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const row = this.db.prepare("SELECT state, updatedAt FROM workers WHERE sessionId=?").get(worker.sessionId) as {state: string; updatedAt: string} | undefined;
+      if (!row || row.state === "ready" || row.updatedAt !== worker.updatedAt) { this.db.exec("ROLLBACK"); return "changed"; }
+      this.db.prepare("UPDATE workers SET selected=0,error=?,updatedAt=? WHERE sessionId=? AND state<>'ready'")
+        .run("Reservation reclaimed: its creator never registered this native session", new Date().toISOString(), worker.sessionId);
+      this.db.prepare("DELETE FROM worker_keys WHERE sessionId=?").run(worker.sessionId);
+      this.db.exec("COMMIT");
+      return "reclaimed";
+    } catch (error) { this.db.exec("ROLLBACK"); throw error; }
+  }
+  private async create(workspace: string, input: {workspace: string; title?: string; model?:string; workerKey?: string},
+    native: NativeWorkerCreator, configure: (sessionId: string) => Promise<void>, checkSelection: () => void): Promise<{created: boolean; worker: WorkspaceWorker; model?:string}> {
     const worker = this.reserve(workspace, input.workerKey);
     try {
       const result = await native.createWorker(workspace,worker.sessionId,input.title??`执行：${path.basename(workspace)}`);
-      if(result.sessionId!==worker.sessionId || path.resolve(result.workspace)!==workspace)throw new Error("Native creation returned another session or workspace; inspect the reserved identity, do not replay");
+      if(result.sessionId!==worker.sessionId || !sameWorkspacePath(result.workspace,workspace))throw new Error("Native creation returned another session or workspace; inspect the reserved identity, do not replay");
       const evidence = await waitForDesktopSession(this.config.workbuddyConfigDir,worker.sessionId);
-      if(!evidence.registered||!this.verify(worker))throw new Error("Native creation returned but desktop history is not registered; inspect the reserved identity, do not replay");
+      if(!evidence.registered) throw new Error(evidence.state === "unverifiable"
+        ? "Native creation returned but the desktop history could not be verified; the reserved identity was kept, do not replay"
+        : "Native creation returned but desktop history is not registered; inspect the reserved identity, do not replay");
+      // The final readback is itself evidence: a read that flipped to absent or
+      // unverifiable must stop the bind instead of being ignored.
+      const confirmed=this.evidenceOf(worker);
+      if(confirmed.state === "unverifiable") throw new Error("Native creation returned but the desktop history could not be re-read; the reserved identity was kept, do not replay");
+      if(!confirmed.registered) throw new Error("Native creation returned but desktop history is no longer registered; inspect the reserved identity, do not replay");
       this.db.prepare("UPDATE workers SET state='ready',updatedAt=?,error=NULL WHERE sessionId=?").run(new Date().toISOString(),worker.sessionId);
       const selected=this.selected(workspace);
       if(selected?.sessionId!==worker.sessionId)throw new Error("Workspace selection changed while creating this session; its native record was retained without overriding the newer selection");

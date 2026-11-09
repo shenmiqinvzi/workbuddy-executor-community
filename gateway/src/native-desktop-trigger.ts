@@ -115,7 +115,36 @@ export const RENDERER_BRIDGE = String.raw`(async function(){
     const unfinishedTools=[...tools.values()].some(tool=>!['completed','failed','cancelled'].includes(tool.status));
     const team=session.teamRuntime;
     const unfinishedTeam=team&&(team.hasActiveMembers||team.teamTrulyIdle===false||(team.teamActive===true&&team.teamTrulyIdle!==true));
-    if(outgoing.has(sid)||active.some(s=>(s.sessionId||s.id)===sid||samePath(s.cwd,session.cwd))||session.isProcessing||session.stopRequested||session.hasActiveTeamMembers||session.hasActiveToolCalls||unfinishedTools||unfinishedTeam||session.hasRunningBackgroundTasks||session.hasActiveChildAgents)return {...observation,state:'busy',reason:'Native WorkBuddy session is active'};
+    // Name the exact signals that keep this session busy. The observation is
+    // recorded in the run journal, so an operator stuck on "session never goes
+    // idle" can read which flag is stuck instead of guessing. The flags are
+    // only descriptive: the busy decision itself is unchanged.
+    const busyFlags={
+      outgoingCall:outgoing.has(sid),
+      daemonActiveSession:active.some(s=>(s.sessionId||s.id)===sid||samePath(s.cwd,session.cwd)),
+      isProcessing:Boolean(session.isProcessing),
+      stopRequested:Boolean(session.stopRequested),
+      hasActiveTeamMembers:Boolean(session.hasActiveTeamMembers),
+      hasActiveToolCalls:Boolean(session.hasActiveToolCalls),
+      unfinishedTools,
+      unfinishedTeam:Boolean(unfinishedTeam),
+      hasRunningBackgroundTasks:Boolean(session.hasRunningBackgroundTasks),
+      hasActiveChildAgents:Boolean(session.hasActiveChildAgents),
+    };
+    const stillBusy=Object.keys(busyFlags).filter(key=>busyFlags[key]);
+    if(stillBusy.length)return {...observation,state:'busy',reason:'Native WorkBuddy session is active',diagnostics:{
+      stillBusy,
+      pendingToolCalls:[...tools.entries()].filter(([,tool])=>!['completed','failed','cancelled'].includes(tool.status))
+        .slice(0,10).map(([toolCallId,tool])=>({toolCallId,status:String(tool.status)})),
+      observedAt:new Date().toISOString(),
+      // What the queue would need before it may call this turn stopped. A
+      // replayed history entry has no attempt/wake binding and a quiet window
+      // proves nothing on its own, so neither may be used as stop evidence.
+      requiredUpstreamEvidence:[
+        'a native event that binds each unfinished tool call to a finished turn (attempt or wake identity, or a terminal tool_call_update)',
+        'or a daemon signal that the current turn ended for this session',
+      ],
+    }};
     if(!['completed','failed','cancelled','idle','stopped','pending','terminated'].includes(String(session.status).toLowerCase()))return {...observation,state:'busy',reason:'Native state is not confirmed idle: '+String(session.status)};
     return {...observation,state:'idle'};
   };

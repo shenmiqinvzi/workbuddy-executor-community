@@ -22,6 +22,7 @@ import { runsDirectory } from "./run-journal.js";
 import { AdmissionError } from "./collaboration.js";
 import { configuredDshCoordinator } from "./dsh-runtime.js";
 import { createReadOnlyProbe } from "./read-only-probe.js";
+
 import { desktopModelCatalog, readOnlyCatalogReaders } from "./desktop-dispatch-runtime.js";
 import { DSH_DISCOVERY_SCHEMA_VERSION, dshExecutorSummary, dshSessionsFor, summarizeDshHosts } from "./dsh-discovery.js";
 
@@ -131,11 +132,12 @@ server.tool("workbuddy_wait", "Wait up to 55 seconds for progress or a terminal/
   return { ok: true, task, statusView: tasks.statusView(task), execution, messages: tasks.listMessages(taskId, 100), next: pending() ? task.state === "needs_review" ? "Worker report received; use bounded wait calls until native stop is verified before rework or acceptance." : "Call wait again; continue supervision." : task.state === "needs_review" ? "Review actual output, then continue for corrections or accept with evidence." : task.state === "blocked" ? config.backend === "desktop-queue" ? "Read the blocker and execution state. Native permission/input stays in WorkBuddy's UI; do not resend or continue while execution is unresolved." : "Read the blocker. If waiting for input, use respond; inspect the original session before rework." : "Read the terminal result." };
 }, detail, {sinceEventSeq}));
 
-server.tool("workbuddy_list_tasks", "List durable task history after reconnecting. Use get/wait on active tasks to resume supervision; never automatically resend a disconnected task.", {
+server.tool("workbuddy_list_tasks", "List durable task history after reconnecting. Attempts whose native stop is already proven are advanced first, so a queued row can come back as needs_review without another wait call. Use get/wait on active tasks to resume supervision; never automatically resend a disconnected task.", {
   limit: z.number().int().positive().max(100).optional().default(20), detail,
 }, ({ limit, detail }) => guard(async () => {
+  const reconcile = await tasks.advanceStoppedAttempts();
   const listed = tasks.listTasks(limit);
-  return { ok: true, tasks: listed, statusViews: listed.map(task => tasks.statusView(task)) };
+  return { ok: true, tasks: listed, statusViews: listed.map(task => tasks.statusView(task)), ...(reconcile.advanced.length ? { reconciled: reconcile.advanced } : {}) };
 }, detail));
 
 server.tool("workbuddy_get_messages", "Synchronize and read current-attempt progress, tool updates and WorkBuddy report. Select an earlier attemptId to inspect history.", {
@@ -163,6 +165,12 @@ server.tool("workbuddy_respond_task", "Respond to an active WorkBuddy permission
   }
 }));
 
+// F-REVIEW-1: every verification tool takes this reference as three flat
+// fields. A status view prints the same values nested under `reviewOperation`,
+// so the flat requirement is spelled out in each tool description; accepting
+// the nested spelling as well would drop `expectedRevision` from the schema's
+// required list, which `test/mcp-entry.test.ts:38` treats as the contract that
+// the reference is always mandatory.
 const reviewOperation = { operationId: z.string().min(1).max(512), expectedRevision: z.string().min(1), expectedAttemptId: z.string().min(1) };
 server.tool("workbuddy_check_task", "Explicitly verify current provenance, native stop, T5 scope and existing command evidence; persists server-owned program check IDs and returns the machineCheckIds that workbuddy_review_task requires. Does not dispatch a model.", {
   taskId, ...reviewOperation,

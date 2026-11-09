@@ -7,7 +7,7 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import type { Config } from "./config.js";
 import { readDesktopSession } from "./desktop-runtime.js";
-import { sameExecutable, windowsProcessTable } from "./native-process.js";
+import { sameExecutable, sameWorkspacePath, windowsProcessTable } from "./native-process.js";
 import { DurableRuns, RunJournal, runsDirectory, writePrivateJson, hasNativeStopEvidence, type RunRequest, type RunSnapshot } from "./run-journal.js";
 import { TaskStore } from "./task-store.js";
 import { workspaceRelative } from "./workspace-protection.js";
@@ -367,7 +367,7 @@ export class DesktopQueue {
     if(snapshot?.nativeHealth?.state===native.state && snapshot.nativeHealth.reason===native.reason && Date.now()-Date.parse(snapshot.nativeHealth.observedAt)<15000)return;
     locked(path.join(journal.dir,"queue-write.lock"),()=>{
       const current=journal.snapshot()!;
-      journal.save({...current,nativeStopCheck:native.state === "idle" ? current.nativeStopCheck : undefined,nativeHealth:{state:native.state,reason:native.reason,observedAt:new Date().toISOString()}});
+      journal.save({...current,nativeStopCheck:native.state === "idle" ? current.nativeStopCheck : undefined,nativeHealth:{state:native.state,reason:native.reason,observedAt:new Date().toISOString(),...(native.diagnostics?{diagnostics:native.diagnostics}:{})}});
     });
   }
   authorizeCommand(input:{sessionId:string;attemptId:string;leaseToken:string}): RunSnapshot {
@@ -448,7 +448,7 @@ export class DesktopQueue {
       const claim = readJson<Claim>(path.join(journal.dir, "claim.json"));
       const request = journal.request();
       if (!snapshot || snapshot.driver !== "desktop-queue" || (claim ? claim.sessionId !== snapshot.sessionId : !["queued", "blocked", "cancelled"].includes(snapshot.status)) ||
-          request.sessionId !== snapshot.sessionId || native.state === "offline" || native.workspace !== request.workspace ||
+          request.sessionId !== snapshot.sessionId || native.state === "offline" || !sameWorkspacePath(native.workspace, request.workspace) ||
           !snapshot.sessionId || !readDesktopSession(this.config.workbuddyConfigDir, snapshot.sessionId).registered) throw new Error("Native observation does not match the execution");
       const wake = readJson<WakeIntent>(path.join(journal.dir, "wake.json"));
       const incomingFailure = native.failure;
@@ -566,12 +566,12 @@ export class DesktopQueue {
       const store = new TaskStore(this.config.dbFile);
       try {
         const task = store.get(input.taskId);
-        if (!task || task.attemptId !== input.attemptId || task.sessionId !== input.sessionId || task.workspace !== input.workspace ||
+        if (!task || task.attemptId !== input.attemptId || task.sessionId !== input.sessionId || !sameWorkspacePath(task.workspace, input.workspace) ||
             !snapshot || snapshot.taskId !== input.taskId || snapshot.attemptId !== input.attemptId || snapshot.sessionId !== input.sessionId || snapshot.driver !== "desktop-queue" ||
-            request.taskId !== input.taskId || request.attemptId !== input.attemptId || request.sessionId !== input.sessionId || request.workspace !== input.workspace ||
+            request.taskId !== input.taskId || request.attemptId !== input.attemptId || request.sessionId !== input.sessionId || !sameWorkspacePath(request.workspace, input.workspace) ||
             claim?.sessionId !== input.sessionId || wake?.sessionId !== input.sessionId || wake.attemptId !== input.attemptId ||
             !readDesktopSession(this.config.workbuddyConfigDir, input.sessionId).registered) throw Error("Report reconciliation identity does not match the current task/attempt/session/workspace");
-        if (native.state !== "idle" || native.workspace !== input.workspace) throw Error("Report reconciliation requires current native idle in the original workspace");
+        if (native.state !== "idle" || !sameWorkspacePath(native.workspace, input.workspace)) throw Error("Report reconciliation requires current native idle in the original workspace");
         const alreadyReconciled = ["blocked","needs_review"].includes(task.state) && snapshot.status === "needs_review" && Boolean(snapshot.postReportFailure) && hasNativeStopEvidence(snapshot);
         if (!alreadyReconciled && (task.state !== "blocked" || snapshot.status !== "blocked" || snapshot.stopReason !== "native_failure_verified" || !hasNativeStopEvidence(snapshot))) throw Error("Only a stopped native-failure attempt with a preserved authenticated report can be reconciled");
         if (!input.reason.trim() || journal.cancellationRequested()) throw Error("A reconciliation reason is required and cancelled/deadline attempts cannot be reconciled");
@@ -636,7 +636,7 @@ export class DesktopQueue {
             snapshot.nativeFailure || snapshot.reportDigest || snapshot.stopControl?.issuedAt)) {
           throw new Error("Unclaimed recovery requires no native delivery or execution evidence");
         }
-        if (task.workspace !== input.workspace || request.workspace !== input.workspace || request.sessionId !== input.sessionId) throw new Error("Recovery workspace or session does not match the original task");
+        if (!sameWorkspacePath(task.workspace, input.workspace) || !sameWorkspacePath(request.workspace, input.workspace) || request.sessionId !== input.sessionId) throw new Error("Recovery workspace or session does not match the original task");
         const cancellation = readJson<{ reason?: string }>(path.join(journal.dir, "cancel.json"));
         const deadline = Date.parse(snapshot.deadline ?? "");
         if (!Number.isFinite(deadline) || deadline > Date.now() || (cancellation && cancellation.reason !== "deadline")) throw new Error("Only an expired attempt without an operator cancellation can be recovered");

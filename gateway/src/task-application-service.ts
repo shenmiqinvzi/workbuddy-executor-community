@@ -14,6 +14,7 @@ import { buildPlanResourceReference, planExecutionFrom, readExecutionLinks, type
 import { PANEL_SCHEMA, readPanelTask } from "./workbench-panel.js";
 import type { DispatchLease } from "./dispatch-settlement.js";
 import { stageTaskViewFromProjection, STAGE_TASK_VIEW_UNAVAILABLE, STAGE_TASK_VIEW_SCHEMA_VERSION, type StageTaskView } from "./task-view-stage.js";
+import { sameWorkspacePath } from "./native-process.js";
 
 /** A conservative status projection for existing tasks. This is not the vNext TaskView. */
 export interface TaskStatusView {
@@ -25,6 +26,17 @@ export interface TaskStatusView {
   remoteStopped: boolean;
   allowedActions: Array<"cancel" | "rework" | "accept">;
   lastObservedAt: string | null;
+  /**
+   * F-REVIEW-1: the verification tools take three flat fields, but their status
+   * view used to print the same values only nested, so a reviewer copying the
+   * view had to guess the flattening. Both spellings now read the same values:
+   * `expectedRevision`/`expectedAttemptId` are exposed flat, next to the nested
+   * reference, and `operationId` stays a fresh caller-chosen id because reusing
+   * a stored one is refused as an operation conflict.
+   */
+  expectedRevision: string | null;
+  expectedAttemptId: string | null;
+  reviewOperation: { operationId: null; expectedRevision: string | null; expectedAttemptId: string | null };
 }
 
 /**
@@ -417,6 +429,47 @@ export class TaskApplicationService {
     return task;
   }
   requireTask(taskId: string) { return this.coordinator.requireTask(taskId); }
+  /**
+   * Read-path reconcile for F-LEDGER-2. A worker can report and be durably
+   * stopped in its run journal while the task row still says queued/working,
+   * because only an operator-driven get/wait call runs sync. Advance those rows
+   * wherever a human is already looking at the ledger, so reconnecting and
+   * listing shows the truth without a second call.
+   *
+   * Bounded and best effort by design: it never throws, never touches a task
+   * whose native stop is unconfirmed, and must never run inside the persistent
+   * service pump (an awaited sync there freezes the pump while the native bridge
+   * is busy — measured 2026-11-08).
+   */
+  async advanceStoppedAttempts(options: { limit?: number; budgetMs?: number } = {}): Promise<{ advanced: string[]; skipped: number }> {
+    const limit = Math.max(1, options.limit ?? 5);
+    const deadline = Date.now() + Math.max(0, options.budgetMs ?? 3_000);
+    const advanced: string[] = [];
+    let skipped = 0;
+    const candidates = this.listTasks(Math.max(limit, 20)).filter(task => (task.state === "queued" || task.state === "working") && task.attemptId);
+    for (const task of candidates.slice(0, limit)) {
+      // The budget is checked before each row so a slow ledger never holds the
+      // list open across the whole batch. No timeout races the sync: the local
+      // desktop queue reads its own journal, and a sync left running after the
+      // response would keep writing next to the caller (F-LEDGER-2).
+      if (Date.now() >= deadline) { skipped += 1; continue; }
+      // The row object can be the store's own instance, and sync writes through
+      // that instance. Capture the state before the call or a real transition
+      // reads back as "unchanged" and the caller is told nothing moved.
+      const before = task.state;
+      try {
+        if (!this.coordinator.advanceGate(task.taskId)) continue;
+        if (!this.executionStatus(task.taskId).remoteStopped) continue;
+        const synced = await this.sync(task.taskId);
+        // Report only a real transition: a sync that agrees with the stored
+        // state proves nothing and must not look like a reconcile.
+        const after = synced?.state ?? before;
+        if (after !== before) advanced.push(task.taskId);
+      } catch { /* the next reader retries; a failed advance never fails the list */ }
+    }
+    return { advanced, skipped };
+  }
+
   executionStatus(taskId: string) { return this.dshFor(taskId)?.executionStatus(taskId) ?? this.coordinator.executionStatus(taskId); }
   listTasks(limit: number) { return this.coordinator.store.listTasks({ limit }); }
   listTasksByCreatedCursor(options: { limit: number; afterTaskId?: string }) { return this.coordinator.store.listTasksByCreatedCursor(options); }
@@ -461,6 +514,9 @@ export class TaskApplicationService {
       remoteStopped: stopped,
       allowedActions,
       lastObservedAt: execution.observedAt ?? null,
+      expectedRevision: task.revision ?? null,
+      expectedAttemptId: task.attemptId ?? null,
+      reviewOperation: { operationId: null, expectedRevision: task.revision ?? null, expectedAttemptId: task.attemptId ?? null },
     };
   }
 }

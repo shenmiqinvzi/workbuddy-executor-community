@@ -285,8 +285,8 @@
     },
     {
       "path": "docs/INSTALL_WINDOWS.md",
-      "sha256": "bc83b1bb7e0a595962688a5e973c592a0472c2d50cdc03fae3df9cc59ee5ce7c",
-      "bytes": 17520
+      "sha256": "a561dc3baee58f841c3b4e6ebf8a6f9e9a391323f589623fa4ef73170a0324b7",
+      "bytes": 18579
     },
     {
       "path": "docs/OPERATION_RECOVERY.md",
@@ -330,8 +330,8 @@
     },
     {
       "path": "docs/WORKBENCH.md",
-      "sha256": "14db4f4912551a1e4683fb369a3a4e93acb96e72de6bd9bf00d3fe6dd89a75e3",
-      "bytes": 8605
+      "sha256": "57b83d4b74e7a4a8d1f90472f29f5665649483546a091ff36edc3bb33c4da3c3",
+      "bytes": 8909
     },
     {
       "path": "docs/desktop-queue-reliability.md",
@@ -475,13 +475,13 @@
     },
     {
       "path": "scripts/package-desktop.mjs",
-      "sha256": "257beaf31a1677ba0f8747d41ae696607d11ef1936dd77824f40aacd8453a292",
-      "bytes": 7030
+      "sha256": "663a3e82a757bf36bc479881ea9a0cac73cc2e84a1f81d8767753fe13ce0934c",
+      "bytes": 7251
     },
     {
       "path": "scripts/package.mjs",
-      "sha256": "593a79fb4e0370b115cb80f499f864fe5401612bf4ffe11034eefec0f440fa7e",
-      "bytes": 19605
+      "sha256": "9d4f2fd57cd186be7b163827bb9d8bfb204d3bb317ed14fd7e550a1a8e2a5dac",
+      "bytes": 19804
     },
     {
       "path": "scripts/plan.mjs",
@@ -535,8 +535,8 @@
     },
     {
       "path": "scripts/workbench-desktop-host.mjs",
-      "sha256": "b0d4c0551e657fe690b4d127fa291f609f59fb4895893c6a36e9797f2e8993c6",
-      "bytes": 6251
+      "sha256": "d443a9e2ad5404a551cf10e889a4a2d6ae3d3e0787475bf3ad6d6ec4fecdacc4",
+      "bytes": 7285
     },
     {
       "path": "scripts/workbench-dispatch-worker.mjs",
@@ -595,8 +595,8 @@
     },
     {
       "path": "skills/workbuddy-executor/references/dispatch.md",
-      "sha256": "5f0c13accf5d1e1958b6e4b21b86579ba571b755feb2fb399d17aebe0857cc26",
-      "bytes": 15301
+      "sha256": "7f63edf88666716e104c7f628d402b7fb199f2c3d9a000d486df3b9f9d49139b",
+      "bytes": 15333
     },
     {
       "path": "skills/workbuddy-executor/references/execution.md",
@@ -605,8 +605,8 @@
     },
     {
       "path": "skills/workbuddy-executor/references/setup.md",
-      "sha256": "3e0707d69f07acfcb3e3cc036a61d6cafc9ffb8d8e796167890faff9e040e931",
-      "bytes": 10784
+      "sha256": "cf65f1713ab06184a8d4c1bcf03e3cca40e770742d824f818b3c0bd926d85607",
+      "bytes": 11140
     },
     {
       "path": "src/acp-live.ts",
@@ -665,8 +665,8 @@
     },
     {
       "path": "src/coordinator.ts",
-      "sha256": "2ba024ba63a1c3059dacac2eb682111c9a82700e37ee59499573a2f6fada82e8",
-      "bytes": 58231
+      "sha256": "e14dc88c8c67947365d66866a045b4b32036edfd10ffe9fc1773a53f0527064a",
+      "bytes": 62169
     },
     {
       "path": "src/credit-balance.ts",
@@ -760,13 +760,13 @@
     },
     {
       "path": "src/desktop-queue.ts",
-      "sha256": "5f885bdb1f2b8f45df66ff1cdc183ca6b65946bb0264fda4714a4fd9671c1369",
-      "bytes": 60300
+      "sha256": "9fb8402e6e48b46ab287f1c0608b367a900fd8deee927d02d0cbeff56f9cdc9f",
+      "bytes": 60481
     },
     {
       "path": "src/desktop-runtime.ts",
-      "sha256": "fc6a93d74c0740ad9945b021dede51c071a5a866e576b75c66a828eb2b51d49c",
-      "bytes": 2425
+      "sha256": "c8f2926a640d6bca6d103683128d79108dfd5223e3012607805ccb9cc6253a71",
+      "bytes": 3164
     },
     {
       "path": "src/desktop-worker-cli.ts",
@@ -860,8 +860,8 @@
     },
     {
       "path": "src/native-desktop-trigger.ts",
-      "sha256": "7ca72978822c320dc2a2056e0b4e9cd04bc9b3547488a160f648b6db4525b3bc",
-      "bytes": 40909
+      "sha256": "2463d323d3ae701928bb4266c27faf0613072d111d8f34baa858b825afbaa520",
+      "bytes": 42392
     },
     {
       "path": "src/native-ownership.ts",
@@ -870,8 +870,8 @@
     },
     {
       "path": "src/native-process.ts",
-      "sha256": "6401fa182a495a1e820045f2046385c45d0dfa82b2b03293c18daa640344a342",
-      "bytes": 3947
+      "sha256": "a6c248a3bb10cb14ec0d6ad30586aeaf081998b45139ce56acf6939850b0ce9a",
+      "bytes": 4738
     },
     {
       "path": "src/native-stop-declaration.ts",
@@ -900,8 +900,8 @@
     },
     {
       "path": "src/persistent-service.ts",
-      "sha256": "14822f1969ea6dbf7df01727deeb959732601c1d6473eec08659bd0efa0e8cd6",
-      "bytes": 35133
+      "sha256": "61c1dbaaaebd53bbee9023bea20ac9bd9e11cdf81bcbb84fef664e6f3b470730",
+      "bytes": 35628
     },
     {
       "path": "src/plan-resource-reference.ts",
@@ -1060,8 +1060,8 @@
     },
     {
       "path": "src/run-journal.ts",
-      "sha256": "3bd79d4819475d3f78c52a069535304622ce79f8241d405d013b62609f96239d",
-      "bytes": 19055
+      "sha256": "63e5f2f130a7be4c36a19834535041e7801f1142fceadbdb0f9dde45acace208",
+      "bytes": 19374
     },
     {
       "path": "src/run-worker.ts",
@@ -1075,8 +1075,8 @@
     },
     {
       "path": "src/server.ts",
-      "sha256": "cd87b9f67b79139f0c5cd28d05b3d9cc11b680e6d567e22859962758a2d933f4",
-      "bytes": 24395
+      "sha256": "dde3eaec6e137540355b8ad63ba175cbdcd7c538c2de2a15b59ce267fcfc20ce",
+      "bytes": 25103
     },
     {
       "path": "src/service-cli.ts",
@@ -1115,8 +1115,8 @@
     },
     {
       "path": "src/task-application-service.ts",
-      "sha256": "8cedc6bb4ad05c14622678c50d1d7e216c393717589647533c70671f574ec3a6",
-      "bytes": 29437
+      "sha256": "fc27fe9444f633a3fb297f8f4cab9a56b05692c293ccbea7f356a68999625a47",
+      "bytes": 32494
     },
     {
       "path": "src/task-contract.ts",
@@ -1225,8 +1225,8 @@
     },
     {
       "path": "src/workspace-workers.ts",
-      "sha256": "2675919486ee2810e676d5d810e4191e89b129f5d0487cb0c2ea6768ea7a078c",
-      "bytes": 12949
+      "sha256": "f3676a0791c678000465123d0634ac66d9f3d64ab0e41dc21914e1c0bcdbfdc5",
+      "bytes": 19995
     },
     {
       "path": "test/acp-live.test.ts",
@@ -1485,8 +1485,8 @@
     },
     {
       "path": "test/finish-acceptance-review-layers.test.ts",
-      "sha256": "cac24595b29bfd0a3f9cdfa19916359f4e2b822c119004d4ede1ee71eb7f25dc",
-      "bytes": 10193
+      "sha256": "0fb13d918058d2300c318484851e98d8434fd24d3f08a25e6a7ac2c13dbf47f0",
+      "bytes": 12331
     },
     {
       "path": "test/fixtures/task-view-samples.ts",
@@ -1530,8 +1530,8 @@
     },
     {
       "path": "test/native-desktop-trigger.test.ts",
-      "sha256": "2844f9f9c1871f1304ad7ba04fa59615289f0654e5a725541d61d25bb423eb20",
-      "bytes": 41289
+      "sha256": "114fa4924e374e3cd4ee5dc688c192b8e97288416ab89a22caf353c7622bc7f4",
+      "bytes": 42513
     },
     {
       "path": "test/native-failure-diagnostic.test.ts",
@@ -1565,8 +1565,8 @@
     },
     {
       "path": "test/package.test.ts",
-      "sha256": "2843c0c2c5da23e64e6221249d2c6d4d2d81b725a9bc0fa2de742b7db3f5c676",
-      "bytes": 24681
+      "sha256": "6504b41e11b5a3c5f70311835c791b8de094d3a4ea95e0ac34d113353e19ee7d",
+      "bytes": 24847
     },
     {
       "path": "test/persistent-service.test.ts",

@@ -14,6 +14,8 @@ node scripts/doctor.mjs
 
 生成的 data/workbuddy-mcp.toml 包含这次安装的真实 Node/网关路径；核对后合并进自己的 MCP 配置，不覆盖其他条目。完整步骤见 [Windows 安装指南](https://github.com/shenmiqinvzi/workbuddy-executor-community/blob/main/gateway/docs/INSTALL_WINDOWS.md)。安装不启动或重启 WorkBuddy；首次原生连接应在无其他任务且用户明确允许初始化时进行。
 
+如果配套网关的桌面宿主提示缺少任务库，先核对它报告的路径与 `WORKBUDDY_DB_FILE`。已有任务库应使用原路径。只有确认目标是全新任务库且网关带有 `scripts/init-state.mjs` 时，才在该网关目录执行 `node scripts/init-state.mjs`。完成初始化后，另行核验原生连接和派工就绪。
+
 默认先查询目录，再让用户选择并确认本次模型；不预选固定模型，也不要求 x0.00。列出已知费率，缺少或过期的信息显示未知；用户可在了解费用后选择付费或未知费用模型。模型目录不保证余额、实际账单上限或后续平台可用性。
 
 `WORKBUDDY_REQUIRED_FREE_MODEL` 仅用于用户主动要求的免费限定部署；设置后仍在原生配置与唤醒时检查精确模型及零费率。旧安装或已保存任务的限制保持生效，不为消除阻塞擅自清除。要更改运行部署，先取得该配置变更的授权；仓库源码更新不等于已安装环境更新。

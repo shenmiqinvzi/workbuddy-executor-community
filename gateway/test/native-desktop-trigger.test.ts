@@ -369,6 +369,19 @@ test("terminal session flags do not hide unfinished raw tools, team work or back
   assert.equal(f.sends().length,0);
 });
 
+test("a busy session names the exact signal that keeps it busy, without becoming stop evidence", async t => {
+  const f = await fixture(t);
+  f.session = {sessionId:f.sessionId,cwd:f.workspace,status:"failed",isProcessing:false,hasActiveToolCalls:false,
+    eventHistory:[{update:{sessionUpdate:"tool_call",toolCallId:"replayed-tool",status:"pending"}}]};
+  const native = await f.bridge.inspect(f.sessionId) as {state:string;diagnostics?:{stillBusy?:string[];pendingToolCalls?:Array<{toolCallId:string;status:string}>;requiredUpstreamEvidence?:string[]}};
+  assert.equal(native.state,"busy");
+  assert.ok(native.diagnostics?.stillBusy?.includes("unfinishedTools"),"the stuck flag is named instead of a generic active message");
+  assert.equal(native.diagnostics?.pendingToolCalls?.length,1,"the unresolved call is listed");
+  assert.equal(native.diagnostics?.pendingToolCalls?.[0]?.toolCallId,"replayed-tool");
+  assert.ok((native.diagnostics?.requiredUpstreamEvidence?.length ?? 0) > 0,"the observation states what upstream proof is still missing");
+  // Diagnostics are descriptive: they never unlock a wake or a stop.
+  assert.equal((await f.bridge.wakeIdle(f.sessionId,WAKE_B,wakePrompt(WAKE_B))).accepted,false);
+});
 const invocationMeta = {
   "codebuddy.ai/toolName": "Bash",
   "codebuddy.ai/conversationRequestId": "fixture-conversation",

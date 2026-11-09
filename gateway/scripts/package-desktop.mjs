@@ -58,6 +58,8 @@ node "gateway\\scripts\\bootstrap.mjs" --install-root "gateway" --apply
 2. 双击 \`gateway\\desktop\\app\\WorkBuddy.Workbench.exe\`；窗口标题应为「WorkBuddy · 任务工作台」。
 3. 单独下载的**网关 ZIP** 才有自己的校验入口：在网关解包根跑 \`node scripts\\verify-release.mjs\`。桌面包里 \`gateway\` 目录下没有 \`RELEASE_MANIFEST.json\`（清单只在包根），所以在桌面包里跑它会报 ENOENT，属预期。
 
+首次打开时若提示缺少任务库，先核对窗口报告的路径。确认要初始化全新的任务库后，在 \`gateway\` 目录运行 \`node scripts/init-state.mjs\`。已有任务库应使用其原路径。
+
 ## 5. 窗口报错怎么读
 
 | 窗口提示 | 含义 | 处理 |

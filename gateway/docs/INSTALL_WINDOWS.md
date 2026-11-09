@@ -25,7 +25,7 @@ npm run desktop
 
 运行该窗口还要求本机已安装 .NET Desktop Runtime 10。跳过这一步不影响技能与 MCP 派工流程，浏览器界面用 `npm run workbench` 启动后在 `http://127.0.0.1:18493/workbench/` 查看同一份只读记录。构建细节、预览包内容与签名状态见 [桌面工作台说明](WORKBENCH.md)。
 
-如果使用完整发布 ZIP，在解压后的网关目录先运行 `node scripts/verify-release.mjs` 核对发布清单，再运行 `npm ci`。包内已有构建产物，可直接进入下一步；源码 clone 使用上述 verify-snapshot/build 流程。单独技能 ZIP 只有指令，不包含网关或可用连接。
+如果使用完整发布 ZIP，在解压后的网关目录先运行 `node scripts/verify-release.mjs` 核对发布清单，再运行 `node scripts/bootstrap.mjs --install-root . --apply` 安装生产依赖。源码 clone 使用上述 verify-snapshot/build 流程。单独技能 ZIP 需要配套网关和 MCP 连接。
 
 ## 2. 先预览，再安装
 
@@ -85,6 +85,16 @@ node scripts/candidate-installation.mjs version-check --package "D:/pkg/codex-wo
 
 `matches=true` 只说明磁盘上的托管文件与该包一致，不代表任务已执行、原生登录就绪或部署验收完成。
 
+### 2.3 初始化全新任务库
+
+若需要在首次派工前打开独立桌面工作台，请先核对宿主提示中的数据库绝对路径。已有任务库应直接使用其原路径。只有确认目标是**有意选择的新库**时，才在同一个网关目录运行：
+
+```powershell
+node scripts/init-state.mjs
+```
+
+此命令使用与桌面宿主相同的配置。若通过 `WORKBUDDY_DB_FILE` 指定了路径，运行两者时使用同一个值。命令在目标已存在时退出，成功后可重开工作台。建立任务库只表示可保存任务记录。原生连接和派工就绪分别核验。
+
 ## 3. 连接 Codex
 
 打开生成的 data/workbuddy-mcp.toml，核对命令和路径。将其中 workbuddy 配置合并进自己的 Codex config.toml；如已有同名项，只替换明确指向这次安装的条目，保留其他设置。安装程序不会替你修改用户配置。
@@ -95,7 +105,7 @@ node scripts/candidate-installation.mjs version-check --package "D:/pkg/codex-wo
 
 ## 4. 首次真实连接
 
-先确认没有其他 WorkBuddy 任务运行，明确允许本次原生连接初始化；首次建立原生连接可能需要应用正常重启。通过 Codex 按技能流程展示可用模型及已知费用，由用户选择并确认，再调用 ensure_workspace，使用新的专用样本目录及稳定任务身份。付费和费用未知可在用户了解后选择；只有主动免费限定才要求零费率，不自动切模型。新安装不默认写入固定免费模型，升级保留已有显式限制。
+先确认没有其他 WorkBuddy 任务运行。首次建立原生连接可能需要正常重启应用。通过 Codex 按技能流程查询可用模型及已知费用，由用户选择并确认，再用 `workbuddy_send_task` 提交专用样本目录、稳定任务身份和选定模型。编辑样本要声明结构化文件范围。模型准备在派工准入后执行。付费和费用未知可在用户了解后选择，只有主动免费限定才要求零费率。升级保留已有显式限制。
 
 ```powershell
 node scripts/doctor.mjs --live
@@ -123,12 +133,15 @@ node scripts/doctor.mjs --live
 
 共享服务兼容层在 `get_task`、`wait` 返回 `statusView`，在 `list_tasks` 返回对应的 `statusViews`。每项包含 `taskId`、`attemptId`、`sessionId`、`businessState`、`displayState`、`remoteStopped`、`allowedActions` 与 `lastObservedAt`。它是现有任务的保守投影，尚不是设计中的完整 vNext TaskView；操作执行时仍由 coordinator 重新核验。原生失败后的停止未确认也显示为 `waiting_stop`，不要求先有人工取消请求；不会因此开放返工或验收。报告恢复同样经过共享服务入口。
 
+新版 `workbuddy_list_tasks` 可能将已有停止证据的桌面队列任务补记到任务库。`reconciled` 只列出本次状态已推进的任务。需要只读快照时，请使用 `node scripts/workbuddy-inspect.mjs @任务参数文件.json`。
+
 | 字段 | 含义 |
 |---|---|
 | `execution.nativeRateLimit` | `kind=rate_limited`、`statusCode=429`、`observedAt`；可附 `phase`（`session:sendMessage` 或 `native_history`）和明确提供的 `retryAfterSeconds` |
 | `execution.postReportFailure` | 晚于有效完成报告的 `error`、`observedAt`、原 `reportReceivedAt`，可附 `phase`；保留报告但不跳过停止和验收 |
 | `execution.stopControl` | 原有请求状态加 `issuedAt`、`acknowledgedAt` 等时间；仅 `issuedAt` 不证明请求成功或任务停止 |
 | `execution.nativeStopCheck` | 失败轮次的连续空闲检查：`since`、`checkedAt`、`observations`，可附后端 `activityAt` |
+| `execution.nativeHealth.diagnostics` | 原生观察仍判忙时可记录阻塞信号、未结束工具及所缺证据。观察时间和身份仍须与当前轮次核对，诊断本身不确认停止。 |
 
 `workbuddy_reconcile_report` 输入为 `{taskId, attemptId, reason, detail?}`：`attemptId` 必须是当前 `run-<UUID>`，`reason` 为非空核查说明（最长2000字符），`detail` 为 `brief` 或 `full`。成功只表示已有报告恢复到 `needs_review`，`taskCompleted=false`；仍须核对返回的 `task`、`execution` 和当前成果后另行验收。
 

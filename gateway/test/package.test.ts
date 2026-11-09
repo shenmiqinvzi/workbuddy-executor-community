@@ -84,6 +84,8 @@ async function fixture() {
   // so both entry points and their sources are part of the release contract.
   files["scripts/readiness.mjs"] = "// read-only readiness fixture\n";
   files["scripts/bootstrap.mjs"] = "// bounded bootstrap fixture\n";
+  // The first-run guidance points at this initializer, so it ships with the release.
+  files["scripts/init-state.mjs"] = "// task database initializer fixture\n";
   for (const name of ["readiness", "installation-bootstrap"]) for (const [prefix, suffix] of [["src", "ts"], ["dist", "js"]]) files[`${prefix}/${name}.${suffix}`] = "export {};\n";
   for (const name of ["installation-dependencies", "installation-rollback"]) for (const [prefix, suffix] of [["src", "ts"], ["dist", "js"], ["dist", "d.ts"]]) files[`${prefix}/${name}.${suffix}`] = "export {};\n";
   for (const name of ["automation", "automation-http", "automation-cli"]) for (const [prefix, suffix] of [["src", "ts"], ["dist", "js"]]) files[`${prefix}/${name}.${suffix}`] = "export {};\n";

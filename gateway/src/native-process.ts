@@ -77,6 +77,22 @@ export function hasProcess(pid: number, table?: NativeProcess[]): boolean {
   return rows.some((row) => row.pid === pid);
 }
 
+/**
+ * Compare the workspace the native app reports with the one a request dispatched.
+ *
+ * Windows hands the session cwd back with backslashes while a dispatch may carry
+ * forward slashes, so a raw `!==` reads every healthy run as a mismatch and the
+ * supervisor can never confirm the stop (F-PATH-1). Compare normalized paths.
+ */
+export function sameWorkspacePath(candidate: string | undefined, configured: string | undefined): boolean {
+  if (!candidate || !configured) return false;
+  const normalize = (value: string) => String(value).replace(/\\/g, "/").replace(/\/+$/, "");
+  const left = normalize(candidate);
+  const right = normalize(configured);
+  if (left === right) return true;
+  return process.platform === "win32" ? left.toLowerCase() === right.toLowerCase() : false;
+}
+
 /** Compare an executable path from the process table with a configured path. */
 export function sameExecutable(candidate: string | undefined, configured: string): boolean {
   if (!candidate) return false;

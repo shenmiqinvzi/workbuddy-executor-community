@@ -10,6 +10,7 @@ import { TaskStore, type StoredTask, type TaskReport, type TaskState, type TaskU
 import { WorkBuddyClient, messageText } from "./workbuddy-client.js";
 import { RunJournal, runsDirectory, hasNativeStopEvidence, type RunSnapshot } from "./run-journal.js";
 import { readServiceRegistration } from "./persistent-service.js";
+import { sameWorkspacePath } from "./native-process.js";
 import { PersistentDesktopService, reconcileReportedAttempt, registeredServiceConfig } from "./persistent-service.js";
 import { NativeDesktopRpcTrigger } from "./native-desktop-trigger.js";
 import { verifyValidationEvidence } from "./worker-result.js";
@@ -20,6 +21,17 @@ import { AdmissionError, defaultModelPolicy, enforceModelPolicy, type ModelObser
 
 import type { OperationOptions, OperationRecord } from "./operation-admission.js";
 import type { WorkspaceDispatchGuard } from "./workspace-protection.js";
+
+/**
+ * A journal is bound to one project path. Windows records the same directory in
+ * several spellings, so compare normalized forms and never treat a different
+ * project as the same attempt.
+ */
+function sameProjectPath(left: string, right: string): boolean {
+  // Windows paths are case-insensitive; POSIX paths are not, so the shared
+  // comparator only folds case on win32.
+  return sameWorkspacePath(left, right);
+}
 
 export interface SendTaskInput extends OperationOptions {
   taskId?: string; objective: string; workspace?: string; constraints?: string[]; acceptanceCommands?: string[];
@@ -257,7 +269,10 @@ export class TaskCoordinator {
       // proof may have appeared without any message) and, for terminal tasks
       // whose evidence is complete, close the task exactly once.
       const evidenced = this.recordRunEvidence(task);
-      return terminal ? this.closeTerminalTask(evidenced) : evidenced;
+      // F-CAP-3: closure is attempted on every sync, not only for tasks that
+      // already look terminal — a blocked attempt that was cancelled and whose
+      // native stop is proven only becomes terminal here.
+      return this.closeTerminalTask(evidenced);
     }
     this.store.addMessages(taskId, messages);
     // Mirror per-attempt journal events into the persistent task event stream.
@@ -367,6 +382,14 @@ export class TaskCoordinator {
    * open until that proof arrives.
    */
   private closeTerminalTask(task: StoredTask): StoredTask {
+    // F-CAP-3: a blocked attempt that an operator cancelled and whose native
+    // stop is already proven is terminal too. Leaving the label at "blocked"
+    // kept the single dispatch slot occupied forever, because the closure rule
+    // only accepts accepted/cancelled/failed — every later send was refused as
+    // CAPACITY_OCCUPIED and the only way out was replacing the ledger.
+    if (task.state === "blocked" && task.cancelNote && hasNativeStopEvidenceFromDigest(task.runEvidenceDigest)) {
+      task = this.store.update(task.taskId, { state: "cancelled", blockingReason: null });
+    }
     if (task.state !== "accepted" && task.state !== "cancelled") return task;
     if (!task.attemptId || !/^run-[a-f0-9-]{36}$/.test(task.attemptId)) return task;
     if (!hasNativeStopEvidenceFromDigest(task.runEvidenceDigest)) return task;
@@ -526,6 +549,44 @@ export class TaskCoordinator {
     this.client.respond(task.attemptId, decision, content);
     return { ok: true, taskId, message: "Input delivered to the active WorkBuddy request; call wait for its response." };
   }
+  /**
+   * The journal's snapshot carries no project path, so bind the attempt to the
+   * task's workspace through the run request the queue wrote. A request that
+   * cannot be read, or that predates the workspace field, cannot disprove the
+   * binding and is therefore not treated as a mismatch.
+   */
+  private journalMatchesWorkspace(task: StoredTask): boolean {
+    if (!task.attemptId || !task.workspace) return true;
+    try {
+      const request = new RunJournal(runsDirectory(this.config), task.attemptId).request();
+      if (!request.workspace) return true;
+      return sameProjectPath(task.workspace, request.workspace);
+    } catch { return true; }
+  }
+  /**
+   * The strict gate used by the list advance (F-LEDGER-3). Only a local desktop
+   * queue attempt whose run request and snapshot both bind this exact task,
+   * attempt, session and project may be advanced from a plain list read. Any
+   * missing, unreadable or foreign identity is not stop proof: the row stays as
+   * stored and get/wait still report the truth.
+   */
+  advanceGate(taskId: string): boolean {
+    if (this.config.backend !== "desktop-queue") return false;
+    const task = this.requireTask(taskId);
+    if (task.runtimeSource && task.runtimeSource !== "desktop_queue") return false;
+    if (!task.attemptId || !task.sessionId || !task.workspace) return false;
+    const snapshot = this.client.runSnapshot(task.attemptId);
+    if (!snapshot || snapshot.driver !== "desktop-queue") return false;
+    if (snapshot.taskId !== task.taskId || snapshot.attemptId !== task.attemptId) return false;
+    if (snapshot.sessionId !== task.sessionId) return false;
+    try {
+      const request = new RunJournal(runsDirectory(this.config), task.attemptId).request();
+      if (request.taskId !== task.taskId || request.attemptId !== task.attemptId) return false;
+      if (!request.workspace || !sameWorkspacePath(request.workspace, task.workspace)) return false;
+      if (!request.sessionId || request.sessionId !== task.sessionId) return false;
+    } catch { return false; }
+    return true;
+  }
   executionStatus(taskId: string) {
     const task = this.requireTask(taskId);
     if (!task.attemptId || !/^run-[a-f0-9-]{36}$/.test(task.attemptId)) return { state: "unknown", remoteStopped: false };
@@ -533,7 +594,8 @@ export class TaskCoordinator {
     if (!snapshot) return { state: "unknown", remoteStopped: false };
     // A reused or corrupt journal cannot prove that this task's native turn stopped.
     if (snapshot.taskId !== task.taskId || snapshot.attemptId !== task.attemptId ||
-        (task.sessionId && snapshot.sessionId !== task.sessionId)) return { state: "unknown", remoteStopped: false };
+        (task.sessionId && snapshot.sessionId !== task.sessionId) ||
+        (task.workspace && !this.journalMatchesWorkspace(task))) return { state: "unknown", remoteStopped: false };
     const remoteStopped = (snapshot.driver === "desktop-queue" || task.runtimeSource === "desktop_queue" ? hasNativeStopEvidence(snapshot) : Boolean(snapshot.stopReason)) && ["needs_review", "blocked", "failed", "cancelled"].includes(snapshot.status);
     const cancellationRequested = task.attemptId ? new RunJournal(runsDirectory(this.config), task.attemptId).cancellationRequested() : false;
     return {
@@ -643,8 +705,14 @@ export class TaskCoordinator {
         finally {trigger.close();}
       }
     }
+    // F-CAP-2: once the native side is really stopped, the cancelled workflow
+    // must close in this same call. Leaving the closure to a later read kept
+    // the shared capacity slot occupied by a task that can never dispatch
+    // again, and every new send was refused until the ledger was replaced.
+    let closed = request.updated;
+    try { closed = await this.sync(taskId); } catch { /* a later read still reconciles the same evidence */ }
     const execution = this.executionStatus(taskId);
-    return { ok: true, cancellationRequested: execution.cancellationRequested || request.requested, remoteStopped: execution.remoteStopped, executionState: execution.remoteStopped ? "stopped" : "stop_unconfirmed", execution, task: request.updated };
+    return { ok: true, cancellationRequested: execution.cancellationRequested || request.requested, remoteStopped: execution.remoteStopped, executionState: execution.remoteStopped ? "stopped" : "stop_unconfirmed", execution, task: closed };
   }
   requireTask(taskId: string): StoredTask {
     const task = this.store.get(taskId);

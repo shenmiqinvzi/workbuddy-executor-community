@@ -28,7 +28,25 @@ loadDotEnv();
 if (process.env.WORKBUDDY_WORKBENCH_DIAGNOSTICS === '1') console.error('[host] PATH=' + (process.env.PATH ?? '<unset>') + ' SystemRoot=' + (process.env.SystemRoot ?? '<unset>') + ' temp=' + (process.env.TEMP ?? '<unset>'));
 const config = loadConfig();
 // Never create an empty database because the launcher selected the wrong path.
-if (!fs.statSync(config.dbFile).isFile()) throw new Error('The configured task database must exist.');
+// A first install legitimately has no database, so name the variable that chose
+// this path and the one command that creates it, instead of failing with a bare
+// stat error that the window can only render as "not connected".
+const databasePath = config.dbFile;
+let databasePresent = false;
+try { databasePresent = fs.statSync(databasePath).isFile(); } catch { databasePresent = false; }
+if (!databasePresent) {
+    for (const line of [
+        '[host] The configured task database does not exist yet:',
+        '       ' + databasePath,
+        '       WORKBUDDY_DB_FILE chooses this path (unset means <install>/data/tasks.sqlite).',
+        '       On a first install, create it once from this folder:',
+        '         node scripts/init-state.mjs',
+        '       That helper refuses an existing file and creates nothing else.',
+        '       If this is not the ledger you meant, point WORKBUDDY_DB_FILE at the real one.'
+    ]) console.error(line);
+    console.error(JSON.stringify({ event: 'desktop_host_blocked', reason: 'task_database_missing', databasePath, hint: 'node scripts/init-state.mjs' }));
+    process.exit(2);
+}
 const store = openWorkbenchReadStore(config.dbFile, { dispatchFile: desktopJournal(config).file, runsDir: runsDirectory(config) });
 const coordinator = Object.freeze({ store });
 // R12: read-side dispatch-lease evidence from the same journal the read store
