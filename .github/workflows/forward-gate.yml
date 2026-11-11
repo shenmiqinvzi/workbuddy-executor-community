@@ -64,7 +64,7 @@ jobs:
         run: |
           npx tsx --test --test-concurrency=1 test/**/*.test.ts 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP\backend-suite.log" -Encoding utf8
           if ($LASTEXITCODE -ne 0) {
-            Select-String -Path "$env:RUNNER_TEMP\backend-suite.log" -Pattern 'not ok|✖' | Select-Object -First 8 | ForEach-Object { Write-Host "::error::$($_.Line.Trim())" }
+            $log = Get-Content "$env:RUNNER_TEMP\backend-suite.log"; for ($i = 0; $i -lt $log.Count; $i++) { if ($log[$i] -match '✖ .*\(\d+\.\d+ms\)') { Write-Host "::error::$($log[$i].Trim())"; for ($j = 1; $j -le 14 -and ($i + $j) -lt $log.Count; $j++) { $line = $log[$i + $j].Trim(); if ($line -and $line -notmatch '^✔') { Write-Host "::error::  $line" } }; break } }
             exit $LASTEXITCODE
           }
       - name: Workbench frontend tests
