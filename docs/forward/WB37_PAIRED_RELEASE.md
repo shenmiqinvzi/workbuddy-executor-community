@@ -1,9 +1,9 @@
-# WB37 配对发布包（release-wb41b）
+# WB37 配对发布包（release-wb41c）
 
-最终产物目录 `E:\javaproject\outputs\executor-plan-20261111\release-wb41b\`。
+最终产物目录 `E:\javaproject\outputs\executor-plan-20261111\release-wb41c\`。
 
 `release-wb37` / `-b` / `-c` / `-d` / `-wb38` / `-wb39` / `-wb40` 是过程中的早期构建，保留作对照；
-只有 **`release-wb41b`** 是本轮（REVIEW.md R1–R5 返修后）的候选，其余包的哈希与它不同是预期结果。
+只有 **`release-wb41c`** 是本轮（REVIEW.md R1–R5 返修后、且 live 故障修复 `898ecba` 之后）的候选，其余包的哈希与它不同是预期结果。
 
 > 为什么又往前一版：R2 让 readiness 的探针改走只读入口 `dist/health-entry.js`，R5 让安装包自带验收矩阵的
 > 四份输入。两者都改变了包内容，因此 wb40 的配对结果与哈希不再适用；`wb41` 是第一次打出的新结构，
@@ -13,13 +13,13 @@
 
 | 产物 | 文件 | 字节数 | SHA-256（条目数） |
 | --- | --- | --- | --- |
-| 网关 | `codex-workbuddy-gateway-v0.7.1.zip` | 2672611 | `f932d07f96331d3958156b48da14a8e2691e3ba6a578afae1b26173c224fc1f3`（798 条目） |
-| 桌面预览 | `desktop\workbuddy-desktop-v0.7.1-t7d-desktop-preview.zip` | 3101103 | `3b0b84dda9fe4a8e8f6e1858416b759fa6276e521f97936c92edf24274661160`（807 条目） |
+| 网关 | `codex-workbuddy-gateway-v0.7.1.zip` | 2676495 | `a7aaf4f80047bb3e1133f1f882ad8b24dd640bcae9b22f03085dcdaf14ed955b`（799 条目） |
+| 桌面预览 | `desktop\workbuddy-desktop-v0.7.1-t7d-desktop-preview.zip` | 3105024 | `c39a4426d6a08253b08e031a2eff5e8475749db373142078bd0e4ffe954517ff`（808 条目） |
 | 技能（Codex） | `workbuddy-executor-v0.7.1.zip` | 29367 | `2b39d81cc603219a2938b4cb234c708f5892bb76bf9fed8aaa211d798ba2f8c4`（6 文件） |
 | 技能（DSH 派生） | `deepseek-executor-v0.7.1.zip` | 4249 | `22909e1b0654df6eb13b3ccdcf5767ed78e094d416b891821a072c1004318d13`（2 文件） |
-| 网关清单 | `codex-workbuddy-gateway-v0.7.1.manifest.json` | 126898 | 逐文件 `bytes` + `sha256` |
-| 配对报告 | `E:\javaproject\outputs\executor-plan-20261111\wb41-pairing.json` | — | `ok: true` |
-| 候选预检 | `E:\javaproject\outputs\executor-plan-20261111\wb41-candidate-check.json` | — | `ok: true`，798 files，`problems: []` |
+| 网关清单 | `codex-workbuddy-gateway-v0.7.1.manifest.json` | 129142 | 逐文件 `bytes` + `sha256` |
+| 配对报告 | `E:\javaproject\outputs\executor-plan-20261111\wb41c-pairing.json` | — | `ok: true`，`problems: []` |
+| 候选预检 | `E:\javaproject\outputs\executor-plan-20261111\wb41c-candidate-check.json` | — | `ok: true`，`problems: []` |
 
 每个 ZIP 旁都有 `.sha256` 边车；清单里 `videoAcceptance` 仍为 `pending_user_verification`。
 
@@ -27,9 +27,9 @@
 
 | 项目 | 结果 |
 | --- | --- |
-| 共用文件（去包装后同路径） | **798**，全部逐字节相同 |
+| 共用文件（去包装后同路径） | **799**，全部逐字节相同 |
 | 必需共享清单（`REQUIRED_SHARED`） | 11 项全部存在，`missing: []` |
-| 清单互认条目 | **798**，逐个 `sha256`+`bytes` 相同，分歧 **0** |
+| 清单互认条目 | **799**，逐个 `sha256`+`bytes` 相同，分歧 **0** |
 | 两包各自的 manifest 与实际条目 | 双向一致（清单列出的都在包里，包里的都在清单里） |
 | 网关独有 / 桌面独有 | 0 / 9（`desktop/app/` 8 个编译产物 + `PREVIEW-START-HERE.md`，属允许例外） |
 | 版本 | 网关 `0.7.1`、桌面 `0.7.1-t7d-desktop-preview`（`versionCore` 相同，允许配对） |
@@ -44,9 +44,9 @@ R4 之后 `verify-pairing` 不再只比交集：缺必需文件、缺清单、�
 
 | 步骤 | 命令 | 结果 |
 | --- | --- | --- |
-| 解包 | `tar -xf release-wb41b\codex-workbuddy-gateway-v0.7.1.zip -C install-wb41` | exit 0 |
-| 首跑依赖 | `node scripts/bootstrap.mjs --install-root . --apply` | exit 0（`wb41-bootstrap.log`） |
-| **包内验收自检** | `node scripts/check-acceptance-matrix.mjs` | **exit 0**：`acceptance matrix ok: 53 scenarios, 31 original tasks mapped`（`wb41-installed-acceptance.log`） |
+| 解包 | `tar -xf release-wb41c\codex-workbuddy-gateway-v0.7.1.zip -C install-wb41c` | exit 0 |
+| 首跑依赖 | `node scripts/bootstrap.mjs --install-root . --apply` | exit 0（wb41b 包上已验证；wb41c 结构相同，本轮只复跑无需依赖的自检） |
+| **包内验收自检** | `node scripts/check-acceptance-matrix.mjs` | **exit 0**：`acceptance matrix ok: 53 scenarios, 31 original tasks mapped`（本轮 `wb41c` 复跑同结果） |
 | 技能自检 | `node scripts/sync-skill.mjs --check --json` | exit 0，`sourceMode: "bundled"`，三副本 inSync（`wb41-installed-skill-check.json`） |
 | 只读诊断 | `node scripts/readiness.mjs --json`（临时库路径） | 跑完且 `tasks.sqlite` 前后均**不存在**（`wb41-installed-readiness.json`） |
 
@@ -54,7 +54,7 @@ R4 之后 `verify-pairing` 不再只比交集：缺必需文件、缺清单、�
 `nativeOnline blocked`（本机桥未连接），`projectSessionDispatchable unknown`、`candidateDeployed unknown`、
 `desktopPageReady absent`——与 `WB06_READINESS_FACTS.md` 的契约一致，没有把未观测层写成 ready。
 
-## 4 升级与回退（已在 wb40 演练，wb41b 结构相同）
+## 4 升级与回退（已在 wb40 演练，wb41c 结构相同）
 
 | 动作 | 命令 | 观察 |
 | --- | --- | --- |
@@ -73,8 +73,8 @@ R4 之后 `verify-pairing` 不再只比交集：缺必需文件、缺清单、�
 ```
 node scripts/generate-snapshot-manifest.mjs
 node verify-snapshot.mjs
-node scripts/package.mjs ..\..\..\outputs\executor-plan-20261111\release-wb41b
-node scripts/package-desktop.mjs ..\..\..\outputs\executor-plan-20261111\release-wb41b\desktop
+node scripts/package.mjs ..\..\..\outputs\executor-plan-20261111\release-wb41c
+node scripts/package-desktop.mjs ..\..\..\outputs\executor-plan-20261111\release-wb41c\desktop
 node scripts/verify-pairing.mjs <网关 zip> <桌面 zip>
 node scripts/candidate-installation.mjs check --package <网关 zip> --expect-sha256 <sha>
 ```
@@ -86,7 +86,7 @@ node scripts/candidate-installation.mjs check --package <网关 zip> --expect-sh
 
 ## 6 这证明了什么 / 不证明什么
 
-证明了：两个包的内容一致（798 文件逐字节相同）、清单与实际条目互相吻合、必需文件齐备、
+证明了：两个包的内容一致（799 文件逐字节相同）、清单与实际条目互相吻合、必需文件齐备、
 安装树里的维护脚本和验收矩阵能独立跑起来、只读诊断不会建库。
 
 不证明了：安装后的**运行身份**切换、桌面窗口的面板渲染（WebView2 控制器在本机不可用，见

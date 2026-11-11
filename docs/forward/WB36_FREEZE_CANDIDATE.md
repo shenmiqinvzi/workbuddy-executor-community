@@ -96,11 +96,16 @@ REVIEW.md 的五项返修（见 [REVIEW_R1_R5_FIXES](REVIEW_R1_R5_FIXES.md)）�
 
 | 项目 | 当前值 |
 | --- | --- |
-| 后端套件 | `suite-r5b.log`：1586 tests / 1574 pass / 0 fail / 12 skip（204.1s） |
+| 后端套件（串行，CI 同款命令） | `suite-npx-tsx.log`：**1590 tests / 1578 pass / 0 fail / 12 skip（1435s）** |
+| 后端套件（串行，`node --import tsx`） | `suite-ci-serial.log`：1590 / 1578 / 0 / 12（1470.8s） |
 | 工作台套件 | 169/169（`wb36-workbench.log`，未受返修影响） |
 | 桌面策略测试 | 133 pass / 0 fail（`wb36-desktop.log`，未受返修影响） |
-| 快照清单 | 467 文件，摘要 `b8fd2b1a34912c5ef57f363e1d34dc3288b21a615f615c7b56255952c774eeb0` |
-| 候选产物 | `release-wb41b`（网关 `f932d07f…`、桌面 `3b0b84dd…`、共用 798 文件） |
+| 快照清单 | 468 文件，`verify-snapshot.mjs` `hashesMatch:true` |
+| 候选产物 | `release-wb41c`（网关 `a7aaf4f8…`、桌面 `c39a4426…`、共用 799 文件） |
+
+两条串行口径都在本机（Windows 24.19.0、空 `WORKBUDDY_CONFIG_DIR`）跑过且全绿，说明 CI 第 10 步的失败不是
+「串行跑就会红」这类系统性差异；`forward-gate.yml` 现在会把失败行打成 `::error::` 注解，下一次运行可直接
+读到测试名。
 
 新增的两个入口是本轮引入的：`src/health-entry.ts`（只读 MCP 入口）与 `src/health-report.ts`（health 主体）。
 `dist/health-entry.js` 现在是 readiness tool 层的必要条件，也是配对必需文件之一。

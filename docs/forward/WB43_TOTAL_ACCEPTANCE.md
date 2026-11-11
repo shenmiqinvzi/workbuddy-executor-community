@@ -23,7 +23,7 @@
 | 通知与导出 | WB30 / WB31 | done_source | `wb25-wb31.log` 92/92 |
 | 跨能力异常与安全 | WB32 / WB33 | done_source | 145/145、63/63 |
 | 矩阵与实机 | WB34 / WB35 | blocked_external / blocked_external（live 端闭环已跑通） | 矩阵 53/53 有行有据；WB35 已取到真实窗口、分阶段失败、7 次真实派工与三类失败路径，并跑通两次完整 accept 闭环（`live-accept-014`/`015` → `accepted`，见 [WB35_LIVE](WB35_LIVE_NATIVE_RUN.md) §3.6）；仍缺真实 DSH 端闭环、面板渲染、`turn_end` |
-| 冻结与配对 | WB36 / WB37 | done_source | `suite-r5b.log` 1586/1574/0/12；`wb41-pairing.json` ok、798 共用、`wb41-candidate-check.json` `problems:[]` |
+| 冻结与配对 | WB36 / WB37 | done_source | `suite-npx-tsx.log` 1590/1578/0/12（串行）；`wb41c-pairing.json` ok、799 共用、`wb41c-candidate-check.json` `problems:[]` |
 | 安装与第二台机 | WB38 / WB39 | done_source / blocked_external | 隔离根完成解包/依赖/建库/doctor/部署检查/技能落位，并做完整**升级与回退演练**（升到 wb40 后 `skill:check` exit 0、回退后 doctor exit 0，见 [WB37](WB37_PAIRED_RELEASE.md) §4）；改写运行安装与第二台 Windows 仍缺 |
 | 文档与许可 | WB40 / WB41 | done_source / blocked_external | README 唯一入口 + 手册；依赖披露完成，许可证与签名属权利人 |
 | CI 与发行 | WB42 / WB43 | blocked_external | workflow 就绪、本地复演完成；远端回执与发行授权缺 |
@@ -41,12 +41,12 @@
 
 | 项 | 值 |
 | --- | --- |
-| 后端套件 | 1586 tests / 1574 pass / **0 fail** / 12 skip（`suite-r5b.log`，204.1s；R1–R5 返修之后） |
+| 后端套件 | **1590 tests / 1578 pass / 0 fail / 12 skip**（串行，CI 同款 `npx tsx` 命令，1435s，`suite-npx-tsx.log`；`node --import tsx` 口径 1470.8s，`suite-ci-serial.log`） |
 | 工作台前端 | 169 / 169 |
 | 桌面策略 | 133 pass / 0 fail / 1 skip |
 | 验收矩阵 | 53 项齐全，`npm run acceptance:check` 通过 |
-| 配对包 | 网关 2672611 B `f932d07f…`；桌面 3101103 B `3b0b84dd…`；共用 **798** 文件逐字节相同、`problems:[]`、单边文件 0（`release-wb41b`） |
-| 快照清单 | 467 文件，`verify-snapshot.mjs` exit 0 |
+| 配对包 | 网关 2676495 B `a7aaf4f8…`；桌面 3105024 B `c39a4426…`；共用 **799** 文件逐字节相同、`problems:[]`、网关独有 0（`release-wb41c`） |
+| 快照清单 | 468 文件，`verify-snapshot.mjs` `hashesMatch:true` |
 | 改动规模 | 82 条路径（含 22 份 `docs/forward` 文档与 15 个新增源/测试文件） |
 | 安装包自检 | 解包 → `bootstrap --apply` → `node scripts/check-acceptance-matrix.mjs` 在**安装树内** exit 0；`readiness --json` 前后 `tasks.sqlite` 均不存在 |
 
@@ -57,7 +57,7 @@
 3. **真实 DSH 端闭环**（WB35 的另一半）：本机 dsh 适配器 `adapter_disabled`，没有可用的 DSH 主机连接。
 4. **改写运行安装**（WB08/WB38 剩余部分）：隔离根已跑通解包 → 依赖 → 建库 → doctor → 部署检查 → 技能落位，并完成**升级与回退演练**；没做的是把运行安装 `gateway-v0.7.1-final2` 的常驻服务切到候选。
 5. **自动模式第二层**（WB26/WB29）：ADR-01 已写清边界，启用需用户明确给出逐任务规则（范围、窗口、预算、期限）。
-6. **远端 CI 全绿**（WB42）：`b8d0c09` 起 `Release pairing` 已 12/12 步全绿（`43029275765`），`Forward gate` 的零作业失败已修（job 级 `env` 用了 `${{ runner.temp }}`），当前卡在 `e0b2a1a` 的第 10 步「Backend suite, serial」。
+6. **远端 CI 全绿**（WB42）：`b8d0c09` 起 `Release pairing` 已 12/12 步全绿（`43029275765`），`Forward gate` 的零作业失败已修（job 级 `env` 用了 `${{ runner.temp }}`），`e0b2a1a` 仍卡在第 10 步「Backend suite, serial」，但同一条串行命令在本机两口径全绿（1590/1578/0），已把失败行改成 `::error::` 注解，下一次运行直接给出测试名。`898ecba` 是当前候选提交。
 7. **许可证选择与代码签名**（WB41）：权利人与证书都不在本机。
 8. **第二台物理 Windows**（WB39）。
 9. **真实资源来源联调**（WB16/WB19/WB20）：需要用户可访问的只读来源与上游金额/额度回报。
