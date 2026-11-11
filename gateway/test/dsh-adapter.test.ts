@@ -510,5 +510,5 @@ test("a contract with a valid CommandSpec check still dispatches through the sha
   const sent = await f.coordinator.send({ contract, objective: contract.objective, sessionId: "original-session" });
   assert.equal(sent.ok, true); assert.equal(sent.created, true);
   assert.deepEqual(f.counts(), { prompts: 1, selections: 1 });
-  assert.equal(f.store.get("dsh-spec")!.acceptanceCommands.length, 1);
+  assert.equal(f.store.get("dsh-spec")?.acceptanceCommands?.length, 1);
 });

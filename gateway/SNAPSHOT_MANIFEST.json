@@ -1510,8 +1510,8 @@
     },
     {
       "path": "test/dsh-adapter.test.ts",
-      "sha256": "32dbdb15bdfad7eaf8107cba6d86adb6d13c17f401e05f3a560c5f348249f362",
-      "bytes": 41289
+      "sha256": "0468bb923f039e2afde84a5e35950cac74f45c219efc3b23af35e51432282a51",
+      "bytes": 41290
     },
     {
       "path": "test/dsh-discovery.test.ts",
