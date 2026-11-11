@@ -5,6 +5,19 @@ WB35 = `blocked_external`（真实窗口已出现并按阶段给出状态文案�
 
 口径：本文件只登记**实际跑过**的步骤与输出。窗口出现过不等于面板通过，安装成功不等于派工成功。
 
+## 补充：升级与回退演练（release-wb40）
+
+安装演练之后又在隔离根上做了真实的替换演练，细节与命令见 [WB37](WB37_PAIRED_RELEASE.md) §4：
+
+| 步骤 | 结果 |
+| --- | --- |
+| 备份原目录 | 整棵保留为 `…-plan20261111.rollback-wb37c` |
+| 解包 wb40 到安装根 | tar exit 0，包内出现 `scripts/sync-skill.mjs`、`scripts/verify-pairing.mjs` |
+| 首跑 | `npm ci` 8393ms；`doctor` exit 0；`sync-skill --check` exit 0（`sourceMode:"bundled"`） |
+| 回退 | 删除升级树 + 还原备份；`doctor` exit 0，旧包 `skill:check` 复现「脚本不存在」 |
+
+说明：回退**不改善**旧包，只把它恢复成升级前的确切状态 —— 这正是回退要证明的事。
+
 ## 1. 安装演练（从 release 包到可首跑）
 
 | 步骤 | 命令 | 结果 |

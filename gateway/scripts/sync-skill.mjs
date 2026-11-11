@@ -58,13 +58,20 @@ function sameAs(sourceEntries, entries) {
  */
 export async function inspectSkillCopies(sources) {
   const canonical = await readCopy(sources.source);
+  // A packaged installation carries no repository root: the bundled copy is the
+  // only source it has. Comparing it with the missing checkout would report a
+  // drift that no command inside that installation could ever remove, so the
+  // bundled copy becomes the reference there.
+  const packed = canonical["SKILL.md"]?.state === "missing";
+  const reference = packed ? await readCopy(sources.bundled) : canonical;
   const bundled = await readCopy(sources.bundled);
   const report = {
     source: sources.source,
     bundled: sources.bundled,
-    files: canonical,
+    sourceMode: packed ? "bundled" : "repository",
+    files: reference,
     copies: {
-      bundled: { directory: sources.bundled, inSync: sameAs(canonical, bundled), drift: Object.keys(bundled).filter(name => canonical[name]?.sha256 !== bundled[name]?.sha256), entries: bundled },
+      bundled: { directory: sources.bundled, inSync: packed || sameAs(canonical, bundled), drift: packed ? [] : Object.keys(bundled).filter(name => canonical[name]?.sha256 !== bundled[name]?.sha256), entries: bundled },
     },
   };
   for (const [label, entry] of Object.entries(sources.installed ?? {})) {
@@ -73,7 +80,7 @@ export async function inspectSkillCopies(sources) {
     // The DSH skill is a derived variant with its own source; comparing it to the
     // Codex skill would report drift that no installer can ever remove.
     const ownSource = typeof entry === "string" ? null : entry.source ?? null;
-    const expected = ownSource ? await readCopy(ownSource, files) : canonical;
+    const expected = ownSource ? await readCopy(ownSource, files) : reference;
     const entries = await readCopy(directory, files);
     report.copies[label] = {
       directory,

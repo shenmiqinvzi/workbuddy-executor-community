@@ -46,7 +46,7 @@ node scripts/bootstrap.mjs --install-root . --apply
 ```powershell
 node scripts/candidate-installation.mjs check `
   --package .\codex-workbuddy-gateway-v0.7.1.zip `
-  --expect-sha256 f160410a933fa3e90a659a82f188f3ad087eceb6c4338335036415256fc26631
+  --expect-sha256 3897d4e2163bf3abbf6b6e1209d44eda34fd73e5890fbc23b0d6416174849a0d
 # → ok: true, 782 files, problems: []
 ```
 

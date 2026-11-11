@@ -143,6 +143,28 @@ function examplesIn(filename) {
   }).filter(item => item.includes('"executable"'));
 }
 
+test("a packaged installation compares installed copies with its bundled skill", async t => {
+  // The release zip ships `skills/workbuddy-executor` but not the repository root,
+  // so `npm run skill:check` inside an installation must treat the bundled copy as
+  // the reference. Otherwise every installed copy reports drift that no command in
+  // that installation could ever remove.
+  const source = tempRoot(t);
+  const bundled = tempRoot(t);
+  const installed = tempRoot(t);
+  copySkill(bundled);
+  copySkill(installed);
+  const packed = await inspectSkillCopies({ source, bundled, installed: { codex: { directory: installed } } });
+  assert.equal(packed.sourceMode, "bundled");
+  assert.equal(packed.copies.bundled.inSync, true, "the bundled copy is the reference, not drift");
+  assert.equal(packed.copies.codex.inSync, true, "an installed copy matching the bundled skill is in sync");
+  assert.equal(packed.inSync, true);
+
+  fs.appendFileSync(path.join(installed, "SKILL.md"), "extra\n");
+  const drifted = await inspectSkillCopies({ source, bundled, installed: { codex: { directory: installed } } });
+  assert.deepEqual(drifted.copies.codex.drift, ["SKILL.md"]);
+  assert.equal(drifted.inSync, false);
+});
+
 test("every shipped CommandSpec example parses after the documented substitutions", t => {
   const workspace = tempRoot(t);
   fs.writeFileSync(path.join(workspace, "RESULT.md"), "done\n");

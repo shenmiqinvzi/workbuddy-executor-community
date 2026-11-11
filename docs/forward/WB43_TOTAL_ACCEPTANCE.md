@@ -22,20 +22,28 @@
 | 通知与导出 | WB30 / WB31 | done_source | `wb25-wb31.log` 92/92 |
 | 跨能力异常与安全 | WB32 / WB33 | done_source | 145/145、63/63 |
 | 矩阵与实机 | WB34 / WB35 | blocked_external / blocked_external（live 部分已取） | 矩阵 53/53 有行有据；WB35 已取到真实窗口、分阶段失败、7 次真实派工与三类失败路径（见 [WB35_LIVE](WB35_LIVE_NATIVE_RUN.md)），面板渲染与完整 accept 闭环仍缺 |
-| 冻结与配对 | WB36 / WB37 | done_source | `suite-wb38.log` 1563/1551/0/12；`wb38-pairing.json` ok、782 共用 |
-| 安装与第二台机 | WB38 / WB39 | blocked_external | 本机隔离根已完成解包/依赖/建库/doctor/部署检查/技能落位（installed 证据）；升级回退与切换运行安装、第二台 Windows 仍缺 |
+| 冻结与配对 | WB36 / WB37 | done_source | `suite-wb40.log` 1564/1552/0/12；`wb40-pairing.json` ok、785 共用、`wb40-candidate-check.json` `problems:[]` |
+| 安装与第二台机 | WB38 / WB39 | done_source / blocked_external | 隔离根完成解包/依赖/建库/doctor/部署检查/技能落位，并做完整**升级与回退演练**（升到 wb40 后 `skill:check` exit 0、回退后 doctor exit 0，见 [WB37](WB37_PAIRED_RELEASE.md) §4）；改写运行安装与第二台 Windows 仍缺 |
 | 文档与许可 | WB40 / WB41 | done_source / blocked_external | README 唯一入口 + 手册；依赖披露完成，许可证与签名属权利人 |
 | CI 与发行 | WB42 / WB43 | blocked_external | workflow 就绪、本地复演完成；远端回执与发行授权缺 |
+
+## 2.5 本轮补的三件事（提交之后）
+
+提交 `41e9595` 之后又做了三项，均已并入上面的状态与数字：
+
+1. **发布包自检缺口**：wb37c 时代的包里没有 `scripts/sync-skill.mjs`、`scripts/verify-pairing.mjs`、`scripts/check-acceptance-matrix.mjs`，但 `package.json` 的 `skill:check` / `release:pairing` / `acceptance:check` 都指向它们 —— 装好的包跑不了自己文档里的自检。修法：三个脚本进 `scripts/package.mjs` 允许清单；`sync-skill.mjs` 在没有仓库根时以 bundled 副本为参照（`sourceMode:"bundled"`），并加一条用例锁住。release-wb40 起可用。
+2. **升级/回退演练**：隔离根真实替换（备份 → 解包 wb40 → bootstrap/doctor/skill:check → 删除并还原备份 → doctor 复验），升级与回退都可逆，回退回到旧包的确切状态（含它的自检缺口）。
+3. **live 派工新证据**：`live-accept-010` 走通「派工 → 原生认领 → 真实回合 → 写盘 `RESULT.md=TOTAL=11` → 报告到达」，但原生最后一条工具调用没有终态 `tool_call_update`，产品判 `stop_unconfirmed` → `blocked`，单槽被占用、再派工 `CAPACITY_OCCUPIED`。这是 FIX02 的残留形态，按停止围栏**拒绝放行是对的**；放宽规则会推翻 WB04 四类样本判据，已回退该尝试。桥接缺口仍是原生 `turn_end` 事件。
 
 ## 3. 本轮数字
 
 | 项 | 值 |
 | --- | --- |
-| 后端套件 | 1563 tests / 1551 pass / **0 fail** / 12 skip（`suite-wb38.log`，408.7s） |
+| 后端套件 | 1564 tests / 1552 pass / **0 fail** / 12 skip（`suite-wb40.log`，401.4s） |
 | 工作台前端 | 169 / 169 |
 | 桌面策略 | 133 pass / 0 fail / 1 skip |
 | 验收矩阵 | 53 项齐全，`npm run acceptance:check` 通过 |
-| 配对包 | 网关 2604199 B `f160410a…`；桌面 3031998 B `a9fd2342…`；共用 782 文件逐字节相同（`release-wb38`） |
+| 配对包 | 网关 2614018 B `3897d4e2…`；桌面 3041940 B `fb03b905…`；共用 785 文件逐字节相同（`release-wb40`） |
 | 快照清单 | 464 文件，`verify-snapshot.mjs` exit 0 |
 | 改动规模 | 77 条路径（含 21 份 `docs/forward` 文档与 12 个新增源/测试文件） |
 

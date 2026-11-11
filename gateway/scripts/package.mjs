@@ -48,7 +48,7 @@ const DIRECTORY_RULES = new Map([
   ["src", /\.ts$/],
   ["test", /\.test\.ts$/],
   ["docs", /^(?:INSTALL_WINDOWS|DEPLOYMENT_ACCEPTANCE|OPERATION_RECOVERY|video-explanation|FAILURE_REVIEW|USER_ACCEPTANCE|CODEX_WORKFLOW|QUEUE_WORKER|DEEPSEEK|AGENT_HUB_DESIGN|AGENT_HUB|RELEASE_NOTES|WORKBENCH)\.md$/],
-  ["scripts", /^(?:bounded-job\.ps1$|(?:build-desktop|open-workbench|workbench-desktop-host|package-desktop|zip|verify-release|verify-desktop|setup|doctor|deployment-check|package|init-state|install-skill|install-deepseek-skill|install-deepseek-plugin|dsh-host-check|plan|deepseek-call|workbuddy-call|workbuddy-inspect|agent-hub-call|resource-source-acceptance|candidate-installation|delivery-baseline|live-acceptance-fixture|automation|readiness|bootstrap)\.mjs$)/],
+  ["scripts", /^(?:bounded-job\.ps1$|(?:build-desktop|open-workbench|workbench-desktop-host|package-desktop|zip|verify-release|verify-desktop|setup|doctor|deployment-check|package|init-state|install-skill|install-deepseek-skill|install-deepseek-plugin|sync-skill|verify-pairing|check-acceptance-matrix|dsh-host-check|plan|deepseek-call|workbuddy-call|workbuddy-inspect|agent-hub-call|resource-source-acceptance|candidate-installation|delivery-baseline|live-acceptance-fixture|automation|readiness|bootstrap)\.mjs$)/],
   ["bin", /^(?:workbuddy-(?:gateway|cli|doctor|worker|service|recovery)(?:\.cmd)?|deepseek-gateway|agent-hub(?:-mcp)?)$/],
   ["dist", /\.(?:js|js\.map|d\.ts)$/],
   ["skills", /^(?:SKILL\.md|openai\.yaml|setup\.md)$/],

@@ -69,3 +69,22 @@ dotnet run --project desktop/test/PolicyTests.csproj --configuration Release
 - 提交与远端 CI 回执：工作区未提交、未推送（用户未要求），WB42 的「最终 HEAD 的 CI 成功回执」仍是外部条件。
 - 实机/实窗：本报告只证明源码级候选自洽，不证明安装后的运行身份，也不证明真实窗口。
 - 序列化耗时：全量 454811ms 为本机与当前并发度下的数值，不作跨机承诺。
+
+## 6. 补记：提交之后、wb40 之前的增量
+
+§1–§4 描述的是 `suite-wb38.log` 时的候选（65 条改动、未提交）。此后发生了三件事，冻结身份随之改变：
+
+1. **提交并推送**：`git add -A` + commit `41e9595`（`feat(executor): enforce CommandSpec admission, staged supervisors, readiness probes and paired releases`）→ `git push -u origin feat/executor-plan-20261111`。HEAD 因此从基线 `0919201` 前进到 `41e9595c35d4260db2df54813c96c8b358cd9b54`。
+2. **移除两个本机排障脚本**：`gateway/scripts/live-call.local.mjs`、`gateway/scripts/probe-send.local.mjs` 是 live 实测时的临时客户端，随 `41e9595` 误提交，现已从索引移除（证据副本留在 `outputs/executor-plan-20261111/`，文档写清「复制进 gateway/scripts 才能解析 SDK」）。
+3. **修掉发布包自检缺口**（见 [WB37](WB37_PAIRED_RELEASE.md) §3）：`scripts/package.mjs` 的 `scripts` 允许清单补入 `sync-skill.mjs`、`verify-pairing.mjs`、`check-acceptance-matrix.mjs`；`scripts/sync-skill.mjs` 在没有仓库根时以 bundled 副本为参照（`sourceMode: "bundled"`），并加一条用例锁住。
+
+| 项 | 值（wb40 候选） |
+| --- | --- |
+| HEAD | `41e9595c35d4260db2df54813c96c8b358cd9b54`（已在 `origin/feat/executor-plan-20261111`） |
+| 未提交改动 | 9 条路径（3 个脚本/文档改动 + 2 个删除 + 文档） |
+| 清单 | 464 文件，`verify-snapshot.mjs` exit 0 |
+| 清单摘要 | `db644246289045c0615e3750bfb1e20715cdfcfa6c8e1ac48907c41f7f2c1cdc` |
+| 后端全量 | `outputs\executor-plan-20261111\suite-wb40.log`（本轮最后一次全量，数字以该日志为准） |
+
+产物的最终身份以 [WB37](WB37_PAIRED_RELEASE.md) 的 `release-wb40` 为准。
+

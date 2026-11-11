@@ -162,6 +162,11 @@
 | source | E:\\javaproject\\outputs\\executor-plan-20261111\\wb32-fault-matrix.log | 故障/恢复/停止 10 文件 | 145 tests / 145 pass / 0 fail |
 | source | E:\\javaproject\\outputs\\executor-plan-20261111\\wb33-security.log | 路径/HTTP/资源 5 文件 | 63 tests / 63 pass / 0 fail |
 | source | gateway/workbench/test/recommendation-view.test.mjs + gateway/test/executor-modes-consistency.test.ts | WB10/WB12/WB24 | 12/12 与 3/3（本轮新增 4 + 3 例） |
+| source | `E:\javaproject\outputs\executor-plan-20261111\wb40-pairing.json`、`wb40-candidate-check.json` | release-wb40 两个 ZIP | `ok:true`、shared 785 全同、mismatched 0、清单互认 785/0 分歧、`problems:[]` |
+| source | `gateway/test/skill-sync.test.ts`（新例 `a packaged installation compares installed copies with its bundled skill`） | 包内自检参照 bundled | 9/9 通过；故意改一字节仍报 `SKILL.md` 漂移 |
+| installed | `E:\javaproject\outputs\executor-plan-20261111\wb40-installed-skill-check.json`、`wb40-upgrade-tar.log` | 升级到 release-wb40 的隔离根 `gateway-v0.7.1-plan20261111-wb40` | 解包 exit 0、`npm ci` 8393ms、`skill:check` exit 0（`sourceMode:"bundled"`、三副本 inSync）、doctor exit 0 |
+| installed | `E:\javaproject\outputs\executor-plan-20261111\wb40-rollback-doctor.log` | 回退到升级前目录 | doctor exit 0；旧包 `skill:check` 复现「脚本不存在」→ 回退回到原样。见 [WB37](WB37_PAIRED_RELEASE.md) §4 |
+| live（部分） | `E:\javaproject\outputs\executor-plan-20261111\live-010-state4.log`、`live-health.log`、`native-dump4.json` | 真实 WorkBuddy + `live-config/tasks-2.sqlite` | `live-accept-010`：原生认领 → 真实回合 → 写盘 `RESULT.md=TOTAL=11` → `report_received` → **`stop_unconfirmed`/`blocked`**（`call_f6f3bbab…` 无终态）。派工链路证明，验收闭环仍未达成；单槽被该任务占用。见 [WB35_LIVE](WB35_LIVE_NATIVE_RUN.md) §3.5 |
 
 ## 6. 与 `SCENARIO_INDEX` 的差异（口径恢复）
 

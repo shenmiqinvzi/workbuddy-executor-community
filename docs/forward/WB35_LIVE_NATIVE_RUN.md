@@ -36,6 +36,35 @@
 6. **失败即停**：429/502/无报告三种失败都收敛为 `blocked` + `No automatic resend`，产物保留不删。
 7. **会话复用**：返工落在同一 `sessionId`；任务被取消后再派工会换新会话（`7143d993…` → `0fa6a0a6…`），不会把取消过的会话当可复用目标。
 
+## 3.5 第 8 次（`live-accept-010`）：派工链路全通，停止证据缺失
+
+这一轮换到全新库（`live-config/tasks-2.sqlite` + `runs-2`）后，派工链路第一次完整走通到「原生真的干活并写出产物」：
+
+| 阶段 | 结果 |
+| --- | --- |
+| `send_task` | `created:true`，`state:queued`，revision `KcV8F2mraOVWgTWj` |
+| 原生认领 | 系统消息「The verified native WorkBuddy desktop conversation claimed this task.」 |
+| 模型回合 | 助手消息说明「读取 NUMBERS.txt（5 和 6），求和 11，将 RESULT.md 覆写为单行 TOTAL=11」 |
+| 产物 | `live-workspace2\RESULT.md` = `TOTAL=11`（真写盘，非自述） |
+| 报告 | `execution.state=report_received`、`reportDigestPresent:true` |
+| 停止 | **`stop_unconfirmed` → `blocked`**，`displayState=waiting_stop`、`allowedActions:[]` |
+
+原因是原生侧那次回合的最后一个工具调用（`call_f6f3bbab7d6c4d748338bdb6`）一直停在 `in_progress`，没有拿到终态 `tool_call_update`；会话本身已 `terminated`（应用库 `sessions.status=terminated`），但渲染层历史里这条记录不会自己收敛。`workbuddy_health` 的 `nativeHealth.diagnostics` 如实点名：
+
+```json
+{"state":"busy","diagnostics":{"stillBusy":["unfinishedTools"],
+ "pendingToolCalls":[{"toolCallId":"call_f6f3bbab7d6c4d748338bdb6","status":"in_progress"}],
+ "requiredUpstreamEvidence":[
+  "a native event that binds each unfinished tool call to a finished turn (attempt or wake identity, or a terminal tool_call_update)",
+  "or a daemon signal that the current turn ended for this session"]}}
+```
+
+**处置决定（重要）**：我曾试过把规则放宽成「会话状态终态 + 不在 daemon 活跃表 ⇒ 把未收敛的工具记录当历史」。这会直接推翻 WB04 已固化的判据（`test/native-desktop-trigger.test.ts` 的四类样本里，「当前回合的 pending 调用 stays busy」正是其中一条），等于用「状态看起来结束了」替代「原生给出停止证据」。按停止围栏不做这个放宽 —— 改动已回退，四类样本 38 通过 / 6 跳过 / 0 失败。
+
+因此本任务的正确结局就是 **blocked（stop_unconfirmed）**，而且它占着单槽容量：再派工一律 `CAPACITY_OCCUPIED`（`An original workflow remains open or uncertain (task live-accept-010)`）。释放路径只有两条，都不许自动化：①原生补发那条终态事件；②操作员在有 TTY 的恢复控制台里用 `bin\workbuddy-recovery.cmd` 查看证据后人工确认（`recovery-cli.ts` 要求 `process.stdin.isTTY && process.stdout.isTTY` 才接受确认命令）。
+
+这正是 WB04 文档里写的桥接缺口：需要原生新增 `turn_end` 事件（`turnId/wakeId/messageRequestId/status/seq`），让「回合结束」有可绑定到 attempt 的终态证据，而不是靠一个不会收敛的工具记录。
+
 ## 4. 没证明的部分（如实记）
 
 - **完整验收闭环没有跑完**：没有一次拿到「认证报告 + 命令证据 + 独立审查 + accept」齐全的 `accepted` 任务。卡点不在源码，而在本机网络：系统代理 127.0.0.1:7890 在上游模型流上间歇 502（`socket hang up`），以及 provider 侧 429。7 次里 0 次走到 `accept_task`。

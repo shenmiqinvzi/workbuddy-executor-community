@@ -490,8 +490,8 @@
     },
     {
       "path": "scripts/package.mjs",
-      "sha256": "9d4f2fd57cd186be7b163827bb9d8bfb204d3bb317ed14fd7e550a1a8e2a5dac",
-      "bytes": 19804
+      "sha256": "21da2f2f69ea52436de5bc9b35c66b861d29c995e5bf0245732ba658e4111107",
+      "bytes": 19854
     },
     {
       "path": "scripts/plan.mjs",
@@ -515,8 +515,8 @@
     },
     {
       "path": "scripts/sync-skill.mjs",
-      "sha256": "74b28119850ba7e410d90a43c0f78ba3cdeb771eb4d3df8047e703c6ec1f7826",
-      "bytes": 8474
+      "sha256": "480ebd4435cf8be48071bc54696eaa802429191c884db8463eb6df8e8b7f1e4e",
+      "bytes": 8969
     },
     {
       "path": "scripts/uninstall-local.ps1",
@@ -1830,8 +1830,8 @@
     },
     {
       "path": "test/skill-sync.test.ts",
-      "sha256": "0a8547d300cf7dd8a8a144fce7f43cfc3cf710272d661864b97a0a0e8f2eba3f",
-      "bytes": 8304
+      "sha256": "5fbf65e2815172fb2ea66b55c6a191863c43ff6186361dbb64361d07da3ca542",
+      "bytes": 9522
     },
     {
       "path": "test/sqlite-busy.test.ts",
