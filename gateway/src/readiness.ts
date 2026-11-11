@@ -41,10 +41,29 @@ export interface ReadinessReport {
   schema: typeof READINESS_SCHEMA;
   readOnly: true;
   observedAt: string;
+  /** Which process answered, and which probes it actually ran. */
+  observer: ReadinessObserver;
   selection: SelectionReport;
   layers: ReadinessLayer[];
   nextAction: { layer: ReadinessLayerName | "dispatch" | "selection"; action: string } | null;
   notes: string[];
+}
+
+/**
+ * Readiness is a statement about one observer. The CLI, the desktop host and the
+ * tool process each see a different set of things: a probe that was never
+ * injected in this process cannot support a "ready" answer, so the report names
+ * its origin, its pid and which probes it ran. Without this, a report copied
+ * from another process reads as if this process had verified it.
+ */
+export interface ReadinessObserver {
+  origin: string;
+  pid: number;
+  platform: string;
+  node: string;
+  root: string;
+  dataRoot: string | null;
+  probes: { tool: "injected" | "not_observed"; native: "injected" | "not_observed" };
 }
 
 /**
@@ -67,6 +86,10 @@ export interface RuntimeSummary {
   release?: string;
   updatedAt?: string;
   status?: string;
+  /** Data directory the running service serves. A summary from another database proves nothing here. */
+  dataRoot?: string;
+  /** When that service started; together with updatedAt it separates "same process" from "an old file". */
+  startedAt?: string;
 }
 
 export interface DesktopWindowObservation {
@@ -82,6 +105,8 @@ export interface ReadinessProbes {
 
 export interface ReadinessOptions extends DiscoveryOptions {
   root?: string;
+  /** Entry that asked, e.g. "scripts/readiness.mjs"; recorded so a copied report cannot pass as this process's evidence. */
+  origin?: string;
   config?: Config;
   /** Set when the caller could not resolve a config; reported as unknown, never as "no database". */
   configError?: string;
@@ -184,6 +209,10 @@ export function readRuntimeSummary(projectDir: string): { found: boolean; summar
       release: typeof runtime?.release === "string" ? runtime.release : undefined,
       updatedAt: typeof record.updatedAt === "string" ? record.updatedAt : undefined,
       status: typeof record.status === "string" ? record.status : undefined,
+      // A summary written before these fields existed stays readable but cannot
+      // prove which database it belongs to; readiness reports that as missing.
+      dataRoot: typeof record.dataRoot === "string" ? record.dataRoot : typeof runtime?.dataRoot === "string" ? runtime.dataRoot : undefined,
+      startedAt: typeof record.startedAt === "string" ? record.startedAt : typeof runtime?.startedAt === "string" ? runtime.startedAt : undefined,
     },
   };
 }
@@ -280,6 +309,14 @@ export async function observeReadiness(options: ReadinessOptions = {}): Promise<
   const discoveryError = selection.error;
   const config = options.config;
   const notes: string[] = [];
+  const origin = options.origin ?? "observeReadiness";
+  const observer: ReadinessObserver = {
+    origin, pid: process.pid, platform: options.platform ?? process.platform, node: process.versions.node, root,
+    dataRoot: config ? path.dirname(config.dbFile) : null,
+    probes: { tool: options.probes?.tool ? "injected" : "not_observed", native: options.probes?.native ? "injected" : "not_observed" },
+  };
+  if (!options.probes?.tool) notes.push(`tool: ${origin} 没有注入 tool probe：toolResponsive 只能报 unverified 或 unknown，不能当作“工具已就绪”。`);
+  if (!options.probes?.native) notes.push(`native: ${origin} 没有注入 native probe：nativeOnline 只能报未观测，不能当作“桥接已就绪”。`);
 
   // ---- toolResponsive -------------------------------------------------------
   const buildPresent = hasFile(path.join(root, "dist", "server.js"));
@@ -288,6 +325,7 @@ export async function observeReadiness(options: ReadinessOptions = {}): Promise<
   const toolFacts: ReadinessLayer["facts"] = {
     buildPresent, nodeSupported: supportedNode(), platformSupported: (options.platform ?? process.platform) === "win32",
     runtimeSummary: summaryRead.found ? "present" : "missing", runtimePid: summaryRead.summary?.pid ?? null,
+    runtimeStartedAt: summaryRead.summary?.startedAt ?? null, observedByPid: observer.pid,
     runtimeHeartbeat: summaryRead.found ? (heartbeatFresh ? "fresh" : "stale") : "absent",
     supervisorPidAlive: summaryRead.summary ? isAlive(summaryRead.summary.pid) : null,
   };
@@ -398,6 +436,10 @@ export async function observeReadiness(options: ReadinessOptions = {}): Promise<
   const deployedFacts: ReadinessLayer["facts"] = {
     runtimeSummary: summaryRead.found ? "present" : "missing",
     runtimeCodeHash: summaryRead.summary?.codeHash ?? null,
+    runtimeDataRoot: summaryRead.summary?.dataRoot ?? null,
+    observedDataRoot: observer.dataRoot,
+    runtimeStartedAt: summaryRead.summary?.startedAt ?? null,
+    runtimeUpdatedAt: summaryRead.summary?.updatedAt ?? null,
     installedCodeHash: short(installedCodeHash),
     candidateCodeHash: candidate?.codeHash ?? null,
     registration: registrationPresent(path.join(root, "data", "persistent-service.json")),
@@ -406,19 +448,31 @@ export async function observeReadiness(options: ReadinessOptions = {}): Promise<
   const deployedMissing: string[] = [];
   if (!summaryRead.found) deployedMissing.push("runtime_summary");
   else if (!summaryRead.summary?.codeHash) deployedMissing.push("runtime_code_hash");
+  if (summaryRead.found && !summaryRead.summary?.dataRoot) deployedMissing.push("runtime_data_root");
   if (!installedCodeHash) deployedMissing.push("installed_dist");
   if (candidate && !candidate.codeHash) deployedMissing.push("candidate_code_hash");
   const comparable = Boolean(summaryRead.summary?.codeHash && installedCodeHash);
   const matches = comparable && summaryRead.summary!.codeHash === installedCodeHash;
   const candidateMatches = !candidate || (candidate.codeHash ? candidate.codeHash === installedCodeHash : true);
-  const deployedState: ReadinessState = !summaryRead.found || !summaryRead.summary?.codeHash ? "unknown"
-    : !installedCodeHash ? "unknown"
-      : matches && candidateMatches ? "ready" : "blocked";
-  const deployedReason = deployedState === "blocked"
-    ? matches ? "the installed files are not the candidate that was requested" : "the running code and the files on disk differ"
-    : deployedState === "unknown"
-      ? summaryRead.found ? "the runtime summary carries no code hash; the disk version is not a substitute" : summaryRead.reason
-      : undefined;
+  // A heartbeat written for another database is not evidence about this one.
+  const foreignDataRoot = Boolean(summaryRead.summary?.dataRoot && observer.dataRoot)
+    && path.resolve(summaryRead.summary!.dataRoot!) !== path.resolve(observer.dataRoot!);
+  // A summary written before dataRoot existed cannot be bound to this database.
+  const unboundSummary = Boolean(summaryRead.found && summaryRead.summary?.codeHash && !summaryRead.summary?.dataRoot);
+  const deployedState: ReadinessState = foreignDataRoot ? "blocked"
+    : !summaryRead.found || !summaryRead.summary?.codeHash ? "unknown"
+      : unboundSummary ? "unverified"
+        : !installedCodeHash ? "unknown"
+          : matches && candidateMatches ? "ready" : "blocked";
+  const deployedReason = foreignDataRoot
+    ? "the runtime summary belongs to another data directory; it cannot prove this install is running"
+    : deployedState === "blocked"
+      ? matches ? "the installed files are not the candidate that was requested" : "the running code and the files on disk differ"
+      : deployedState === "unverified"
+        ? "the runtime summary predates dataRoot/startedAt binding; restart the service once to write them"
+        : deployedState === "unknown"
+          ? summaryRead.found ? "the runtime summary carries no code hash; the disk version is not a substitute" : summaryRead.reason
+          : undefined;
   const deployedLayer = layer("candidateDeployed", deployedState, observedAt, deployedFacts, deployedMissing, deployedReason);
 
   // ---- desktopPageReady ---------------------------------------------------
@@ -463,7 +517,7 @@ export async function observeReadiness(options: ReadinessOptions = {}): Promise<
 
   const layers = [toolLayer, nativeLayer, dispatchLayer, deployedLayer, desktopLayer];
   const nextAction = pickNextAction(layers, { dispatchState, deployedState, desktopState, toolLayer }, selectionReport(discovery, config, env, options.home ?? os.homedir()));
-  return { schema: READINESS_SCHEMA, readOnly: true, observedAt, selection: selectionReport(discovery, config, env, options.home ?? os.homedir()), layers, nextAction, notes };
+  return { schema: READINESS_SCHEMA, readOnly: true, observedAt, observer, selection: selectionReport(discovery, config, env, options.home ?? os.homedir()), layers, nextAction, notes };
 }
 
 /** A registration that exists but does not validate is still "present but unreadable", never "absent". */
@@ -492,13 +546,13 @@ function pickNextAction(layers: ReadinessLayer[], context: { dispatchState: Read
   if (!first) return { layer: "dispatch", action: "五层都已就绪：可以在项目会话里展示执行器/来源/模型/推理档与价格，取得用户确认后再派工；本诊断不派工。" };
   switch (first.layer) {
     case "toolResponsive":
-      return { layer: first.layer, action: first.state === "absent" ? "在这个安装根里先构建（npm ci && npm run build），再运行诊断。" : "从工具进程内部运行 readiness（npm run readiness -- --json）；独立进程只能给出 unknown。" };
+      return { layer: first.layer, action: first.state === "absent" ? "在这个安装根里先构建（npm ci && npm run build），再运行诊断。" : "用 `npm run readiness`（或 `node scripts/readiness.mjs`）重跑：它会启动一个短命的 MCP 进程调用 workbuddy_health；没有 probe 的观察者只能报 unknown。" };
     case "nativeOnline":
       return { layer: first.layer, action: "打开 WorkBuddy 桌面应用并完成首次连接；诊断不会启动应用、也不会安装原生桥。" };
     case "projectSessionDispatchable":
       return { layer: first.layer, action: dispatchAction(first) };
     case "candidateDeployed":
-      return { layer: first.layer, action: context.deployedState === "blocked" ? "已装文件与运行摘要不一致：先重启常驻服务再核对；核对前不得声称候选已部署。" : "启动一次常驻服务以写入运行摘要（data/persistent-service-status.json）；不要用磁盘 package.json 版本代替运行版本。" };
+      return { layer: first.layer, action: first.missing.includes("runtime_data_root") ? "运行摘要没有 dataRoot/startedAt（旧版服务写的）：重启一次常驻服务让它写出这两个字段；在那之前这份摘要不能证明当前库在跑。" : context.deployedState === "blocked" ? "已装文件与运行摘要不一致：先重启常驻服务再核对；核对前不得声称候选已部署。" : "启动一次常驻服务以写入运行摘要（data/persistent-service-status.json）；不要用磁盘 package.json 版本代替运行版本。" };
     default:
       return { layer: first.layer, action: first.state === "absent" ? "启动桌面壳（WorkBuddy.Workbench.exe），窗口会自行拉起它的宿主。" : desktopAction(first) };
   }

@@ -15,6 +15,9 @@ import { runtimeVersion } from '../dist/runtime-version.js';
 // The window is the place where "why is nothing dispatchable" gets asked, so the same
 // read-only five-layer diagnosis the CLI prints has to answer here too. It only reads.
 import { observeReadiness } from '../dist/readiness.js';
+// The window polls this route; the probe pair is memoized so each answer does not
+// spawn another MCP process. A probe that cannot answer says so, never "ready".
+import { createReadinessProbes } from '../dist/readiness-probes.js';
 import { runsDirectory } from '../dist/run-journal.js';
 import { loadDotEnv } from '../dist/env.js';
 import { createDesktopDispatchSession, desktopJournal } from '../dist/desktop-dispatch-runtime.js';
@@ -27,6 +30,7 @@ import { runProductivityCommand } from '../dist/desktop-productivity.js';
 loadDotEnv();
 if (process.env.WORKBUDDY_WORKBENCH_DIAGNOSTICS === '1') console.error('[host] PATH=' + (process.env.PATH ?? '<unset>') + ' SystemRoot=' + (process.env.SystemRoot ?? '<unset>') + ' temp=' + (process.env.TEMP ?? '<unset>'));
 const config = loadConfig();
+const readinessProbes = createReadinessProbes({ moduleUrl: import.meta.url });
 // Never create an empty database because the launcher selected the wrong path.
 // A first install legitimately has no database, so name the variable that chose
 // this path and the one command that creates it, instead of failing with a bare
@@ -68,7 +72,7 @@ const server = new WorkbenchHttpServer({
     health: () => workbenchHealth({ runtime: runtimeVersion }),
     statistics: statisticsSources(store),
     productivity: productivity.sources,
-    readiness: { observe: () => observeReadiness({ config }) },
+    readiness: { observe: () => observeReadiness({ config, origin: 'scripts/workbench-desktop-host.mjs', probes: readinessProbes }) },
 });
 try {
     const port = await server.listen(0);

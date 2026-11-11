@@ -78,3 +78,30 @@ test("a supervisor that cannot start reports why instead of a bare 125",{skip:pr
  assert.ok(r.failure!.stderrTail.length<=600,"the stderr tail must stay bounded");
  assert.match(r.reason,/Job supervisor exited 1/);
 });
+
+test("the supervisor reports its startup phases and a durable target start",{skip:process.platform!=="win32"},async t=>{
+ // Supervision is measured in phases: supervisor spawn -> helper ready -> target start -> end.
+ // Only the last phase runs the submitted command, so the numbers have to be recorded to prove
+ // that the command's own deadline is anchored to a real target start and not to spawn time.
+ const dir=fixture(t);
+ const r:any=await runBounded({executable:process.execPath,args:["-e","0"],cwd:dir,timeoutSeconds:5},dir);
+ assert.equal(r.exitCode,0,JSON.stringify(r));
+ assert.ok(r.readyMarker,"a windows run must report the helper-ready marker path");
+ assert.ok(fs.existsSync(r.readyMarker),"the helper must write its ready marker before it compiles or starts anything");
+ assert.equal(JSON.parse(fs.readFileSync(r.readyMarker,"utf8")).phase,"helper_ready");
+ assert.equal(typeof r.phaseTimings.helperStartupMs,"number","helper startup must be measured");
+ assert.equal(typeof r.phaseTimings.targetStartMs,"number","the time from helper ready to target start must be measured");
+ assert.ok(r.phaseTimings.targetStartMs<r.durationMs,"the command deadline is anchored after the target started");
+});
+test("a startup budget is reported as the helper_startup phase instead of a bare 125",{skip:process.platform!=="win32"},async t=>{
+ // A supervisor that never reported ready cannot have created the target, so the failure must name
+ // the phase instead of only returning 125, and it must not claim anything was cleaned up.
+ const dir=fixture(t);
+ const r=await runBounded({executable:process.execPath,args:["-e","0"],cwd:dir,timeoutSeconds:5},dir,{startupBudgetMs:50});
+ assert.equal(r.exitCode,125,JSON.stringify(r));
+ assert.equal(r.cleanupConfirmed,false);
+ assert.equal(r.processStarted,false);
+ assert.equal(r.failure!.watchdogFired,true);
+ assert.equal(r.failure!.phase,"helper_startup");
+ assert.match(r.reason,/helper_startup/);
+});

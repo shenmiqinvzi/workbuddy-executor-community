@@ -6,6 +6,8 @@ import type { DesktopControlDraft, DesktopControlKind, DesktopControlReceipt } f
 export interface DesktopControlSnapshot {
   taskId: string; attemptId: string; revision: string; title: string; workspace: string;
   allowedActions: DesktopControlKind[]; remoteStopped: boolean;
+  /** What this process observed, so a refusal can explain itself instead of saying "not allowed". */
+  displayState: string;
   model: string | null; rate: string | null; attempt: number; attemptLimit: number;
   executorId: string; connectionId: string; providerId: string; reasoningEffort: string | null;
   currentReviewId: string | null;
@@ -97,11 +99,11 @@ export class DesktopControlSession {
     return this.dependencies.observe(taskId,attemptId);
   }
   private assertCurrent(snapshot:DesktopControlSnapshot,request:{kind:DesktopControlKind;taskId:string;attemptId:string;revision:string;feedback:string|null;reviewId:string|null}) {
-    if(snapshot.taskId!==request.taskId||snapshot.attemptId!==request.attemptId)return fail("STALE_ATTEMPT","任务已进入其他轮次，请刷新。");
-    if(snapshot.revision!==request.revision)return fail("STALE_REVISION","任务状态已变化，请刷新后重新核对。");
-    if(!snapshot.allowedActions.includes(request.kind))return fail("ACTION_UNAVAILABLE","当前任务状态不允许此操作，请刷新并查看停止与验收状态。");
-    if(request.kind!=="cancel"&&!snapshot.remoteStopped)return fail("STOP_UNCONFIRMED","原生执行尚未确认停止。");
-    if(request.kind==="rework"&&(!snapshot.model||snapshot.attempt>=snapshot.attemptLimit))return fail("BUDGET_EXCEEDED","原模型或剩余轮次无法核实。");
-    if(request.kind==="accept"&&snapshot.currentReviewId!==request.reviewId)return fail("REVIEW_REQUIRED","审查记录已变化，请重新核对。");
+    if(snapshot.taskId!==request.taskId||snapshot.attemptId!==request.attemptId)return fail("STALE_ATTEMPT","任务已进入其他轮次，请刷新详情页后再操作；本轮的新操作要基于当前 attempt 重新发起。");
+    if(snapshot.revision!==request.revision)return fail("STALE_REVISION","任务状态已变化，请刷新后重新核对；不要沿用旧页面上的按钮结果。");
+    if(!snapshot.allowedActions.includes(request.kind))return fail("ACTION_UNAVAILABLE",`当前任务状态不允许此操作（本机观察到 displayState=${snapshot.displayState}，可用操作=${snapshot.allowedActions.length?snapshot.allowedActions.join("/"):"无"}），请刷新并查看停止与验收状态。`);
+    if(request.kind!=="cancel"&&!snapshot.remoteStopped)return fail("STOP_UNCONFIRMED","原生执行尚未确认停止：先取消或等原生侧自己结束，拿到停止证据后再返工/审查/验收；这里不会因超时放行。");
+    if(request.kind==="rework"&&(!snapshot.model||snapshot.attempt>=snapshot.attemptLimit))return fail("BUDGET_EXCEEDED","原模型或剩余轮次无法核实：去任务详情确认当前模型与剩余轮次，或改走新的派工而不是在本轮返工。");
+    if(request.kind==="accept"&&snapshot.currentReviewId!==request.reviewId)return fail("REVIEW_REQUIRED","审查记录已变化，请重新核对：打开最新一份独立审查，确认 reviewId 后再验收。");
   }
 }

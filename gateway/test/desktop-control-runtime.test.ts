@@ -98,7 +98,7 @@ test("confirmed desktop rework retains the original model and task, and a replay
   const inspect=async()=>{
     const task=f.current(),status=f.service.statusView(task),contract=f.store.getContract(task.taskId);
     if(contract.state!=="found")throw Error("Fixture contract missing");
-    return {taskId:task.taskId,attemptId:task.attemptId!,revision:task.revision!,title:contract.record.contract.title,workspace:task.workspace!,allowedActions:status.allowedActions,remoteStopped:status.remoteStopped,model:"synthetic-user-choice",rate:"x0.00",executorId:"workbuddy",connectionId:"local-workbuddy",providerId:"workbuddy-native",reasoningEffort:null,attempt:task.attempt!,attemptLimit:contract.record.effectiveMaxAttempts,currentReviewId:null,requirements:contract.record.contract.requiredChecks};
+    return {taskId:task.taskId,attemptId:task.attemptId!,revision:task.revision!,title:contract.record.contract.title,workspace:task.workspace!,allowedActions:status.allowedActions,displayState:status.displayState,remoteStopped:status.remoteStopped,model:"synthetic-user-choice",rate:"x0.00",executorId:"workbuddy",connectionId:"local-workbuddy",providerId:"workbuddy-native",reasoningEffort:null,attempt:task.attempt!,attemptLimit:contract.record.effectiveMaxAttempts,currentReviewId:null,requirements:contract.record.contract.requiredChecks};
   };
   const session=new DesktopControlSession({inspect,enqueue:async draft=>f.controlJournal.enqueue(draft),receipt:id=>f.controlJournal.receipt(id),forAttempt:(taskId,attemptId)=>f.controlJournal.forAttempt(taskId,attemptId)});
   const original=f.current();

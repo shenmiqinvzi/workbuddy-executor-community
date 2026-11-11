@@ -68,11 +68,20 @@ function category(name: string, kind: WorkspaceEntry["kind"], scope: TaskContrac
 function entryEqual(a?: WorkspaceEntry, b?: WorkspaceEntry) { return a?.path === b?.path && a?.kind === b?.kind && a?.sha256 === b?.sha256 && a?.bytes === b?.bytes && a?.links === b?.links; }
 function identity(root: string) { const stat = fs.statSync(root, { bigint: true }); return `${stat.dev}:${stat.ino}`; }
 function scopePatterns(scope: TaskContractScope) { return [...scope.allowedChanges, ...scope.permittedMetadata]; }
+/**
+ * Every Git read below (index digest, protected-path status) is a local,
+ * read-only query, but each one still spawns a process: on a loaded machine
+ * (parallel test files, real-time scanner) a fixed five seconds turned a slow
+ * read into a confusing `spawnSync git ETIMEDOUT` during admission. The budget
+ * is separate from any execution deadline and can be raised for a slow host;
+ * when it expires the failure is still reported.
+ */
+const GIT_READ_TIMEOUT_MS = (() => { const configured = Number(process.env.WORKBUDDY_GIT_READ_TIMEOUT_MS ?? process.env.WORKBUDDY_GIT_INDEX_TIMEOUT_MS ?? 30000); return Number.isFinite(configured) && configured > 0 ? configured : 30000; })();
 function gitIndex(root: string): string | null {
   let cursor = root;
   while (!fs.existsSync(path.join(cursor, ".git"))) { const parent = path.dirname(cursor); if (parent === cursor) return null; cursor = parent; }
   const args = ["--no-optional-locks", "-c", "core.fsmonitor=false", "-C", root];
-  return digest(execFileSync("git", [...args, "ls-files", "--stage", "-z"], { encoding: "utf8", windowsHide: true, timeout: 5000, maxBuffer: 16 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] }));
+  return digest(execFileSync("git", [...args, "ls-files", "--stage", "-z"], { encoding: "utf8", windowsHide: true, timeout: GIT_READ_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] }));
 }
 
 /** No traversal through reparse points, even when a link currently resolves inside. */
@@ -158,7 +167,7 @@ function gitProtected(root: string, entries: WorkspaceEntry[]): { paths: string[
   let cursor = root;
   while (!fs.existsSync(path.join(cursor, ".git"))) { const parent = path.dirname(cursor); if (parent === cursor) return { paths: [], git: "not_a_repository" }; cursor = parent; }
   const args = ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "-c", "submodule.recurse=false"];
-  const run = (extra: string[], cwd = root) => execFileSync("git", [...args, "-C", cwd, ...extra], { encoding: "utf8", timeout: 5000, windowsHide: true, maxBuffer: 16 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
+  const run = (extra: string[], cwd = root) => execFileSync("git", [...args, "-C", cwd, ...extra], { encoding: "utf8", timeout: GIT_READ_TIMEOUT_MS, windowsHide: true, maxBuffer: 16 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
   // Status must not invoke repository-configured clean/process helpers.
   let filters = "";
   try { filters = run(["config", "--name-only", "--get-regexp", "^filter\\..*\\.(clean|process|required)$"]); } catch (error) { if ((error as { status?: number }).status !== 1) throw error; }

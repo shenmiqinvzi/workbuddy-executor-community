@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { DeepSeekRpcError, type DeepSeekTransport } from "./deepseek-client.js";
 import { DeepSeekStore, type DeepSeekTask } from "./deepseek-store.js";
+import { admitCommandSpecs, commandSpecAdmissionMessage } from "./command-spec.js";
 
 export interface DeepSeekSendInput { taskId?: string; hostId?: string; sessionId: string; objective: string; workspace?: string; constraints?: string[]; acceptanceCommands?: string[]; timeoutSeconds?: number; }
 export class DeepSeekCoordinator {
@@ -17,6 +18,7 @@ export class DeepSeekCoordinator {
     if (session.sessionId !== input.sessionId) throw new Error("Harness returned a different session identity");
     if (session.busy) throw new Error("Harness session is busy. Wait for its active turn before dispatching.");
     const workspace = verifiedWorkspace(input.workspace, session.workspace);
+    assertCommandChecks(input.acceptanceCommands, workspace ?? null);
     const now = new Date().toISOString(); const attemptId = crypto.randomUUID();
     const task: DeepSeekTask = { taskId, objective: input.objective, hostId, sessionId: session.sessionId, workspace,
       constraints: input.constraints ?? [], acceptanceCommands: input.acceptanceCommands ?? [], state: "queued", attemptId, attempt: 1,
@@ -83,6 +85,7 @@ export class DeepSeekCoordinator {
     const session = await this.client.session({ hostId: current.hostId, sessionId: current.sessionId });
     if (session.sessionId !== current.sessionId || session.busy) throw new Error("Bound Harness session is busy or changed; no rework was dispatched");
     verifiedWorkspace(current.workspace, session.workspace);
+    assertCommandChecks(input.acceptanceCommands, current.workspace ?? null);
     const attemptId = crypto.randomUUID();
     const task: DeepSeekTask = { ...current, attemptId, requestId: attemptId, attempt: current.attempt + 1, turnId: undefined,
       state: "queued", dispatchState: "reserved", runOpen: true, updatedAt: new Date().toISOString(), deadlineAt: deadline(input.timeoutSeconds),
@@ -121,6 +124,11 @@ function verifiedWorkspace(requested?: string, actual?: string): string | undefi
   if (requested && actual && fs.realpathSync(requested) !== fs.realpathSync(actual)) throw new Error("Requested workspace does not match the Harness session directory");
   if (requested && !actual) throw new Error("Harness did not verify its workspace; select a session with a known directory");
   return actual ?? requested;
+}
+/** The same admission rule as the native coordinator: no free-text commands, no dispatch. */
+function assertCommandChecks(definitions: string[] | undefined, workspaceRoot: string | null): void {
+  const rejection = admitCommandSpecs(definitions, { workspaceRoot, field: "acceptanceCommands" });
+  if (rejection) throw new Error(commandSpecAdmissionMessage(rejection));
 }
 function deadline(seconds = 1800) { if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 86400) throw new Error("timeoutSeconds must be between 1 and 86400"); return new Date(Date.now() + seconds * 1000).toISOString(); }
 function errorText(error: unknown) { return error instanceof Error ? error.message : String(error); }

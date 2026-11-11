@@ -771,3 +771,30 @@ test("a desktop launch always states the port it was asked for", () => {
   assert.deepEqual(Object.keys(env), ["WORKBUDDY_REMOTE_DEBUGGING_PORT"]);
   assert.equal(env.WORKBUDDY_REMOTE_DEBUGGING_PORT, "9333");
 });
+
+/**
+ * WB04: four ownership samples decide whether the native session is still busy.
+ * Only a terminal result bound to the same invocation may close a replayed call;
+ * anything whose ownership cannot be proven stays busy and keeps blocking
+ * accept, rework and new dispatch.
+ */
+test("the four ownership samples close only work a terminal result binds", async t => {
+  const f = await fixture(t);
+  const samples = [
+    { name: "a replay from a finished turn", events: completedArgumentHistory(), activity: {}, expected: "idle" },
+    { name: "a pending call in the current turn", events: [{ update: { sessionUpdate: "tool_call", toolCallId: "current-tool", status: "pending", _meta: invocationMeta } }], activity: {}, expected: "busy", flag: "unfinishedTools" },
+    { name: "background descendants of an earlier turn", events: [], activity: { hasRunningBackgroundTasks: true, hasActiveChildAgents: true }, expected: "busy", flag: "hasRunningBackgroundTasks" },
+    { name: "the user's own new work in the same session", events: [{ update: { sessionUpdate: "tool_call", toolCallId: "user-tool", status: "in_progress", _meta: { ...invocationMeta, "codebuddy.ai/messageRequestId": WAKE_B } } }], activity: { isProcessing: true }, expected: "busy", flag: "isProcessing" },
+  ];
+  for (const sample of samples) {
+    f.session = { sessionId: f.sessionId, cwd: f.workspace, status: "failed", eventHistory: sample.events, ...sample.activity };
+    const native = await f.bridge.inspect(f.sessionId) as { state: string; diagnostics?: { stillBusy?: string[]; requiredUpstreamEvidence?: string[] } };
+    assert.equal(native.state, sample.expected, sample.name);
+    if (sample.flag) assert.ok(native.diagnostics?.stillBusy?.includes(sample.flag), `${sample.name} names ${sample.flag}`);
+    if (sample.expected === "busy") {
+      assert.ok((native.diagnostics?.requiredUpstreamEvidence?.length ?? 0) > 0, `${sample.name} states the proof it is missing`);
+      assert.equal((await f.bridge.wakeIdle(f.sessionId, WAKE_B, wakePrompt(WAKE_B))).accepted, false, `${sample.name} may not be woken`);
+    }
+  }
+  assert.equal(f.sends().length, 0);
+});

@@ -1,7 +1,12 @@
-param([Parameter(Mandatory=$true)][string]$SpecFile,[string]$StartedFile)
+param([Parameter(Mandatory=$true)][string]$SpecFile,[string]$StartedFile,[string]$ReadyFile)
 $ErrorActionPreference = 'Stop'
+# Phase marker: written before the C# helper exists, so a parent can tell "the supervisor never
+# started" apart from "the supervisor is still compiling" without guessing from elapsed time.
+if(![string]::IsNullOrEmpty($ReadyFile)) {
+  [IO.File]::WriteAllText($ReadyFile,'{"pid":' + $PID + ',"phase":"helper_ready","at":"' + [DateTime]::UtcNow.ToString('o') + '"}',(New-Object Text.UTF8Encoding($false)))
+}
 $spec = Get-Content -LiteralPath $SpecFile -Raw -Encoding UTF8 | ConvertFrom-Json
-Add-Type -TypeDefinition @'
+$source = @'
 using System;
 using System.Text;
 using System.IO;
@@ -45,8 +50,9 @@ public static class BoundedJob {
       StringBuilder command=new StringBuilder(Quote(exe));foreach(string arg in args)command.Append(" ").Append(Quote(arg));
       Check(CreateProcess(exe,command,IntPtr.Zero,IntPtr.Zero,true,0x08000004,IntPtr.Zero,cwd,ref si,out pi));
       // Durable proof that this command really started: a supervisor that never ran leaves no marker,
-      // so a blocked script cannot be mistaken for a process tree that still needs cleaning.
-      if(!String.IsNullOrEmpty(startedFile))File.WriteAllText(startedFile,"{\"pid\":"+pi.pid+"}",new UTF8Encoding(false));
+      // so a blocked script cannot be mistaken for a process tree that still needs cleaning. The
+      // timestamp lets the parent measure the command's own deadline from the real target start.
+      if(!String.IsNullOrEmpty(startedFile))File.WriteAllText(startedFile,"{\"pid\":"+pi.pid+",\"startedAt\":\""+DateTime.UtcNow.ToString("o")+"\"}",new UTF8Encoding(false));
       // Suspended creation prevents a child escaping before ownership is established.
       Check(AssignProcessToJobObject(job,pi.process));assigned=true;Check(ResumeThread(pi.thread)!=0xffffffff);
       var watch=System.Diagnostics.Stopwatch.StartNew();
@@ -69,4 +75,31 @@ public static class BoundedJob {
   }
 }
 '@
+# Compiling this helper with Add-Type costs about 1.3s per supervised command, and the CodeDom
+# compiler is the elastic part of supervisor startup: when many commands start at once (the full
+# test suite starts dozens) the compile queue pushed startup past the parent watchdog. The compiled
+# assembly is therefore cached by source hash and only compiled when the cache misses. A cache hit
+# keeps the supervisor's startup bounded and independent of how many commands run in parallel.
+$loaded = $false
+try {
+  $sha = [Security.Cryptography.SHA256]::Create()
+  $digest = [BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($source))).Replace('-','').ToLowerInvariant()
+  $cacheRoot = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'WorkBuddy\bounded-job'
+  New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
+  $assembly = Join-Path $cacheRoot ($digest.Substring(0,32) + '.dll')
+  if (Test-Path -LiteralPath $assembly) {
+    try { [void][Reflection.Assembly]::LoadFile($assembly); $loaded = $true } catch { $loaded = $false }
+  }
+  if (!$loaded) {
+    $temp = Join-Path $cacheRoot ($digest.Substring(0,32) + '.' + $PID + '.tmp')
+    try {
+      Add-Type -TypeDefinition $source -OutputAssembly $temp -ErrorAction Stop
+      Move-Item -LiteralPath $temp -Destination $assembly -Force -ErrorAction Stop
+      [void][Reflection.Assembly]::LoadFile($assembly); $loaded = $true
+    } catch {
+      if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue }
+    }
+  }
+} catch { $loaded = $false }
+if (!$loaded) { Add-Type -TypeDefinition $source }
 [BoundedJob]::Run([string]$spec.executable,[string[]]$spec.args,[string]$spec.cwd,[string]$spec.stdout,[string]$spec.stderr,[int]$spec.timeoutMs,[string]$spec.cancelFile,[string]$StartedFile)

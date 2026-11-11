@@ -8,6 +8,7 @@ import { TaskCoordinator } from "../src/coordinator.js";
 import { TaskStore, type StoredTask } from "../src/task-store.js";
 import type { LocalMessage } from "../src/workbuddy-client.js";
 import { SelectedModelClient as WorkBuddyClient } from "./support/selected-model-client.js";
+import { commandSpec } from "./support/command-spec.js";
 import { RunJournal, type RunSnapshot } from "../src/run-journal.js";
 
 class FakeClient extends WorkBuddyClient {
@@ -62,8 +63,8 @@ function finish(client: FakeClient, task: StoredTask, text = "TASK_STATUS: compl
   client.batches.push([event(task, 2, text, { type: "result", status: "needs_review", artifacts: ["output.mp4"] })]);
 }
 
-async function send(coordinator: TaskCoordinator, workspace: string, taskId = "video", scope?: { allowedChanges: string[]; permittedMetadata: string[] }) {
-  return coordinator.send({ model: "synthetic-user-choice", taskId, objective: "make a video", workspace, sessionId: "fixed-session", constraints: ["keep the approved script", "use WorkBuddy tools"], acceptanceCommands: ["inspect the exported media"], ...(scope ? { scope } : {}) });
+async function send(coordinator: TaskCoordinator, workspace: string, taskId = "video", scope?: { allowedChanges: string[]; permittedMetadata: string[] }, checks: string[] = [commandSpec(workspace)]) {
+  return coordinator.send({ model: "synthetic-user-choice", taskId, objective: "make a video", workspace, sessionId: "fixed-session", constraints: ["keep the approved script", "use WorkBuddy tools"], acceptanceCommands: checks, ...(scope ? { scope } : {}) });
 }
 
 test("idempotent parallel sends reserve one task and dispatch exactly one desktop prompt", async (t) => {
@@ -83,7 +84,7 @@ test("idempotent parallel sends reserve one task and dispatch exactly one deskto
 
 test("initial submission identity survives reconnects and rejects changed routing, budget, model and requirements", async t => {
   const { dir, config, client, coordinator } = fixture(t);
-  const original = { taskId: "stable", objective: "fix submission", workspace: dir, sessionId: "fixed-session", constraints: ["keep contract"], acceptanceCommands: ["check retry"], model: "approved", timeoutSeconds: 120 };
+  const original = { taskId: "stable", objective: "fix submission", workspace: dir, sessionId: "fixed-session", constraints: ["keep contract"], acceptanceCommands: [commandSpec(dir)], model: "approved", timeoutSeconds: 120 };
   await coordinator.send(original);
   const secondStore = new TaskStore(config.dbFile);
   try {
@@ -156,17 +157,18 @@ test("streams progress and final results separately and requires independent evi
 
 test("keeps the verified desktop session, objective, original constraints and acceptance checks across rework", async (t) => {
   const { dir, store, client, coordinator } = fixture(t);
-  await send(coordinator, dir);
+  const mediaCheck = commandSpec(dir), subtitleCheck = commandSpec(dir, { args: ["-p", "'subtitle'"] });
+  await send(coordinator, dir, "video", undefined, [mediaCheck]);
   const first = store.get("video")!;
   finish(client, first);
   await coordinator.sync("video");
-  await coordinator.continue({ taskId: "video", feedback: "Correct the subtitle timing only", acceptanceCommands: ["check subtitle timing"] });
+  await coordinator.continue({ taskId: "video", feedback: "Correct the subtitle timing only", acceptanceCommands: [subtitleCheck] });
   const second = store.get("video")!;
   assert.notEqual(second.attemptId, first.attemptId);
   assert.equal(second.attempt, 2);
   assert.equal(second.sessionId, "fixed-session");
   assert.deepEqual(second.constraints, ["keep the approved script", "use WorkBuddy tools"]);
-  assert.deepEqual(second.acceptanceCommands, ["inspect the exported media", "check subtitle timing"]);
+  assert.deepEqual(second.acceptanceCommands, [mediaCheck, subtitleCheck]);
   assert.equal(client.sent[1]?.[3], "fixed-session");
   assert.equal(client.sent[1]?.[4]?.sessionMode, "existing");
   const prompt = client.sent[1]?.[0] ?? "";
@@ -185,16 +187,17 @@ test("keeps the verified desktop session, objective, original constraints and ac
 
 test("concurrent rework dispatches one prompt and cannot add rejected requirements to its running attempt", async (t) => {
   const { dir, store, client, coordinator } = fixture(t);
-  await send(coordinator, dir);
+  const mediaCheck = commandSpec(dir), reworkCheck = commandSpec(dir, { args: ["-p", "'rework'"] });
+  await send(coordinator, dir, "video", undefined, [mediaCheck]);
   finish(client, store.get("video")!);
   await coordinator.sync("video");
   const results = await Promise.allSettled([
-    coordinator.continue({ taskId: "video", feedback: "first rework", acceptanceCommands: ["first rework check"] }),
-    coordinator.continue({ taskId: "video", feedback: "second overlapping rework", acceptanceCommands: ["rejected second check"] }),
+    coordinator.continue({ taskId: "video", feedback: "first rework", acceptanceCommands: [reworkCheck] }),
+    coordinator.continue({ taskId: "video", feedback: "second overlapping rework", acceptanceCommands: [commandSpec(dir, { args: ["-p", "'rejected'"] })] }),
   ]);
   assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
   assert.equal(client.sent.length, 2);
-  assert.deepEqual(store.get("video")?.acceptanceCommands, ["inspect the exported media", "first rework check"]);
+  assert.deepEqual(store.get("video")?.acceptanceCommands, [mediaCheck, reworkCheck]);
 });
 
 test("a cancellation during an in-flight poll cannot be overwritten by its late terminal result", async (t) => {

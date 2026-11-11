@@ -6,6 +6,7 @@ import { afterEach, test } from "node:test";
 import { DeepSeekStore } from "../src/deepseek-store.js";
 import { DeepSeekCoordinator } from "../src/deepseek-coordinator.js";
 import { DeepSeekRpcError, type DeepSeekEvent, type DeepSeekTransport, type DeepSeekSession } from "../src/deepseek-client.js";
+import { commandSpec } from "./support/command-spec.js";
 
 const cleanups: Array<() => void> = [];
 afterEach(() => { for (const cleanup of cleanups.splice(0).reverse()) cleanup(); });
@@ -56,12 +57,13 @@ test("a lost prompt reply is uncertain, never automatically resent, and recovere
   const result = await recovered.sync("uncertain"); assert.equal(result.state, "needs_review"); assert.equal(result.runOpen, false);
 });
 test("only matching request and turn can finish the current attempt; late old events cannot finish rework", async () => {
-  const { coordinator, plugin, store } = setup();
-  const first = (await coordinator.send({ taskId: "rework", objective: "preserve original", sessionId: "session", constraints: ["keep existing"], acceptanceCommands: ["check one"] })).task;
+  const { dir, coordinator, plugin, store } = setup();
+  const firstCheck = commandSpec(dir, { args: ["-p", "'check one'"] }), secondCheck = commandSpec(dir, { args: ["-p", "'check two'"] });
+  const first = (await coordinator.send({ taskId: "rework", objective: "preserve original", sessionId: "session", constraints: ["keep existing"], acceptanceCommands: [firstCheck] })).task;
   plugin.emit("other-request", "completed", "foreign"); plugin.emit(first.requestId, "completed", "wrong turn", "unrelated-turn");
   assert.equal((await coordinator.sync("rework")).state, "working");
   plugin.emit(first.requestId, "completed", "version one"); assert.equal((await coordinator.sync("rework")).state, "needs_review");
-  const next = (await coordinator.continue({ taskId: "rework", feedback: "fix one detail", acceptanceCommands: ["check two"] })).task;
+  const next = (await coordinator.continue({ taskId: "rework", feedback: "fix one detail", acceptanceCommands: [secondCheck] })).task;
   assert.equal(next.sessionId, first.sessionId); assert.notEqual(next.requestId, first.requestId); assert.equal(next.attempt, 2);
   assert.match(plugin.prompts[1]!.text, /preserve original/); assert.match(plugin.prompts[1]!.text, /keep existing/); assert.match(plugin.prompts[1]!.text, /check one/); assert.match(plugin.prompts[1]!.text, /check two/);
   plugin.emit(first.requestId, "completed", "late old result"); assert.equal((await coordinator.sync("rework")).state, "working");
@@ -208,14 +210,15 @@ test("routine progress cannot clear a pending input or cancellation; a new nativ
 });
 
 test("rework can explicitly replace obsolete acceptance checks while retaining original scope and history", async () => {
-  const { coordinator, plugin, store } = setup();
-  const first = (await coordinator.send({ taskId: "revised-checks", objective: "create version one", sessionId: "session", constraints: ["Only output.json"], acceptanceCommands: ["version must be 1"] })).task;
+  const { dir, coordinator, plugin, store } = setup();
+  const versionOne = commandSpec(dir, { args: ["-p", "'version must be 1'"] }), versionTwo = commandSpec(dir, { args: ["-p", "'version must be 2'"] });
+  const first = (await coordinator.send({ taskId: "revised-checks", objective: "create version one", sessionId: "session", constraints: ["Only output.json"], acceptanceCommands: [versionOne] })).task;
   plugin.emit(first.requestId, "completed", "version one ready"); await coordinator.sync(first.taskId);
-  const next = (await coordinator.continue({ taskId: first.taskId, feedback: "Change version to 2", acceptanceCommands: ["version must be 2"], acceptanceMode: "replace" })).task;
-  assert.deepEqual(next.acceptanceCommands, ["version must be 2"]);
+  const next = (await coordinator.continue({ taskId: first.taskId, feedback: "Change version to 2", acceptanceCommands: [versionTwo], acceptanceMode: "replace" })).task;
+  assert.deepEqual(next.acceptanceCommands, [versionTwo]);
   assert.deepEqual(next.constraints, ["Only output.json"]); assert.equal(next.sessionId, first.sessionId);
   assert.doesNotMatch(plugin.prompts[1]!.text, /version must be 1/);
-  assert.deepEqual(store.attempts(first.taskId)[0]?.acceptanceCommands, ["version must be 1"]);
+  assert.deepEqual(store.attempts(first.taskId)[0]?.acceptanceCommands, [versionOne]);
 });
 
 test("empty replacement checks reject before reserving a new attempt", async () => {

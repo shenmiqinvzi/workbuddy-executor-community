@@ -15,7 +15,11 @@ const gatewayRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 test("the desktop host wires the five-layer diagnosis into its read-only server", () => {
   const source = fs.readFileSync(path.join(gatewayRoot, "scripts", "workbench-desktop-host.mjs"), "utf8");
   assert.match(source, /import \{ observeReadiness \} from '\.\.\/dist\/readiness\.js';/);
-  assert.match(source, /new WorkbenchHttpServer\(\{[\s\S]*?readiness: \{ observe: \(\) => observeReadiness\(\{ config \}\) \},[\s\S]*?\}\);/);
+  // WB06: the host that draws the window must answer the first two layers itself,
+  // through a memoized probe pair, and must name its own origin in the report.
+  assert.match(source, /import \{ createReadinessProbes \} from '\.\.\/dist\/readiness-probes\.js';/);
+  assert.match(source, /const readinessProbes = createReadinessProbes\(\{ moduleUrl: import\.meta\.url \}\);/);
+  assert.match(source, /new WorkbenchHttpServer\(\{[\s\S]*?readiness: \{ observe: \(\) => observeReadiness\(\{ config, origin: 'scripts\/workbench-desktop-host\.mjs', probes: readinessProbes \}\) \},[\s\S]*?\}\);/);
 });
 
 /**

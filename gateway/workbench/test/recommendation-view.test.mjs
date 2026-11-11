@@ -51,7 +51,7 @@ function submit(){
     return Promise.all(handlers.map(handler=>handler({type:'submit',preventDefault(){}})));
 }
 /** A host that answers the recommendation command; `answer` decides each reply. */
-async function openEditor({answer=()=>explanation(),statistics=null,reference=null}={}){
+async function openEditor({answer=()=>explanation(),statistics=null,reference=null,catalogOverride=null}={}){
     setup();const calls=[];let dispatched=0;
     globalThis.fetch=async(url,init)=>{
         const address=String(url);
@@ -60,7 +60,7 @@ async function openEditor({answer=()=>explanation(),statistics=null,reference=nu
         if(address.includes('/workbench/v1/resources/plan-reference'))return reference?new Response(JSON.stringify(reference)):new Response('{}',{status:404});
         const {action,parameters}=JSON.parse(init.body);calls.push({action,parameters});
         if(action==='latest')return new Response(JSON.stringify({ok:true,value:null}));
-        if(action==='catalog')return new Response(JSON.stringify({ok:true,value:catalog()}));
+        if(action==='catalog')return new Response(JSON.stringify({ok:true,value:(catalogOverride||catalog)()}));
         if(action==='preview')return new Response(JSON.stringify({ok:true,value:draft(calls.filter(call=>call.action==='preview').length)}));
         if(action==='dispatch'){dispatched++;return new Response(JSON.stringify({ok:true,value:{requestId:'draft-1',taskId:'desktop-task-1',operationId:'desktop-send-1',state:'launch_requested'}}));}
         if(action==='recommend'){
@@ -220,4 +220,60 @@ test('a direct decision names the recomposition and still creates no attempt',as
     assert.match(q('recommendation-authority').textContent,/记录的执行轮次：无/);
     assert.match(q('recommendation-authority').textContent,/原生派工：未发生/);
     assert.equal(host.calls.filter(call=>call.action==='dispatch').length,0);
+});
+
+const optionText=id=>{const select=q(id);return select.children.find(option=>option.value===select.value)?.textContent.trim()??''};
+
+test('the composer preselects no model or effort, and reading the catalog prepares nothing',async()=>{
+    const host=await openEditor();
+    assert.equal(q('compose-model').value,'');
+    assert.equal(q('compose-effort').value,'');
+    assert.match(q('compose-model').children[0].textContent.trim(),/^请(先选择来源|选择精确模型)$/);
+    assert.match(q('compose-effort').children[0].textContent.trim(),/^请(先选择模型|选择推理档位)$/);
+    assert.match(q('compose-rate').textContent,/请选择完整模型/);
+    assert.match(body.textContent,/读取可用目录不会准备或切换模型/);
+    assert.equal(host.calls.filter(call=>call.action==='preview'||call.action==='dispatch').length,0);
+});
+
+test('an unknown price is a choice the user makes knowingly, not a silent block',async()=>{
+    const unknown={...wb,key:'wb-unknown',execution:{...wb.execution,modelId:'synthetic-unknown'},credits:null,pricingVerified:false,blockedReason:null};
+    const base=catalog();
+    const host=await openEditor({catalogOverride:()=>({...base,models:[unknown]})});
+    q('compose-workspace').value=projectPath;q('compose-workspace').dispatch('input');
+    q('compose-source').value=sourceKey(wb.execution);q('compose-source').dispatch('change');
+    q('compose-model').value='synthetic-unknown';q('compose-model').dispatch('change');
+    q('compose-effort').value='__none__';q('compose-effort').dispatch('change');
+    assert.equal(optionText('compose-model'),'synthetic-unknown');
+    assert.match(q('compose-rate').textContent,/费用未知/);
+    assert.equal(q('preview-task').disabled,false);
+    assert.match(body.textContent,/本页只准备约定/);
+    assert.equal(host.calls.filter(call=>call.action==='dispatch').length,0);
+});
+
+test('a Chinese project path is located by identity among several candidates',async()=>{
+    const chinese='C:/合成/项目 甲';
+    const base=catalog();
+    await openEditor({catalogOverride:()=>({...base,projects:[
+        {projectId,realPath:chinese,displayName:'项目 甲',state:'unverified',observedAt:'2026-11-05T00:00:00.000Z'},
+        {projectId:'project-'+'b'.repeat(32),realPath:'C:/synthetic/other',displayName:'other',state:'unverified',observedAt:'2026-11-05T00:00:00.000Z'}]})});
+    q('compose-workspace').value=chinese;q('compose-workspace').dispatch('input');
+    q('compose-source').value=sourceKey(wb.execution);q('compose-source').dispatch('change');
+    q('compose-model').value='synthetic-model';q('compose-model').dispatch('change');
+    q('compose-effort').value='__none__';q('compose-effort').dispatch('change');
+    await until(()=>!q('preview-task').disabled);
+    assert.match(body.textContent,/项目 甲/);
+});
+
+test('adopting a recommendation only fills the form and never dispatches',async()=>{
+    const host=await openEditor();
+    fillIntent();
+    q('recommendation-refresh').click();
+    await until(()=>q('recommendation-decision'));
+    const adopt=body.descendants().find(node=>node.tagName==='BUTTON'&&node.textContent.trim()==='采用此候选');
+    assert.ok(adopt,'the recommendation offers one candidate to adopt');
+    adopt.click();
+    assert.equal(q('compose-model').value,wb.execution.modelId);
+    assert.match(body.textContent,/仍需核对约定/);
+    assert.equal(host.calls.filter(call=>call.action==='dispatch').length,0);
+    assert.equal(host.dispatched(),0);
 });

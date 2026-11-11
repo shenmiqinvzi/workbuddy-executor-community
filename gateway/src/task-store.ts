@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
+import { sqliteBusyTimeoutMs } from "./sqlite-busy.js";
 import type { LocalMessage } from "./workbuddy-client.js";
 import { persistedTaskContract, validateSupportedTaskContract, verifyPersistedContract, type PersistedTaskContract, type TaskContractIntegrity, type TaskContractPolicy, type TaskContractRejection } from "./task-contract.js";
 import { AdmissionError, CollaborationRegistry, enforceModelPolicy, verifySelectedModel, type ModelPolicy, type ModelObservation } from "./collaboration.js";
@@ -196,7 +197,7 @@ export class TaskStore {
     // Opening a status client must never change an existing Windows ACL.
     if (process.platform !== "win32") fs.chmodSync(file, 0o600);
     this.db.exec(`
-      PRAGMA busy_timeout = 5000;
+      PRAGMA busy_timeout = ${sqliteBusyTimeoutMs()};
       PRAGMA journal_mode = WAL;
       CREATE TABLE IF NOT EXISTS tasks (
         task_id TEXT PRIMARY KEY,

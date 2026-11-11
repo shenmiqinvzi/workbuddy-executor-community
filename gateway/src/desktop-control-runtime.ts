@@ -53,7 +53,7 @@ export async function inspectDesktopControl(config:Config,taskId:string,kind:Des
     const allowedActions:Array<DesktopControlKind>=[...view.allowedActions];
     if(task.state==="needs_review"&&view.remoteStopped&&task.report?.rawText.trim()&&store.workspaceProtection.readView(taskId,task.attemptId).baseline==="present")allowedActions.push("review");
     return {taskId,attemptId:task.attemptId,revision:task.revision,title:contract.title,workspace:task.workspace,
-      allowedActions,remoteStopped:view.remoteStopped,model:execution.modelId,rate,attempt:task.attempt??0,
+      allowedActions,displayState:view.displayState,remoteStopped:view.remoteStopped,model:execution.modelId,rate,attempt:task.attempt??0,
       executorId:execution.executorId,connectionId:execution.connectionId,providerId:execution.providerId,reasoningEffort:execution.reasoningEffort,
       attemptLimit:saved.record.effectiveMaxAttempts,currentReviewId:reviews.at(-1)?.reviewId??null,requirements:contract.requiredChecks};
   } finally {store.close();}

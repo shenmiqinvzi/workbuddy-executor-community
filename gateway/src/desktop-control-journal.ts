@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
+import { sqliteBusyTimeoutMs } from "./sqlite-busy.js";
 
 export type DesktopControlKind = "cancel" | "rework" | "review" | "accept";
 export type DesktopControlState = "requested" | "started" | "succeeded" | "rejected" | "outcome_unknown";
@@ -28,7 +29,7 @@ export class DesktopControlJournal {
       if (fs.existsSync(current) && fs.lstatSync(current).isSymbolicLink()) throw Error("Linked desktop state is not supported.");
     }
     const db = new DatabaseSync(this.file, { readOnly: !write });
-    db.exec("PRAGMA busy_timeout=3000");
+    db.exec(`PRAGMA busy_timeout=${sqliteBusyTimeoutMs()}`);
     if (write) {
       if (process.platform !== "win32") fs.chmodSync(this.file, 0o600);
       db.exec(`CREATE TABLE IF NOT EXISTS desktop_control_requests (

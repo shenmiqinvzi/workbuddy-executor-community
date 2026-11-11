@@ -6,6 +6,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { codeHashOf, desktopInstanceKey, observeDesktopWindow, observeReadiness, readRuntimeSummary, describeReadiness, type DesktopWindowObservation, type ReadinessReport } from "../src/readiness.js";
+import { createReadinessProbes } from "../src/readiness-probes.js";
 import type { Config } from "../src/config.js";
 
 function hashOfDist(dist: string): string {
@@ -60,7 +61,7 @@ function fixture(t: test.TestContext): Fixture {
     root, configDir, dbFile, config, env,
     report: options => observeReadiness({ root, config, env, platform: "win32", desktopObservation: { reachable: false, reason: "no window" }, ...options }),
     layer: (report, name) => { const found = report.layers.find(item => item.layer === name); assert.ok(found, `layer ${name} missing`); return found; },
-    writeSummary: runtime => fs.writeFileSync(path.join(data, "persistent-service-status.json"), JSON.stringify({ pid: process.pid, updatedAt: new Date().toISOString(), status: "running", runtime: { release: "test", packageVersion: "0.7.1", ...(runtime ?? {}) } })),
+    writeSummary: runtime => fs.writeFileSync(path.join(data, "persistent-service-status.json"), JSON.stringify({ pid: process.pid, dataRoot: data, startedAt: new Date().toISOString(), updatedAt: new Date().toISOString(), status: "running", runtime: { release: "test", packageVersion: "0.7.1", ...(runtime ?? {}) } })),
     dispose: () => fs.rmSync(root, { recursive: true, force: true }),
   };
   t.after(() => fx.dispose());
@@ -370,4 +371,104 @@ test("code hashing skips non-javascript files and survives a missing tree", () =
     fs.writeFileSync(path.join(root, "a.js"), "1");
     assert.equal(codeHashOf(path.join(root, "missing")), undefined);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+// ---- WB06: the report names its observer, and only a probe from this process may say ready ----
+
+test("the report names the process that observed it and which probes ran", async t => {
+  const fx = fixture(t);
+  const report = await fx.report({ origin: "test/readiness.test.ts" });
+  assert.equal(report.observer.origin, "test/readiness.test.ts");
+  assert.equal(report.observer.pid, process.pid);
+  assert.equal(report.observer.platform, "win32");
+  assert.equal(report.observer.root, fx.root);
+  assert.equal(report.observer.dataRoot, path.dirname(fx.dbFile));
+  assert.deepEqual(report.observer.probes, { tool: "not_observed", native: "not_observed" });
+  assert.ok(report.notes.some(note => note.startsWith("tool: ") && note.includes("没有注入 tool probe")));
+  assert.ok(report.notes.some(note => note.startsWith("native: ")));
+});
+
+test("an unrecognized observer is named instead of being left blank", async t => {
+  const fx = fixture(t);
+  assert.equal((await fx.report()).observer.origin, "observeReadiness");
+});
+
+test("a tool probe from this process is what makes toolResponsive ready", async t => {
+  const fx = fixture(t);
+  fx.writeSummary({ codeHash: hashOfDist(path.join(fx.root, "dist")) });
+  const withProbe = fx.layer(await fx.report({ probes: { tool: async () => ({ responsive: true, detail: "workbuddy_health answered" }) } }), "toolResponsive");
+  assert.equal(withProbe.state, "ready");
+  assert.equal(withProbe.facts.toolProbe, true);
+  assert.equal(withProbe.reason, "workbuddy_health answered");
+
+  const withoutProbe = fx.layer(await fx.report(), "toolResponsive");
+  assert.notEqual(withoutProbe.state, "ready");
+  assert.ok(withoutProbe.missing.includes("tool_probe"));
+});
+
+test("a probe that fails blocks the layer with its reason instead of reporting unknown", async t => {
+  const fx = fixture(t);
+  const tool = fx.layer(await fx.report({ probes: { tool: async () => { throw new Error("spawn EACCES"); } } }), "toolResponsive");
+  assert.equal(tool.state, "blocked");
+  assert.match(String(tool.reason), /the tool probe failed/);
+  const native = fx.layer(await fx.report({ probes: { native: async () => ({ bridgeReady: false, detail: "bridge not reachable" }) } }), "nativeOnline");
+  assert.equal(native.state, "blocked");
+  assert.equal(native.facts.bridgeReady, false);
+});
+
+test("a runtime summary from another data directory cannot prove this install is running", async t => {
+  const fx = fixture(t);
+  const foreign = fs.mkdtempSync(path.join(os.tmpdir(), "foreign-data-"));
+  t.after(() => fs.rmSync(foreign, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(fx.root, "data", "persistent-service-status.json"), JSON.stringify({ pid: process.pid, dataRoot: foreign, updatedAt: new Date().toISOString(), runtime: { codeHash: hashOfDist(path.join(fx.root, "dist")) } }));
+  const deployed = fx.layer(await fx.report(), "candidateDeployed");
+  assert.equal(deployed.state, "blocked");
+  assert.match(String(deployed.reason), /another data directory/);
+  assert.equal(deployed.facts.runtimeDataRoot, foreign);
+  assert.equal(deployed.facts.observedDataRoot, path.dirname(fx.dbFile));
+});
+
+test("a summary written before the binding fields stays readable but cannot be ready", async t => {
+  const fx = fixture(t);
+  fs.writeFileSync(path.join(fx.root, "data", "persistent-service-status.json"), JSON.stringify({ pid: process.pid, updatedAt: new Date().toISOString(), runtime: { codeHash: hashOfDist(path.join(fx.root, "dist")) } }));
+  const report = await fx.report();
+  const deployed = fx.layer(report, "candidateDeployed");
+  assert.equal(deployed.state, "unverified");
+  assert.ok(deployed.missing.includes("runtime_data_root"));
+  assert.equal(deployed.facts.runtimeStartedAt, null);
+  assert.match(String(deployed.reason), /predates dataRoot/);
+});
+
+test("the heartbeat carries the data root and the start time it belongs to", async t => {
+  const fx = fixture(t);
+  fx.writeSummary({ codeHash: hashOfDist(path.join(fx.root, "dist")) });
+  const summary = readRuntimeSummary(fx.root);
+  assert.equal(summary.summary?.dataRoot, path.dirname(fx.dbFile));
+  assert.ok(summary.summary?.startedAt);
+});
+
+test("the memoized probe pair asks once per window and marks a cached answer", async () => {
+  let calls = 0;
+  let clock = 1_000;
+  const probes = createReadinessProbes({
+    ttlMs: 5_000, now: () => clock,
+    probe: async () => { calls += 1; return { responsive: true, detail: "answered", native: { bridgeReady: true, detail: "bridge" } }; },
+  });
+  assert.deepEqual(await probes.tool!(), { responsive: true, detail: "answered" });
+  clock += 1_000;
+  const cached = await probes.tool!();
+  assert.equal(calls, 1);
+  assert.match(String(cached.detail), /\(cached 1000ms\)/);
+  clock += 10_000;
+  await probes.tool!();
+  assert.equal(calls, 2);
+  const native = await probes.native!();
+  assert.equal(native.bridgeReady, true);
+});
+
+test("a probe answer without a bridge status never claims the bridge is ready", async () => {
+  const probes = createReadinessProbes({ probe: async () => ({ responsive: true, detail: "answered" }) });
+  const native = await probes.native!();
+  assert.equal(native.bridgeReady, false);
+  assert.match(String(native.detail), /no bridge status/);
 });

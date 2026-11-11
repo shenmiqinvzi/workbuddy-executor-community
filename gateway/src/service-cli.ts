@@ -288,6 +288,11 @@ async function runService(configFile: string): Promise<void> {
   const trigger = await module.createNativeDesktopTrigger(config, { cdpPort: registration.cdpPort });
   const store = new TaskStore(config.dbFile);
   const stateFile = path.join(registration.projectDir, "data", "persistent-service-status.json");
+  // The heartbeat carries what makes it evidence: which build, which data
+  // directory and which process wrote it. Readiness refuses to compare a summary
+  // from another database with this install's files.
+  const startedAt = new Date().toISOString();
+  const dataRoot = path.dirname(config.dbFile);
   let stopping = false;
   let stopDelay: (() => void) | undefined;
   const stop = () => { stopping = true; stopDelay?.(); };
@@ -296,7 +301,7 @@ async function runService(configFile: string): Promise<void> {
   try {
     while (!stopping) {
       const result = await pumpWorkspaceWorkers(config, registration, trigger, store);
-      writePrivateJson(stateFile, { pid: process.pid, runtime: runtimeVersion, ...result, updatedAt: new Date().toISOString() });
+      writePrivateJson(stateFile, { pid: process.pid, runtime: runtimeVersion, dataRoot, startedAt, ...result, updatedAt: new Date().toISOString() });
       if (!stopping) await new Promise<void>((resolve) => {
         const timer = setTimeout(() => { stopDelay = undefined; resolve(); }, registration.intervalMs ?? 1500);
         stopDelay = () => { clearTimeout(timer); stopDelay = undefined; resolve(); };

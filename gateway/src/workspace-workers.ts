@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
+import { sqliteBusyTimeoutMs } from "./sqlite-busy.js";
 import type { Config } from "./config.js";
 import { AdmissionError } from "./collaboration.js";
 import { readDesktopSession, waitForDesktopSession, type DesktopSessionEvidence } from "./desktop-runtime.js";
@@ -68,7 +69,7 @@ export class WorkspaceWorkers {
     const file = path.join(root, "workspace-workers.sqlite");
     this.db = new DatabaseSync(file);
     if (process.platform !== "win32") fs.chmodSync(file, 0o600);
-    this.db.exec(`PRAGMA busy_timeout=5000;
+    this.db.exec(`PRAGMA busy_timeout=${sqliteBusyTimeoutMs()};
       CREATE TABLE IF NOT EXISTS workers(sessionId TEXT PRIMARY KEY, workspace TEXT NOT NULL, state TEXT NOT NULL,
         selected INTEGER NOT NULL, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL, error TEXT);
       CREATE UNIQUE INDEX IF NOT EXISTS selected_workspace ON workers(workspace) WHERE selected=1;`);

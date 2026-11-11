@@ -29,12 +29,18 @@ foreach ($rule in $acl.GetAccessRules($true,$true,[Security.Principal.SecurityId
 }
 [Console]::Out.Write('private')
 `;
+// The ACL query is a local read: raising the budget for a loaded or slow host
+// must not change the verdict. A timeout and a failed query stay distinguishable.
+const TIMEOUT_MS = (() => {
+  const configured = Number(process.env.WORKBUDDY_PRIVATE_PATH_TIMEOUT_MS ?? 30000);
+  return Number.isFinite(configured) && configured > 0 ? configured : 30000;
+})();
 export function windowsPrivatePath(path, { protect = false, directory = false } = {}) {
   if (process.platform !== 'win32') return;
   try {
     const result = execFileSync(join(process.env.SystemRoot ?? 'C:\\Windows', 'System32/WindowsPowerShell/v1.0/powershell.exe'),
       ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')],
-      { input: `${Buffer.from(path, 'utf8').toString('base64')}\n${protect ? 1 : 0}\n${directory ? 1 : 0}`, encoding: 'utf8', windowsHide: true, timeout: 10000, maxBuffer: 65536, stdio: ['pipe', 'pipe', 'pipe'] });
+      { input: `${Buffer.from(path, 'utf8').toString('base64')}\n${protect ? 1 : 0}\n${directory ? 1 : 0}`, encoding: 'utf8', windowsHide: true, timeout: TIMEOUT_MS, maxBuffer: 65536, stdio: ['pipe', 'pipe', 'pipe'] });
     if (result.trim() !== 'private') throw Error();
   } catch (error) {
     const reason = error?.code === 'ETIMEDOUT' ? 'query_timeout' : 'query_failed';

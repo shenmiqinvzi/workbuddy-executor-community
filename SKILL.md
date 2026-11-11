@@ -77,9 +77,13 @@ description: 将适合的本地开发、修复、测试及资料整理交给桌�
 先用 check_task 保存服务端程序批次；需要语义检查时，以 record_inspection 记录实际文件检查，再用 review_task 引用原约定的 semantic 项和检查证据，取得不可变 reviewId。accept_task 只接受该 reviewId 和当前 operationId/revision/attempt；旧 note/evidence/artifactPaths 调用不能绕过。命令必需项须有可匹配的真实命令记录：`send_task` 的 `acceptanceCommands` 元素必须是**一段 JSON 文本**（CommandSpec），不是命令行字符串，五个键缺一个都会被拒：
 
 ```json
-{"executable":"F:/node.exe","args":["-p","require('fs').readFileSync('RESULT.md','utf8')"],"cwd":"<工作区绝对路径>","timeoutSeconds":60,"inputs":["RESULT.md"]}
+{"executable":"<node>","args":["-p","require('fs').readFileSync('RESULT.md','utf8')"],"cwd":"<工作区绝对路径>","timeoutSeconds":60,"inputs":["RESULT.md"]}
 ```
 
-写成裸命令（如 `F:/node.exe -p "..."`）不会报错，但该检查项永远是 `unknown`，accept 时会以 `CHECKS_REQUIRED` 拒绝——`unknown` 与 `failed` 一样不可接受。`inputs` 不能为空、`cwd` 必须在工作区内、路径用正斜杠。原约定为精确 JSON CommandSpec 时可显式调用 run_review_command 复核，由网关自己执行并登记独立记录，不调用模型。详情见 [派工与审查示例](references/dispatch.md)。需要修正且确认原生停止后，沿原任务 continue_task，保留会话与失败历史；默认首次加两轮返工，不换键绕过限制。超时的认证迟到报告可供审查，任务仍是 blocked，不能直接验收。
+把 `<node>` 换成 `node -p process.execPath` 打印出来的绝对路径（就是跑这个技能的那个 Node），`cwd` 换成用户选定的工作区绝对路径，`inputs` 写命令要读的文件（相对 `cwd`，或写绝对路径但要落在 `cwd` 与工作区内）。这三处不替换就发出去会被判 `COMMAND_SPEC_PATH`/`COMMAND_SPEC_REQUIRED`，不会执行——占位符不是合法路径，这是有意的。示例里的命令只读一个结果文件：它不写盘、不联网、不改工作区，这也是验收命令应有的默认形态；需要写盘或跑测试的命令要显式把产物写进工作区并在 `inputs` 里列出它读的文件。
+
+一次审查的 revision 变化是单向的：`send_task`/`continue_task` 定下检查项（revision 1，返工加一）→ `run_review_command` 或 check_task 执行并登记**命令记录**（不改 revision，但记录与本次 attempt 绑定）→ `record_inspection` 记语义检查（同样不改 revision）→ `review_task` 出不可变 reviewId（绑定当时的 revision/attempt）→ `accept_task` 只认这个 reviewId 与当前 revision/attempt。任何一步之后 revision 或 attempt 变了，之前那份 review 就作废，要重新走。
+
+写成裸命令（如 `node -p "..."`）现在会在派工时被拒（`COMMAND_SPEC_REQUIRED`，附出错位置、原因与可复制示例），不会发出任何原生请求；只有历史上已按自由文本落库的检查项仍保留可读记录、永远判 `unknown`，accept 时会以 `CHECKS_REQUIRED` 拒绝——`unknown` 与 `failed` 一样不可接受。`inputs` 不能为空、`cwd` 必须在工作区内、路径用正斜杠。原约定为精确 JSON CommandSpec 时可显式调用 run_review_command 复核，由网关自己执行并登记独立记录，不调用模型。详情见 [派工与审查示例](references/dispatch.md)。需要修正且确认原生停止后，沿原任务 continue_task，保留会话与失败历史；默认首次加两轮返工，不换键绕过限制。超时的认证迟到报告可供审查，任务仍是 blocked，不能直接验收。
 
 最终报告真实交付状态、成果入口、实际验证及影响使用的遗留问题。评估效率时记录监督调用、回报字节数、耗时和人工干预；没有对照实测，不宣称节省 token 或时间。

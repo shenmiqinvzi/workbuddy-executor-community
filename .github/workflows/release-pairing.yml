@@ -1,0 +1,81 @@
+name: Release pairing
+
+# Rebuilds the same three artifacts the release step produces (gateway ZIP,
+# desktop ZIP, skill ZIPs) and proves they are one source tree:
+#  - verify-pairing.mjs: every shared path must be byte-identical and the two
+#    manifests must agree on sha256+bytes for those paths;
+#  - candidate-installation.mjs check: the ZIP must expand to the declared file
+#    set with matching checksums.
+#
+# It is here so the pairing claim can be re-checked on a machine this round never
+# touched. Until it has run there, the CI tier of that evidence is empty — the
+# local run is recorded in docs/forward/WB37_PAIRED_RELEASE.md and does not
+# borrow a CI receipt it never got.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'gateway/src/**'
+      - 'gateway/scripts/**'
+      - 'gateway/desktop/**'
+      - 'gateway/skills/**'
+      - 'SKILL.md'
+      - 'references/**'
+      - 'agents/**'
+
+permissions:
+  contents: read
+
+jobs:
+  pair:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: gateway
+    env:
+      WORKBUDDY_CONFIG_DIR: ${{ runner.temp }}\workbuddy-pair-config
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: gateway/package-lock.json
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Build the gateway
+        run: npm run build
+      - name: Package the gateway and the two skill archives
+        run: |
+          node scripts/package.mjs "$env:RUNNER_TEMP\pair"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build the desktop shell from the same tree
+        run: |
+          npm run desktop:build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Package the desktop shell
+        run: |
+          node scripts/package-desktop.mjs "$env:RUNNER_TEMP\pair\desktop"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Prove both archives come from one tree
+        run: |
+          $gateway = Join-Path "$env:RUNNER_TEMP\pair" 'codex-workbuddy-gateway-v0.7.1.zip'
+          $desktop = Join-Path "$env:RUNNER_TEMP\pair\desktop" 'workbuddy-desktop-v0.7.1-t7d-desktop-preview.zip'
+          node scripts/verify-pairing.mjs $gateway $desktop
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $hash = (Get-FileHash $gateway -Algorithm SHA256).Hash.ToLower()
+          node scripts/candidate-installation.mjs check --package $gateway --expect-sha256 $hash
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upload both archives for inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: paired-release
+          path: |
+            ${{ runner.temp }}/pair/codex-workbuddy-gateway-v0.7.1.zip
+            ${{ runner.temp }}/pair/desktop/workbuddy-desktop-v0.7.1-t7d-desktop-preview.zip
+          if-no-files-found: error

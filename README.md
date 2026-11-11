@@ -6,6 +6,45 @@
 
 项目正在整理开放协作入口；统一开源许可证尚待明确，来源与授权事实见 [授权和许可说明](AUTHORIZATION.md)。本仓库是面向社区的公开版本。
 
+## 当前状态（唯一现状入口）
+
+下面这些文档按日期记录当时的进展；**当前总表只有一处**——[验收矩阵](docs/forward/ACCEPTANCE_MATRIX.md)（53 项，逐项写明判据、可观察子断言、证据维度与下一步）。历史文档保留原文与日期，不再充当当前结论。
+
+| 你需要 | 入口 |
+|---|---|
+| 53 项验收现状、证据与缺口 | [ACCEPTANCE_MATRIX.md](docs/forward/ACCEPTANCE_MATRIX.md) |
+| 本轮交付范围与未覆盖 | [交付报告](docs/forward/DELIVERY_REPORT_20261111.md) |
+| 冻结候选与全绿证据 | [WB36 冻结候选](docs/forward/WB36_FREEZE_CANDIDATE.md) |
+| 网关 / 桌面 / 技能配对包 | [WB37 配对包](docs/forward/WB37_PAIRED_RELEASE.md) |
+| 安装、升级、回退与排障 | [使用与维护手册](docs/forward/WB40_USER_AND_MAINTAINER_MANUAL.md) |
+| 本机安装演练与真实窗口证据 | [WB35/WB38](docs/forward/WB35_WB38_INSTALLED_AND_WINDOW.md) |
+| 真实原生派工实录（7 次派工 / 失败路径） | [WB35 live](docs/forward/WB35_LIVE_NATIVE_RUN.md) |
+| 自动模式的两层决策 | [ADR-01](docs/forward/ADR-01_AUTOMATION_MODES.md) |
+| 资源、用量与统计 | [WB16–WB25](docs/forward/WB16_WB25_RESOURCE_USAGE_STATISTICS.md) |
+| 故障与安全边界 | [WB32–WB33](docs/forward/WB32_WB33_FAULT_AND_SECURITY.md) |
+| 技能唯一来源与漂移检测 | [WB07](docs/forward/WB07_SKILL_SINGLE_SOURCE.md) |
+| 就绪五层与探针来源 | [WB06](docs/forward/WB06_READINESS_FACTS.md) |
+| 停止证据与恢复路径 | [WB04](docs/forward/WB04_NATIVE_STOP_OWNERSHIP.md) · [WB09](docs/forward/WB09_RECOVERY_MATRIX.md) |
+
+支持范围：仅 Windows（Node 24+、PowerShell 5.1+；桌面包 `net10.0-windows`，需 .NET 10 Desktop Runtime 与 WebView2 Runtime，未做自包含发布）。以下是**当前**约定，不是待办清单：
+
+- 自动模式只有 `per_task_confirmed` 一层生效；`preauthorized_policy` 仍是提案，启用需用户明确调整规则（见 ADR-01）。
+- 费用未知一律保持 `unknown`，不补 0、不把估算当硬上限；每个新任务仍需用户实际选择执行器/来源/模型/档位。
+- 停止只认原生停止证据；报告收到、超时、页面空闲都不等于已停止。
+- 实窗（window）、真实派工（live）、安装后（installed）、第二台机（second_machine）、远端 CI 回执（ci）与发行（release）六类证据尚未取得，验收矩阵里对应项按 `blocked`/`unknown` 记录。
+- 配对包未做代码签名，Windows 会提示未签名；签名与第三方声明见 [WB41](docs/forward/WB41_LICENSES_AND_SIGNING.md)。
+
+常见错误与具体操作：
+
+| 现象 | 先做什么 |
+|---|---|
+| `readiness` 报 `toolResponsive unknown` | 说明观察者没有注入探针（例如从别处读旧摘要）。在 gateway 目录跑 `npm run readiness`，它会拉起短命 MCP 进程真调 `workbuddy_health`。 |
+| `candidateDeployed` 报 `another data directory` | 摘要来自另一个数据根，不能证明当前安装；用本安装的配置目录重跑，或删掉那份外来摘要。 |
+| `candidateDeployed` 报 `predates dataRoot` | 旧版常驻服务没写绑定字段；重启一次常驻服务即可，不要改摘要文件。 |
+| 派工被拒 `COMMAND_SPEC_REQUIRED` | `acceptanceCommands` 元素必须是五键 JSON 文本（executable/args/cwd/timeoutSeconds/inputs），且 `inputs` 非空、`cwd` 在工作区内。 |
+| 派工被拒 `ACTION_UNAVAILABLE` | 该状态不允许此操作；错误里已列出当前 `displayState` 与可用操作，按提示先取消或等原生结束。 |
+| `ERR_SQLITE_ERROR` 且提示保留任务编号 | 并发写入超出锁等待预算；确认没有第二个进程占用同一数据根，必要时用 `WORKBUDDY_SQLITE_BUSY_TIMEOUT_MS` 放宽（默认 15000）。 |
+
 ## 当前能力
 
 - 通过 Windows desktop-queue 连接 WorkBuddy，提供技能、网关源码和验证记录。

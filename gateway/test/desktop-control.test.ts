@@ -4,7 +4,7 @@ import { DesktopControlSession, type DesktopControlSnapshot } from "../src/deskt
 import type { DesktopControlDraft, DesktopControlReceipt } from "../src/desktop-control-journal.js";
 
 function fixture() {
-  let snapshot:DesktopControlSnapshot={taskId:"task",attemptId:"attempt",revision:"revision",title:"Example",workspace:"project",allowedActions:["cancel","rework","review","accept"],remoteStopped:true,model:"model-a",rate:"x0.00",executorId:"workbuddy",connectionId:"local",providerId:"native",reasoningEffort:null,attempt:1,attemptLimit:2,currentReviewId:"review-1",requirements:[{id:"semantic-1",kind:"semantic",definition:"Keep behavior"}]};
+  let snapshot:DesktopControlSnapshot={taskId:"task",attemptId:"attempt",revision:"revision",title:"Example",workspace:"project",allowedActions:["cancel","rework","review","accept"],displayState:"needs_review",remoteStopped:true,model:"model-a",rate:"x0.00",executorId:"workbuddy",connectionId:"local",providerId:"native",reasoningEffort:null,attempt:1,attemptLimit:2,currentReviewId:"review-1",requirements:[{id:"semantic-1",kind:"semantic",definition:"Keep behavior"}]};
   const sent:DesktopControlDraft[]=[];
   const session=new DesktopControlSession({inspect:async()=>structuredClone(snapshot),enqueue:async draft=>{sent.push(draft);return {requestId:draft.requestId,operationId:draft.operationId,kind:draft.kind,taskId:draft.taskId,attemptId:draft.attemptId,revision:draft.revision,state:"requested"} satisfies DesktopControlReceipt;},receipt:()=>null,forAttempt:()=>[]});
   const input={kind:"rework",taskId:"task",attemptId:"attempt",revision:"revision",feedback:"Fix the boundary",reviewId:null,inspectionFiles:null,semanticChecks:null};

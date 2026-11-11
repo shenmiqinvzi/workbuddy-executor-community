@@ -51,11 +51,27 @@
 
 ```json
 "acceptanceCommands": [
-  "{\"executable\":\"F:/node.exe\",\"args\":[\"-p\",\"require('fs').readFileSync('RESULT.md','utf8')\"],\"cwd\":\"E:/work/workspace\",\"timeoutSeconds\":60,\"inputs\":[\"RESULT.md\"]}"
+  "{\"executable\":\"<node>\",\"args\":[\"-p\",\"require('fs').readFileSync('RESULT.md','utf8')\"],\"cwd\":\"<工作区绝对路径>\",\"timeoutSeconds\":60,\"inputs\":[\"RESULT.md\"]}"
 ]
 ```
 
-五个键 `executable`/`args`/`cwd`/`timeoutSeconds`/`inputs` 缺一不可，`inputs` 不能为空、`cwd` 必须在工作区内、路径用正斜杠。写成裸命令不会在派工时被拒，但 check_task 对它的判断永远是 `unknown`，accept 报 `CHECKS_REQUIRED`：`unknown`、`failed`、`checker_error`、`not_applicable` 都不能接受。发现写错时不要改键绕过——cancel 后以新的 taskId 重提，旧的 blocked/cancelled 记录留作证据。
+`<node>` 用 `node -p process.execPath` 的输出替换——那是跑本技能的那个 Node，不是别人机器上的路径；`<工作区绝对路径>` 换成用户选定的工作区；`inputs` 写命令实际读取的文件（相对 `cwd`，或绝对路径但必须落在 `cwd` 与工作区内）。留占位符发出去会被拒（`COMMAND_SPEC_PATH`/`COMMAND_SPEC_REQUIRED`），不会执行，这是设计好的行为。上面这条命令只读一个结果文件、不写盘、不联网，是验收命令的默认形态；要跑测试或生成产物时，把写盘位置限定在工作区内，并把读取的文件全部列进 `inputs`。
+
+同一个工作区里的只读检查不需要额外 scope；要让模型改文件才需要 `scope`，并且必须逐条列出。派工前的 scope 预览显示的是保护范围内的旧修改将被如何对待，不是模型将要写什么。
+
+一次验收里 revision 只沿一个方向走：
+
+| 步骤 | 工具 | 对 revision 的影响 | 产出 |
+| --- | --- | --- | --- |
+| 定检查项 | `send_task` / `continue_task` | 新任务为 1，返工加一 | 约定哈希、检查项 |
+| 跑命令 | `check_task`（服务端批次）或 `run_review_command`（单条精确 spec） | 不变 | 绑定本次 attempt 的命令记录 |
+| 记语义检查 | `record_inspection` | 不变 | 检查证据 |
+| 出审查 | `review_task` | 不变 | 不可变 reviewId，绑定当时 revision/attempt |
+| 验收 | `accept_task` | 不变 | 只认上述 reviewId 与当前 revision/attempt |
+
+revision 或 attempt 一变（返工、取消后重提），此前那份 review 与命令记录都不再能用于验收，必须重走。
+
+五个键 `executable`/`args`/`cwd`/`timeoutSeconds`/`inputs` 缺一不可，`inputs` 不能为空、`cwd` 必须在工作区内、路径用正斜杠。写成裸命令会在派工前被拒（`COMMAND_SPEC_REQUIRED`，不发出任何原生请求）；只有历史上已落库的自由文本检查项仍判 `unknown`，accept 报 `CHECKS_REQUIRED`：`unknown`、`failed`、`checker_error`、`not_applicable` 都不能接受。发现写错时不要改键绕过——cancel 后以新的 taskId 重提，旧的 blocked/cancelled 记录留作证据。
 
 ## 指定 DSH 执行器
 

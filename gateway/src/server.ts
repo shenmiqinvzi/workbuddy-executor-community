@@ -18,6 +18,11 @@ import { loadDotEnv } from "./env.js";
 import { runtimeVersion } from "./runtime-version.js";
 import { progressDelta } from "./progress-summary.js";
 import { registerTaskProjectionTool } from "./task-view-reader.js";
+import { COMMAND_SPEC_EXAMPLE } from "./command-spec.js";
+
+// The MCP schema stays a string array (a JSON CommandSpec is transported as
+// text), but every entry must parse as the five-field spec before dispatch.
+const COMMAND_SPEC_FIELD_DESCRIPTION = `Each entry must be one JSON CommandSpec with exactly executable, args, cwd, timeoutSeconds and inputs; free text, bare command lines and shell strings are rejected before any native preparation. inputs must be a nonempty list of workspace-relative files and cwd must be an absolute directory inside the task workspace. Example: ${COMMAND_SPEC_EXAMPLE}`;
 import { runsDirectory } from "./run-journal.js";
 import { AdmissionError } from "./collaboration.js";
 import { configuredDshCoordinator } from "./dsh-runtime.js";
@@ -92,7 +97,7 @@ server.tool("workbuddy_send_task", "Reserve and dispatch a task to a verified Wo
   sessionId: z.string().min(1).optional().describe("Real WorkBuddy desktop session ID. Required when several live sessions exist."),
   sessionMode: z.enum(["existing", "new"]).optional().default("existing").describe("Queue uses project routing with existing; pass workspace for automatic native creation or selection. ACP new is version-dependent."),
   model: z.string().trim().min(1).optional().describe("Exact model ID from workbuddy_list_models. The user must choose this exact model before dispatch; queue applies and verifies it at the next native wake."),
-  constraints: z.array(z.string()).max(30).optional(), acceptanceCommands: z.array(z.string()).max(30).optional(), timeoutSeconds: timeout,
+  constraints: z.array(z.string()).max(30).optional(), acceptanceCommands: z.array(z.string()).max(30).optional().describe(COMMAND_SPEC_FIELD_DESCRIPTION), timeoutSeconds: timeout,
   scope: z.object({ allowedChanges: z.array(z.string()).max(100), permittedMetadata: z.array(z.string()).max(100) }).strict().optional().describe("Immutable exact-file/directory/** write scope for a non-contract task. Missing scope grants read-only access. Existing user changes remain protected; cannot be combined with contract."),
   contract: z.unknown().optional().describe("Optional immutable vnext-1/vnext-2 contract. Requires a registered workspace; vnext-2 also requires a plan authorized through the trusted application service. Do not combine with constraints/check overrides."),
   detail,
@@ -145,7 +150,7 @@ server.tool("workbuddy_get_messages", "Synchronize and read current-attempt prog
 }, ({ taskId, attemptId, limit, detail }) => guard(async () => ({ ok: true, task: await tasks.sync(taskId, 100), messages: tasks.listMessages(taskId, limit, attemptId) }), detail, { messageAttemptId: attemptId }));
 
 server.tool("workbuddy_continue_task", "Send specific review feedback to the same verified desktop session. Original objective, constraints and checks remain in force. Refuses an overlapping prompt or switching sessions.", {
-  ...operation, taskId, feedback: z.string().min(1).max(10_000), acceptanceCommands: z.array(z.string()).max(30).optional(), timeoutSeconds: timeout, model: z.string().min(1).optional(), detail,
+  ...operation, taskId, feedback: z.string().min(1).max(10_000), acceptanceCommands: z.array(z.string()).max(30).optional().describe(COMMAND_SPEC_FIELD_DESCRIPTION), timeoutSeconds: timeout, model: z.string().min(1).optional(), detail,
 }, ({ detail, ...input }) => guard(() => tasks.continue(input), detail));
 
 server.tool("workbuddy_reconcile_report", "Restore an existing authenticated, on-time worker report for review when a later native error overwrote it. Requires the current attempt, verified native idle and original turn ownership. Does not dispatch a task or accept a result.", {

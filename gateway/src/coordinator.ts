@@ -18,6 +18,7 @@ import { runEvidenceDigestOf } from "./run-evidence.js";
 export { runEvidenceDigestOf } from "./run-evidence.js";
 import { validateSupportedTaskContract, contractExecution, validateTaskScope, type TaskContractScope } from "./task-contract.js";
 import { AdmissionError, defaultModelPolicy, enforceModelPolicy, type ModelObservation } from "./collaboration.js";
+import { admitCommandSpecs, commandSpecAdmissionMessage } from "./command-spec.js";
 
 import type { OperationOptions, OperationRecord } from "./operation-admission.js";
 import type { WorkspaceDispatchGuard } from "./workspace-protection.js";
@@ -105,6 +106,16 @@ export class TaskCoordinator {
     this.store.workspaceProtection.assertGuard(scopeGuard);
     return result;
   }
+  /**
+   * Every commanded acceptance check is validated as an exact JSON CommandSpec
+   * before native preparation or capacity reservation, so an unrunnable check
+   * can never be dispatched and later be reported as an unverifiable "unknown".
+   * Legacy free text stays readable on stored rows; it is never accepted here.
+   */
+  private admitCommandChecks(definitions: string[] | undefined, workspaceRoot: string | null, field: string): void {
+    const rejection = admitCommandSpecs(definitions, { workspaceRoot, field });
+    if (rejection) throw new AdmissionError(rejection.code, commandSpecAdmissionMessage(rejection));
+  }
   private async sendAdmitted(input: SendTaskInput, operation?: OperationRecord) {
     this.requireDesktop();
     if (input.contract !== undefined) return this.sendWithContract(input, operation);
@@ -134,6 +145,7 @@ export class TaskCoordinator {
     if (previous) return reuse(previous);
     if (!input.model?.trim()) throw new AdmissionError("MODEL_SELECTION_REQUIRED", "Choose and authorize an exact model before a new task can prepare or dispatch.");
     if (input.workspace && (!path.isAbsolute(input.workspace) || !fs.statSync(input.workspace).isDirectory())) throw new Error("workspace must be an existing absolute directory");
+    this.admitCommandChecks(input.acceptanceCommands, input.workspace ?? null, "acceptanceCommands");
     let scopeGuard: WorkspaceDispatchGuard | undefined;
     const protectLegacy = (workspace: string) => {
       this.store.workspaceProtection.create(taskId, workspace, submissionHash, declaredScope ?? { allowedChanges: [], permittedMetadata: [] }, runsDirectory(this.config), declaredScope ? "scoped_submission" : "legacy_read_only");
@@ -145,6 +157,9 @@ export class TaskCoordinator {
         if(!input.workspace&&!input.sessionId&&new Set(readWorkspaceWorkers(this.config,registration).filter(worker=>worker.selected).map(worker=>worker.workspace)).size>1)throw new Error("Several project workspaces are registered; provide workspace or sessionId instead of silently using the legacy default");
         const workspace=input.workspace??(input.sessionId?readDesktopSession(this.config.workbuddyConfigDir,input.sessionId).cwd:registration.workspace);
         if(!workspace)throw new Error("Cannot determine the chosen native session workspace");
+        // The routed workspace is now known: containment is checked before the
+        // task row, the scope row or any native preparation exists.
+        this.admitCommandChecks(input.acceptanceCommands, workspace, "acceptanceCommands");
         protectLegacy(workspace);
         const selected=await this.prepareWorkspace(operation,{workspace,sessionId:input.sessionId,model:input.model},scopeGuard!);
         input={...input,workspace:selected.workspace,sessionId:selected.sessionId};
@@ -178,6 +193,7 @@ export class TaskCoordinator {
     const admission = this.store.collaboration.prepare(contract, contractHash, policy);
     if (input.workspace !== undefined && fs.realpathSync.native(input.workspace) !== admission.workspace.realPath) throw new AdmissionError("WORKSPACE_CONFLICT", "The supplied directory differs from the registered project.");
     const commands = contract.requiredChecks.filter(check => check.kind === "command").map(check => check.definition);
+    this.admitCommandChecks(commands, admission.workspace.realPath, "contract.requiredChecks");
     const constraints = [`Allowed changes: ${JSON.stringify(contract.scope.allowedChanges)}`, `Permitted metadata: ${JSON.stringify(contract.scope.permittedMetadata)}`];
     this.store.workspaceProtection.create(contract.taskId, admission.workspace.realPath, contractHash, contract.scope, runsDirectory(this.config));
     const scopeGuard = this.store.workspaceProtection.guard(contract.taskId);
@@ -445,6 +461,9 @@ export class TaskCoordinator {
   }
   async continue(input: { taskId: string; feedback: string; acceptanceCommands?: string[]; timeoutSeconds?: number; model?: string } & OperationOptions) {
     input = structuredClone(input);
+    // An appended check is refused before the operation record, the native stop
+    // observation or any attempt reservation: the same CommandSpec rule as send.
+    this.admitCommandChecks(input.acceptanceCommands, this.store.get(input.taskId)?.workspace ?? null, "acceptanceCommands");
     const { operationId, expectedRevision, expectedAttemptId, ...parameters } = input;
     // Legacy callers did not supply a view token: observe first, then capture it
     // transactionally. A saved compatibility operation is replayed before sync.
@@ -497,6 +516,8 @@ export class TaskCoordinator {
         modelObservation = await this.observeModel(this.config, task.sessionId, execution.modelId);
       }
     }
+    // Appended checks were already admitted in continue(), before any admission
+    // side effect; merging here never widens what that check accepted.
     const current = { ...task, acceptanceCommands: [...new Set([...(task.acceptanceCommands ?? []), ...(input.acceptanceCommands ?? [])])] };
     const prompt = buildTaskPrompt({ taskId: current.taskId, objective: current.objective, workspace: current.workspace, constraints: current.constraints, acceptanceCommands: current.acceptanceCommands, timeoutSeconds: input.timeoutSeconds ?? this.config.taskTimeoutSeconds ?? 1800 }, input.feedback);
     return this.dispatch(current, prompt, { ...input, modelObservation, scopeGuard, sessionId: current.sessionId, sessionMode: "existing" });

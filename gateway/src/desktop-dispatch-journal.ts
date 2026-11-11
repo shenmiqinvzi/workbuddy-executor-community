@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
+import { sqliteBusyTimeoutMs } from "./sqlite-busy.js";
 import type { DesktopDraft, DesktopReceipt } from "./desktop-dispatch.js";
 
 const digest = (value: unknown) => crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -19,7 +20,7 @@ export class DesktopDispatchJournal {
     const db = new DatabaseSync(this.file, { readOnly: !write });
     if (write) {
       if (process.platform !== "win32") fs.chmodSync(this.file, 0o600);
-      db.exec("PRAGMA busy_timeout=3000; CREATE TABLE IF NOT EXISTS desktop_dispatch_requests (request_id TEXT PRIMARY KEY, task_id TEXT NOT NULL UNIQUE, operation_id TEXT NOT NULL UNIQUE, digest TEXT NOT NULL, body TEXT NOT NULL, state TEXT NOT NULL, code TEXT, message TEXT, updated_at TEXT NOT NULL, owner_pid INTEGER, owner_started_at TEXT, claimed_at TEXT, heartbeat_at TEXT)");
+      db.exec(`PRAGMA busy_timeout=${sqliteBusyTimeoutMs()}; CREATE TABLE IF NOT EXISTS desktop_dispatch_requests (request_id TEXT PRIMARY KEY, task_id TEXT NOT NULL UNIQUE, operation_id TEXT NOT NULL UNIQUE, digest TEXT NOT NULL, body TEXT NOT NULL, state TEXT NOT NULL, code TEXT, message TEXT, updated_at TEXT NOT NULL, owner_pid INTEGER, owner_started_at TEXT, claimed_at TEXT, heartbeat_at TEXT)`);
       /** A lease is additive evidence: older rows keep their row identity and
        * simply read as "no lease record" until a worker claims them again. */
       const columns = new Set((db.prepare("PRAGMA table_info(desktop_dispatch_requests)").all() as Array<Record<string, unknown>>).map(row => String(row.name)));

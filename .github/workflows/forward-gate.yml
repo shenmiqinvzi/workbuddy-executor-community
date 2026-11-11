@@ -48,6 +48,10 @@ jobs:
         run: npm run build
       - name: Type check the TaskView contract
         run: npm run typecheck:task-view
+      - name: Acceptance matrix must still match the original design
+        run: |
+          npm run acceptance:check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Backend suite, serial
         run: |
           npx tsx --test --test-concurrency=1 test/**/*.test.ts

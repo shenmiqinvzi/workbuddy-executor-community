@@ -6,6 +6,7 @@ import test from "node:test";
 import { loadConfig } from "../src/config.js";
 import { TaskCoordinator, runEvidenceDigestOf } from "../src/coordinator.js";
 import { TaskApplicationService } from "../src/task-application-service.js";
+import { commandSpec } from "./support/command-spec.js";
 import { TaskStore } from "../src/task-store.js";
 import { SelectedModelClient as WorkBuddyClient } from "./support/selected-model-client.js";
 import { reportDigest } from "../src/report-authentication.js";
@@ -635,7 +636,7 @@ function lifecycleFixture(t: { after: (fn: () => void) => void }) {
 
 test("the sync lifecycle records contract events in order, folds native stop proof into the revision and keeps cancelled tasks mirroring evidence (T2-R1/R2/R3)", async t => {
   const f = lifecycleFixture(t);
-  const sent = await f.coordinator.send({ model: "synthetic-user-choice", taskId: "lifecycle", objective: "drive the full lifecycle", workspace: f.dir, sessionId: "session-stage-1", constraints: ["keep scope"], acceptanceCommands: ["run check"], scope: { allowedChanges: ["out.mp4"], permittedMetadata: [] } });
+  const sent = await f.coordinator.send({ model: "synthetic-user-choice", taskId: "lifecycle", objective: "drive the full lifecycle", workspace: f.dir, sessionId: "session-stage-1", constraints: ["keep scope"], acceptanceCommands: [commandSpec(f.dir, { args: ["-p", "'run check'"] })], scope: { allowedChanges: ["out.mp4"], permittedMetadata: [] } });
   assert.ok(sent, "dispatch must return a result");
   assert.equal(sent.created, true);
   const taskId = "lifecycle";

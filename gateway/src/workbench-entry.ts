@@ -38,8 +38,12 @@ import { WorkBuddyCreditBalanceCollector } from "./credit-balance.js";
 import { configuredDshCoordinator } from "./dsh-runtime.js";
 import { desktopJournal } from "./desktop-dispatch-runtime.js";
 import { observeReadiness } from "./readiness.js";
+import { createReadinessProbes } from "./readiness-probes.js";
 
 const runtime = { release: runtimeVersion.release, packageVersion: runtimeVersion.packageVersion, startedAt: runtimeVersion.startedAt };
+// One memoized pair for the whole process: the page polls readiness, and the
+// probe process must not be started per request.
+const readinessProbes = createReadinessProbes({ moduleUrl: import.meta.url });
 
 function resolveConfig(): { config: Config } | { error: string } {
   try { return { config: loadConfig() }; }
@@ -63,7 +67,9 @@ async function serveDegraded(reason: string): Promise<void> {
     service: unopenedService(),
     degraded,
     // The diagnosis needs no store, so the shell still gets the five answers.
-    readiness: { observe: () => observeReadiness({ configError: reason }) },
+    // With an unresolved config the tool process cannot start either, so no
+    // probe is injected: the report names this origin and says it did not run one.
+    readiness: { observe: () => observeReadiness({ configError: reason, origin: "workbench-entry (degraded)" }) },
     health: () => workbenchDegradedHealth({ runtime, degraded }),
   });
   const port = workbenchPortFromEnv();
@@ -109,7 +115,10 @@ async function serveFull(config: Config): Promise<void> {
     // A01: the same five-layer diagnosis scripts/readiness.mjs prints, observed
     // again per request. It reads the running process, the runs directory and the
     // desktop shell's pipe; it prepares no model and writes no configuration.
-    readiness: { observe: () => observeReadiness({ config }) },
+    // The tool and native layers are answered by a short-lived MCP process that
+    // calls workbuddy_health; the answer is memoized for a few seconds so the
+    // page polling this route does not spawn a process per request.
+    readiness: { observe: () => observeReadiness({ config, origin: "workbench-entry", probes: readinessProbes }) },
     health: () => workbenchHealth({ runtime }),
   });
 

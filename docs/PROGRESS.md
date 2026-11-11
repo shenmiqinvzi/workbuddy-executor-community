@@ -1,5 +1,7 @@
 # 后端开发进度
 
+> 本页按日期记录历史进展，**不是当前总表**。当前口径以 [验收矩阵](forward/ACCEPTANCE_MATRIX.md) 为准；本轮收口见 [交付报告](forward/DELIVERY_REPORT_20261111.md) 与 [总验收](forward/WB43_TOTAL_ACCEPTANCE.md)。下文带日期的结论保留原文，不随后续改动刷新。
+
 2026-11-05 后续修复：A/B 集成的最后一项 DSH 注册发现缺陷已修复，新候选正式全量 **1013 项 / 1000 通过 / 0 失败 / 13 跳过**。详见 [DSH 注册发现一致性修复](DSH_REGISTRY_DISCOVERY_FIX.md)；这是源码与本地候选验证，不代表生产安装已更新。
 
 2026-11-05 最新本地集成见 [A/B 独立验收与统一候选](RESOURCE_PARALLEL_INTEGRATION_20261105.md)；C 线首版 [D0/D1 版本、53 项矩阵及真实闭环条件](D0_D1_DELIVERY_READINESS.md) 已建立。下文带日期的历史结论保留，不代表当前安装已同步。
