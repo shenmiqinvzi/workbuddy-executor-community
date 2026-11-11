@@ -71,6 +71,19 @@ const terms = (catalog: any) => ({catalogId: catalog.catalogId, modelKey: catalo
     allowedChanges: ['src/**'], permittedMetadata: [], checks: ['Independent check of the requested behavior'], maxAttempts: 1, timeoutSeconds: 600, sessionId: null});
 
 test('a previewed agreement reaches the fake native boundary exactly once', {skip: !built, timeout: 90000}, async t => {
+    try {
+        await previewToBoundary(t);
+    } catch (error) {
+        // The CI runner only exposes annotations to anonymous readers, so the
+        // failure has to name itself here instead of relying on a job log.
+        const message = String((error as Error)?.message ?? error).replace(/\r?\n/g, ' ');
+        try { fs.writeFileSync(path.join(gateway, 'ci-failure.txt'), message); } catch {}
+        console.log(`::error::desktop-dispatch-e2e ${message.slice(0, 600)}`);
+        throw error;
+    }
+});
+
+async function previewToBoundary(t: test.TestContext): Promise<void> {
     const {directory, command} = await host(t);
     const first = await command('catalog');
     assert.deepEqual(first.projects, [], 'a fresh registry offers no remembered project');
@@ -110,4 +123,4 @@ test('a previewed agreement reaches the fake native boundary exactly once', {ski
     assert.equal(revised.taskId, again.taskId, 'a revision keeps the task identity');
     assert.notEqual(revised.digest, again.digest);
     assert.equal(stats(directory).workbuddyPreparations, 1, 'revising still prepares nothing');
-});
+}
