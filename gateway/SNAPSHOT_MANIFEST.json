@@ -1460,8 +1460,8 @@
     },
     {
       "path": "test/desktop-dispatch-e2e.test.ts",
-      "sha256": "0d397cd0b7204849d1cd13b08342c8135c7897a7b820f57cee7a61e59ff65ff5",
-      "bytes": 7830
+      "sha256": "9906f577e8d31d115547fcb8de2e958fc1e16c434387e6938a2e195dfbd151d3",
+      "bytes": 8414
     },
     {
       "path": "test/desktop-dispatch-terms.test.ts",
