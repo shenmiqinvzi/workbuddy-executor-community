@@ -102,8 +102,29 @@ Located at position 1 within expression: runner.temp
 「能启动，等一次绿色运行」。**在绿色运行出现之前，CI 仍记为 `notObserved`**；出现之后才把
 `evidence.ci` 写进 `final-state.json` 并同步本节。
 
-### 这轮学到的两件事
+### 7. 首份绿色回执与随后两处真问题
+
+| 运行 | 工作流 | head | 结果 | 说明 |
+| --- | --- | --- | --- | --- |
+| [43029275765](https://github.com/shenmiqinvzi/workbuddy-executor-community/actions/runs/43029275765) | Release pairing | `b8d0c09` | **success，12/12 步全绿** | 第一份真实绿色回执：`npm ci` → build → package → `desktop:build` → `desktop:package` → `verify-pairing` → `candidate-installation check` → 上传制品 |
+| [43029275737](https://github.com/shenmiqinvzi/workbuddy-executor-community/actions/runs/43029275737) | Forward gate | `b8d0c09` | failure @ step 8 | 第 8 步 `Type check the TaskView contract`：R1 新增断言用了 `!` 非空断言，撞上 `noUncheckedIndexedAccess`（`TS2532`）。本地只跑了 `tsc -p tsconfig.json`，没跑 `typecheck:task-view`，所以漏了 |
+| 同轮后续 | Forward gate | `e0b2a1a` | failure @ step 10 | 第 8、9 步已绿（类型检查、`acceptance:check`），卡在 `Backend suite, serial` |
+
+第二处修法（`e0b2a1a`）：断言改为 `f.store.get("dsh-spec")?.acceptanceCommands?.length`，并补跑
+`npm run typecheck:task-view`（exit 0）与 `test/dsh-adapter.test.ts`（40/40）。
+
+第三处（串行套件）在本机复现中：CI 与本地有两处差异——CI 用 `npx tsx --test`，且 `WORKBUDDY_CONFIG_DIR`
+指向一个空目录。为了让下一次失败能自证，`forward-gate.yml` 的第 8 步改为把日志 tee 到
+`$RUNNER_TEMP\backend-suite.log`，失败时把前 8 条 `not ok|✖` 行写成 `::error::` 注解——注解是匿名 API
+就能读到的，不必等一个带 token 的日志下载。
+
+**口径**：`ci` 维度现在有「Release pairing 全绿」这一条真实回执；Forward gate 仍未绿，所以矩阵里凡是
+依赖 gate 的项不能写通过。
+
+### 这轮学到的三件事
 
 - 「零作业的 Failure」优先怀疑工作流求值失败，而不是 runner 或配额；运行页里那句
   `Invalid workflow file … Unrecognized named-value` 才是唯一可信的线索，注解读不到时不要猜。
 - `runner` / `env` 这类上下文在不同层级可用性不同，属于「本地一定过、远端必挂」的类别，适合用结构测试兜住。
+- `tsc -p tsconfig.json` 不等于 `typecheck:task-view`（后者用 `tsconfig.task-view.json`，严格度不同）；
+  本地复演表里少跑一条，远端就会在第一条没跑的那步停住。

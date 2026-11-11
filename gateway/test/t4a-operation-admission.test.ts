@@ -14,7 +14,8 @@ import type { DshTransport, DshSelection } from "../src/dsh-client.js";
 import type { Config } from "../src/config.js";
 import type { WorkBuddyClient } from "../src/workbuddy-client.js";
 import { RunJournal, type RunSnapshot } from "../src/run-journal.js";
-import { OperationOutcomeError, operationDigest } from "../src/operation-admission.js";
+import { OperationOutcomeError, operationDigest, failureDetail } from "../src/operation-admission.js";
+import { AdmissionError } from "../src/collaboration.js";
 
 function fixture(t: { after(fn: () => void): void }) {
   const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "t4a-admission-")));
@@ -306,4 +307,33 @@ test("legacy rework retains its original model, duration and saved attempt budge
   f.store.update(task.taskId, { attempt: 3 });
   await assert.rejects(f.workbuddy.continue({ taskId: task.taskId, feedback: "Cannot extend saved budget" }), /attempt limit/);
   assert.equal(f.counts().prompts, 1);
+});
+
+test("a failed operation keeps a bounded reason while an admission refusal keeps its own code", async t => {
+  const f = fixture(t);
+  const options = (id: string) => ({ operationId: id, expectedRevision: null, expectedAttemptId: null });
+  await assert.rejects(f.store.operations.run("send", "plain-fail", "workbuddy", { model: "chosen" }, options("plain-fail"), {}, async () => {
+    throw new Error("The persistent service uses another task database");
+  }), /another task database/);
+  const plain = f.store.operations.get("plain-fail")!;
+  assert.equal(plain.state, "rejected");
+  assert.equal(plain.error!.code, "OPERATION_FAILED");
+  assert.equal(plain.error!.message, "The original operation failed; inspect its stored task and binding.");
+  assert.match(plain.error!.detail ?? "", /another task database/);
+
+  await assert.rejects(f.store.operations.run("send", "admission-fail", "workbuddy", { model: "chosen" }, options("admission-fail"), {}, async () => {
+    throw new AdmissionError("BRIDGE_DATABASE_MISMATCH", "registered for another database");
+  }), { code: "BRIDGE_DATABASE_MISMATCH" });
+  const refused = f.store.operations.get("admission-fail")!;
+  assert.equal(refused.state, "rejected");
+  assert.equal(refused.error!.code, "BRIDGE_DATABASE_MISMATCH");
+  assert.equal(refused.error!.message, "registered for another database");
+  assert.equal(refused.error!.detail, undefined, "a named refusal already explains itself");
+
+  const long = failureDetail(new Error("x".repeat(400)));
+  assert.equal(long.length, 300);
+  assert.ok(long.endsWith("..."));
+  assert.equal(failureDetail(new TypeError("bad shape")), "TypeError: bad shape");
+  assert.equal(failureDetail(undefined), "the operation failed without an error message");
+  assert.deepEqual(f.counts(), { preparations: 0, prompts: 0 });
 });

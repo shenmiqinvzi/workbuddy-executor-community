@@ -925,8 +925,8 @@
     },
     {
       "path": "src/operation-admission.ts",
-      "sha256": "262a58ed0eacf471802db7ffa21871d6a9ac9fdbf45c91aabce03f9c190e855d",
-      "bytes": 35670
+      "sha256": "6615398bcd80ecece5d3cc2d6cdbe46207c1e4d0fe05df9568b33a04091a700e",
+      "bytes": 36738
     },
     {
       "path": "src/operation-recovery.ts",
@@ -1260,8 +1260,8 @@
     },
     {
       "path": "src/workspace-manager.ts",
-      "sha256": "19315cef8a3f8b19cf51efc3f8a3c146f287b0365264ead2ebb928bafcca6e01",
-      "bytes": 6445
+      "sha256": "c5e410fc5cc74e1f668845ba0008eb9c3297eff9b0954b64c8914107558e7de1",
+      "bytes": 6883
     },
     {
       "path": "src/workspace-protection.ts",
@@ -1950,8 +1950,8 @@
     },
     {
       "path": "test/t4a-operation-admission.test.ts",
-      "sha256": "20d6ae4261ed47eca1571abbc58121aca570aa3a1369618fb30156770020c318",
-      "bytes": 24782
+      "sha256": "108491e80d2fd063d02b116b85ab8e822fe1a3bd71f1c6006873b6c478410aa2",
+      "bytes": 26671
     },
     {
       "path": "test/t4b-operation-recovery.test.ts",

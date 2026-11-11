@@ -18,7 +18,7 @@
 | 网关 / 桌面 / 技能配对包 | [WB37 配对包](docs/forward/WB37_PAIRED_RELEASE.md) |
 | 安装、升级、回退与排障 | [使用与维护手册](docs/forward/WB40_USER_AND_MAINTAINER_MANUAL.md) |
 | 本机安装演练与真实窗口证据 | [WB35/WB38](docs/forward/WB35_WB38_INSTALLED_AND_WINDOW.md) |
-| 真实原生派工实录（7 次派工 / 失败路径） | [WB35 live](docs/forward/WB35_LIVE_NATIVE_RUN.md) |
+| 真实原生派工实录（7 次派工 / 失败路径 / 两次 accepted 闭环） | [WB35 live](docs/forward/WB35_LIVE_NATIVE_RUN.md) |
 | 自动模式的两层决策 | [ADR-01](docs/forward/ADR-01_AUTOMATION_MODES.md) |
 | 资源、用量与统计 | [WB16–WB25](docs/forward/WB16_WB25_RESOURCE_USAGE_STATISTICS.md) |
 | 故障与安全边界 | [WB32–WB33](docs/forward/WB32_WB33_FAULT_AND_SECURITY.md) |
@@ -31,7 +31,7 @@
 - 自动模式只有 `per_task_confirmed` 一层生效；`preauthorized_policy` 仍是提案，启用需用户明确调整规则（见 ADR-01）。
 - 费用未知一律保持 `unknown`，不补 0、不把估算当硬上限；每个新任务仍需用户实际选择执行器/来源/模型/档位。
 - 停止只认原生停止证据；报告收到、超时、页面空闲都不等于已停止。
-- 实窗（window）、真实派工（live）、安装后（installed）、第二台机（second_machine）、远端 CI 回执（ci）与发行（release）六类证据尚未取得，验收矩阵里对应项按 `blocked`/`unknown` 记录。
+- 证据按维度记录：`installed`（隔离安装/升级/回退演练）与 `live`（真实派工，含 `live-accept-014`/`015` 两次 `accepted` 闭环）已取得；`window` 只到真实窗口与分阶段文案（面板未渲染），`second_machine`、`release` 仍缺；远端 `Release pairing` 全绿，`Forward gate` 的串行后端套件仍在修。验收矩阵按实际维度记 `blocked`/`unknown`/`partial`。
 - 配对包未做代码签名，Windows 会提示未签名；签名与第三方声明见 [WB41](docs/forward/WB41_LICENSES_AND_SIGNING.md)。
 
 常见错误与具体操作：

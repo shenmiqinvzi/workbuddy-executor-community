@@ -65,10 +65,44 @@
 
 这正是 WB04 文档里写的桥接缺口：需要原生新增 `turn_end` 事件（`turnId/wakeId/messageRequestId/status/seq`），让「回合结束」有可绑定到 attempt 的终态证据，而不是靠一个不会收敛的工具记录。
 
+## 3.6 第 9、10 次（`live-accept-014` / `live-accept-015`）：验收闭环跑到 `accepted`
+
+上一轮停在 131ms 的 `OUTCOME_UNKNOWN`（`live-accept-012`），这次把真因挖出来了，并且把两处产品缺陷一并修掉：
+
+| 事项 | 事实 |
+| --- | --- |
+| 真因 | `gateway/data/persistent-service.json` 仍指向旧数据目录（`tasks-2.sqlite`）。`workerRegistration()`（`src/workspace-manager.ts:26`）比较注册里的 `dbFile` 与本进程 `config.dbFile`，不一致就拒绝；但抛的是普通 `Error`，被 `operation-admission.ts` 压成 `OPERATION_FAILED` + 一句无法执行的「inspect its stored task and binding」。 |
+| 修 1（诊断） | 该拒绝改为 `AdmissionError("BRIDGE_DATABASE_MISMATCH", …)`，消息里同时写出注册库路径、本进程库路径和该改的文件；`AdmissionError` 的消息现在原样进 operation 记录，不再是通用文案。 |
+| 修 2（可观测） | 非 `AdmissionError` 的失败额外写 `error.detail`（`failureDetail()`：单行化、上限 300 字符），记录仍保留 `OPERATION_FAILED` 代码与「可能已有效果」的语义。测试：`test/t4a-operation-admission.test.ts` 新增「a failed operation keeps a bounded reason while an admission refusal keeps its own code」。 |
+| 运行配置 | 每个数据目录拥有自己的注册：`WORKBUDDY_SERVICE_CONFIG=<live-config>/persistent-service.json`、`WORKBUDDY_DB_FILE=<live-config>/tasks-5.sqlite`、`WORKBUDDY_RUNS_DIR=<live-config>/runs-5`。不再与被删的旧注册互相污染。 |
+
+派工与验收（两次都真实跑到 `accepted`）：
+
+| 任务 | 工作区 | 派工 | 原生产物 | 停止证据 | 验收 |
+| --- | --- | --- | --- | --- | --- |
+| `live-accept-014` | `live-workspace4`（3、4） | `ok:true`，session `1e6ec47f…`，attempt `run-9a6da2fc…` | `RESULT.md` = `TOTAL=7` | `execution.state=stopped`、`remoteStopped:true`、`stopReason:"end_turn"`、`nativeHealth.state=idle` | `accepted`（review `review-ad698080…`） |
+| `live-accept-015` | `live-workspace5`（9、10） | `ok:true`，session `32636057…`，attempt `run-7d71c13c…` | `RESULT.md` = `TOTAL=19` | 同上（`reportDigestPresent:true`） | `accepted`（review `review-c0c0c583…`） |
+
+`live-accept-015` 是一条**单趟完整链路**，日志 `live-accept-015-chain.log`：
+
+```
+check_task #1        ok:true  command legacy-command-1 status=unknown   （模型自述不算证据）
+run_review_command   ok:true  exitCode:0  cleanupConfirmed:true         （网关真跑 CommandSpec）
+check_task #2        ok:true  legacy-command-1 status=passed  note=Original command, source hashes, output and cleanup verified
+record_inspection    ok:true  evidenceId inspection-ef2e386d-…         （独立检查，文件须绝对路径）
+review_task          ok:true  reviewId review-c0c0c583-…                 （machineCheckIds 长度必须 1）
+accept_task          ok:true  state=accepted
+```
+
+三次被拒绝的调用也留下了教学点，全部是契约本身生效：①复用旧 `operationId` → `OPERATION_CONFLICT`；②用 `check_task` 之前的旧 revision 调 `run_review_command` → `STALE_REVISION`；③`record_inspection` 传相对路径 → `INVALID_REVIEW`「Inspection files must be absolute.」。另外 `review_task` 若引用命令跑完之前那批 `machineCheckIds` → `REVIEW_STALE`，必须在命令执行后再 `check_task` 一次。
+
 ## 4. 没证明的部分（如实记）
 
-- **完整验收闭环没有跑完**：没有一次拿到「认证报告 + 命令证据 + 独立审查 + accept」齐全的 `accepted` 任务。卡点不在源码，而在本机网络：系统代理 127.0.0.1:7890 在上游模型流上间歇 502（`socket hang up`），以及 provider 侧 429。7 次里 0 次走到 `accept_task`。
-- `<sub>未观测</sub>`：真实窗口内的任务面板渲染（WebView2 controller 在本机不可用，见 `WB35_WB38_INSTALLED_AND_WINDOW.md`）、第二台物理机、远端 CI、签名发行。
+- **窗口内的任务面板渲染**：WebView2 controller 在本机 `EnsureCoreWebView2Async` 抛 `COMException`（见 `WB35_WB38_INSTALLED_AND_WINDOW.md`），需要能做控制器的另一台 Windows。窗口本体、分阶段状态文案、真实失败阶段是有的，但面板内容不算。
+- **`turn_end` 桥接事件**：`live-accept-010` 的 `stop_unconfirmed` 仍未解决（应用库会话已 `terminated`，最后一条工具调用停在 `in_progress`）。现在有了可跑的 accept 闭环，但这一条只能等原生补事件。
+- 第二台物理机、签名发行、以及远端 CI 的**全绿**回执：Forward gate 的串行后端套件在远端仍失败，本机复现中。
+- 上游金额：`workbuddy_list_models` 只给 credits 倍率，`amount` 一律 unknown，不补 0。
+
 
 ## 5. 复跑方法
 

@@ -24,12 +24,26 @@ export interface OperationRecord {
   phaseVersion?: 1;
   dispatchEnteredAt?: string;
   preparationCompletedAt?: string;
-  createdAt: string; updatedAt: string; result?: unknown; error?: { code: string; message: string };
+  createdAt: string; updatedAt: string; result?: unknown; error?: { code: string; message: string; detail?: string };
 }
 export class OperationOutcomeError extends AdmissionError {
   constructor(readonly operationId: string, readonly operationState: OperationState) {
     super("OUTCOME_UNKNOWN", "Observe the original operation and task; execution will not be retried automatically.");
   }
+}
+
+/**
+ * A failed operation that is not an AdmissionError keeps its generic code, but the
+ * operator still needs the reason: without it "inspect its stored task and binding"
+ * names nothing to inspect. The text is bounded and single-line so a record stays
+ * readable and copyable, and it never becomes proof that native work stopped.
+ */
+export function failureDetail(error: unknown): string {
+  const raw = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  const flat = raw.replace(/\s+/g, " ").trim();
+  const named = error instanceof Error && error.name && error.name !== "Error" ? `${error.name}: ` : "";
+  const text = `${named}${flat}` || "the operation failed without an error message";
+  return text.length > 300 ? `${text.slice(0, 297)}...` : text;
 }
 
 /** JSON data only; never hash transport metadata by accident or omit unknown behavior fields. */
@@ -371,7 +385,7 @@ export class OperationAdmission {
         try { this.store.atomic(() => {
           const current = this.get(record.operationId)!;
           const uncertain = current.state === "effect_started" || current.state === "outcome_unknown";
-          this.save({ ...current, state: uncertain ? "outcome_unknown" : "rejected", error: { code: error instanceof AdmissionError ? error.code : "OPERATION_FAILED", message: "The original operation failed; inspect its stored task and binding." }, updatedAt: new Date().toISOString() });
+          this.save({ ...current, state: uncertain ? "outcome_unknown" : "rejected", error: { code: error instanceof AdmissionError ? error.code : "OPERATION_FAILED", message: error instanceof AdmissionError ? error.message : "The original operation failed; inspect its stored task and binding.", ...(error instanceof AdmissionError ? {} : { detail: failureDetail(error) }) }, updatedAt: new Date().toISOString() });
           if (!uncertain && !this.store.get(taskId) && this.occupant()?.operationId === record.operationId) this.db.prepare("DELETE FROM workflow_capacity WHERE slot=1").run();
         }); } catch {
           // Failure to save the failure is never evidence that native work did not occur.
@@ -437,7 +451,7 @@ export class OperationAdmission {
         return value;
       } catch (error) {
         failure = error;
-        this.save({ ...record, state: "rejected", error: { code: error instanceof AdmissionError ? error.code : "OPERATION_FAILED", message: "The original review operation was rejected; inspect its binding." }, updatedAt: new Date().toISOString() });
+        this.save({ ...record, state: "rejected", error: { code: error instanceof AdmissionError ? error.code : "OPERATION_FAILED", message: error instanceof AdmissionError ? error.message : "The original review operation was rejected; inspect its binding.", ...(error instanceof AdmissionError ? {} : { detail: failureDetail(error) }) }, updatedAt: new Date().toISOString() });
         return undefined;
       }
     });

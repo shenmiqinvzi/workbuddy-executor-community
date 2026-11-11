@@ -7,7 +7,7 @@
 - `done_source`：源码、测试、文档齐备，证据是**本机 source 维度**（测试日志、校验报告）。不等于实机验收。
 - `done`：`done_source` 之外还有原生/窗口/安装层证据（本轮 3 张：WB01 矩阵机器校验、WB03 派前拒绝、WB05 监督器）。
 - `blocked_external`：**每一张都写明缺的那一件具体东西**（见第 4 节与 `任务台账.json` 的 `dimensions.external`），不是「代码没写」的同义词。台账同时按五维记录每张卡：`implementation` / `automated` / `window` / `live` / `installed` + `external`，所以标签数不等于完成率。
-- 证据维度：`source` / `synthetic` / `window` / `live` / `installed` / `ci` / `second_machine` / `release`。本轮产出 `source`（含合成夹具）与 `installed`（隔离安装演练），`window` 与 `live` 取得部分证据（真实窗口与分阶段文案、真实派工与写盘产物；面板未渲染、accept 闭环未走到）。
+- 证据维度：`source` / `synthetic` / `window` / `live` / `installed` / `ci` / `second_machine` / `release`。本轮产出 `source`（含合成夹具）与 `installed`（隔离安装演练），`window` 与 `live` 取得部分证据（真实窗口与分阶段文案、真实派工与写盘产物；面板未渲染），`live` 的验收闭环已跑通（`live-accept-014`/`015` 两条 `accepted`），`ci` 取得 Release pairing 的绿色回执。
 - 交付提交：`41e9595`（技能/门禁/就绪/发布主线）→ `4aa0b23`（包里补维护脚本并让安装副本自检）→ `d866a09`（记录首轮远端 CI）。三笔均已推 `origin/feat/executor-plan-20261111`；台账 `delivery_commit` 指向最近一笔。
 
 ## 2. 44 张卡的状态
@@ -22,7 +22,7 @@
 | 自动模式 | WB26–WB29 | WB27/28 done_source；WB26/29 blocked_external | `wb27-wb28.log` 69/69、`automation-view` 15/15 |
 | 通知与导出 | WB30 / WB31 | done_source | `wb25-wb31.log` 92/92 |
 | 跨能力异常与安全 | WB32 / WB33 | done_source | 145/145、63/63 |
-| 矩阵与实机 | WB34 / WB35 | blocked_external / blocked_external（live 部分已取） | 矩阵 53/53 有行有据；WB35 已取到真实窗口、分阶段失败、7 次真实派工与三类失败路径（见 [WB35_LIVE](WB35_LIVE_NATIVE_RUN.md)），面板渲染与完整 accept 闭环仍缺 |
+| 矩阵与实机 | WB34 / WB35 | blocked_external / blocked_external（live 端闭环已跑通） | 矩阵 53/53 有行有据；WB35 已取到真实窗口、分阶段失败、7 次真实派工与三类失败路径，并跑通两次完整 accept 闭环（`live-accept-014`/`015` → `accepted`，见 [WB35_LIVE](WB35_LIVE_NATIVE_RUN.md) §3.6）；仍缺真实 DSH 端闭环、面板渲染、`turn_end` |
 | 冻结与配对 | WB36 / WB37 | done_source | `suite-r5b.log` 1586/1574/0/12；`wb41-pairing.json` ok、798 共用、`wb41-candidate-check.json` `problems:[]` |
 | 安装与第二台机 | WB38 / WB39 | done_source / blocked_external | 隔离根完成解包/依赖/建库/doctor/部署检查/技能落位，并做完整**升级与回退演练**（升到 wb40 后 `skill:check` exit 0、回退后 doctor exit 0，见 [WB37](WB37_PAIRED_RELEASE.md) §4）；改写运行安装与第二台 Windows 仍缺 |
 | 文档与许可 | WB40 / WB41 | done_source / blocked_external | README 唯一入口 + 手册；依赖披露完成，许可证与签名属权利人 |
@@ -35,6 +35,7 @@
 1. **发布包自检缺口**：wb37c 时代的包里没有 `scripts/sync-skill.mjs`、`scripts/verify-pairing.mjs`、`scripts/check-acceptance-matrix.mjs`，但 `package.json` 的 `skill:check` / `release:pairing` / `acceptance:check` 都指向它们 —— 装好的包跑不了自己文档里的自检。修法：三个脚本进 `scripts/package.mjs` 允许清单；`sync-skill.mjs` 在没有仓库根时以 bundled 副本为参照（`sourceMode:"bundled"`），并加一条用例锁住。release-wb40 起可用。
 2. **升级/回退演练**：隔离根真实替换（备份 → 解包 wb40 → bootstrap/doctor/skill:check → 删除并还原备份 → doctor 复验），升级与回退都可逆，回退回到旧包的确切状态（含它的自检缺口）。
 3. **live 派工新证据**：`live-accept-010` 走通「派工 → 原生认领 → 真实回合 → 写盘 `RESULT.md=TOTAL=11` → 报告到达」，但原生最后一条工具调用没有终态 `tool_call_update`，产品判 `stop_unconfirmed` → `blocked`，单槽被占用、再派工 `CAPACITY_OCCUPIED`。这是 FIX02 的残留形态，按停止围栏**拒绝放行是对的**；放宽规则会推翻 WB04 四类样本判据，已回退该尝试。桥接缺口仍是原生 `turn_end` 事件。
+4. **live 验收闭环终于跑通**（同一轮后续）：`live-accept-012` 的 131ms `OUTCOME_UNKNOWN` 真因是陈旧 `persistent-service.json` 指向旧数据目录；修成 `BRIDGE_DATABASE_MISMATCH` + `error.detail` 后，`live-accept-014`/`015` 两条任务各跑完 `check_task → run_review_command(exitCode 0) → check_task(passed) → record_inspection → review_task → accept_task`，均 `accepted`，产物 `TOTAL=7`/`TOTAL=19` 为真写盘、`execution.state=stopped`。
 
 ## 3. 本轮数字
 
@@ -52,20 +53,21 @@
 ## 4. 明确没做的部分
 
 1. **实窗面板**（WB35/WB34/WB14 的 window 层）：窗口能启动并给出分阶段文案，但本机会话拿不到 WebView2 控制器（`controller` 阶段固定 `COMException`，runtime 已装 157.0.4341.42），面板未渲染。
-2. **完整 accept 闭环**（WB35 的 live 层）：早前 7 次派工撞上代理 502 与 provider 429；网络恢复后 `live-accept-010` 走通「派工 → 原生认领 → 真实回合 → 写盘 `RESULT.md=TOTAL=11` → 报告到达」，**卡点已不是网络**，而是原生最后一条工具调用没有终态 `tool_call_update`（应用库 `sessions.status=terminated`，`stillBusy:["unfinishedTools"]`）→ 产品判 `stop_unconfirmed` → `blocked`。停止围栏拒绝放行是对的；桥接缺口是原生 `turn_end` 事件。
-3. **改写运行安装**（WB08/WB38 剩余部分）：隔离根已跑通解包 → 依赖 → 建库 → doctor → 部署检查 → 技能落位，并完成**升级与回退演练**；没做的是把运行安装 `gateway-v0.7.1-final2` 的常驻服务切到候选。
-4. **自动模式第二层**（WB26/WB29）：ADR-01 已写清边界，启用需用户明确给出逐任务规则（范围、窗口、预算、期限）。
-5. **远端 CI 回执**（WB42）：分支已推送，但两个 run 都以「零作业」失败（`43008444151`、`43008446862`），注解读不到（未认证 API 配额 0/60、无 `gh` CLI），本机同串命令可跑通。
-6. **许可证选择与代码签名**（WB41）：权利人与证书都不在本机。
-7. **第二台物理 Windows**（WB39）。
-8. **真实资源来源联调**（WB16/WB19/WB20）：需要用户可访问的只读来源与上游金额/额度回报。
+2. **`turn_end` 桥接**（WB35 的 live 层剩余部分）：`live-accept-010` 那次的原生最后一条工具调用没有终态 `tool_call_update`（应用库 `sessions.status=terminated`，`stillBusy:["unfinishedTools"]`）→ 产品判 `stop_unconfirmed` → `blocked`，这是**对的**。其余两条任务（`live-accept-014`/`015`）原生正常收敛到 `stopReason:"end_turn"` 并跑完 accept 闭环，说明闭环本身不再缺代码，缺的是异常收敛路径的原生事件。
+3. **真实 DSH 端闭环**（WB35 的另一半）：本机 dsh 适配器 `adapter_disabled`，没有可用的 DSH 主机连接。
+4. **改写运行安装**（WB08/WB38 剩余部分）：隔离根已跑通解包 → 依赖 → 建库 → doctor → 部署检查 → 技能落位，并完成**升级与回退演练**；没做的是把运行安装 `gateway-v0.7.1-final2` 的常驻服务切到候选。
+5. **自动模式第二层**（WB26/WB29）：ADR-01 已写清边界，启用需用户明确给出逐任务规则（范围、窗口、预算、期限）。
+6. **远端 CI 全绿**（WB42）：`b8d0c09` 起 `Release pairing` 已 12/12 步全绿（`43029275765`），`Forward gate` 的零作业失败已修（job 级 `env` 用了 `${{ runner.temp }}`），当前卡在 `e0b2a1a` 的第 10 步「Backend suite, serial」。
+7. **许可证选择与代码签名**（WB41）：权利人与证书都不在本机。
+8. **第二台物理 Windows**（WB39）。
+9. **真实资源来源联调**（WB16/WB19/WB20）：需要用户可访问的只读来源与上游金额/额度回报。
 
 ## 5. 下一步的最小动作
 
 | 想让哪项从 blocked 变成有证据 | 需要什么 |
 | --- | --- |
 | WB34/WB35（window） | 一台能创建 WebView2 控制器的会话（本机 `controller` 阶段固定 `COMException`），并留窗口截图 |
-| WB35（live 闭环） | 原生在回合结束时补发终态 `tool_call_update`，或按 [WB04](WB04_NATIVE_STOP_OWNERSHIP.md) 的 `turn_end` 事件契约提供 `wakeId`+`requestId`+`seq`；拿到后同一单槽即可走到 `review_task` → `accept_task` |
+| WB35（live 异常收敛） | 原生在回合结束时补发终态 `tool_call_update`，或按 [WB04](WB04_NATIVE_STOP_OWNERSHIP.md) 的 `turn_end` 事件契约提供 `wakeId`+`requestId`+`seq`；正常收敛路径的 accept 闭环已由 `live-accept-014`/`015` 证明 |
 | WB38（剩余） | 明确是否允许把运行安装 `gateway-v0.7.1-final2` 的常驻服务切到候选（隔离根的升级/回退已演练） |
 | WB39 | 第二台 Windows + 可用执行器账号 |
 | WB42 | 拿到 GitHub API 配额（或装 `gh` 并登录）后读 `check-runs` 日志，定位两个 run 的零作业失败 |

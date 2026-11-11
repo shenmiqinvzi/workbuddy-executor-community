@@ -62,8 +62,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Backend suite, serial
         run: |
-          npx tsx --test --test-concurrency=1 test/**/*.test.ts
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx tsx --test --test-concurrency=1 test/**/*.test.ts 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP\backend-suite.log" -Encoding utf8
+          if ($LASTEXITCODE -ne 0) {
+            Select-String -Path "$env:RUNNER_TEMP\backend-suite.log" -Pattern 'not ok|✖' | Select-Object -First 8 | ForEach-Object { Write-Host "::error::$($_.Line.Trim())" }
+            exit $LASTEXITCODE
+          }
       - name: Workbench frontend tests
         run: npm run test:workbench
       - name: Desktop policy tests

@@ -26,7 +26,10 @@ export function installAutostartIfNeeded(registration: unknown, install: () => v
 export function workerRegistration(config: Config) {
   const file = config.serviceConfigFile??path.join(path.dirname(config.dbFile),"persistent-service.json");
   const registration = readServiceRegistration(file);
-  if(registration && path.resolve(registration.dbFile)!==path.resolve(config.dbFile))throw new Error("The persistent service uses another task database; fix the bridge configuration before connecting projects");
+  // A registration written by another data directory is a configuration mistake the
+  // caller can fix, so it must arrive as its own code with both paths named. A plain
+  // Error would be flattened into OPERATION_FAILED, leaving the operator with no clue.
+  if(registration && path.resolve(registration.dbFile)!==path.resolve(config.dbFile))throw new AdmissionError("BRIDGE_DATABASE_MISMATCH", `The persistent service registered for ${path.resolve(registration.dbFile)} is not the database this process uses (${path.resolve(config.dbFile)}); fix ${file} or point WORKBUDDY_SERVICE_CONFIG at the registration that belongs to this data directory`);
   return registration;
 }
 export async function ensureWorkspace(config: Config, input: {workspace:string;sessionId?:string;title?:string;model?:string;workerKey?:string;admissionTaskId?:string;admissionOperationId?:string}) {
