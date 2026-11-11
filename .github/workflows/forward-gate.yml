@@ -16,6 +16,12 @@ name: Forward gate
 on:
   workflow_dispatch:
   pull_request:
+  # Feature branches get the same gate as main: without this the only way to see
+  # the gate run is an authenticated dispatch or a pull request.
+  push:
+    branches:
+      - main
+      - 'feat/**'
 
 permissions:
   contents: read
@@ -27,8 +33,6 @@ jobs:
     defaults:
       run:
         working-directory: gateway
-    env:
-      WORKBUDDY_CONFIG_DIR: ${{ runner.temp }}\workbuddy-gate-config
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -41,9 +45,13 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
       - name: Prepare an empty configuration directory
+        # `runner` is not readable from jobs.<id>.env, so the directory is decided
+        # here and exported for every later step through GITHUB_ENV.
         run: |
-          New-Item -ItemType Directory -Force -Path $env:WORKBUDDY_CONFIG_DIR | Out-Null
-          "config dir: $env:WORKBUDDY_CONFIG_DIR"
+          $config = Join-Path $env:RUNNER_TEMP 'workbuddy-gate-config'
+          New-Item -ItemType Directory -Force -Path $config | Out-Null
+          "WORKBUDDY_CONFIG_DIR=$config" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "config dir: $config"
       - name: Build the gateway
         run: npm run build
       - name: Type check the TaskView contract

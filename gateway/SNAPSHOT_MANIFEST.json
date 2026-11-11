@@ -485,13 +485,13 @@
     },
     {
       "path": "scripts/package-desktop.mjs",
-      "sha256": "663a3e82a757bf36bc479881ea9a0cac73cc2e84a1f81d8767753fe13ce0934c",
-      "bytes": 7251
+      "sha256": "1ba8ab78bb83b2edc66616de23a2cee2b307ab5af1821f7eb500665b16c1259e",
+      "bytes": 7322
     },
     {
       "path": "scripts/package.mjs",
-      "sha256": "8aee71db60d04a1707d983d70fa837eca34518fca20bdd162e7618c4463e7863",
-      "bytes": 21318
+      "sha256": "a925cd48405dc0d095bd60ec6c4263eb901ab36d71c4e66a6b33e15c4e1ae440",
+      "bytes": 21814
     },
     {
       "path": "scripts/plan.mjs",
@@ -2047,6 +2047,11 @@
       "path": "test/workbuddy-client.test.ts",
       "sha256": "727b108197772e0db2019259c987c9eef245637879395da201fe36ed439e4c5a",
       "bytes": 2628
+    },
+    {
+      "path": "test/workflow-contexts.test.ts",
+      "sha256": "1e697aea12300c504c6cf3d9144c6a59f565cfa473b5598252717ab2b1c11094",
+      "bytes": 3375
     },
     {
       "path": "test/workspace-autostart.test.ts",

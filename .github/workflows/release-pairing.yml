@@ -23,6 +23,10 @@ on:
       - 'SKILL.md'
       - 'references/**'
       - 'agents/**'
+  push:
+    branches:
+      - main
+      - 'feat/**'
 
 permissions:
   contents: read
@@ -34,8 +38,6 @@ jobs:
     defaults:
       run:
         working-directory: gateway
-    env:
-      WORKBUDDY_CONFIG_DIR: ${{ runner.temp }}\workbuddy-pair-config
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -48,6 +50,14 @@ jobs:
           dotnet-version: '10.0.x'
       - name: Install locked dependencies
         run: npm ci
+      - name: Prepare an empty configuration directory
+        # `runner` is not readable from jobs.<id>.env, so the directory is decided
+        # here and exported for every later step through GITHUB_ENV.
+        run: |
+          $config = Join-Path $env:RUNNER_TEMP 'workbuddy-pair-config'
+          New-Item -ItemType Directory -Force -Path $config | Out-Null
+          "WORKBUDDY_CONFIG_DIR=$config" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "config dir: $config"
       - name: Build the gateway
         run: npm run build
       - name: Package the gateway and the two skill archives
