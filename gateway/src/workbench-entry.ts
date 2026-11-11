@@ -41,9 +41,6 @@ import { observeReadiness } from "./readiness.js";
 import { createReadinessProbes } from "./readiness-probes.js";
 
 const runtime = { release: runtimeVersion.release, packageVersion: runtimeVersion.packageVersion, startedAt: runtimeVersion.startedAt };
-// One memoized pair for the whole process: the page polls readiness, and the
-// probe process must not be started per request.
-const readinessProbes = createReadinessProbes({ moduleUrl: import.meta.url });
 
 function resolveConfig(): { config: Config } | { error: string } {
   try { return { config: loadConfig() }; }
@@ -104,6 +101,11 @@ async function serveFull(config: Config): Promise<void> {
     store,
     statistics: exportStatisticsFrom(statistics),
   });
+  // One memoized pair for the whole process: the page polls readiness, and the
+  // probe process must not be started per request. It is built here, after the
+  // configuration is resolved, so the child inspects *this* instance instead of
+  // whatever a parent shell or a .env file would have selected.
+  const readinessProbes = createReadinessProbes({ moduleUrl: import.meta.url, config });
   const server = new WorkbenchHttpServer({
     service,
     statistics,

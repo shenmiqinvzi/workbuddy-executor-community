@@ -1,12 +1,22 @@
 #!/usr/bin/env node
 /**
- * Pairing check for the two release archives (WB37).
+ * Pairing check for the two release archives (WB37, R4).
  *
  * The gateway archive and the desktop preview archive ship the same gateway
  * sources; the desktop one adds the compiled shell. A user who gets both must
- * not receive two different copies of the same file, so every path present in
- * both archives must be byte-identical, and each archive must match its
- * published `.sha256` sidecar. Anything else is reported, never smoothed over.
+ * not receive two different copies of the same file, so:
+ *
+ *   1. every path present in both archives must be byte-identical, except the
+ *      files that describe the archive itself;
+ *   2. a fixed set of files the product needs must be present in both — an
+ *      empty intersection is a failure, not a vacuous pass;
+ *   3. one-sided files must be expected ones (the compiled shell, its readme);
+ *   4. each archive's RELEASE_MANIFEST.json must describe every entry it ships,
+ *      with the same size and digest, and the two manifests must agree on the
+ *      version and on every path they share;
+ *   5. each archive must match its `.sha256` sidecar.
+ *
+ * Every failure is reported in `problems`; nothing is smoothed over.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -15,6 +25,29 @@ import { inflateRawSync } from "node:zlib";
 import { fileURLToPath } from "node:url";
 
 const digest = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
+
+/**
+ * Files the paired product needs from both archives. The list is deliberately
+ * short and stable: it names the entry points a user is told to run, so a
+ * desktop archive that lost the gateway sources cannot pass as "paired".
+ */
+export const REQUIRED_SHARED = [
+  "package.json",
+  "dist/server.js",
+  "dist/health-entry.js",
+  "dist/readiness.js",
+  "dist/readiness-probes.js",
+  "scripts/readiness.mjs",
+  "scripts/init-state.mjs",
+  "scripts/verify-pairing.mjs",
+  "scripts/check-acceptance-matrix.mjs",
+  "scripts/sync-skill.mjs",
+  "skills/workbuddy-executor/SKILL.md",
+];
+
+/** One-sided files that are expected, by role rather than by name count. */
+export const ALLOWED_DESKTOP_ONLY = [/^desktop\/app\//, /^PREVIEW-START-HERE\.md$/];
+export const ALLOWED_GATEWAY_ONLY = [];
 
 /** Read a ZIP32 central directory and inflate every entry. */
 export function readArchive(file) {
@@ -27,6 +60,7 @@ export function readArchive(file) {
   const count = bytes.readUInt16LE(end + 10);
   const start = bytes.readUInt32LE(end + 16);
   const entries = new Map();
+  const duplicates = [];
   let offset = start;
   for (let index = 0; index < count; index += 1) {
     if (bytes.readUInt32LE(offset) !== 0x02014b50) throw new Error(`${file}: bad central directory entry`);
@@ -41,12 +75,13 @@ export function readArchive(file) {
     const localExtraLength = bytes.readUInt16LE(localOffset + 28);
     const dataStart = localOffset + 30 + localNameLength + localExtraLength;
     const packed = bytes.subarray(dataStart, dataStart + packedSize);
+    if (entries.has(name)) duplicates.push(name);
     if (method === 0) entries.set(name, Buffer.from(packed));
     else if (method === 8) entries.set(name, inflateRawSync(packed));
     else throw new Error(`${file}: unsupported compression method ${method} for ${name}`);
     offset += 46 + nameLength + extraLength + commentLength;
   }
-  return { archive: file, bytes: bytes.length, sha256: digest(bytes), entries };
+  return { archive: file, bytes: bytes.length, sha256: digest(bytes), entries, duplicates };
 }
 
 function sidecar(archive) {
@@ -57,15 +92,6 @@ function sidecar(archive) {
   return { file, present: true, recorded, matches: recorded === actual, actual };
 }
 
-/**
- * Compare two archives. Both wrap their contents in one top-level directory
- * (`codex-workbuddy-gateway-v0.7.1/`, `workbuddy-desktop-…/`), and the desktop
- * archive nests the same gateway sources under `gateway/`. Paths are compared
- * after those wrappers are removed, so `shared` really means "same file".
- * `shared` lists paths in both; every one of them must hash the same. One-sided
- * paths are reported with counts so a reader can see that the desktop archive
- * is a superset by design rather than by accident.
- */
 /**
  * Remove the release wrapper from an archive entry or a manifest path.
  * Archive entries always start with a wrapper that carries the version
@@ -83,14 +109,53 @@ export function relativeName(name) {
   return parts.join("/");
 }
 
-/**
- * Files whose content is *about* the archive rather than shared code. Each
- * archive records its own file list, so these may differ by design; they are
- * still compared field by field for the paths both manifests describe.
- */
+/** A path that a reader could resolve to something outside the extraction root, or that two files could share. */
+export function unsafePath(name) {
+  const raw = String(name);
+  if (!raw) return "empty path";
+  if (raw.includes("\\")) return "backslash separator";
+  if (raw.startsWith("/") || /^[a-zA-Z]:/.test(raw)) return "absolute path";
+  if (raw.endsWith("/")) return "directory entry";
+  const segments = raw.split("/");
+  if (segments.some(segment => segment === "" || segment === "." || segment === "..")) return "unresolved path segment";
+  return null;
+}
+
 function manifestOf(archive) {
   for (const [name, bytes] of archive.entries) if (relativeName(name) === "RELEASE_MANIFEST.json") return JSON.parse(bytes.toString("utf8"));
   return null;
+}
+
+/** Check that one archive's manifest describes exactly the entries it ships. */
+export function verifyManifest(archive) {
+  const problems = [];
+  const manifest = manifestOf(archive);
+  const label = path.basename(archive.archive);
+  if (!manifest) return { manifest: null, problems: [`${label}: no RELEASE_MANIFEST.json in the archive`], described: 0 };
+  if (!Array.isArray(manifest.files)) return { manifest, problems: [`${label}: RELEASE_MANIFEST.json has no files array`], described: 0 };
+  // A manifest may name a file with the archive's own wrapper (`gateway/dist/x`)
+  // or without it; both describe the same shipped file, so compare the relative name.
+  const shipped = new Map();
+  for (const [name, bytes] of archive.entries) shipped.set(relativeName(name), bytes);
+  const byPath = new Map();
+  for (const entry of manifest.files) {
+    const issue = unsafePath(entry?.path);
+    if (issue) { problems.push(`${label}: manifest entry ${JSON.stringify(entry?.path)} is ${issue}`); continue; }
+    const relative = relativeName(String(entry.path));
+    if (byPath.has(relative)) { problems.push(`${label}: manifest lists ${relative} more than once`); continue; }
+    byPath.set(relative, entry);
+    const bytes = shipped.get(relative);
+    if (!bytes) { problems.push(`${label}: manifest lists ${relative}, which the archive does not contain`); continue; }
+    const actual = digest(bytes);
+    if (entry.sha256 !== actual) problems.push(`${label}: ${relative} hashes ${actual} but the manifest says ${entry.sha256}`);
+    if (entry.bytes !== bytes.length) problems.push(`${label}: ${relative} is ${bytes.length} bytes but the manifest says ${entry.bytes}`);
+  }
+  for (const relative of shipped.keys()) {
+    if (relative === "RELEASE_MANIFEST.json") continue;
+    if (!byPath.has(relative)) problems.push(`${label}: ${relative} ships in the archive but is not in the manifest`);
+  }
+  if (archive.duplicates.length) problems.push(`${label}: duplicate archive entries ${archive.duplicates.slice(0, 5).join(", ")}`);
+  return { manifest, problems, described: byPath.size };
 }
 
 /**
@@ -102,7 +167,7 @@ function manifestOf(archive) {
 export function compareManifests(gateway, desktop) {
   const a = manifestOf(gateway);
   const b = manifestOf(desktop);
-  if (!a || !b) return { present: { gateway: Boolean(a), desktop: Boolean(b) }, compared: 0, disagreements: [] };
+  if (!a || !b) return { present: { gateway: Boolean(a), desktop: Boolean(b) }, compared: 0, disagreements: [], versions: { gateway: a?.version ?? null, desktop: b?.version ?? null } };
   const other = new Map((b.files ?? []).map(entry => [relativeName(String(entry.path)), entry]));
   const disagreements = [];
   let compared = 0;
@@ -117,43 +182,89 @@ export function compareManifests(gateway, desktop) {
 
 export const IDENTITY_FILES = new Set(["RELEASE_MANIFEST.json"]);
 
+/** `0.7.1-t7d-desktop-preview` and `0.7.1` are the same release; `0.7.2` is not. */
+export function versionCore(version) {
+  if (!version) return null;
+  const match = /^\d+\.\d+\.\d+/.exec(String(version));
+  return match ? match[0] : String(version);
+}
+
 export function verifyPairing(gatewayArchive, desktopArchive) {
+  const problems = [];
   const gateway = readArchive(gatewayArchive);
   const desktop = readArchive(desktopArchive);
-  const desktopByRelative = new Map();
-  for (const [name, bytes] of desktop.entries) desktopByRelative.set(relativeName(name), { name, bytes });
+  const gatewayRelative = new Map();
+  for (const [name, bytes] of gateway.entries) {
+    const relative = relativeName(name);
+    const issue = unsafePath(relative);
+    if (issue) { problems.push(`${path.basename(gatewayArchive)}: ${JSON.stringify(name)} is ${issue}`); continue; }
+    gatewayRelative.set(relative, { name, bytes });
+  }
+  const desktopRelative = new Map();
+  for (const [name, bytes] of desktop.entries) {
+    const relative = relativeName(name);
+    const issue = unsafePath(relative);
+    if (issue) { problems.push(`${path.basename(desktopArchive)}: ${JSON.stringify(name)} is ${issue}`); continue; }
+    desktopRelative.set(relative, { name, bytes });
+  }
+
   const shared = [];
   const mismatched = [];
   const identity = [];
   const gatewayOnly = [];
   const desktopOnly = [];
-  const matchedDesktop = new Set();
-  for (const [name, bytes] of gateway.entries) {
-    const relative = relativeName(name);
-    const other = desktopByRelative.get(relative);
+  for (const [relative, entry] of gatewayRelative) {
+    const other = desktopRelative.get(relative);
     if (!other) { gatewayOnly.push(relative); continue; }
-    matchedDesktop.add(relative);
-    if (IDENTITY_FILES.has(relative)) identity.push({ path: relative, gateway: digest(bytes), desktop: digest(other.bytes) });
-    else if (other.bytes.equals(bytes)) shared.push(relative);
-    else mismatched.push({ path: relative, gateway: digest(bytes), desktop: digest(other.bytes), gatewayBytes: bytes.length, desktopBytes: other.bytes.length });
+    if (IDENTITY_FILES.has(relative)) identity.push({ path: relative, gateway: digest(entry.bytes), desktop: digest(other.bytes) });
+    else if (other.bytes.equals(entry.bytes)) shared.push(relative);
+    else mismatched.push({ path: relative, gateway: digest(entry.bytes), desktop: digest(other.bytes), gatewayBytes: entry.bytes.length, desktopBytes: other.bytes.length });
   }
-  for (const relative of desktopByRelative.keys()) if (!matchedDesktop.has(relative)) desktopOnly.push(relative);
+  for (const relative of desktopRelative.keys()) if (!gatewayRelative.has(relative)) desktopOnly.push(relative);
+
+  for (const problem of mismatched) problems.push(`${problem.path} differs between the archives (${problem.gatewayBytes} vs ${problem.desktopBytes} bytes)`);
+  const missing = REQUIRED_SHARED.filter(relative => !gatewayRelative.has(relative) || !desktopRelative.has(relative));
+  for (const relative of missing) {
+    const where = !gatewayRelative.has(relative) && !desktopRelative.has(relative) ? "both archives" : !gatewayRelative.has(relative) ? "the gateway archive" : "the desktop archive";
+    problems.push(`${relative} is missing from ${where}`);
+  }
+  for (const relative of desktopOnly) if (!ALLOWED_DESKTOP_ONLY.some(pattern => pattern.test(relative))) problems.push(`${relative} is only in the desktop archive and is not an expected desktop file`);
+  for (const relative of gatewayOnly) if (!ALLOWED_GATEWAY_ONLY.some(pattern => pattern.test(relative))) problems.push(`${relative} is only in the gateway archive and is not an expected gateway file`);
+  if (!shared.length) problems.push("the two archives share no byte-identical file; they are not a pair");
+
+  const gatewayIntegrity = verifyManifest(gateway);
+  const desktopIntegrity = verifyManifest(desktop);
+  problems.push(...gatewayIntegrity.problems, ...desktopIntegrity.problems);
   const manifestAgreement = compareManifests(gateway, desktop);
+  if (manifestAgreement.disagreements.length) problems.push(...manifestAgreement.disagreements.map(item => `${item.path}: the two manifests disagree (${item.gateway} vs ${item.desktop})`));
+  const gatewayVersion = versionCore(manifestAgreement.versions.gateway);
+  const desktopVersion = versionCore(manifestAgreement.versions.desktop);
+  // The desktop preview carries its own label after the numeric version
+  // (`0.7.1-t7d-desktop-preview`); the numeric core is what must agree.
+  if (gatewayVersion && desktopVersion && gatewayVersion !== desktopVersion) {
+    problems.push(`the archives describe different versions (${manifestAgreement.versions.gateway} vs ${manifestAgreement.versions.desktop})`);
+  }
+  if (manifestAgreement.present.gateway && manifestAgreement.present.desktop && manifestAgreement.compared === 0) {
+    problems.push("the manifests describe no common path; the pair cannot be verified");
+  }
+
   const gatewaySum = sidecar(gatewayArchive);
   const desktopSum = sidecar(desktopArchive);
+  if (gatewaySum.matches === false) problems.push(`${path.basename(gatewayArchive)} does not match its .sha256 sidecar`);
+  if (desktopSum.matches === false) problems.push(`${path.basename(desktopArchive)} does not match its .sha256 sidecar`);
+
   return {
-    gateway: { archive: gateway.archive, bytes: gateway.bytes, sha256: gateway.sha256, entries: gateway.entries.size, checksum: gatewaySum },
-    desktop: { archive: desktop.archive, bytes: desktop.bytes, sha256: desktop.sha256, entries: desktop.entries.size, checksum: desktopSum },
+    gateway: { archive: gateway.archive, bytes: gateway.bytes, sha256: gateway.sha256, entries: gateway.entries.size, checksum: gatewaySum, manifest: gatewayIntegrity.described },
+    desktop: { archive: desktop.archive, bytes: desktop.bytes, sha256: desktop.sha256, entries: desktop.entries.size, checksum: desktopSum, manifest: desktopIntegrity.described },
+    required: { count: REQUIRED_SHARED.length, missing },
     shared: { count: shared.length, identical: shared.length },
     mismatched,
     identity,
     manifestAgreement,
     gatewayOnly: { count: gatewayOnly.length, sample: gatewayOnly.slice(0, 10) },
     desktopOnly: { count: desktopOnly.length, sample: desktopOnly.slice(0, 10) },
-    ok: mismatched.length === 0
-      && manifestAgreement.disagreements.length === 0
-      && gatewaySum.matches !== false
-      && desktopSum.matches !== false,
+    problems,
+    ok: problems.length === 0,
   };
 }
 

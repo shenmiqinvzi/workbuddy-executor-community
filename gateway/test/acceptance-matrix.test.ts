@@ -5,7 +5,7 @@
 // that can only say ok.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -117,5 +117,64 @@ test("a result outside the enum is caught", () => {
     assert.match(result.stderr, /V13: result "已验收"/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+/**
+ * R5: the same command has to work where a user meets it. An installed archive
+ * keeps the script at `<install>/scripts/` and its inputs at `<install>/docs/`,
+ * so "two levels up" pointed at the parent of the install and the check died on
+ * a missing file. The installed layout must resolve, and a tree without the
+ * inputs must name them rather than fail with a bare ENOENT.
+ */
+test("an installed layout finds its inputs and passes without a source checkout", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "wb-acceptance-install-"));
+  try {
+    for (const relative of [
+      "docs/ACCEPTANCE.md",
+      "docs/FRONTEND_TASK_PANEL_DESIGN.md",
+      "docs/forward/ACCEPTANCE_MATRIX.md",
+      "docs/forward/SCENARIO_INDEX.md",
+    ]) {
+      mkdirSync(path.dirname(path.join(dir, relative)), { recursive: true });
+      cpSync(path.join(repoRoot, relative), path.join(dir, relative));
+    }
+    mkdirSync(path.join(dir, "scripts"), { recursive: true });
+    cpSync(script, path.join(dir, "scripts", "check-acceptance-matrix.mjs"));
+    const result = spawnSync(process.execPath, [path.join(dir, "scripts", "check-acceptance-matrix.mjs")], { cwd: dir, encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /53 scenarios, 31 original tasks mapped/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("an installed copy without the frozen inputs names every missing file", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "wb-acceptance-partial-"));
+  try {
+    mkdirSync(path.join(dir, "scripts"), { recursive: true });
+    cpSync(script, path.join(dir, "scripts", "check-acceptance-matrix.mjs"));
+    const result = spawnSync(process.execPath, [path.join(dir, "scripts", "check-acceptance-matrix.mjs")], { cwd: dir, encoding: "utf8" });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /missing input: .*ACCEPTANCE\.md/);
+    assert.match(result.stderr, /input\(s\) are not in this tree/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the release mirrors the acceptance inputs the installed check reads", async () => {
+  const { MIRRORED_DOCS, collectMirroredDocs } = await import("../scripts/package.mjs");
+  const mirrored = await collectMirroredDocs(gatewayRoot);
+  assert.deepEqual(mirrored.map((entry: { relative: string }) => entry.relative), MIRRORED_DOCS);
+  for (const entry of mirrored as Array<{ relative: string; source: string }>) {
+    assert.ok(existsSync(entry.source), `${entry.relative} is missing at ${entry.source}`);
+  }
+  const orphan = mkdtempSync(path.join(tmpdir(), "wb-acceptance-orphan-"));
+  try {
+    mkdirSync(path.join(orphan, "gateway"), { recursive: true });
+    await assert.rejects(collectMirroredDocs(path.join(orphan, "gateway")), /Missing mirrored document docs\/ACCEPTANCE\.md/);
+  } finally {
+    rmSync(orphan, { recursive: true, force: true });
   }
 });

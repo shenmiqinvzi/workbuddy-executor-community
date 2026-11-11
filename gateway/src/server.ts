@@ -2,17 +2,13 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { loadConfig } from "./config.js";
+import path from "node:path";
 import { TaskStore } from "./task-store.js";
 import { WorkBuddyClient } from "./workbuddy-client.js";
-import { AcpLiveClient } from "./acp-live.js";
 import { TaskCoordinator } from "./coordinator.js";
 import { TaskApplicationService } from "./task-application-service.js";
 import { DesktopQueue } from "./desktop-queue.js";
-import { listDesktopSessions } from "./desktop-runtime.js";
 import { resultForDetail, type ResultDetail, type BriefResultOptions } from "./brief-result.js";
-import { serviceStatus } from "./service-cli.js";
-import { readServiceRegistration } from "./persistent-service.js";
-import path from "node:path";
 import { ensureWorkspace, listWorkspaces, listModels } from "./workspace-manager.js";
 import { loadDotEnv } from "./env.js";
 import { runtimeVersion } from "./runtime-version.js";
@@ -27,6 +23,7 @@ import { runsDirectory } from "./run-journal.js";
 import { AdmissionError } from "./collaboration.js";
 import { configuredDshCoordinator } from "./dsh-runtime.js";
 import { createReadOnlyProbe } from "./read-only-probe.js";
+import { healthReport } from "./health-report.js";
 
 import { desktopModelCatalog, readOnlyCatalogReaders } from "./desktop-dispatch-runtime.js";
 import { DSH_DISCOVERY_SCHEMA_VERSION, dshExecutorSummary, dshSessionsFor, summarizeDshHosts } from "./dsh-discovery.js";
@@ -54,21 +51,7 @@ const taskId = z.string().min(1).max(200);
 const operation = { operationId: z.string().min(1).max(512).optional(), expectedRevision: z.string().min(1).nullable().optional(), expectedAttemptId: z.string().min(1).nullable().optional() };
 const detail = z.enum(["full", "brief"]).optional().default("brief").describe("full preserves complete records. brief omits repeated goals/history/logs and clips the latest report to 2000 characters, while retaining identity, blockers and artifact paths. Brief summaries are not acceptance evidence.");
 
-server.tool("workbuddy_health", "Probe the configured transport. Online means a connection is available; it does not prove login, model/skill availability, desktop visibility or task success.", { sessionId: z.string().optional(), detail }, ({ sessionId, detail }) => guard(async () => {
-  const result = await client.health(sessionId);
-  let sessions: unknown[] = [];
-  if (config.backend === "desktop-acp") {
-    try { sessions = AcpLiveClient.listSessions(config).map((endpoint) => ({ sessionId: endpoint.sessionId, ready: endpoint.desktopVisible === true, workspace: endpoint.sessionCwd ?? endpoint.cwd, source: endpoint.runtimeSource })); } catch {}
-  }
-  if (config.backend === "desktop-queue") sessions = new DesktopQueue(config).listeners();
-  const registrationFile=config.serviceConfigFile??path.join(path.dirname(config.dbFile),"persistent-service.json");
-  const registration=config.backend==="desktop-queue"?readServiceRegistration(registrationFile):undefined;
-  const bound=registration&&path.resolve(registration.dbFile)===path.resolve(config.dbFile)&&(!sessionId||listWorkspaces(config).some(worker=>worker.sessionId===sessionId));
-  const persistentService=config.backend==="desktop-queue"?(bound?serviceStatus(registrationFile):{installed:false}):undefined;
-  const state=persistentService?.state as {updatedAt?:string;status?:string}|undefined;
-  const serviceAvailable=Boolean(persistentService?.installed&&persistentService.launchdLoaded&&persistentService.desktopRegistered&&state?.updatedAt&&Date.now()-Date.parse(state.updatedAt)<30_000);
-  return { ok: true, runtime: runtimeVersion, backend: config.backend, online: result.online, desktopSupervision: ["desktop-acp", "desktop-queue"].includes(config.backend), ready: result.ready ?? false, sessionId: result.sessionId??sessionId??persistentService?.sessionId, sessions, persistentService, workerCandidates: config.backend === "desktop-queue"&&!bound ? listDesktopSessions(config.workbuddyConfigDir) : undefined, status: result.online ? "transport_online" : serviceAvailable?(state?.status==="no_task"?"persistent_service_idle":"persistent_service_state"):"offline", message: serviceAvailable&&!result.online?(state?.status==="no_task"?"The persistent service is running. No temporary listener is needed while idle; queued tasks wake enrolled native WorkBuddy chats automatically.":"The persistent service is running; inspect its per-workspace state for active work, blockers or uncertain submission before any retry."):result.raw.msg, next: persistentService?.installed?"Pass workspace to send_task to create/reuse its native worker and route automatically. Queued/installed does not prove execution.":"After choosing a model, pass a stable taskId, workspace and that model to send_task for admitted native setup. Login and native permissions remain in WorkBuddy." };
-}, detail));
+server.tool("workbuddy_health", "Probe the configured transport. Online means a connection is available; it does not prove login, model/skill availability, desktop visibility or task success.", { sessionId: z.string().optional(), detail }, ({ sessionId, detail }) => guard(async () => healthReport({ config, client, sessionId }), detail));
 
 server.tool("workbuddy_ensure_workspace", "Compatibility entry. Standalone native preparation is refused; submit the user-selected model with a stable task identity through send_task to acquire shared admission first.", {
   workspaceId: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,199}$/).optional().describe("Optional stable project ID to register for immutable contract dispatch."),

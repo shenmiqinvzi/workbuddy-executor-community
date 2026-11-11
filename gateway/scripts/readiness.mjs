@@ -25,7 +25,9 @@ try {
   try { config = loadConfig(); } catch (error) { configError = error.message; }
   // --no-probe exists for a machine where spawning anything is not allowed; the
   // report then records that no probe ran, so nobody reads it as verified.
-  const probes = noProbe ? undefined : createReadinessProbes({ gatewayRoot: path.dirname(path.dirname(fileURLToPath(import.meta.url))) });
+  // The probe child is given the configuration resolved here, so the diagnosis
+  // describes the instance this command selected rather than the parent shell's.
+  const probes = noProbe ? undefined : createReadinessProbes({ gatewayRoot: path.dirname(path.dirname(fileURLToPath(import.meta.url))), config });
   const report = await observeReadiness({ config, configError, origin: ORIGIN, probes });
   if (json) console.log(JSON.stringify(report, null, 2));
   else {

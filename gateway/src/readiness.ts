@@ -101,6 +101,8 @@ export interface DesktopWindowObservation {
 export interface ReadinessProbes {
   tool?: () => Promise<{ responsive: boolean; detail?: string }>;
   native?: () => Promise<{ bridgeReady: boolean; detail?: string }>;
+  /** Identity the probe actually observed (pid/dataRoot/codeHash of the answering process). */
+  identity?: () => Promise<{ pid?: number; dataRoot?: string; codeHash?: string } | undefined>;
 }
 
 export interface ReadinessOptions extends DiscoveryOptions {
@@ -319,7 +321,7 @@ export async function observeReadiness(options: ReadinessOptions = {}): Promise<
   if (!options.probes?.native) notes.push(`native: ${origin} 没有注入 native probe：nativeOnline 只能报未观测，不能当作“桥接已就绪”。`);
 
   // ---- toolResponsive -------------------------------------------------------
-  const buildPresent = hasFile(path.join(root, "dist", "server.js"));
+  const buildPresent = hasFile(path.join(root, "dist", "server.js")) && hasFile(path.join(root, "dist", "health-entry.js"));
   const summaryRead = readRuntimeSummary(root);
   const heartbeatFresh = isFresh(summaryRead.summary, now());
   const toolFacts: ReadinessLayer["facts"] = {
@@ -333,13 +335,30 @@ export async function observeReadiness(options: ReadinessOptions = {}): Promise<
   if (options.probes?.tool) {
     try { toolProbe = await options.probes.tool(); } catch { toolProbe = { responsive: false, detail: "the tool probe failed" }; }
   }
+  // The answer's identity is the answering process, never this one: a probe that
+  // passed another data directory proves nothing about this installation.
+  let observedIdentity: { pid?: number; dataRoot?: string; codeHash?: string } | undefined;
+  if (options.probes?.identity) {
+    try { observedIdentity = await options.probes.identity(); } catch { observedIdentity = undefined; }
+  }
+  const foreignProbeRoot = Boolean(observedIdentity?.dataRoot && observer.dataRoot)
+    && path.resolve(observedIdentity!.dataRoot!) !== path.resolve(observer.dataRoot!);
+  const probeFacts = {
+    ...toolFacts,
+    observedByPid: observedIdentity?.pid ?? observer.pid,
+    observedDataRoot: observedIdentity?.dataRoot ?? null,
+    observedCodeHash: observedIdentity?.codeHash ?? null,
+    probeDataRootMatchesObserver: observedIdentity?.dataRoot ? !foreignProbeRoot : null,
+  };
   const toolLayer = !buildPresent
-    ? layer("toolResponsive", "absent", observedAt, toolFacts, ["dist/server.js"], "this install root has no build to respond with")
-    : toolProbe
-      ? layer("toolResponsive", toolProbe.responsive ? "ready" : "blocked", observedAt, { ...toolFacts, toolProbe: toolProbe.responsive }, [], toolProbe.detail)
-      : heartbeatFresh
-        ? layer("toolResponsive", "unverified", observedAt, toolFacts, ["tool_probe"], "a supervisor is writing heartbeats, but nothing proved the tool process itself answers")
-        : layer("toolResponsive", "unknown", observedAt, toolFacts, [summaryRead.found ? "fresh_runtime_summary" : "runtime_summary"], summaryRead.reason);
+    ? layer("toolResponsive", "absent", observedAt, probeFacts, ["dist/server.js", "dist/health-entry.js"], "this install root has no build to respond with")
+    : foreignProbeRoot
+      ? layer("toolResponsive", "blocked", observedAt, probeFacts, ["tool_probe_data_root"], "the tool process answered from another data directory; it cannot prove this installation is ready")
+      : toolProbe
+        ? layer("toolResponsive", toolProbe.responsive ? "ready" : "blocked", observedAt, { ...probeFacts, toolProbe: toolProbe.responsive }, [], toolProbe.detail)
+        : heartbeatFresh
+          ? layer("toolResponsive", "unverified", observedAt, probeFacts, ["tool_probe"], "a supervisor is writing heartbeats, but nothing proved the tool process itself answers")
+          : layer("toolResponsive", "unknown", observedAt, probeFacts, [summaryRead.found ? "fresh_runtime_summary" : "runtime_summary"], summaryRead.reason);
 
   // ---- nativeOnline --------------------------------------------------------
   const applicationPresent = hasFile(discovery?.executable.value);

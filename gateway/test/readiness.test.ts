@@ -40,6 +40,8 @@ function fixture(t: test.TestContext): Fixture {
   const data = path.join(root, "data");
   fs.mkdirSync(dist, { recursive: true }); fs.mkdirSync(configDir, { recursive: true }); fs.mkdirSync(data, { recursive: true });
   fs.writeFileSync(path.join(dist, "server.js"), "export const value = 1;\n");
+  // The tool layer is answered by the read-only entry, so a fixture install needs it too.
+  fs.writeFileSync(path.join(dist, "health-entry.js"), "export const health = 1;\n");
   fs.writeFileSync(path.join(dist, "helpers.js"), "export const helper = 2;\n");
   fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ name: "gateway", version: "0.7.1" }));
   fs.writeFileSync(path.join(root, "WorkBuddyAI.exe"), "stub");

@@ -163,10 +163,17 @@
 | source | E:\\javaproject\\outputs\\executor-plan-20261111\\wb33-security.log | 路径/HTTP/资源 5 文件 | 63 tests / 63 pass / 0 fail |
 | source | gateway/workbench/test/recommendation-view.test.mjs + gateway/test/executor-modes-consistency.test.ts | WB10/WB12/WB24 | 12/12 与 3/3（本轮新增 4 + 3 例） |
 | source | `E:\javaproject\outputs\executor-plan-20261111\wb40-pairing.json`、`wb40-candidate-check.json` | release-wb40 两个 ZIP | `ok:true`、shared 785 全同、mismatched 0、清单互认 785/0 分歧、`problems:[]` |
+| installed | `E:\javaproject\outputs\executor-plan-20261111\wb41-pairing.json`、`wb41-candidate-check.json`、`wb41-installed-acceptance.log`、`wb41-installed-readiness.json` | `release-wb41b` 两个 ZIP + 解包后的隔离安装根 |`ok:true`、共用 798 文件全同、必需 11 项齐备、`problems:[]`；安装树内 `check-acceptance-matrix.mjs` exit 0；`readiness.mjs --json` 前后 `tasks.sqlite` 均不存在 |
 | source | `gateway/test/skill-sync.test.ts`（新例 `a packaged installation compares installed copies with its bundled skill`） | 包内自检参照 bundled | 9/9 通过；故意改一字节仍报 `SKILL.md` 漂移 |
 | installed | `E:\javaproject\outputs\executor-plan-20261111\wb40-installed-skill-check.json`、`wb40-upgrade-tar.log` | 升级到 release-wb40 的隔离根 `gateway-v0.7.1-plan20261111-wb40` | 解包 exit 0、`npm ci` 8393ms、`skill:check` exit 0（`sourceMode:"bundled"`、三副本 inSync）、doctor exit 0 |
 | installed | `E:\javaproject\outputs\executor-plan-20261111\wb40-rollback-doctor.log` | 回退到升级前目录 | doctor exit 0；旧包 `skill:check` 复现「脚本不存在」→ 回退回到原样。见 [WB37](WB37_PAIRED_RELEASE.md) §4 |
 | live（部分） | `E:\javaproject\outputs\executor-plan-20261111\live-010-state4.log`、`live-health.log`、`native-dump4.json` | 真实 WorkBuddy + `live-config/tasks-2.sqlite` | `live-accept-010`：原生认领 → 真实回合 → 写盘 `RESULT.md=TOTAL=11` → `report_received` → **`stop_unconfirmed`/`blocked`**（`call_f6f3bbab…` 无终态）。派工链路证明，验收闭环仍未达成；单槽被该任务占用。见 [WB35_LIVE](WB35_LIVE_NATIVE_RUN.md) §3.5 |
+| source | `gateway/test/dsh-adapter.test.ts`（+3 例）、`outputs/codex-executor-plan-review-20261111/r1-dsh-adapter.log` | R1：共享 DSH 入口的 CommandSpec 准入 | 自由文本/越界 cwd 在 `TaskApplicationService.send` 内被拒（`prompts:0, selections:0`、任务与 baseline 不新增）；合法 CommandSpec 仍派工。40/40 通过 |
+| source | `gateway/test/readiness-readonly.test.ts`（7/7）、`outputs/codex-executor-plan-review-20261111/readiness-write.mjs` 复跑 | R2：只读诊断不建库 | 空目录真实 probe 后 `afterDatabaseExists:false`、`files:[]`；非 SQLite 文件字节不变；并发只起一次子进程 |
+| source | `gateway/test/readiness-readonly.test.ts` 的 `probeEnvironment` 用例、`outputs/codex-executor-plan-review-20261111/r3-probe-binding.mjs` | R3：探针绑定调用方配置 | `selected`/`conflicted` 都探测被选实例（`dataRoot E:\selected-instance`）；不传 `config` 时 `ENV_MISSING`，无隐式继承 |
+| source | `gateway/test/release-pairing.test.ts`（14/14）、`outputs/codex-executor-plan-review-20261111/r4-pairing-wb40.json` | R4：配对不再只比交集 | 缺必需文件/缺 manifest/摘要不符/零交集/版本不匹配全部 `ok:false`；wb40 复跑报 `dist/health-entry.js is missing from both archives` |
+| source | `gateway/test/acceptance-matrix.test.ts`（9/9）、`gateway/scripts/package.mjs` 的 `MIRRORED_DOCS` | R5：安装包自带验收输入 | 安装布局能找到 `docs/` 输入并通过；缺输入时逐条点名；发布镜像 4 份输入，缺失即报错 |
+| source | `outputs/executor-plan-20261111/suite-r5b.log` | R1–R5 之后的整套回归 | 见 [REVIEW_R1_R5_FIXES](REVIEW_R1_R5_FIXES.md) 与本轮数字 |
 
 ## 6. 与 `SCENARIO_INDEX` 的差异（口径恢复）
 

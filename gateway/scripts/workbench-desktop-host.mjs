@@ -30,7 +30,9 @@ import { runProductivityCommand } from '../dist/desktop-productivity.js';
 loadDotEnv();
 if (process.env.WORKBUDDY_WORKBENCH_DIAGNOSTICS === '1') console.error('[host] PATH=' + (process.env.PATH ?? '<unset>') + ' SystemRoot=' + (process.env.SystemRoot ?? '<unset>') + ' temp=' + (process.env.TEMP ?? '<unset>'));
 const config = loadConfig();
-const readinessProbes = createReadinessProbes({ moduleUrl: import.meta.url });
+// The probe child is bound to the configuration this host resolved, so a GET on
+// the window never reports another installation's health as this one's.
+const readinessProbes = createReadinessProbes({ moduleUrl: import.meta.url, config });
 // Never create an empty database because the launcher selected the wrong path.
 // A first install legitimately has no database, so name the variable that chose
 // this path and the one command that creates it, instead of failing with a bare

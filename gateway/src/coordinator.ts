@@ -18,7 +18,7 @@ import { runEvidenceDigestOf } from "./run-evidence.js";
 export { runEvidenceDigestOf } from "./run-evidence.js";
 import { validateSupportedTaskContract, contractExecution, validateTaskScope, type TaskContractScope } from "./task-contract.js";
 import { AdmissionError, defaultModelPolicy, enforceModelPolicy, type ModelObservation } from "./collaboration.js";
-import { admitCommandSpecs, commandSpecAdmissionMessage } from "./command-spec.js";
+import { admitCommandSpecs, admitContractCommandChecks, commandSpecAdmissionMessage } from "./command-spec.js";
 
 import type { OperationOptions, OperationRecord } from "./operation-admission.js";
 import type { WorkspaceDispatchGuard } from "./workspace-protection.js";
@@ -116,6 +116,10 @@ export class TaskCoordinator {
     const rejection = admitCommandSpecs(definitions, { workspaceRoot, field });
     if (rejection) throw new AdmissionError(rejection.code, commandSpecAdmissionMessage(rejection));
   }
+  private admitContractChecks(checks: readonly { kind: unknown; definition: unknown }[], workspaceRoot: string | null): void {
+    const rejection = admitContractCommandChecks(checks, workspaceRoot);
+    if (rejection) throw new AdmissionError(rejection.code, commandSpecAdmissionMessage(rejection));
+  }
   private async sendAdmitted(input: SendTaskInput, operation?: OperationRecord) {
     this.requireDesktop();
     if (input.contract !== undefined) return this.sendWithContract(input, operation);
@@ -193,7 +197,7 @@ export class TaskCoordinator {
     const admission = this.store.collaboration.prepare(contract, contractHash, policy);
     if (input.workspace !== undefined && fs.realpathSync.native(input.workspace) !== admission.workspace.realPath) throw new AdmissionError("WORKSPACE_CONFLICT", "The supplied directory differs from the registered project.");
     const commands = contract.requiredChecks.filter(check => check.kind === "command").map(check => check.definition);
-    this.admitCommandChecks(commands, admission.workspace.realPath, "contract.requiredChecks");
+    this.admitContractChecks(contract.requiredChecks, admission.workspace.realPath);
     const constraints = [`Allowed changes: ${JSON.stringify(contract.scope.allowedChanges)}`, `Permitted metadata: ${JSON.stringify(contract.scope.permittedMetadata)}`];
     this.store.workspaceProtection.create(contract.taskId, admission.workspace.realPath, contractHash, contract.scope, runsDirectory(this.config));
     const scopeGuard = this.store.workspaceProtection.guard(contract.taskId);

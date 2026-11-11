@@ -154,14 +154,39 @@ export function parseCommandSpec(definition: unknown, options: CommandSpecOption
 /** Validate a submitted list; returns the first rejection (with its array index) or null. */
 export function admitCommandSpecs(
   definitions: readonly string[] | undefined,
-  options: { workspaceRoot?: string | null; field: string },
+  options: { workspaceRoot?: string | null; field: string; positions?: readonly string[] },
 ): CommandSpecRejection | null {
   const list = definitions ?? [];
   for (let index = 0; index < list.length; index += 1) {
-    const admission = parseCommandSpec(list[index], { workspaceRoot: options.workspaceRoot, position: `${options.field}[${index}]` });
+    const position = options.positions?.[index] ?? `${options.field}[${index}]`;
+    const admission = parseCommandSpec(list[index], { workspaceRoot: options.workspaceRoot, position });
     if (!admission.ok) return admission.rejection;
   }
   return null;
+}
+
+/** One required check as it appears on a stored or submitted contract. */
+export interface ContractCommandCheck {
+  readonly kind: unknown;
+  readonly definition: unknown;
+}
+
+/**
+ * Admit the command checks of a whole contract. The position keeps the real index
+ * inside `requiredChecks` (semantic checks may sit between two command checks), so a
+ * rejection names the entry the caller actually sent.
+ */
+export function admitContractCommandChecks(
+  checks: readonly ContractCommandCheck[] | undefined,
+  workspaceRoot: string | null,
+): CommandSpecRejection | null {
+  const definitions: string[] = [], positions: string[] = [];
+  (checks ?? []).forEach((check, index) => {
+    if (check.kind !== "command") return;
+    definitions.push(check.definition as string);
+    positions.push(`contract.requiredChecks[${index}]`);
+  });
+  return admitCommandSpecs(definitions, { workspaceRoot, field: "contract.requiredChecks", positions });
 }
 
 /** One-line, copy-pasteable explanation. Never includes the whole free-text value. */

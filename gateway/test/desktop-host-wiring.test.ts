@@ -18,7 +18,7 @@ test("the desktop host wires the five-layer diagnosis into its read-only server"
   // WB06: the host that draws the window must answer the first two layers itself,
   // through a memoized probe pair, and must name its own origin in the report.
   assert.match(source, /import \{ createReadinessProbes \} from '\.\.\/dist\/readiness-probes\.js';/);
-  assert.match(source, /const readinessProbes = createReadinessProbes\(\{ moduleUrl: import\.meta\.url \}\);/);
+  assert.match(source, /const readinessProbes = createReadinessProbes\(\{ moduleUrl: import\.meta\.url, config \}\);/);
   assert.match(source, /new WorkbenchHttpServer\(\{[\s\S]*?readiness: \{ observe: \(\) => observeReadiness\(\{ config, origin: 'scripts\/workbench-desktop-host\.mjs', probes: readinessProbes \}\) \},[\s\S]*?\}\);/);
 });
 

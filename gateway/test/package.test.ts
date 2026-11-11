@@ -5,7 +5,7 @@ import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
 import { readZip } from "./support/read-zip.mjs";
-import { assertBuildIsFresh, assertSafeContent, collectReleaseFiles, createPackage, createSkillPackage } from "../scripts/package.mjs";
+import { MIRRORED_DOCS, assertBuildIsFresh, assertSafeContent, collectReleaseFiles, createPackage, createSkillPackage } from "../scripts/package.mjs";
 import { createDesktopPackage } from "../scripts/package-desktop.mjs";
 
 
@@ -113,6 +113,14 @@ async function fixture() {
     await fs.mkdir(path.dirname(target), { recursive: true });
     await fs.writeFile(target, content);
   }
+  // The acceptance inputs live beside the gateway in a real checkout, so the release
+  // mirrors them from the parent directory. The fixture keeps that shape instead of
+  // growing a second copy inside the gateway tree.
+  for (const name of ["docs/ACCEPTANCE.md", "docs/FRONTEND_TASK_PANEL_DESIGN.md", "docs/forward/ACCEPTANCE_MATRIX.md", "docs/forward/SCENARIO_INDEX.md"]) {
+    const target = path.join(root, name);
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(target, `# mirrored fixture ${name}\n`);
+  }
   return { root, source, output };
 }
 
@@ -151,11 +159,13 @@ test("release archive uses a file allowlist and hashes every included file", asy
     const listing = [...(await readZip(result.archive)).keys()];
     const prefix = "codex-workbuddy-gateway-v0.2.0/";
     const files = listing.filter((name) => name && !name.endsWith("/")).map((name) => name.slice(prefix.length));
-    assert.deepEqual(files.sort(), [...selected, "RELEASE_MANIFEST.json"].sort());
+    // The archive also mirrors the design documents the matrix reads from beside the gateway.
+    assert.deepEqual(files.sort(), [...selected, ...MIRRORED_DOCS, "RELEASE_MANIFEST.json"].sort());
     const manifest = JSON.parse(await fs.readFile(result.manifest, "utf8"));
     assert.equal(manifest.videoAcceptance, "pending_user_verification");
     for (const entry of manifest.files) {
-      const bytes = await fs.readFile(path.join(value.source, entry.path));
+      const origin = MIRRORED_DOCS.includes(entry.path) ? value.root : value.source;
+      const bytes = await fs.readFile(path.join(origin, entry.path));
       assert.equal(entry.sha256, crypto.createHash("sha256").update(bytes).digest("hex"));
       assert.equal(entry.bytes, bytes.length);
     }

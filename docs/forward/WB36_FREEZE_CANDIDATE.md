@@ -88,3 +88,19 @@ dotnet run --project desktop/test/PolicyTests.csproj --configuration Release
 
 产物的最终身份以 [WB37](WB37_PAIRED_RELEASE.md) 的 `release-wb40` 为准。
 
+
+## 7 R1–R5 返修后的当前状态（覆盖上文的冻结数字）
+
+REVIEW.md 的五项返修（见 [REVIEW_R1_R5_FIXES](REVIEW_R1_R5_FIXES.md)）改动了探针入口、准入校验、配对脚本与
+打包清单，因此上面 §3/§4/§5 的冻结数字只对 `suite-wb38`/`suite-wb40` 那一刻成立。返修后的口径：
+
+| 项目 | 当前值 |
+| --- | --- |
+| 后端套件 | `suite-r5b.log`：1586 tests / 1574 pass / 0 fail / 12 skip（204.1s） |
+| 工作台套件 | 169/169（`wb36-workbench.log`，未受返修影响） |
+| 桌面策略测试 | 133 pass / 0 fail（`wb36-desktop.log`，未受返修影响） |
+| 快照清单 | 467 文件，摘要 `b8fd2b1a34912c5ef57f363e1d34dc3288b21a615f615c7b56255952c774eeb0` |
+| 候选产物 | `release-wb41b`（网关 `f932d07f…`、桌面 `3b0b84dd…`、共用 798 文件） |
+
+新增的两个入口是本轮引入的：`src/health-entry.ts`（只读 MCP 入口）与 `src/health-report.ts`（health 主体）。
+`dist/health-entry.js` 现在是 readiness tool 层的必要条件，也是配对必需文件之一。

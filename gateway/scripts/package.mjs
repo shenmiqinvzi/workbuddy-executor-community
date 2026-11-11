@@ -28,6 +28,9 @@ REQUIRED_FILES.push(...WORKBENCH_FILES, ...DESKTOP_FILES, "scripts/build-desktop
 REQUIRED_FILES.push("scripts/workbench-read-store.mjs", "scripts/open-workbench-router.mjs");
 REQUIRED_FILES.push("scripts/workbench-desktop-commands.mjs", "scripts/workbench-dispatch-worker.mjs", "scripts/workbench-control-worker.mjs");
 REQUIRED_FILES.push("scripts/resource-source-acceptance.mjs");
+// R5: the acceptance matrix is only checkable where its inputs are, so the
+// release archive ships them and the installed copy can run the same command.
+
 // The installed candidate must be able to diagnose itself and bootstrap its own
 // dependencies without a checkout: both entry points ship with their sources.
 REQUIRED_FILES.push("scripts/readiness.mjs", "scripts/bootstrap.mjs", "src/readiness.ts", "dist/readiness.js", "src/installation-bootstrap.ts", "dist/installation-bootstrap.js");
@@ -55,6 +58,34 @@ const DIRECTORY_RULES = new Map([
   ["deepseek-plugin", /./],
 ]);
 const PRIVATE_DIRS = new Set(["data", "outputs", "node_modules", "work", "logs", ".git", ".workbuddy", ".codex"]);
+
+// The acceptance matrix reads design documents that live at the repository root, one
+// level above the gateway. They are not reachable from the package source directory, so
+// an installed copy could not run `acceptance:check` even though package.json advertised
+// it. Mirroring them into the archive keeps the promise honest: the installed check reads
+// the same frozen text the archive was built from.
+export const MIRRORED_DOCS = [
+  "docs/ACCEPTANCE.md",
+  "docs/FRONTEND_TASK_PANEL_DESIGN.md",
+  "docs/forward/ACCEPTANCE_MATRIX.md",
+  "docs/forward/SCENARIO_INDEX.md",
+];
+
+export async function collectMirroredDocs(sourceDir) {
+  const files = [];
+  for (const relative of MIRRORED_DOCS) {
+    const source = path.join(sourceDir, "..", relative);
+    try {
+      const stat = await fs.lstat(source);
+      if (!stat.isFile()) throw new Error(`${relative} is not a regular file`);
+    } catch (error) {
+      if (error.code === "ENOENT") throw new Error(`Missing mirrored document ${relative}; it sits at the repository root beside the gateway directory.`);
+      throw error;
+    }
+    files.push({ relative, source });
+  }
+  return files;
+}
 
 function allowed(relative) {
   const segments = relative.split("/");
@@ -220,11 +251,26 @@ export function assertSafeContent(relative, content) {
   }
 }
 
+/**
+ * Everything an archive carries: the gateway allowlist plus the design documents the
+ * acceptance matrix reads from beside the gateway. Both archives use this list, so a
+ * desktop ZIP holds exactly the same gateway copy as the gateway ZIP and the pairing
+ * check never has to excuse a one-sided file.
+ */
+export async function collectPackageSources(sourceDir) {
+  const files = await collectReleaseFiles(sourceDir);
+  const mirrored = await collectMirroredDocs(sourceDir);
+  return [
+    ...files.map((relative) => ({ relative, root: sourceDir, source: path.join(sourceDir, relative) })),
+    ...mirrored.map((entry) => ({ ...entry, root: path.join(sourceDir, "..") })),
+  ];
+}
+
 export async function createPackage(sourceDir, outputDir, version) {
   if (!/^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/.test(version)) throw new Error("Release version must be a safe semantic version.");
   sourceDir = path.resolve(sourceDir);
   outputDir = path.resolve(outputDir);
-  const files = await collectReleaseFiles(sourceDir);
+  const sources = await collectPackageSources(sourceDir);
   const releaseName = `codex-workbuddy-gateway-v${version}`;
   const archive = path.join(outputDir, `${releaseName}.zip`);
   const manifestPath = path.join(outputDir, `${releaseName}.manifest.json`);
@@ -237,8 +283,7 @@ export async function createPackage(sourceDir, outputDir, version) {
   const stage = await fs.mkdtemp(path.join(os.tmpdir(), "workbuddy-release-"));
   const entries = [];
   try {
-    for (const relative of files) {
-      const source = path.join(sourceDir, relative);
+    for (const { relative, source } of sources) {
       const content = await fs.readFile(source);
       assertSafeContent(relative, content.toString("utf8"));
       const target = path.join(stage, releaseName, relative);

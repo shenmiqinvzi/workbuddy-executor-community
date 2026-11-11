@@ -5,6 +5,7 @@ import type { DshBinding } from "./dsh-bindings.js";
 import type { DshTransport, DshSelection, DshSession } from "./dsh-client.js";
 import type { ExecutionSelection } from "./task-contract.js";
 import { validateSupportedTaskContract } from "./task-contract.js";
+import { admitContractCommandChecks, commandSpecAdmissionMessage } from "./command-spec.js";
 import { AdmissionError, defaultModelPolicy, enforceModelPolicy, type ModelObservation } from "./collaboration.js";
 import { RunJournal, hasNativeStopEvidence, type RunSnapshot, writePrivateJson } from "./run-journal.js";
 import { parseReport, runEvidenceDigestOf } from "./coordinator.js";
@@ -94,6 +95,11 @@ export class DshTaskCoordinator {
     }
     const policy = this.policy(), admission = this.store.collaboration.prepare(contract, contractHash, policy, "dsh");
     if (input.workspace !== undefined && fs.realpathSync.native(input.workspace) !== admission.workspace.realPath) return fail("WORKSPACE_CONFLICT", "The supplied workspace differs from its immutable contract.");
+    // Shared product admission: a command check is a CommandSpec document, never a
+    // shell line. This runs after the read-only plan/workspace resolution and before
+    // the scope baseline, model selection, prompt or any task/attempt row.
+    const rejectedCheck = admitContractCommandChecks(contract.requiredChecks, admission.workspace.realPath);
+    if (rejectedCheck) return fail(rejectedCheck.code, commandSpecAdmissionMessage(rejectedCheck));
     const hostId = this.client.resolveHostId(input.hostId ?? contract.execution.connectionId);
     this.store.workspaceProtection.create(contract.taskId, admission.workspace.realPath, contractHash, contract.scope, this.runsDir);
     const scopeGuard = this.store.workspaceProtection.guard(contract.taskId);

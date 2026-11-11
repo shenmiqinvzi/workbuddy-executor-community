@@ -76,7 +76,17 @@ function scopePatterns(scope: TaskContractScope) { return [...scope.allowedChang
  * is separate from any execution deadline and can be raised for a slow host;
  * when it expires the failure is still reported.
  */
-const GIT_READ_TIMEOUT_MS = (() => { const configured = Number(process.env.WORKBUDDY_GIT_READ_TIMEOUT_MS ?? process.env.WORKBUDDY_GIT_INDEX_TIMEOUT_MS ?? 30000); return Number.isFinite(configured) && configured > 0 ? configured : 30000; })();
+const GIT_READ_TIMEOUT_MS = (() => { const configured = Number(process.env.WORKBUDDY_GIT_READ_TIMEOUT_MS ?? process.env.WORKBUDDY_GIT_INDEX_TIMEOUT_MS ?? 60000); return Number.isFinite(configured) && configured > 0 ? configured : 60000; })();
+/**
+ * The inventory is bounded by entries, bytes and wall-clock time. All three fail
+ * closed (`SCOPE_SCAN_LIMIT`), so time is a liveness guard rather than a security
+ * boundary — but a guard measured on a machine running a full parallel suite can
+ * expire while the tree itself is tiny, and then admission reports a limit that has
+ * nothing to do with the workspace. The budget is therefore configurable, with the
+ * entry and byte ceilings unchanged.
+ */
+const SCOPE_SCAN_BUDGET_MS = (() => { const configured = Number(process.env.WORKBUDDY_SCOPE_SCAN_MS ?? 60000); return Number.isFinite(configured) && configured > 0 ? configured : 60000; })();
+const SCOPE_SCAN_ENTRY_LIMIT = 40000;
 function gitIndex(root: string): string | null {
   let cursor = root;
   while (!fs.existsSync(path.join(cursor, ".git"))) { const parent = path.dirname(cursor); if (parent === cursor) return null; cursor = parent; }
@@ -131,7 +141,7 @@ function inventory(root: string, scope: TaskContractScope, excluded: string[]): 
     const entries: WorkspaceEntry[] = [], seen = new Set<string>();
     const walk = (dir: string) => {
       for (const item of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-        if (++count > 40000 || Date.now() - start > 15000) return fail("SCOPE_SCAN_LIMIT", "The bounded workspace inventory exceeded its entry/time limit.");
+        if (++count > SCOPE_SCAN_ENTRY_LIMIT || Date.now() - start > SCOPE_SCAN_BUDGET_MS) return fail("SCOPE_SCAN_LIMIT", "The bounded workspace inventory exceeded its entry/time limit.");
         const file = path.join(dir, item.name), name = path.relative(canonical, file).split(path.sep).join("/");
         workspaceRelative(name); if (seen.has(key(name))) return fail("SCOPE_PATH_COLLISION", "Case-insensitive workspace paths collide."); seen.add(key(name));
         const stat = fs.lstatSync(file);

@@ -47,8 +47,8 @@ function fixture(t: { after: (fn: () => void | Promise<void>) => void }, chosenM
   store.collaboration.registerWorkspace("project", dir, "Synthetic project");
   store.collaboration.setPolicy({ ...legacyFreeModelPolicy(), allowed: [...legacyFreeModelPolicy().allowed, execution] });
   t.after(() => { store.close(); fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }); });
-  function contract(taskId = "dsh-task") {
-    const proposal = { schemaVersion: "workbuddy-executor/vnext-2", taskId, workspaceId: "project", title: "Synthetic DSH task", objective: "Verify the bounded synthetic adapter", execution, timeoutSeconds: 60, maxAttempts: 2, scope: { allowedChanges: ["src/example.ts"], permittedMetadata: [] }, requiredChecks: [], collaboration: { planId: "placeholder", expectedPlanRevision: "placeholder" } };
+  function contract(taskId = "dsh-task", requiredChecks: unknown[] = []) {
+    const proposal = { schemaVersion: "workbuddy-executor/vnext-2", taskId, workspaceId: "project", title: "Synthetic DSH task", objective: "Verify the bounded synthetic adapter", execution, timeoutSeconds: 60, maxAttempts: 2, scope: { allowedChanges: ["src/example.ts"], permittedMetadata: [] }, requiredChecks, collaboration: { planId: "placeholder", expectedPlanRevision: "placeholder" } };
     const plan = store.collaboration.createPlan(proposal, coordinator.policy(), { mode: "manual", reason: "Explicit test action" });
     store.collaboration.authorizePlan(plan.planId, plan.revision, coordinator.policy(), "synthetic-user-action");
     return { ...proposal, collaboration: { planId: plan.planId, expectedPlanRevision: plan.revision } };
@@ -467,4 +467,48 @@ test("a prompt whose acceptance was never confirmed records no usage row", async
     const ledger = readUsageRecords(db, { taskId: "dsh-task" });
     assert.equal(ledger.records.length, 0, "an unconfirmed request is not a recorded request");
   } finally { db.close(); }
+});
+
+/** Counts what a refused admission must not have written. */
+function absentWrites(file: string) {
+  const db = new DatabaseSync(file);
+  try {
+    const count = (sql: string) => (db.prepare(sql).get() as { n: number }).n;
+    return {
+      baselines: count("SELECT COUNT(*) AS n FROM workspace_scope_baselines"),
+      attempts: count("SELECT COUNT(*) AS n FROM task_attempts"),
+      contracts: count("SELECT COUNT(*) AS n FROM task_contracts"),
+    };
+  } finally { db.close(); }
+}
+
+test("the shared DSH entry refuses a free-text check before any native preparation", async t => {
+  const f = fixture(t), contract = f.contract("dsh-prose", [{ id: "prose", kind: "command", definition: "run arbitrary prose" }]);
+  const config = { ...loadConfig(), dbFile: f.store.file, runsDir: f.runs };
+  const service = new TaskApplicationService(new TaskCoordinator(config, f.store, new WorkBuddyClient(config)), 2, f.runs, f.coordinator);
+  await assert.rejects(service.send({ taskId: contract.taskId, objective: contract.objective, contract, workspace: f.dir, sessionId: "original-session" }), { code: "COMMAND_SPEC_REQUIRED" });
+  assert.deepEqual(f.counts(), { prompts: 0, selections: 0 });
+  assert.equal(f.store.get("dsh-prose"), undefined);
+  assert.deepEqual(absentWrites(f.store.file), { baselines: 0, attempts: 0, contracts: 0 });
+});
+
+test("the shared DSH entry names the entry that broke the CommandSpec rule", async t => {
+  const f = fixture(t);
+  const semantic = { id: "a-semantic", kind: "semantic", definition: "The report names the summed total." };
+  const broken = { id: "b-command", kind: "command", definition: JSON.stringify({ executable: process.execPath, args: ["-p", "1"], cwd: path.join(f.dir, ".."), timeoutSeconds: 60, inputs: ["NUMBERS.txt"] }) };
+  const contract = f.contract("dsh-cwd", [semantic, broken]);
+  await assert.rejects(f.coordinator.send({ contract, objective: contract.objective, sessionId: "original-session" }),
+    (error: unknown) => error instanceof AdmissionError && error.code === "COMMAND_SPEC_PATH" && /contract\.requiredChecks\[1\]\.cwd/.test(error.message));
+  assert.deepEqual(f.counts(), { prompts: 0, selections: 0 });
+  assert.equal(f.store.get("dsh-cwd"), undefined);
+});
+
+test("a contract with a valid CommandSpec check still dispatches through the shared DSH entry", async t => {
+  const f = fixture(t);
+  const spec = { executable: process.execPath, args: ["-p", "1"], cwd: f.dir, timeoutSeconds: 60, inputs: ["src/example.ts"] };
+  const contract = f.contract("dsh-spec", [{ id: "real", kind: "command", definition: JSON.stringify(spec) }]);
+  const sent = await f.coordinator.send({ contract, objective: contract.objective, sessionId: "original-session" });
+  assert.equal(sent.ok, true); assert.equal(sent.created, true);
+  assert.deepEqual(f.counts(), { prompts: 1, selections: 1 });
+  assert.equal(f.store.get("dsh-spec")!.acceptanceCommands.length, 1);
 });

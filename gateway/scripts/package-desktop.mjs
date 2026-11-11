@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { collectReleaseFiles, assertSafeContent } from './package.mjs';
+import { collectPackageSources, assertSafeContent } from './package.mjs';
 import { zipDirectory } from './zip.mjs';
 
 const appFiles = ['WorkBuddy.Workbench.exe', 'WorkBuddy.Workbench.dll', 'WorkBuddy.Workbench.deps.json', 'WorkBuddy.Workbench.runtimeconfig.json', 'Microsoft.Web.WebView2.Core.dll', 'Microsoft.Web.WebView2.WinForms.dll', 'runtimes/win-x64/native/WebView2Loader.dll', 'WEBVIEW2-LICENSE.txt'];
@@ -78,12 +78,11 @@ export async function createDesktopPackage(gateway, output, version) {
     for (const target of [archive, archive + '.sha256']) {
         try { await fs.lstat(target); throw new Error('Refusing to replace a desktop archive or checksum.'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
     }
-    const files = await collectReleaseFiles(gateway);
+    const sources = await collectPackageSources(gateway);
     const stage = await fs.mkdtemp(path.join(os.tmpdir(), 'workbuddy-desktop-package-'));
     const entries = [];
-    async function copy(relative, destination, scan = true) {
-        const source = path.join(gateway, relative);
-        let current = gateway;
+    async function copyFrom(relative, destination, source, root, scan = true) {
+        let current = root;
         for (const part of relative.split('/')) { current = path.join(current, part); if ((await fs.lstat(current)).isSymbolicLink()) throw new Error('Linked desktop package input.'); }
         if (!(await fs.stat(source)).isFile()) throw new Error('Missing desktop package file.');
         const bytes = await fs.readFile(source);
@@ -97,10 +96,10 @@ export async function createDesktopPackage(gateway, output, version) {
         entries.push({ path: relative, bytes: bytes.length, sha256: crypto.createHash('sha256').update(bytes).digest('hex') });
     }
     try {
-        for (const relative of files) await copy(relative, 'gateway/' + relative);
-        for (const relative of appFiles) await copy('desktop/app/' + relative, 'gateway/desktop/app/' + relative, false);
+        for (const entry of sources) await copyFrom(entry.relative, 'gateway/' + entry.relative, entry.source, entry.root);
+        for (const relative of appFiles) await copyFrom('desktop/app/' + relative, 'gateway/desktop/app/' + relative, path.join(gateway, 'desktop/app/' + relative), gateway, false);
         await write(guideName, previewGuide(version));
-        await fs.writeFile(path.join(stage, 'RELEASE_MANIFEST.json'), JSON.stringify({ project: 'workbuddy-desktop', version, prerequisites: ['Windows x64', '.NET Desktop Runtime 10', 'WebView2 Runtime', 'Node.js >=22.13 and installed gateway dependencies'], coverage: { gateway: files.length, app: appFiles.length, guide: 1 }, files: entries }, null, 2));
+        await fs.writeFile(path.join(stage, 'RELEASE_MANIFEST.json'), JSON.stringify({ project: 'workbuddy-desktop', version, prerequisites: ['Windows x64', '.NET Desktop Runtime 10', 'WebView2 Runtime', 'Node.js >=22.13 and installed gateway dependencies'], coverage: { gateway: sources.length, app: appFiles.length, guide: 1 }, files: entries }, null, 2));
         await zipDirectory(stage, archive, name);
         const sha256 = crypto.createHash('sha256').update(await fs.readFile(archive)).digest('hex');
         await fs.writeFile(archive + '.sha256', sha256 + '  ' + path.basename(archive) + '\n', { flag: 'wx' });

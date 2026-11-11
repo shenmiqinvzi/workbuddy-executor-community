@@ -6,7 +6,7 @@
 // text identical to docs/ACCEPTANCE.md / docs/FRONTEND_TASK_PANEL_DESIGN.md,
 // every one of the 31 original tasks mapped, enum-only modes and results, and
 // docs/forward/SCENARIO_INDEX.md not renaming a scenario.
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -42,6 +42,34 @@ function tableRows(text, idPattern) {
     rows.push(parts);
   }
   return rows;
+}
+
+/** Inputs the check reads. A layout is accepted only when all of them are present. */
+export const MATRIX_INPUTS = [
+  "docs/ACCEPTANCE.md",
+  "docs/FRONTEND_TASK_PANEL_DESIGN.md",
+  "docs/forward/ACCEPTANCE_MATRIX.md",
+  "docs/forward/SCENARIO_INDEX.md",
+];
+
+/**
+ * Locate the tree that holds the frozen acceptance inputs. The same script runs
+ * in two layouts: a source checkout (`<repo>/gateway/scripts/…`, inputs under
+ * `<repo>/docs`) and an installed package (`<install>/scripts/…`, inputs under
+ * `<install>/docs`). Guessing "two levels up" is wrong in the second one, and a
+ * missing input must name itself instead of surfacing as a bare ENOENT.
+ */
+export function locateInputs(scriptFile) {
+  const scriptDir = path.dirname(path.resolve(scriptFile));
+  const installRoot = path.resolve(scriptDir, "..");
+  const checkoutRoot = path.resolve(installRoot, "..");
+  const candidates = [checkoutRoot, installRoot];
+  for (const root of candidates) {
+    const present = MATRIX_INPUTS.filter(relative => existsSync(path.join(root, relative)));
+    if (present.length === MATRIX_INPUTS.length) return { root, missing: [] };
+  }
+  const root = candidates[0];
+  return { root, missing: MATRIX_INPUTS.filter(relative => !existsSync(path.join(root, relative))) };
 }
 
 export function readOriginals(root) {
@@ -157,7 +185,14 @@ export function checkMatrix(root) {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+  const located = locateInputs(fileURLToPath(import.meta.url));
+  if (located.missing.length) {
+    for (const relative of located.missing) console.error(`- missing input: ${path.join(located.root, relative)}`);
+    console.error(`acceptance matrix: ${located.missing.length} input(s) are not in this tree;`);
+    console.error("  the matrix reads the design documents, so it runs in a source checkout or in a release archive that ships them.");
+    process.exit(1);
+  }
+  const root = located.root;
   const result = checkMatrix(root);
   const json = process.argv.includes("--json");
   if (json) {
