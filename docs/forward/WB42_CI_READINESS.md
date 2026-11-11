@@ -53,3 +53,27 @@
 - 远端 CI 实跑回执（需 push + 触发）。
 - 串行套件在本机的复跑（时间成本，且串行口径与并行结论不冲突，但不等价）。
 - `actions/upload-artifact` 上传后的可下载性验证（需远端）。
+
+## 6. 首轮远端运行（已推送，仍无回执）
+
+推送了两次（`41e9595` → `4aa0b23`），远端确实起了运行，但两个工作流都以「无作业」失败：
+
+| 运行 | 工作流 | head | 结果 |
+| --- | --- | --- | --- |
+| [43008444151](https://github.com/shenmiqinvzi/workbuddy-executor-community/actions/runs/43008444151) | Forward gate | `41e9595` | Failure，`/jobs` 返回 `total_count: 0` |
+| [43008446862](https://github.com/shenmiqinvzi/workbuddy-executor-community/actions/runs/43008446862) | Release pairing | `41e9595` | Failure，同上 |
+
+已排除的项：
+
+- 工作流文件确实在远端（`raw.githubusercontent.com/.../4aa0b23/.github/workflows/release-pairing.yml` → HTTP 200）。
+- 两个文件都能被 YAML 解析（顶层键 `name` / `on` / `permissions` / `jobs`），UTF-8 合法、无替换字符。
+- 工作流里的同一串命令在本机按序跑通（build → package → desktop:build → desktop:package → verify-pairing → candidate check，见 §4）。
+
+**读不到失败注解**：GitHub 未认证 API 配额耗尽（`core: remaining 0/60`，`reset=1794398143`），
+本机也没有 `gh` CLI；`annotations_partial` 需要登录态，匿名抓取返回 0 字节。「无作业的 Failure」最常见的两种解释是
+「工作流文件被判定非法」与「仓库/组织策略拦截」，二者都只能从注解里读出来。
+
+所以 CI 这一维仍然是空的（`notObserved`），下一步只有一条：用带 token 的账号读
+`/repos/shenmiqinvzi/workbuddy-executor-community/actions/runs/<id>/annotations`，
+或等配额重置后读 `/jobs`。**在下一次成功运行出现之前，不得把 CI 记为已通过。**
+
