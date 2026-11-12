@@ -98,10 +98,12 @@ REVIEW.md 的五项返修（见 [REVIEW_R1_R5_FIXES](REVIEW_R1_R5_FIXES.md)）�
 | --- | --- |
 | 后端套件（串行，CI 同款命令） | `suite-npx-tsx.log`：**1590 tests / 1578 pass / 0 fail / 12 skip（1435s）** |
 | 后端套件（串行，`node --import tsx`） | `suite-ci-serial.log`：1590 / 1578 / 0 / 12（1470.8s） |
+| 远端门禁 | `626de4a`：`Forward gate` `43142995043` success（10m03s）、`Release pairing` `43142995052` success（1m21s） |
+| 工作台（UTC 时区复跑） | `workbench`：169/169（`TZ=UTC`，证明 L08 时钟修复不依赖本机时区） |
 | 工作台套件 | 169/169（`wb36-workbench.log`，未受返修影响） |
 | 桌面策略测试 | 133 pass / 0 fail（`wb36-desktop.log`，未受返修影响） |
-| 快照清单 | 468 文件，`verify-snapshot.mjs` `hashesMatch:true` |
-| 候选产物 | `release-wb41c`（网关 `a7aaf4f8…`、桌面 `c39a4426…`、共用 799 文件） |
+| 快照清单 | 470 文件，`verify-snapshot.mjs` `hashesMatch:true` |
+| 候选产物 | `release-wb41d`（网关 `d8fd3d24…`、桌面 `9d754f25…`、共用 800 文件） |
 
 两条串行口径都在本机（Windows 24.19.0、空 `WORKBUDDY_CONFIG_DIR`）跑过且全绿，说明 CI 第 10 步的失败不是
 「串行跑就会红」这类系统性差异；`forward-gate.yml` 现在会把失败行打成 `::error::` 注解，下一次运行可直接

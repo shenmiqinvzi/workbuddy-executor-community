@@ -128,3 +128,34 @@ Located at position 1 within expression: runner.temp
 - `runner` / `env` 这类上下文在不同层级可用性不同，属于「本地一定过、远端必挂」的类别，适合用结构测试兜住。
 - `tsc -p tsconfig.json` 不等于 `typecheck:task-view`（后者用 `tsconfig.task-view.json`，严格度不同）；
   本地复演表里少跑一条，远端就会在第一条没跑的那步停住。
+
+### 8. 首个全绿运行与它抓出的两个真缺陷（2026-11-12）
+
+`626de4a` 上两个工作流同时转绿，这是本轮第一份「整条门禁在远端跑完」的回执：
+
+| 运行 | 工作流 | head | 结果 |
+| --- | --- | --- | --- |
+| [43142995043](https://github.com/shenmiqinvzi/workbuddy-executor-community/actions/runs/43142995043) | Forward gate | `626de4a` | **success，10m03s**（快照 → 依赖 → 构建 → 类型 → 矩阵 → 串行套件 → 工作台 → 桌面策略 → 打包+预检 → 只读 HTTP 冒烟） |
+| [43142995052](https://github.com/shenmiqinvzi/workbuddy-executor-community/actions/runs/43142995052) | Release pairing | `626de4a` | **success，1m21s** |
+
+在到达全绿之前，远端抓出两个**本地永远复现不了**的真缺陷。它们都不是「CI 环境差」，而是产品/测试里
+写死了本机才成立的假设：
+
+1. **目录围栏按字符串拼写判断**（`test/support/desktop-dispatch-fixture.mjs:24`）。围栏拿
+   `fs.realpathSync.native(root)` 去和 `path.resolve(config.dbFile)` 做 `startsWith`，而 runner 交回的
+   临时目录可能是另一种盘符大小写或 8.3 短名，于是「库就在自己根目录里」被判成「库在根外」，合成宿主
+   190ms 就退出。修法：两侧都做 canonical（不存在的那一段落在最近的存在祖先上），Windows 下大小写不敏感，
+   并把这段逻辑抽到 `test/support/path-contains.mjs`，由 `test/path-contains.test.ts` 固定语义
+   （大小写改写、尚不存在的 runs 目录、仅前缀相同的兄弟目录、8.3 长名互认）。
+2. **时钟断言绑死了 `+08:00`**（`workbench/test/finish-acceptance-task-panel.test.mjs` 的 L08）。
+   测试给 `2026-11-06T00:00:00+08:00` 然后要求渲染结果以 `00:00` 结尾——它在 UTC runner 上渲染成
+   `11/05 16:00`。面板按浏览器所在时区渲染是**正确行为**，错的是断言：现在两侧都用本地日历构造，
+   并加了一条「同一瞬间只有一种渲染」，`TZ=UTC` 下整套工作台测试 169/169 通过（本机已按此复跑）。
+
+另外补了两条流程纪律，避免同类问题再次以「远端才发现」的形式出现：
+
+- **改完 `gateway/` 下任何源码或镜像文档，先 `git add -N` → `generate-snapshot-manifest.mjs` →
+  `verify-snapshot.mjs`，再提交。** 这轮就因为先提交后忘了重生成清单，让 CI 在第 4 步
+  `Verify source snapshot` 直接失败（一次无效往返）。
+- 失败自证优先写**注解**（`::error::`）而不是依赖日志下载：未认证 API 读不到作业日志（403），
+  但 job 页面的 `Annotations` 段落匿名可读，这轮两个缺陷都是靠注解文字定位的。

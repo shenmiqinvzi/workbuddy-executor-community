@@ -31,7 +31,7 @@
 - 自动模式只有 `per_task_confirmed` 一层生效；`preauthorized_policy` 仍是提案，启用需用户明确调整规则（见 ADR-01）。
 - 费用未知一律保持 `unknown`，不补 0、不把估算当硬上限；每个新任务仍需用户实际选择执行器/来源/模型/档位。
 - 停止只认原生停止证据；报告收到、超时、页面空闲都不等于已停止。
-- 证据按维度记录：`installed`（隔离安装/升级/回退演练）与 `live`（真实派工，含 `live-accept-014`/`015` 两次 `accepted` 闭环）已取得；`window` 只到真实窗口与分阶段文案（面板未渲染），`second_machine`、`release` 仍缺；远端 `Release pairing` 全绿，`Forward gate` 的串行后端套件仍在修。验收矩阵按实际维度记 `blocked`/`unknown`/`partial`。
+- 证据按维度记录：`installed`（隔离安装/升级/回退演练）、`live`（真实派工，含 `live-accept-014`/`015` 两次 `accepted` 闭环）与 `ci`（`626de4a` 上 `Forward gate` `43142995043` 与 `Release pairing` `43142995052` 同时 success）已取得；`window` 只到真实窗口与分阶段文案（面板未渲染），`second_machine`、`release` 仍缺。验收矩阵按实际维度记 `blocked`/`unknown`/`partial`。
 - 配对包未做代码签名，Windows 会提示未签名；签名与第三方声明见 [WB41](docs/forward/WB41_LICENSES_AND_SIGNING.md)。
 
 常见错误与具体操作：

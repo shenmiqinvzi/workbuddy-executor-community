@@ -7,7 +7,7 @@
 - `done_source`：源码、测试、文档齐备，证据是**本机 source 维度**（测试日志、校验报告）。不等于实机验收。
 - `done`：`done_source` 之外还有原生/窗口/安装层证据（本轮 3 张：WB01 矩阵机器校验、WB03 派前拒绝、WB05 监督器）。
 - `blocked_external`：**每一张都写明缺的那一件具体东西**（见第 4 节与 `任务台账.json` 的 `dimensions.external`），不是「代码没写」的同义词。台账同时按五维记录每张卡：`implementation` / `automated` / `window` / `live` / `installed` + `external`，所以标签数不等于完成率。
-- 证据维度：`source` / `synthetic` / `window` / `live` / `installed` / `ci` / `second_machine` / `release`。本轮产出 `source`（含合成夹具）与 `installed`（隔离安装演练），`window` 与 `live` 取得部分证据（真实窗口与分阶段文案、真实派工与写盘产物；面板未渲染），`live` 的验收闭环已跑通（`live-accept-014`/`015` 两条 `accepted`），`ci` 取得 Release pairing 的绿色回执。
+- 证据维度：`source` / `synthetic` / `window` / `live` / `installed` / `ci` / `second_machine` / `release`。本轮产出 `source`（含合成夹具）与 `installed`（隔离安装演练），`window` 与 `live` 取得部分证据（真实窗口与分阶段文案、真实派工与写盘产物；面板未渲染），`live` 的验收闭环已跑通（`live-accept-014`/`015` 两条 `accepted`），`ci` 取得**两个工作流的全绿回执**（`Forward gate` 10m03s、`Release pairing` 1m21s，均在 `626de4a` 上）。
 - 交付提交：`41e9595`（技能/门禁/就绪/发布主线）→ `4aa0b23`（包里补维护脚本并让安装副本自检）→ `d866a09`（记录首轮远端 CI）。三笔均已推 `origin/feat/executor-plan-20261111`；台账 `delivery_commit` 指向最近一笔。
 
 ## 2. 44 张卡的状态
@@ -23,10 +23,10 @@
 | 通知与导出 | WB30 / WB31 | done_source | `wb25-wb31.log` 92/92 |
 | 跨能力异常与安全 | WB32 / WB33 | done_source | 145/145、63/63 |
 | 矩阵与实机 | WB34 / WB35 | blocked_external / blocked_external（live 端闭环已跑通） | 矩阵 53/53 有行有据；WB35 已取到真实窗口、分阶段失败、7 次真实派工与三类失败路径，并跑通两次完整 accept 闭环（`live-accept-014`/`015` → `accepted`，见 [WB35_LIVE](WB35_LIVE_NATIVE_RUN.md) §3.6）；仍缺真实 DSH 端闭环、面板渲染、`turn_end` |
-| 冻结与配对 | WB36 / WB37 | done_source | `suite-npx-tsx.log` 1590/1578/0/12（串行）；`wb41c-pairing.json` ok、799 共用、`wb41c-candidate-check.json` `problems:[]` |
+| 冻结与配对 | WB36 / WB37 | done_source | `suite-npx-tsx.log` 1590/1578/0/12（串行）；`wb41d-pairing.json` ok、**800** 共用、`wb41d-candidate-check.json` `problems:[]` |
 | 安装与第二台机 | WB38 / WB39 | done_source / blocked_external | 隔离根完成解包/依赖/建库/doctor/部署检查/技能落位，并做完整**升级与回退演练**（升到 wb40 后 `skill:check` exit 0、回退后 doctor exit 0，见 [WB37](WB37_PAIRED_RELEASE.md) §4）；改写运行安装与第二台 Windows 仍缺 |
 | 文档与许可 | WB40 / WB41 | done_source / blocked_external | README 唯一入口 + 手册；依赖披露完成，许可证与签名属权利人 |
-| CI 与发行 | WB42 / WB43 | blocked_external | workflow 就绪、本地复演完成；远端回执与发行授权缺 |
+| CI 与发行 | WB42 / WB43 | WB42 done_source / WB43 blocked_external | WB42：两个工作流在 `626de4a` 上全绿（`43142995043` gate、`43142995052` pairing）；WB43：发行仍待授权 |
 
 ## 2.5 本轮补的三件事（提交之后）
 
@@ -45,8 +45,8 @@
 | 工作台前端 | 169 / 169 |
 | 桌面策略 | 133 pass / 0 fail / 1 skip |
 | 验收矩阵 | 53 项齐全，`npm run acceptance:check` 通过 |
-| 配对包 | 网关 2676495 B `a7aaf4f8…`；桌面 3105024 B `c39a4426…`；共用 **799** 文件逐字节相同、`problems:[]`、网关独有 0（`release-wb41c`） |
-| 快照清单 | 468 文件，`verify-snapshot.mjs` `hashesMatch:true` |
+| 配对包 | 网关 2677894 B `d8fd3d24…`；桌面 3106466 B `9d754f25…`；共用 **800** 文件逐字节相同、`problems:[]`、网关独有 0（`release-wb41d`） |
+| 快照清单 | 470 文件，`verify-snapshot.mjs` `hashesMatch:true` |
 | 改动规模 | 82 条路径（含 22 份 `docs/forward` 文档与 15 个新增源/测试文件） |
 | 安装包自检 | 解包 → `bootstrap --apply` → `node scripts/check-acceptance-matrix.mjs` 在**安装树内** exit 0；`readiness --json` 前后 `tasks.sqlite` 均不存在 |
 
@@ -57,7 +57,7 @@
 3. **真实 DSH 端闭环**（WB35 的另一半）：本机 dsh 适配器 `adapter_disabled`，没有可用的 DSH 主机连接。
 4. **改写运行安装**（WB08/WB38 剩余部分）：隔离根已跑通解包 → 依赖 → 建库 → doctor → 部署检查 → 技能落位，并完成**升级与回退演练**；没做的是把运行安装 `gateway-v0.7.1-final2` 的常驻服务切到候选。
 5. **自动模式第二层**（WB26/WB29）：ADR-01 已写清边界，启用需用户明确给出逐任务规则（范围、窗口、预算、期限）。
-6. **远端 CI 全绿**（WB42）：`b8d0c09` 起 `Release pairing` 已 12/12 步全绿（`43029275765`），`Forward gate` 的零作业失败已修（job 级 `env` 用了 `${{ runner.temp }}`），`e0b2a1a` 仍卡在第 10 步「Backend suite, serial」，但同一条串行命令在本机两口径全绿（1590/1578/0），已把失败行改成 `::error::` 注解，下一次运行直接给出测试名。`898ecba` 是当前候选提交。
+6. **远端 CI 已全绿**（WB42）：`626de4a` 上 `Forward gate`（`43142995043`，10m03s）与 `Release pairing`（`43142995052`，1m21s）同时 success。此前远端抓出两个本地复现不了的真缺陷并已修：合成夹具的目录围栏按字符串拼写判断（runner 交回的临时目录大小写/8.3 短名不同就被判成根外）、工作台 L08 时钟断言绑死 `+08:00`（UTC runner 渲染成 `16:00`）。两处修法都有固定语义的测试，`TZ=UTC` 下工作台整套 169/169。`626de4a` 是当前候选提交，产物见 `release-wb41d`。
 7. **许可证选择与代码签名**（WB41）：权利人与证书都不在本机。
 8. **第二台物理 Windows**（WB39）。
 9. **真实资源来源联调**（WB16/WB19/WB20）：需要用户可访问的只读来源与上游金额/额度回报。
