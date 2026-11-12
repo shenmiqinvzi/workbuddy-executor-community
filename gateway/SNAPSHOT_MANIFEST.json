@@ -2295,8 +2295,8 @@
     },
     {
       "path": "workbench/test/finish-acceptance-task-panel.test.mjs",
-      "sha256": "fb98d1ec1e1af605bda7578fa97064b3a1b4ad98b96e4e3118e401034852b429",
-      "bytes": 11579
+      "sha256": "7f429e65c0f236a86b0676fba74c68dd8891684ca047f393735837302f570773",
+      "bytes": 12079
     },
     {
       "path": "workbench/test/model.test.mjs",

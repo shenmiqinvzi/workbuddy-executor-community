@@ -109,17 +109,22 @@ test("L08 clock, midnight, invalid and missing times stay distinguishable", () =
   assert.equal(model.formatTime(null), "未提供");
   assert.equal(model.formatTime(""), "未提供");
   assert.equal(model.formatTime("not-a-time"), "未提供");
-  const midnight = model.formatTime("2026-11-06T00:00:00+08:00");
+  // The panel renders in the viewer's own zone, so a runner in another zone
+  // must not change what "midnight" means. Both sides of this check are built
+  // from the local calendar instead of a hard-coded +08:00 string.
+  const localMidnight = new Date(2026, 10, 6, 0, 0, 0);
+  const midnight = model.formatTime(localMidnight.toISOString());
   assert.notEqual(midnight, "未提供", "midnight is a real instant, not a missing value");
   assert.match(midnight, /^\d{2}\/\d{2} \d{2}:\d{2}$/);
-  assert.match(midnight, /00:00$/);
+  assert.match(midnight, / (00|24):00$/, "a local midnight is the first minute of the day in the viewer zone");
+  assert.equal(model.formatTime("2026-11-06T00:00:00+08:00"), model.formatTime("2026-11-05T16:00:00Z"), "one instant has one rendering");
   assert.notEqual(model.formatTime("2026-11-06T00:00:00Z"), "未提供");
   // Known limitation, recorded instead of hidden: a numeric epoch zero is
   // treated like a missing timestamp because the formatter truth-tests the input.
   assert.equal(model.formatTime(0), "未提供");
   assert.equal(resources.formatStamp(null), "未提供");
   assert.equal(resources.formatStamp("not-a-time"), "时间不可读");
-  assert.match(resources.formatStamp("2026-11-06T00:00:00+08:00"), /00:00$/);
+  assert.match(resources.formatStamp(localMidnight.toISOString()), / (00|24):00$/);
 });
 
 test("L08 null counters never collapse into zero", () => {
