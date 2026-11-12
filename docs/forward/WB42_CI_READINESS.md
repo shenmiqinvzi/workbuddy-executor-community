@@ -138,6 +138,12 @@ Located at position 1 within expression: runner.temp
 | [43142995043](https://github.com/shenmiqinvzi/workbuddy-executor-community/actions/runs/43142995043) | Forward gate | `626de4a` | **success，10m03s**（快照 → 依赖 → 构建 → 类型 → 矩阵 → 串行套件 → 工作台 → 桌面策略 → 打包+预检 → 只读 HTTP 冒烟） |
 | [43142995052](https://github.com/shenmiqinvzi/workbuddy-executor-community/actions/runs/43142995052) | Release pairing | `626de4a` | **success，1m21s** |
 
+文档提交 `742fb33`（本文件 §8 与配套数字）又各跑一次，同样全绿：`Forward gate`
+[43145143266](https://github.com/shenmiqinvzi/workbuddy-executor-community/actions/runs/43145143266)
+11m58s、`Release pairing`
+[43145143201](https://github.com/shenmiqinvzi/workbuddy-executor-community/actions/runs/43145143201)
+1m30s，两个作业的注解都只有那条 Node 20 弃用警告。这说明门禁不是「碰巧绿一次」，在当前提交上可重复。
+
 在到达全绿之前，远端抓出两个**本地永远复现不了**的真缺陷。它们都不是「CI 环境差」，而是产品/测试里
 写死了本机才成立的假设：
 
