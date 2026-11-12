@@ -16,12 +16,13 @@ import {DesktopDispatchJournal} from '../../dist/desktop-dispatch-journal.js';
 import {defaultModelPolicy} from '../../dist/collaboration.js';
 import {sendDesktopAgreement,desktopProjects} from '../../dist/desktop-dispatch-runtime.js';
 import {installDesktopCommands} from '../../scripts/workbench-desktop-commands.mjs';
+import {canonicalPath,inside} from './path-contains.mjs';
 
 loadDotEnv();
 const config=loadConfig(),root=process.env.WORKBENCH_SYNTHETIC_ROOT;
 if(!root||!path.isAbsolute(root)||!fs.existsSync(path.join(root,'.synthetic-workbench')))throw Error('Marked synthetic fixture root required.');
-const canonical=fs.realpathSync.native(root);
-if(!path.resolve(config.dbFile).startsWith(canonical+path.sep)||!path.resolve(config.runsDir||'').startsWith(canonical+path.sep))throw Error('Fixture cannot open an external task database or runs directory.');
+const canonical=canonicalPath(root);
+if(!inside(root,config.dbFile)||!inside(root,config.runsDir||''))throw Error('Fixture cannot open an external task database or runs directory.');
 const project=path.join(canonical,'project'),stateFile=path.join(canonical,'fixture-requests.sqlite'),journal=new DesktopDispatchJournal(stateFile);
 const store=new TaskStore(config.dbFile),statsFile=path.join(canonical,'actor-stats.json');
 function count(name){let stats={};try{stats=JSON.parse(fs.readFileSync(statsFile))}catch{}stats[name]=(stats[name]||0)+1;fs.writeFileSync(statsFile,JSON.stringify(stats,null,2));}

@@ -1664,6 +1664,11 @@
       "bytes": 25614
     },
     {
+      "path": "test/path-contains.test.ts",
+      "sha256": "41862bdab35d84b92e4e330561f686b34ed0af28ceec9dadfb72216cebbdef0b",
+      "bytes": 2463
+    },
+    {
       "path": "test/persistent-service.test.ts",
       "sha256": "12c128b6aea91ec7bd6056fac03384c8150f8100eb5947d6c8423509ddba9f18",
       "bytes": 61288
@@ -1900,13 +1905,18 @@
     },
     {
       "path": "test/support/desktop-dispatch-fixture.mjs",
-      "sha256": "dd7b635c9ef7241842a7179a6c9f0659bc57badd6a16940c765728d5a2725f6a",
-      "bytes": 6058
+      "sha256": "0a5afd7e8363d31106f5e4a8347686e17839e0165a2e1afc43c159132bf92e52",
+      "bytes": 6043
     },
     {
       "path": "test/support/finish-acceptance-fixture.ts",
       "sha256": "dd0f5e75818620c5e0119faa1f554371edc6db3483c3ce536f6905573548901c",
       "bytes": 12036
+    },
+    {
+      "path": "test/support/path-contains.mjs",
+      "sha256": "1489b404034a01b40e6cc0e4d61cba053a607f2160f6fb17aabac392a7c37e81",
+      "bytes": 1057
     },
     {
       "path": "test/support/read-zip.mjs",
