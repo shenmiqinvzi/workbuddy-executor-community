@@ -76,7 +76,20 @@ jobs:
             exit $LASTEXITCODE
           }
       - name: Workbench frontend tests
-        run: npm run test:workbench
+        run: |
+          npm run test:workbench 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP\workbench-suite.log" -Encoding utf8
+          if ($LASTEXITCODE -ne 0) {
+            $log = Get-Content "$env:RUNNER_TEMP\workbench-suite.log"
+            $shown = 0
+            foreach ($line in $log) {
+              if ($shown -ge 10) { break }
+              if ($line -match '^\s*(not ok|✖)|AssertionError|TypeError|ReferenceError|ENOENT|EACCES|expected|actual') {
+                Write-Host "::error::workbench $($line.Trim())"
+                $shown += 1
+              }
+            }
+            exit $LASTEXITCODE
+          }
       - name: Desktop policy tests
         run: npm run desktop:test
       - name: Package the candidate from the fresh build
