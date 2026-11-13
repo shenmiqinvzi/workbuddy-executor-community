@@ -84,6 +84,11 @@ export function loadConfig(): Config {
     oauthRedirectUri: optional("WORKBUDDY_OAUTH_REDIRECT_URI") ?? "http://127.0.0.1:8787/oauth/callback",
     oauthPort: integer("WORKBUDDY_OAUTH_PORT", 8787),
     oauthScopes: optional("WORKBUDDY_OAUTH_SCOPES") ?? "user.localassistant.invokable user.localassistant.readable",
+    // Downstream request budget of the gateway itself. This is NOT the wait of a
+    // local MCP client: scripts/workbuddy-call.mjs keeps its stdio call attached
+    // for WORKBUDDY_MCP_CLIENT_TIMEOUT_MS (default 15 minutes). Raising this value
+    // never extended that client, and lowering it does not shorten native
+    // preparation.
     requestTimeoutMs: integer("WORKBUDDY_REQUEST_TIMEOUT_MS", 30_000),
     cliElectronPath: desktop.executable.value ?? (process.platform === "win32"
       ? path.join(process.env.LOCALAPPDATA ?? os.homedir(), "Programs", "WorkBuddy", "WorkBuddy.exe")

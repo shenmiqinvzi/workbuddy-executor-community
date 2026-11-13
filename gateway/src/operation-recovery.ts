@@ -15,12 +15,12 @@ export interface RecoveryInput {
 }
 export interface RecoveryDecision {
   operationId: string; targetOperationId: string; taskId: string; attemptId: string | null;
-  action: "reconcile" | "close"; proof: "queue_receipt" | "dsh_receipt" | "native_stopped" | "declared_stop" | "not_dispatched";
+  action: "reconcile" | "close"; proof: "queue_receipt" | "dsh_receipt" | "native_stopped" | "declared_stop" | "not_dispatched" | "preparation_failed";
   actor: string; reason: string; confirmedAt: string; decidedAt: string; termsDigest: string; evidenceToken: string;
   /** Present only for `declared_stop`: the human assertion this closure rests on. */
   declarationId?: string;
 }
-type Proof = { reconcile: "queue_receipt" | "dsh_receipt" | null; close: "native_stopped" | "declared_stop" | "not_dispatched" | null; token: string; runEvidenceDigest?: string };
+type Proof = { reconcile: "queue_receipt" | "dsh_receipt" | null; close: "native_stopped" | "declared_stop" | "not_dispatched" | "preparation_failed" | null; token: string; runEvidenceDigest?: string };
 const unknownStates = ["reserved", "effect_started", "outcome_unknown"];
 const fail = (code: string, message: string): never => { throw new AdmissionError(code, message); };
 
@@ -38,7 +38,7 @@ export class RecoveryStore {
     if (!row) return null;
     try {
       const value = JSON.parse(String(row.body_json)) as RecoveryDecision;
-      if (value.operationId !== row.operation_id || value.targetOperationId !== row.target_operation_id || value.taskId !== row.task_id || value.action !== row.action || !["close", "reconcile"].includes(value.action) || !["queue_receipt", "dsh_receipt", "native_stopped", "declared_stop", "not_dispatched"].includes(value.proof)) throw Error();
+      if (value.operationId !== row.operation_id || value.targetOperationId !== row.target_operation_id || value.taskId !== row.task_id || value.action !== row.action || !["close", "reconcile"].includes(value.action) || !["queue_receipt", "dsh_receipt", "native_stopped", "declared_stop", "not_dispatched", "preparation_failed"].includes(value.proof)) throw Error();
       return value;
     } catch { return fail("CONTRACT_INTEGRITY", "Invalid recovery audit record; retain the original workflow."); }
   }
@@ -78,8 +78,18 @@ export class RecoveryStore {
       if (!dsh.runOpen && (dsh.terminalSeq !== undefined || (dsh.dispatch === "rejected" && snapshot!.dsh?.admissionRejected === true)) && hasNativeStopEvidence(snapshot)) close = snapshot!.nativeStopSource === "not_dispatched" ? "not_dispatched" : "native_stopped";
     }
     // A new phase-aware operation can be fenced before dispatch. Missing historical fields prove nothing.
-    if (!attemptId && operations.length && operations.every(op => op.phaseVersion === 1 && !op.dispatchEnteredAt &&
-        (!op.effectStartedAt || !!op.preparationCompletedAt)) && (!dsh || dsh.dispatch === "preparing")) close = "not_dispatched";
+    // A preparation whose reserved identity is verifiably registered in the native
+    // desktop history settles like a returned one: the observation names one
+    // session that existed without any prompt being dispatched to it.
+    const settled = (op: OperationRecord) => !op.effectStartedAt || !!op.preparationCompletedAt || op.preparationObservation?.state === "registered";
+    if (!attemptId && operations.length && operations.every(op => op.phaseVersion === 1 && !op.dispatchEnteredAt && settled(op)) && (!dsh || dsh.dispatch === "preparing")) close = "not_dispatched";
+    // The identity was reserved locally and the native history says that exact
+    // session does not exist, so no prompt can have been dispatched through it.
+    // This is the only closure an interrupted preparation can rest on besides a
+    // registered observation; an unreadable history proves nothing.
+    const abandonedPreparation = operations.some(op => !!op.preparationEnteredAt && !op.preparationCompletedAt && !!op.preparationSessionId &&
+      op.preparationObservation?.state === "absent" && op.preparationObservation.sessionId === op.preparationSessionId);
+    if (!close && !attemptId && abandonedPreparation && operations.every(op => !op.dispatchEnteredAt) && (!dsh || dsh.dispatch === "preparing")) close = "preparation_failed";
     // A human declaration is a weaker fact than native evidence: it is consulted
     // only when the run record itself has nothing, and it keeps its own proof
     // name so a decision resting on it never looks like a native stop.
@@ -109,8 +119,9 @@ export class RecoveryStore {
           completedAt: operation.preparationCompletedAt ?? null,
           dispatchEnteredAt: operation.dispatchEnteredAt ?? null,
           reservedSessionId: operation.preparationSessionId ?? null,
+          observation: operation.preparationObservation ?? null,
           incomplete: !!operation.preparationEnteredAt && !operation.preparationCompletedAt,
-          note: "Recorded gateway phases only; missing markers or an incomplete preparation do not prove native requests stopped or had no effects."
+          note: "Recorded gateway phases plus, when an operator asked, one read-only observation of the reserved native session. Missing markers, an absent session or an unreadable history do not prove that a dispatched request stopped or had no effects."
         },
         runEvidenceDigest: proof.runEvidenceDigest ?? null,
         available: this.closure(operation.taskId) ? [] : [ ...(proof.reconcile && unknownStates.includes(operation.state) && !this.forOperation(targetOperationId) ? ["reconcile"] : []), ...(proof.close && task?.state !== "accepted" ? ["close"] : []) ],
@@ -161,8 +172,12 @@ export class RecoveryStore {
         }
         if (this.store.get(original.taskId)) {
           this.store.update(original.taskId, { state: "cancelled", ...(view.runEvidenceDigest ? { runEvidenceDigest: view.runEvidenceDigest } : {}), cancelNote: input.reason, blockingReason: "Closed by an independently authorized recovery decision; delivery was not accepted." });
+          // A preparation that never reached an attempt has no attempt identity to
+          // carry the closure. It uses the same attempt-less marker the preparation
+          // itself writes, so a later close cannot disagree with this one.
+          const sourceRef = proof === "preparation_failed" && !view.attemptId ? `preparation_failed:${original.taskId}` : `recovery:${input.operationId}`;
           this.store.appendTaskEvent({ taskId: original.taskId, attemptId: view.attemptId, type: "task_closed", occurredAt: decision.decidedAt, observedAt: decision.decidedAt,
-            actor: "recovery", payload: { recoveryOperationId: input.operationId, proof, accepted: false }, sourceRef: `recovery:${input.operationId}` });
+            actor: "recovery", payload: { recoveryOperationId: input.operationId, proof, accepted: false, ...(proof === "preparation_failed" ? { closedAs: "preparation_failed" } : {}) }, sourceRef });
         }
       }
       this.db.prepare("INSERT INTO operation_recoveries VALUES (?,?,?,?,?)").run(input.operationId, original.operationId, original.taskId, input.action, JSON.stringify(decision));

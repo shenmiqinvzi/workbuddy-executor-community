@@ -12,6 +12,13 @@ export interface OperationOptions {
 export type OperationState = "reserved" | "effect_started" | "succeeded" | "rejected" | "outcome_unknown";
 export interface OperationReceipt { operationId: string; operationState: OperationState; outcomeCode?: "OUTCOME_UNKNOWN" }
 export interface PreparationBinding { taskId: string; workspace: string; sessionId: string | null; model: string; workerKey: string | null; title: string | null }
+/**
+ * What the native desktop history says about the identity reserved before an
+ * interrupted preparation. It is an observation of one named session, not a
+ * claim about native work: `absent` only ever names the session that does not
+ * exist, and `unverifiable` keeps the preparation open for another query.
+ */
+export interface PreparationObservation { state: "registered" | "absent" | "unverifiable"; sessionId: string; workspace?: string | null; observedAt: string; reason?: string }
 export interface OperationRecord {
   operationId: string; kind: string; taskId: string; attemptId: string | null;
   parameterDigest: string; expectedRevision: string | null; expectedAttemptId: string | null;
@@ -24,6 +31,7 @@ export interface OperationRecord {
   phaseVersion?: 1;
   dispatchEnteredAt?: string;
   preparationCompletedAt?: string;
+  preparationObservation?: PreparationObservation;
   createdAt: string; updatedAt: string; result?: unknown; error?: { code: string; message: string; detail?: string };
 }
 export class OperationOutcomeError extends AdmissionError {
@@ -209,15 +217,53 @@ export class OperationAdmission {
       this.save({ ...this.get(operation.operationId)!, ...(enter ? { preparationEnteredAt: new Date().toISOString() } : {}), ...(resolvedSessionId ? { preparationSessionId: resolvedSessionId } : {}), updatedAt: new Date().toISOString() });
     });
   }
+  /**
+   * Persist the identity reserved before the native call, so an interrupted
+   * preparation still names exactly one session. The reservation writes it, not
+   * the native reply: a client that disconnects mid-preparation must not leave an
+   * anonymous native creation behind.
+   */
+  preparationIdentity(operationId: string | undefined, sessionId: string): void {
+    this.store.atomic(() => {
+      const operation = operationId ? this.get(operationId) : null;
+      if (!operation || operation.kind !== "send" || operation.executor !== "workbuddy") throw new AdmissionError("OPERATION_REQUIRED", "A reserved native identity requires the coordinator's original send operation.");
+      if (!operation.preparationEnteredAt) throw new AdmissionError("OPERATION_REQUIRED", "The original native preparation has not entered its adapter.");
+      if (operation.preparationSessionId === sessionId) return;
+      if (operation.preparationSessionId) throw new AdmissionError("MODEL_BINDING_CHANGED", "Preparation cannot switch its original resolved session.");
+      this.save({ ...operation, preparationSessionId: sessionId, updatedAt: new Date().toISOString() });
+    });
+  }
+  /**
+   * Record a read-only observation of the reserved identity. Recording never
+   * advances the preparation: only `proof()` decides what an observation can
+   * close, and an unreadable history leaves every recovery option closed.
+   */
+  observePreparation(operationId: string, evidence: { state: PreparationObservation["state"]; sessionId: string; workspace?: string | null; reason?: string }): PreparationObservation | null {
+    return this.store.atomic(() => {
+      const operation = this.get(operationId);
+      if (!operation || operation.kind !== "send" || operation.preparationSessionId !== evidence.sessionId) return null;
+      if (operation.preparationCompletedAt || operation.dispatchEnteredAt) return null;
+      const workspace = evidence.workspace ?? null, previous = operation.preparationObservation;
+      if (previous && previous.state === evidence.state && (previous.workspace ?? null) === workspace && previous.reason === evidence.reason) return previous;
+      const observation: PreparationObservation = { state: evidence.state, sessionId: evidence.sessionId, workspace, observedAt: new Date().toISOString(), ...(evidence.reason ? { reason: evidence.reason } : {}) };
+      this.save({ ...operation, preparationObservation: observation, updatedAt: observation.observedAt });
+      return observation;
+    });
+  }
   /** Closing requires all existing durable facts, never idle/TTL or a business label alone. */
   isClosed(task: StoredTask): boolean {
+    // An attempt-less preparation has no attempt identity to carry a stop proof,
+    // so its own marker is the only closure that can ever apply (R2). It is
+    // checked before the recovery branch because a close authorized with
+    // `preparation_failed` writes this marker, not `recovery:<id>`.
+    if (!task.attemptId && this.db.prepare("SELECT 1 FROM task_events WHERE task_id=? AND attempt_id IS NULL AND type='task_closed' AND source_ref=?").get(task.taskId, `preparation_failed:${task.taskId}`)) return true;
     const recovery = this.store.recoveries.closure(task.taskId);
     if (recovery && task.state === "cancelled" && recovery.attemptId === (task.attemptId ?? null)) return !!this.db.prepare("SELECT 1 FROM task_events WHERE task_id=? AND attempt_id IS ? AND type='task_closed' AND source_ref=?").get(task.taskId, recovery.attemptId, `recovery:${recovery.operationId}`);
     // A send whose native preparation failed never began an attempt, so there is
     // no attempt identity to carry a stop proof. Only an explicitly recorded
     // closure counts here; an untouched preparation row stays open for replay and
     // is kept out of the shared-slot decision by claim() instead.
-    if (!task.attemptId) return !!this.db.prepare("SELECT 1 FROM task_events WHERE task_id=? AND attempt_id IS NULL AND type='task_closed' AND source_ref=?").get(task.taskId, `preparation_failed:${task.taskId}`);
+    if (!task.attemptId) return false;
     if (!["accepted", "cancelled", "failed"].includes(task.state)) return false;
     // A workflow the gateway refused before its native boundary never ran
     // natively, so its closure is the recorded refusal, not a stop proof

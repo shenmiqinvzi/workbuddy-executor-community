@@ -35,6 +35,10 @@ export function workerRegistration(config: Config) {
 export async function ensureWorkspace(config: Config, input: {workspace:string;sessionId?:string;title?:string;model?:string;workerKey?:string;admissionTaskId?:string;admissionOperationId?:string}) {
   if(config.backend!=="desktop-queue")throw new Error("Automatic native workspaces require desktop-queue");
   const target = { taskId: input.admissionTaskId ?? "", workspace: input.workspace, sessionId: input.sessionId ?? null, model: input.model ?? "", workerKey: input.workerKey ?? null, title: input.title ?? null };
+  // The registration pairs the persistent native service with this task database.
+  // Resolving it before the preparation boundary keeps a fixable configuration
+  // mistake in front of the native adapter instead of after it (FC11-D1/D2).
+  const registration=workerRegistration(config);
   const gate = new TaskStore(config.dbFile);
   try {
     if (!input.admissionTaskId) throw new AdmissionError("OPERATION_REQUIRED", "Use a durable authorized task operation for native workspace preparation.");
@@ -42,7 +46,6 @@ export async function ensureWorkspace(config: Config, input: {workspace:string;s
     gate.workspaceProtection.verifyPreparation(input.admissionTaskId, input.workspace);
   } finally { gate.close(); }
   if(process.env.WORKBUDDY_REQUIRED_FREE_MODEL&&!input.model)input={...input,model:process.env.WORKBUDDY_REQUIRED_FREE_MODEL};
-  const registration=workerRegistration(config);
   const bound=registration?registeredServiceConfig(config,registration):config;
   const workers=new WorkspaceWorkers(bound);
   const trigger=new NativeDesktopRpcTrigger(bound,registration?.cdpPort??18491);
@@ -70,6 +73,14 @@ export async function ensureWorkspace(config: Config, input: {workspace:string;s
           }
         } finally {store.close();}
         return trigger.setModel(sessionId,model);
+      },
+    },{
+      // The reserved identity is written before the native call. A preparation cut
+      // off by a client timeout then still names exactly one session, so its
+      // native existence can be observed instead of guessed at.
+      onReserved(sessionId){
+        const identity=new TaskStore(bound.dbFile);
+        try { identity.operations.preparationIdentity(input.admissionOperationId, sessionId); } finally { identity.close(); }
       },
     });
     let startupWarning: string | undefined;

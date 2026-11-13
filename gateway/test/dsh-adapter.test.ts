@@ -18,7 +18,7 @@ import { defaultModelPolicy, legacyFreeModelPolicy, AdmissionError } from "../sr
 import { RunJournal } from "../src/run-journal.js";
 import { readTaskProjection } from "../src/task-view-reader.js";
 import { workBuddyDshFreeRateVerifier, workBuddyDshRateObserver } from "../src/dsh-rate-verifier.js";
-import { DeepSeekRpcError, type DeepSeekEvent } from "../src/deepseek-client.js";
+import { DeepSeekRpcError, type DeepSeekEvent, type DeepSeekRequestModelEvidence } from "../src/deepseek-client.js";
 import { readUsageRecords } from "../src/usage-attribution.js";
 
 
@@ -28,6 +28,7 @@ function fixture(t: { after: (fn: () => void | Promise<void>) => void }, chosenM
   const execution = { executorId: "dsh" as const, connectionId: "dsh-synthetic-host", providerId: "synthetic-provider", modelId: chosenModel, reasoningEffort: null };
   let selected: DshSelection | null = null, prompts = 0, selections = 0, busy = false, lost = false;
   let promptError: Error | undefined, selectionError: Error | undefined;
+  let evidence: DeepSeekRequestModelEvidence | undefined;
   const events: DeepSeekEvent[] = [];
   const checkKeys = (input: object, keys: string[]) => assert.deepEqual(Object.keys(input).sort(), keys.sort());
   const client: DshTransport = {
@@ -39,7 +40,7 @@ function fixture(t: { after: (fn: () => void | Promise<void>) => void }, chosenM
     async models() { return { pricingVerified: false, models: [{ ...execution, credits: null, reasoningEfforts: [] }] }; },
     async selectModel(input) { checkKeys(input, ["hostId", "sessionId", "providerId", "modelId", "reasoningEffort"]); selections++; if (selectionError) throw selectionError; selected = { providerId: input.providerId, modelId: input.modelId, reasoningEffort: input.reasoningEffort }; return { sessionId: input.sessionId, workspace: dir, attached: true, selectedModel: selected }; },
     async prompt(input) { checkKeys(input, ["hostId", "sessionId", "requestId", "text", "expectedSelection"]); prompts++; if (promptError) throw promptError; return { requestId: input.requestId, accepted: true }; },
-    async events(input) { checkKeys(input, ["hostId", "sessionId", "requestId", "afterSeq", "limit"]); if (lost) throw Error("private source error"); const page = events.filter(e => e.seq > input.afterSeq).slice(0, input.limit); return { events: page, cursor: page.at(-1)?.seq ?? input.afterSeq }; },
+    async events(input) { checkKeys(input, ["hostId", "sessionId", "requestId", "afterSeq", "limit"]); if (lost) throw Error("private source error"); const page = events.filter(e => e.seq > input.afterSeq).slice(0, input.limit); return { events: page, cursor: page.at(-1)?.seq ?? input.afterSeq, ...(evidence ? { modelEvidence: evidence } : {}) }; },
     async cancel(input) { checkKeys(input, ["hostId", "sessionId", "requestId"]); return { requested: true, stopped: true }; },
   };
   const free = async () => ({ credits: "x0.00", observedAt: new Date().toISOString() });
@@ -63,7 +64,7 @@ function fixture(t: { after: (fn: () => void | Promise<void>) => void }, chosenM
     event("started"); event("progress", { data: { header: { config: { provider: execution.providerId, model } } } }); event("completed", { text: "TASK_STATUS: completed\nTEST_RESULT: synthetic verification passed" });
   }
   return { dir, store, runs, client, free, coordinator, contract, send, event, finish, events, execution,
-    counts: () => ({ prompts, selections }), setBusy: (value: boolean) => { busy = value; }, setLost: (value: boolean) => { lost = value; }, setPromptError: (error?: Error) => { promptError = error; }, setSelectionError: (error?: Error) => { selectionError = error; }, setSelected: (value: DshSelection | null) => { selected = value; } };
+    counts: () => ({ prompts, selections }), setBusy: (value: boolean) => { busy = value; }, setLost: (value: boolean) => { lost = value; }, setPromptError: (error?: Error) => { promptError = error; }, setSelectionError: (error?: Error) => { selectionError = error; }, setSelected: (value: DshSelection | null) => { selected = value; }, setEvidence: (value?: DeepSeekRequestModelEvidence) => { evidence = value; } };
 }
 
 test("DSH plans use their dispatch policy when WorkBuddy has a different default attempt limit", async t => {
@@ -221,7 +222,9 @@ test("only this request's own header authenticates a report; an unobserved turn 
   unobserved.event("started"); unobserved.event("completed", { text: "A plausible success report" });
   assert.equal((await unobserved.coordinator.sync("dsh-task")).state, "blocked");
   assert.equal(unobserved.coordinator.executionStatus("dsh-task").reportDigestPresent, false);
-  assert.match(String(unobserved.store.get("dsh-task").blockingReason), /without request-level model evidence/);
+  const blocked = unobserved.store.get("dsh-task");
+  assert.ok(blocked, "the blocked original task must still be readable");
+  assert.match(String(blocked.blockingReason), /without request-level model evidence/);
   await assert.rejects(unobserved.coordinator.accept("dsh-task", "review", ["evidence"]), { code: "REVIEW_REQUIRED" });
 
   // An observed header that names the immutable selection still authenticates.
@@ -236,6 +239,36 @@ test("only this request's own header authenticates a report; an unobserved turn 
   assert.equal(drifted.coordinator.executionStatus("dsh-task").remoteStopped, true);
   assert.equal(drifted.coordinator.executionStatus("dsh-task").reportDigestPresent, false);
   await assert.rejects(drifted.coordinator.accept("dsh-task", "review", ["evidence"]), { code: "REVIEW_REQUIRED" });
+});
+
+test("a continuation is anchored to one native header, and a foreign anchor authenticates nothing", async t => {
+  // A continuation turn emits no header of its own, so the bridge records the
+  // native header sequence the request continues from. That anchor must name this
+  // exact requestId: evidence belonging to another request authenticates nothing.
+  const anchored = fixture(t); await anchored.send();
+  const binding = anchored.store.dshBindings.forTask("dsh-task")!;
+  anchored.setEvidence({ headerSeq: 0, providerId: anchored.execution.providerId, modelId: anchored.execution.modelId, reasoningEffort: null, requestId: binding.requestId });
+  anchored.event("started"); anchored.event("completed", { text: "TASK_STATUS: completed\nTEST_RESULT: continuation verification passed" });
+  assert.equal((await anchored.coordinator.sync("dsh-task")).state, "needs_review");
+  assert.equal(anchored.coordinator.executionStatus("dsh-task").reportDigestPresent, true);
+  const db = new DatabaseSync(anchored.store.file, { readOnly: true });
+  const row = db.prepare("SELECT payload_json FROM task_events WHERE type='native_request_observed' AND source_ref=?").get(`${binding.attemptId}:dsh:header:0`) as { payload_json?: string } | undefined;
+  db.close();
+  assert.ok(row, "the anchored header is recorded as its own native observation");
+  assert.equal(JSON.parse(String(row.payload_json)).modelEvidenceSource, "bridge/persisted-request-header");
+
+  const foreign = fixture(t); await foreign.send();
+  foreign.setEvidence({ headerSeq: 0, providerId: foreign.execution.providerId, modelId: foreign.execution.modelId, reasoningEffort: null, requestId: "another-request" });
+  foreign.event("started"); foreign.event("completed", { text: "A plausible success report" });
+  assert.equal((await foreign.coordinator.sync("dsh-task")).state, "blocked");
+  assert.equal(foreign.coordinator.executionStatus("dsh-task").reportDigestPresent, false);
+
+  // A header this request emitted itself always wins over the anchored evidence.
+  const native = fixture(t); await native.send();
+  const nbinding = native.store.dshBindings.forTask("dsh-task")!;
+  native.setEvidence({ headerSeq: 0, providerId: native.execution.providerId, modelId: "some-other-model", reasoningEffort: null, requestId: nbinding.requestId });
+  native.finish();
+  assert.equal((await native.coordinator.sync("dsh-task")).state, "needs_review");
 });
 
 test("a stopped original without an authenticated report closes on cancel and frees the shared slot", async t => {

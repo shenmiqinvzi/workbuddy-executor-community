@@ -207,13 +207,21 @@ export class TaskApplicationService {
   resolveOperationRecovery(input: RecoveryInput, authorizationId: string) { return this.coordinator.store.recoveries.resolve(input, this.runsDir, authorizationId); }
   async observeOperationRecovery(targetOperationId: string) {
     const view = this.readOperationRecovery(targetOperationId);
-    if (this.coordinator.store.get(view.operation.taskId)?.attemptId && !this.coordinator.store.recoveries.closure(view.operation.taskId)) {
+    const store = this.coordinator.store;
+    if (store.get(view.operation.taskId)?.attemptId && !store.recoveries.closure(view.operation.taskId)) {
       const dsh = this.dshFor(view.operation.taskId);
       if (dsh) await dsh.sync(view.operation.taskId, 100, true);
       else {
         if (view.operation.executor === "dsh") throw new AdmissionError("EXECUTOR_UNAVAILABLE", "The original DSH source is unavailable; no fallback is allowed.");
         await this.coordinator.observeRecovery(view.operation.taskId);
       }
+    } else if (!store.recoveries.closure(view.operation.taskId) && view.operation.preparationEnteredAt && !view.operation.preparationCompletedAt &&
+        !view.operation.dispatchEnteredAt && view.operation.preparationSessionId) {
+      // An interrupted preparation has no attempt and no native request, so the
+      // desktop history of its reserved identity is the only fact left to read.
+      // Reading it is deliberate: nothing here creates, wakes or messages a
+      // session, and an unreadable history records only that it was unreadable.
+      store.operations.observePreparation(view.operation.operationId, this.coordinator.preparationEvidence(view.operation.preparationSessionId));
     }
     return this.readOperationRecovery(targetOperationId);
   }

@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import os from "node:os";
-import { ensureWorkspace, listModels } from "./workspace-manager.js";
+import { ensureWorkspace, listModels, workerRegistration } from "./workspace-manager.js";
 import { readDesktopSession } from "./desktop-runtime.js";
 import { readWorkspaceWorkers } from "./workspace-workers.js";
 import path from "node:path";
@@ -75,6 +75,15 @@ export class TaskCoordinator {
     private readonly observeModel: (config: Config, sessionId: string, model: string) => Promise<ModelObservation> = observeSelectedModel,
     private readonly journalFiles: JournalFiles = fs) {}
   modelPolicy() { return this.store.collaboration.currentPolicy(defaultModelPolicy(this.config.maxTaskAttempts ?? 3)); }
+  /**
+   * Read-only native evidence for one reserved preparation identity. It never
+   * creates, wakes or messages a session: an operator asking about an interrupted
+   * preparation must be able to learn what exists without starting anything.
+   */
+  preparationEvidence(sessionId: string) {
+    const evidence = readDesktopSession(this.config.workbuddyConfigDir, sessionId);
+    return { state: evidence.state, sessionId, workspace: evidence.cwd ?? null, ...(evidence.reason ? { reason: evidence.reason } : {}) };
+  }
   private requireDesktop(): void {
     if (!["desktop-acp", "desktop-queue"].includes(this.config.backend)) throw new Error("Desktop supervision requires WORKBUDDY_BACKEND=desktop-queue or desktop-acp. CLI and hidden gateway execution do not prove execution in your WorkBuddy desktop conversation.");
   }
@@ -122,6 +131,16 @@ export class TaskCoordinator {
   }
   private async sendAdmitted(input: SendTaskInput, operation?: OperationRecord) {
     this.requireDesktop();
+    // Routing into a named native session needs the persistent service that owns it.
+    // A registration naming that session but pointing at another task database is a
+    // fixable configuration mistake: report it here, before any native boundary, and
+    // never fall through to a queued task that can never be prepared.
+    if (this.config.backend === "desktop-queue" && input.sessionId) {
+      const file = this.config.serviceConfigFile ?? path.join(path.dirname(this.config.dbFile), "persistent-service.json");
+      const registration = readServiceRegistration(file);
+      const preparedHere = (registration?.sessionId === input.sessionId) || readWorkspaceWorkers(this.config).some(worker => worker.sessionId === input.sessionId);
+      if (preparedHere) workerRegistration(this.config);
+    }
     if (input.contract !== undefined) return this.sendWithContract(input, operation);
     const checkedScope = input.scope === undefined ? null : validateTaskScope(input.scope);
     if (checkedScope && !checkedScope.ok) throw new AdmissionError("INVALID_CONTRACT", `${checkedScope.rejection.code}: ${checkedScope.rejection.field}`);
@@ -240,6 +259,20 @@ export class TaskCoordinator {
   }
 
   private async dispatch(task: StoredTask, prompt: string, input: { timeoutSeconds?: number; sessionId?: string; model?: string; sessionMode?: "existing" | "new"; acceptanceCommands?: string[]; modelObservation?: ModelObservation; scopeGuard?: WorkspaceDispatchGuard }) {
+    // A rework dispatches without preparing a workspace, so the desktop service
+    // registration is the only place a configuration mismatch can still surface.
+    // Checking it before beginAttempt keeps a fixable mistake in front of every
+    // native boundary: inside the try below the same error would be folded into a
+    // blocked attempt whose reservation already reached the native adapter.
+    // The pairing only constrains sessions this data directory actually prepared
+    // (or that the registration itself names): a registration belonging to another
+    // data directory says nothing about an untracked manual session.
+    if (this.config.backend === "desktop-queue" && task.sessionId) {
+      const file = this.config.serviceConfigFile ?? path.join(path.dirname(this.config.dbFile), "persistent-service.json");
+      const registration = readServiceRegistration(file);
+      const preparedHere = (registration?.sessionId === task.sessionId) || readWorkspaceWorkers(this.config).some(worker => worker.sessionId === task.sessionId);
+      if (preparedHere) workerRegistration(this.config);
+    }
     const scopeGuard = input.scopeGuard ?? this.store.workspaceProtection.guard(task.taskId);
     this.store.workspaceProtection.assertGuard(scopeGuard);
     prompt = `${prompt}\n${this.store.workspaceProtection.instructions(task.taskId)}`;

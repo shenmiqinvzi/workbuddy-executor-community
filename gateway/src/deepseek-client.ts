@@ -11,7 +11,8 @@ export interface DeepSeekEvent {
   type: "accepted" | "started" | "progress" | "completed" | "failed" | "cancelled" | "waiting_input";
   text?: string; artifacts?: string[]; error?: string; timestamp?: string; rawType?: string; data?: unknown; raw?: unknown;
 }
-export interface DeepSeekEvents { events: DeepSeekEvent[]; cursor: number; }
+export interface DeepSeekRequestModelEvidence { headerSeq: number; providerId: string; modelId: string; reasoningEffort: string | null; requestId?: string; sessionId?: string; observedAt?: string }
+export interface DeepSeekEvents { events: DeepSeekEvent[]; cursor: number; modelEvidence?: DeepSeekRequestModelEvidence }
 export interface DeepSeekTransport {
   health(hostId?: string): Promise<unknown>;
   sessions(hostId?: string): Promise<{ sessions: DeepSeekSession[] }>;

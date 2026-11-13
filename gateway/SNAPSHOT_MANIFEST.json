@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "capturedAt": "2026-10-23T00:39:39.586Z",
+  "capturedAt": "2026-11-13T03:20:27.578Z",
   "upstream": "https://github.com/dudu555-djiao/codex-workbuddy-gateway",
   "upstreamCommit": "fbaaa2ef6d6cb59f48b953a1f27058202a81553f",
   "snapshot": "2026-10-23-shared-service-task-projection-integration",
@@ -30,8 +30,8 @@
   "files": [
     {
       "path": ".env.example",
-      "sha256": "e3dcb604fadba497d037f2ad64bf9ea8071a47e3558d08e3053bb37dbea65488",
-      "bytes": 4197
+      "sha256": "e5aed23eb938de8555f49a5d3f34aed47979e29fbd77702407b19b4bac3f77ac",
+      "bytes": 4701
     },
     {
       "path": ".gitattributes",
@@ -125,8 +125,8 @@
     },
     {
       "path": "deepseek-plugin/adapter.mjs",
-      "sha256": "4009cbd90cfc1de503f51964c248907b3e3e91b8cd9bc8510a8f4f341d9a21d6",
-      "bytes": 19535
+      "sha256": "0a25c03d1fbc0e4268b9c586ff2ad9d5d7a61d98743389c5f25c391518ea31ae",
+      "bytes": 21900
     },
     {
       "path": "deepseek-plugin/cordis.patch.yml",
@@ -290,8 +290,8 @@
     },
     {
       "path": "docs/OPERATION_RECOVERY.md",
-      "sha256": "430cec442d86bd4993cdd945608de65d9574784a6f0bac31e0c091218d92469f",
-      "bytes": 3634
+      "sha256": "2837b881e3b324177af401ec9fb4000b93037e245e7e22049ed6d9f84de94143",
+      "bytes": 4814
     },
     {
       "path": "docs/PORTABILITY_VERIFICATION_2026-10-18.md",
@@ -575,8 +575,8 @@
     },
     {
       "path": "scripts/workbuddy-call.mjs",
-      "sha256": "dfe1d1bd43395059a5379cba66f9e6484d17fbe8b64828c923d8861656b9fa0b",
-      "bytes": 1711
+      "sha256": "6b5bb2bf20dab0cebc7553b7587cd39c539a926231686623c7685cf54d2f7f06",
+      "bytes": 3431
     },
     {
       "path": "scripts/workbuddy-inspect.mjs",
@@ -685,13 +685,13 @@
     },
     {
       "path": "src/config.ts",
-      "sha256": "a819673eca641fb7961c9ed4911d89c7a7bc239c4a3414ec01bba51c1f5cb220",
-      "bytes": 6268
+      "sha256": "7c54083769a1c511f09564300af75ed93b065d51b4f3c85b97819371eb27d455",
+      "bytes": 6616
     },
     {
       "path": "src/coordinator.ts",
-      "sha256": "ace3521aeb704329b65090a40e487b6c81074e1af53a5ea9089d4fd8bc5d3a1d",
-      "bytes": 67840
+      "sha256": "51f70bf638e6cdfc0dc4cda7464f06013c0fa62bb63b0a688fff094e70e20d71",
+      "bytes": 70338
     },
     {
       "path": "src/credit-balance.ts",
@@ -700,8 +700,8 @@
     },
     {
       "path": "src/deepseek-client.ts",
-      "sha256": "98dda8f1696d64b9cc20a4cc64ced0a05c035691293e55f1380013d9c1c60beb",
-      "bytes": 8733
+      "sha256": "ac870d34474e1c00362f77c16ffc17a70f3ea4f61da205a3196565d3592ca019",
+      "bytes": 8977
     },
     {
       "path": "src/deepseek-coordinator.ts",
@@ -820,8 +820,8 @@
     },
     {
       "path": "src/dsh-coordinator.ts",
-      "sha256": "a1d3d095d4fab68cf642a1a8dcd8dc7a8ab15961410513c743a3d02cedc11321",
-      "bytes": 39870
+      "sha256": "8fd935e0ffdd408ac05d7b58df1a2fb4c050ca98b7337d6d4b94deb300aa9f8c",
+      "bytes": 41521
     },
     {
       "path": "src/dsh-discovery.ts",
@@ -925,13 +925,13 @@
     },
     {
       "path": "src/operation-admission.ts",
-      "sha256": "f5b2d0a83120d4458097b24bb314ae6bcb60e3ea8bf2cfa9ad6a668952f18935",
-      "bytes": 39314
+      "sha256": "df01fd9af6d78f9d6a698c487f0dfc996b4bbd04c3bae6806a541781dac9a3f5",
+      "bytes": 42727
     },
     {
       "path": "src/operation-recovery.ts",
-      "sha256": "32ce772508fdcde5cb352ebd28ac5409a8e83a7e2655c7b0c8db3c256773b2f7",
-      "bytes": 15916
+      "sha256": "64c6bbe7d498c35a9131b15acceddd77f5ed72afd808c488e1460e7e21bfea5a",
+      "bytes": 17686
     },
     {
       "path": "src/persistent-service.ts",
@@ -1115,8 +1115,8 @@
     },
     {
       "path": "src/server.ts",
-      "sha256": "81f03ebc359b60dd5e478e4a523cf4bc421f1dc99c20717b46fcaf1882bf8553",
-      "bytes": 23091
+      "sha256": "16254d27bfb934623195cc001c4347475b08d39dbf9a7cbc2db9732bd19045b7",
+      "bytes": 23178
     },
     {
       "path": "src/service-cli.ts",
@@ -1160,8 +1160,8 @@
     },
     {
       "path": "src/task-application-service.ts",
-      "sha256": "eb5c357d751416cea3882bb6b700d4f59a97992e6f6759e4f66a7451eea2cb36",
-      "bytes": 32769
+      "sha256": "86be003ab7d6cdf564bf9ccc6ba34e147c8819f6c3161f0b8c5139630513787e",
+      "bytes": 33475
     },
     {
       "path": "src/task-contract.ts",
@@ -1260,8 +1260,8 @@
     },
     {
       "path": "src/workspace-manager.ts",
-      "sha256": "c5e410fc5cc74e1f668845ba0008eb9c3297eff9b0954b64c8914107558e7de1",
-      "bytes": 6883
+      "sha256": "52e8ed8715e90d3d4862b0aa089a0c33278bf8799b350e14c2d6ea263a5880a4",
+      "bytes": 7575
     },
     {
       "path": "src/workspace-protection.ts",
@@ -1270,8 +1270,8 @@
     },
     {
       "path": "src/workspace-workers.ts",
-      "sha256": "b3f17cde8a6e5343bc80194a078dc1da64daaf4199733798beb51d7e1cd19009",
-      "bytes": 20071
+      "sha256": "e6cbbe5b619cec141d1d7e43ff59af8d21f859cce7f8a5cbbc72e21c1f592c3d",
+      "bytes": 20498
     },
     {
       "path": "test/acceptance-matrix.test.ts",
@@ -1515,8 +1515,8 @@
     },
     {
       "path": "test/dsh-adapter.test.ts",
-      "sha256": "14ffc74d763d77b50f0701c0f911d08b434520322359b6333d0523e3bf9bc4a1",
-      "bytes": 43911
+      "sha256": "f3c20e266ead597ca94b4da6eeeda2da1cc240309c17e2b87a814f7f95982090",
+      "bytes": 46647
     },
     {
       "path": "test/dsh-discovery.test.ts",
@@ -1972,6 +1972,16 @@
       "path": "test/t4b-operation-recovery.test.ts",
       "sha256": "42c320e39278ffe58b0bc66c53a97775a2b0885809d48ebfe3ca054d034b5cd8",
       "bytes": 24733
+    },
+    {
+      "path": "test/t4c-preparation-observation.test.ts",
+      "sha256": "ef4861b3c599038ed620235cfb0d380b57a664c378d5601304cc1178adaddff9",
+      "bytes": 10748
+    },
+    {
+      "path": "test/t4e-bridge-continuation-evidence.test.ts",
+      "sha256": "6018b3a0dc8881a7125573494b0bdc9c569a9f9f34dad84a0b108371b49ecf67",
+      "bytes": 4739
     },
     {
       "path": "test/t7d-native-stop-declaration.test.ts",

@@ -223,6 +223,17 @@ export class DshTaskCoordinator {
       if (snapshot?.taskId !== taskId || snapshot.attemptId !== binding.attemptId || snapshot.sessionId !== binding.sessionId || snapshot.driver !== "dsh") return fail("CONTRACT_INTEGRITY", "DSH run evidence belongs to another binding.");
       const reserved = this.store.collaboration.getAttempt(binding.attemptId);
       if (!reserved || reserved.taskId !== taskId || snapshot.deadline !== reserved.deadlineAt || snapshot.dsh?.hostId !== binding.hostId || snapshot.dsh.requestId !== binding.requestId) return fail("CONTRACT_INTEGRITY", "DSH evidence differs from its immutable request or deadline reservation.");
+      // A continuation turn reuses the persisted request header instead of emitting
+      // one of its own, so its configuration is only provable through the native
+      // header sequence the bridge recorded when this requestId was admitted. That
+      // anchor names an event that already exists in the session, and it is used
+      // only when this request produced no header of its own: a native header in
+      // the stream always wins, and absence of both still blocks the report.
+      const bridged = page.modelEvidence;
+      if (bridged && bridged.requestId === binding.requestId && Number.isSafeInteger(bridged.headerSeq) && bridged.headerSeq >= 0 && bridged.headerSeq <= page.cursor && typeof bridged.providerId === "string" && typeof bridged.modelId === "string" && (bridged.reasoningEffort == null || typeof bridged.reasoningEffort === "string") && !snapshot.dsh?.effectiveModel && page.events.every(event => event.rawType !== "request/header")) {
+        snapshot.dsh = { ...snapshot.dsh!, effectiveModel: { providerId: bridged.providerId, modelId: bridged.modelId, reasoningEffort: bridged.reasoningEffort ?? null, seq: bridged.headerSeq, requestId: binding.requestId } };
+        this.store.appendTaskEvent({ taskId, attemptId: binding.attemptId, type: "native_request_observed", occurredAt: new Date().toISOString(), observedAt: new Date().toISOString(), actor: "dsh", payload: { requestId: binding.requestId, modelEvidenceSource: "bridge/persisted-request-header", nativeHeaderSeq: bridged.headerSeq, effectiveModel: snapshot.dsh.effectiveModel }, sourceRef: `${binding.attemptId}:dsh:header:${bridged.headerSeq}` });
+      }
       for (const event of page.events) {
         if (current.turnId && event.turnId && current.turnId !== event.turnId) return fail("SOURCE_IDENTITY_MISMATCH", "The event belongs to a different native turn.");
         this.store.workspaceProtection.observeToolCall(taskId, binding.attemptId, event.rawType, event.data, `${binding.attemptId}:dsh:${event.seq}`);

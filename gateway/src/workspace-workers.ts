@@ -178,7 +178,8 @@ export class WorkspaceWorkers {
     }
     return evidence;
   }
-  async ensure(input: {workspace: string; sessionId?: string; title?: string; model?:string; workerKey?: string}, native: NativeWorkerCreator): Promise<{created: boolean; worker: WorkspaceWorker; model?:string}> {
+  async ensure(input: {workspace: string; sessionId?: string; title?: string; model?:string; workerKey?: string}, native: NativeWorkerCreator,
+    hooks?: { onReserved?: (sessionId: string) => void }): Promise<{created: boolean; worker: WorkspaceWorker; model?:string}> {
     if(!path.isAbsolute(input.workspace)||!fs.statSync(input.workspace).isDirectory())throw new Error("workspace must be an existing absolute directory");
     const workspace = path.resolve(input.workspace);
     if (input.workerKey !== undefined && (!input.workerKey.trim() || input.workerKey.length > 200 || input.sessionId)) throw new Error("workerKey must be nonempty, at most 200 characters and cannot be combined with sessionId");
@@ -210,19 +211,19 @@ export class WorkspaceWorkers {
       if(evidence.state === "unverifiable") throw new Error(`The WorkBuddy desktop history could not be read (${evidence.reason ?? "unknown reason"}); the reserved identity ${previous.sessionId} was kept and no second native session was created. Repair the desktop directory or point WORKBUDDY_CONFIG_DIR at the real one, then retry with the same worker key`);
       if(previous.state!=='ready')await this.safeProbe(previous,native);
       const reclaim = this.reclaimStale(previous, workspace);
-      if(reclaim === "reclaimed") return this.create(workspace, input, native, configure, checkSelection);
+      if(reclaim === "reclaimed") return this.create(workspace, input, native, configure, checkSelection, hooks);
       if(reclaim === "changed") {
         // Another writer advanced this reservation between our read and the
         // write transaction; decide again from what is on disk now.
         const current = input.workerKey ? this.keyed(workspace, input.workerKey) : this.selected(workspace);
-        if(!current) return this.create(workspace, input, native, configure, checkSelection);
+        if(!current) return this.create(workspace, input, native, configure, checkSelection, hooks);
         const currentEvidence = this.evidenceOf(current);
         if(currentEvidence.registered){await configure(current.sessionId);checkSelection();return {created:false,worker:this.select(workspace,current.sessionId),model:input.model};}
         if(currentEvidence.state === "unverifiable") throw new Error(`The WorkBuddy desktop history could not be read (${currentEvidence.reason ?? "unknown reason"}); the reserved identity ${current.sessionId} was kept and no second native session was created`);
       }
       throw new Error(previous.state==='ready' ? "The registered WorkBuddy session was deleted or is unavailable; select another real session explicitly" : "Native creation is in progress or uncertain; inspect the reserved session before retrying. No second session was created");
     }
-    return this.create(workspace, input, native, configure, checkSelection);
+    return this.create(workspace, input, native, configure, checkSelection, hooks);
   }
   /**
    * Reclaim a reservation whose creator died before it could settle (F-WORKER-1).
@@ -250,9 +251,14 @@ export class WorkspaceWorkers {
     } catch (error) { this.db.exec("ROLLBACK"); throw error; }
   }
   private async create(workspace: string, input: {workspace: string; title?: string; model?:string; workerKey?: string},
-    native: NativeWorkerCreator, configure: (sessionId: string) => Promise<void>, checkSelection: () => void): Promise<{created: boolean; worker: WorkspaceWorker; model?:string}> {
+    native: NativeWorkerCreator, configure: (sessionId: string) => Promise<void>, checkSelection: () => void,
+    hooks?: { onReserved?: (sessionId: string) => void }): Promise<{created: boolean; worker: WorkspaceWorker; model?:string}> {
     const worker = this.reserve(workspace, input.workerKey);
     try {
+      // The reserved identity is handed to the caller before the native call: if
+      // this process dies or its client disconnects mid-preparation, the durable
+      // operation still names the one session that may exist.
+      hooks?.onReserved?.(worker.sessionId);
       const result = await native.createWorker(workspace,worker.sessionId,input.title??`执行：${path.basename(workspace)}`);
       if(result.sessionId!==worker.sessionId || !sameWorkspacePath(result.workspace,workspace))throw new Error("Native creation returned another session or workspace; inspect the reserved identity, do not replay");
       const evidence = await waitForDesktopSession(this.config.workbuddyConfigDir,worker.sessionId);

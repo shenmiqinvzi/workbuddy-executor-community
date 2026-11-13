@@ -15,6 +15,24 @@ function selectionOf(state) {
   return null;
 }
 function equalSelection(a, b) { return a?.providerId === b?.providerId && a?.modelId === b?.modelId && (a?.reasoningEffort ?? null) === (b?.reasoningEffort ?? null); }
+/** The header the Harness will reuse for the request about to be admitted. A
+ *  continuation turn takes its configuration from this persisted header instead
+ *  of emitting one of its own, so its native sequence number is the only anchor
+ *  that can name the configuration that request actually runs with. */
+function nativeHeaderEvidence(events) {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    const config = event.type === 'request/header' ? event.data?.header?.config : undefined;
+    if (typeof config?.provider === 'string' && typeof config.model === 'string' && (config.reasoningEffort == null || typeof config.reasoningEffort === 'string')) {
+      return { headerSeq: event.seq, providerId: config.provider, modelId: config.model, reasoningEffort: config.reasoningEffort ?? null };
+    }
+  }
+  return null;
+}
+function sameEvidence(evidence, value) {
+  return evidence?.headerSeq === value.headerSeq && evidence.providerId === value.providerId && evidence.modelId === value.modelId && (evidence.reasoningEffort ?? null) === (value.reasoningEffort ?? null);
+}
+export const __test = Object.freeze({ nativeHeaderEvidence, sameEvidence });
 const hash = value => createHash('sha256').update(value).digest('hex');
 function string(value, name, max = 512) {
   if (typeof value !== 'string' || !value.trim() || value.length > max || value.includes('\0')) throw new BridgeError('bridge/bad-request', `${name} must be a nonempty string of at most ${max} characters`);
@@ -102,11 +120,12 @@ export async function createAdapter(ctx, { root, hostId, identity, allowLegacyPr
       if (existing && (existing.requestId !== requestId || existing.sessionId !== sessionId || existing.textHash !== hash(text))) throw new BridgeError('bridge/request-conflict', 'requestId was already used with different prompt content');
       const state = await inspect(sessionId, signal);
       const replay = replayEvents(sessionId, state.events);
+      const header = nativeHeaderEvidence(state.events);
       const nativeRequest = replay.requests.get(requestId);
       if (!existing && nativeRequest?.promptText !== undefined && nativeRequest.promptText !== text) throw new BridgeError('bridge/request-conflict', 'requestId already belongs to different native prompt content');
       if (nativeRequest || existing?.state === 'accepted') {
         nativeSubmitted = true; // Proven already admitted; later I/O errors cannot mean rejection.
-        if (!existing || existing.state !== 'accepted') await writeLedger(path, { sessionId, requestId, textHash: hash(text), state: 'accepted', acceptedAt: new Date().toISOString() });
+        if (!existing || existing.state !== 'accepted') await writeLedger(path, { sessionId, requestId, textHash: hash(text), state: 'accepted', acceptedAt: new Date().toISOString(), ...(existing?.modelEvidence ? { modelEvidence: existing.modelEvidence } : {}) });
         return { requestId, accepted: true, ...(nativeRequest?.turnId ? { turnId: nativeRequest.turnId } : {}), duplicate: true };
       }
       if (existing) throw new BridgeError('bridge/admission-unknown', 'This request was reserved before a disconnect. No duplicate dispatch is allowed; inspect the App and synchronize persisted events');
@@ -114,7 +133,7 @@ export async function createAdapter(ctx, { root, hostId, identity, allowLegacyPr
       if (!current.attached) throw new BridgeError('bridge/session-not-live', 'The selected original native session is not attached');
       if (current.busy) throw new BridgeError('bridge/session-busy', 'Session already has running or queued work');
       if (params.expectedSelection && !equalSelection(selectionOf(state), params.expectedSelection)) throw new BridgeError('bridge/model-drift', 'Session selection changed before admission');
-      const record = { sessionId, requestId, textHash: hash(text), state: 'reserved', reservedAt: new Date().toISOString() };
+      const record = { sessionId, requestId, textHash: hash(text), state: 'reserved', reservedAt: new Date().toISOString(), ...(header ? { modelEvidence: { ...header, sessionId, requestId, observedAt: new Date().toISOString() } } : {}) };
       const reservation = await fs.open(path, 'wx', 0o600);
       try { await reservation.writeFile(JSON.stringify(record)); await reservation.sync(); } finally { await reservation.close(); }
       // Native prompt uses source.rpcId=requestId and checks inbox + durable messages.
@@ -202,7 +221,16 @@ export async function createAdapter(ctx, { root, hostId, identity, allowLegacyPr
           const afterSeq = integer(params.afterSeq ?? -1, 'afterSeq', -1, Number.MAX_SAFE_INTEGER);
           const limit = integer(params.limit ?? 100, 'limit', 1, 256);
           const state = await inspect(sessionId, signal);
-          return eventPage(replayEvents(sessionId, state.events), { requestId, afterSeq, limit });
+          const page = eventPage(replayEvents(sessionId, state.events), { requestId, afterSeq, limit });
+          if (requestId === undefined) return page;
+          // Serve the model evidence only while the native header it names is still
+          // in the session: a compacted or replaced header stops grounding it.
+          const record = await readLedger(ledgerPath(sessionId, requestId));
+          const evidence = record?.modelEvidence;
+          const anchor = evidence && Number.isSafeInteger(evidence.headerSeq) ? state.events.find(event => event.seq === evidence.headerSeq && event.type === 'request/header') : undefined;
+          const config = anchor?.data?.header?.config;
+          const grounded = evidence && config && config.provider === evidence.providerId && config.model === evidence.modelId && (config.reasoningEffort ?? null) === (evidence.reasoningEffort ?? null);
+          return grounded ? { ...page, modelEvidence: { ...evidence, requestId } } : page;
         }
         case 'cancel': {
           keys(params, ['sessionId', 'requestId']);
