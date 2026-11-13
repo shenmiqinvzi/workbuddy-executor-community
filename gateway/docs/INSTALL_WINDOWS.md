@@ -44,6 +44,14 @@ node scripts/setup.mjs install --apply --workbuddy-app "D:/Apps/WorkBuddy/WorkBu
 
 上述路径是占位示例，替换为自己的实际位置。也可通过 WORKBUDDY_CLI_ELECTRON、WORKBUDDY_CONFIG_DIR 指定。--codex-home 或 CODEX_HOME 可选择独立的技能安装目录。
 
+同一个数据目录里，`data/persistent-service.json` 记录的原生目录必须与进程自身读取的 WORKBUDDY_CONFIG_DIR 一致：准备阶段按注册绑定原生会话，派工阶段读进程配置，两者不同就会出现"准备用 A、派工读 B"。这种情况下返工/派工在创建 attempt 之前就被拒绝，不会留下新的 blocked attempt 或需要恢复操作的 effect_started：
+
+- `BRIDGE_CONFIG_MISMATCH`：注册的原生目录与 WORKBUDDY_CONFIG_DIR 不同，错误里给出两个绝对路径；把 WORKBUDDY_CONFIG_DIR 改成注册里的目录，或为本数据目录重写注册。
+- `BRIDGE_SESSION_ABSENT`：该目录的原生历史里没有这个会话；重新打开该会话，或为这个数据目录准备新工作区。
+- `BRIDGE_HISTORY_UNREADABLE`：该目录下没有可读的 workbuddy.db（或在运行中无法读取）；修好桌面配置或目录权限后重试同一任务。
+
+修好之后用新的 operationId 重试即可；被拒绝的那次操作不推进 attempt，也不需要按恢复流程关闭。
+
 安装写入本机 .env（仅原来不存在时）、技能文件、data/workbuddy-mcp.toml 和 data/deployment-installation.json。旧技能先备份；同样内容重复安装不改变文件。既有 .env 不覆盖；配置冲突或缺少免费政策时明确报错，由使用者核对修改。整个安装不发送任务、不启动或重启 WorkBuddy、不安装常驻服务，也不改变执行策略。
 
 ### 2.1 先核对发布包，再决定是否安装

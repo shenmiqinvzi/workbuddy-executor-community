@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "capturedAt": "2026-11-13T03:20:27.578Z",
+  "capturedAt": "2026-11-13T04:03:20Z",
   "upstream": "https://github.com/dudu555-djiao/codex-workbuddy-gateway",
   "upstreamCommit": "fbaaa2ef6d6cb59f48b953a1f27058202a81553f",
   "snapshot": "2026-10-23-shared-service-task-projection-integration",
@@ -285,13 +285,13 @@
     },
     {
       "path": "docs/INSTALL_WINDOWS.md",
-      "sha256": "a561dc3baee58f841c3b4e6ebf8a6f9e9a391323f589623fa4ef73170a0324b7",
-      "bytes": 18579
+      "sha256": "db8fe4a2af41ddd525c09c5e366f77e3a9c3b08598f46580da8cd2895882ef4c",
+      "bytes": 19644
     },
     {
       "path": "docs/OPERATION_RECOVERY.md",
-      "sha256": "2837b881e3b324177af401ec9fb4000b93037e245e7e22049ed6d9f84de94143",
-      "bytes": 4814
+      "sha256": "9218a662b4941f2578ed3542a6a044db75bd8a9909b4ec355d8e610974ac4b2b",
+      "bytes": 5356
     },
     {
       "path": "docs/PORTABILITY_VERIFICATION_2026-10-18.md",
@@ -690,8 +690,8 @@
     },
     {
       "path": "src/coordinator.ts",
-      "sha256": "51f70bf638e6cdfc0dc4cda7464f06013c0fa62bb63b0a688fff094e70e20d71",
-      "bytes": 70338
+      "sha256": "125d1caa36e44293e488e3f54e4da6b7e36ee5437dcd69797505883929f32bb9",
+      "bytes": 69500
     },
     {
       "path": "src/credit-balance.ts",
@@ -1260,8 +1260,8 @@
     },
     {
       "path": "src/workspace-manager.ts",
-      "sha256": "52e8ed8715e90d3d4862b0aa089a0c33278bf8799b350e14c2d6ea263a5880a4",
-      "bytes": 7575
+      "sha256": "999fd49dfc5d1ce6cd4768f21f7a55b380995975ff86222a0f12353d260b9352",
+      "bytes": 10676
     },
     {
       "path": "src/workspace-protection.ts",
@@ -1982,6 +1982,11 @@
       "path": "test/t4e-bridge-continuation-evidence.test.ts",
       "sha256": "6018b3a0dc8881a7125573494b0bdc9c569a9f9f34dad84a0b108371b49ecf67",
       "bytes": 4739
+    },
+    {
+      "path": "test/t4f-dispatch-configuration.test.ts",
+      "sha256": "7e3a7b23fcec11fe918e7823f5d12600cbc74783a645b12baf4913a56988e33e",
+      "bytes": 7159
     },
     {
       "path": "test/t7d-native-stop-declaration.test.ts",

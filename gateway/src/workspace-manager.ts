@@ -32,6 +32,36 @@ export function workerRegistration(config: Config) {
   if(registration && path.resolve(registration.dbFile)!==path.resolve(config.dbFile))throw new AdmissionError("BRIDGE_DATABASE_MISMATCH", `The persistent service registered for ${path.resolve(registration.dbFile)} is not the database this process uses (${path.resolve(config.dbFile)}); fix ${file} or point WORKBUDDY_SERVICE_CONFIG at the registration that belongs to this data directory`);
   return registration;
 }
+/**
+ * The single configuration a dispatch will read for one already prepared session.
+ *
+ * Preparation binds to the persistent service's registration (`registeredServiceConfig`),
+ * while a dispatch reads this process's own WorkBuddy directory. When those two name
+ * different directories the same task would be prepared against one native history and
+ * dispatched against another, so the disagreement is refused here — before an attempt
+ * exists — instead of surfacing as a blocked attempt after the native boundary. The
+ * native registration of the session is checked in the same place for the same reason:
+ * a missing, unreadable or session-less history can never become a dispatchable route.
+ */
+export function assertDispatchConfiguration(config: Config, sessionId: string): void {
+  // Read the registration without judging it first: a registration that belongs to
+  // another data directory says nothing about a session this one never prepared, and
+  // treating it as a mismatch here would refuse sessions that route fine today.
+  const registration = readServiceRegistration(config.serviceConfigFile ?? path.join(path.dirname(config.dbFile), "persistent-service.json"));
+  const preparedHere = registration?.sessionId === sessionId || readWorkspaceWorkers(config).some(worker => worker.sessionId === sessionId);
+  if (!preparedHere) return;
+  // Only a governed session has to agree with its registration: the same database,
+  // the same WorkBuddy directory, and a native history that still knows the session.
+  workerRegistration(config);
+  const configured = path.resolve(config.workbuddyConfigDir);
+  if (registration) {
+    const bound = path.resolve(registeredServiceConfig(config, registration).workbuddyConfigDir);
+    if (bound !== configured) throw new AdmissionError("BRIDGE_CONFIG_MISMATCH", `The persistent service reads WorkBuddy history from ${bound}, but this process is configured for ${configured}. Preparation would bind ${bound} while the dispatch would read ${configured}; set WORKBUDDY_CONFIG_DIR to ${bound} (or rewrite the registration for this data directory) before dispatching again.`);
+  }
+  const evidence = readDesktopSession(configured, sessionId);
+  if (evidence.state === "unverifiable") throw new AdmissionError("BRIDGE_HISTORY_UNREADABLE", `The WorkBuddy desktop history at ${configured} could not be read (${evidence.reason}); the attempt was not started. Fix WORKBUDDY_CONFIG_DIR or the desktop profile, then retry the same task.`);
+  if (!evidence.registered) throw new AdmissionError("BRIDGE_SESSION_ABSENT", `WorkBuddy session ${sessionId} is not registered in ${configured}; the desktop service cannot route to it. Reopen that session, or prepare a workspace for this data directory, before retrying.`);
+}
 export async function ensureWorkspace(config: Config, input: {workspace:string;sessionId?:string;title?:string;model?:string;workerKey?:string;admissionTaskId?:string;admissionOperationId?:string}) {
   if(config.backend!=="desktop-queue")throw new Error("Automatic native workspaces require desktop-queue");
   const target = { taskId: input.admissionTaskId ?? "", workspace: input.workspace, sessionId: input.sessionId ?? null, model: input.model ?? "", workerKey: input.workerKey ?? null, title: input.title ?? null };
@@ -39,6 +69,10 @@ export async function ensureWorkspace(config: Config, input: {workspace:string;s
   // Resolving it before the preparation boundary keeps a fixable configuration
   // mistake in front of the native adapter instead of after it (FC11-D1/D2).
   const registration=workerRegistration(config);
+  // An existing session already has a native route, so its registration and history
+  // are checked before the preparation boundary is written: a wrong directory must
+  // leave no operation behind, not an effect that only a recovery decision can close.
+  if (input.sessionId) assertDispatchConfiguration(config, input.sessionId);
   const gate = new TaskStore(config.dbFile);
   try {
     if (!input.admissionTaskId) throw new AdmissionError("OPERATION_REQUIRED", "Use a durable authorized task operation for native workspace preparation.");

@@ -25,6 +25,8 @@ Windows 也可使用 `bin\workbuddy-recovery.cmd`，参数相同。命令读取�
 
 客户端等超时不等于操作被取消，也不等于没产生原生效果。`scripts/workbuddy-call.mjs` 的等待由 `WORKBUDDY_MCP_CLIENT_TIMEOUT_MS`（默认 900000 毫秒）决定；`WORKBUDDY_REQUEST_TIMEOUT_MS`（默认 30000）只约束网关自己的下游请求。调大后者不会延长前者。等超时后按上面的 `show` → `observe` → `close` 顺序收尾，不要为拿到"第二个会话"而重派同一 taskId。
 
+配置类拒绝不进入这里：当 `data/persistent-service.json` 的原生目录与进程的 `WORKBUDDY_CONFIG_DIR` 不一致、该目录读不到原生历史、或历史里没有这个会话时，返工/派工在创建 attempt 之前就以 `BRIDGE_CONFIG_MISMATCH`、`BRIDGE_HISTORY_UNREADABLE` 或 `BRIDGE_SESSION_ABSENT` 失败，既不写新的派工边界，也不产生需要这里关闭的操作；按错误里给出的路径改好配置，用新的 operationId 重试同一任务即可（详见 INSTALL_WINDOWS.md 第 2 节）。
+
 MCP 提供 `workbuddy_get_operation_recovery`（只读）和 `workbuddy_observe_operation_recovery`（显式观察），二者均接收原 `operationId`；人工授权与关闭仅由本地控制台或可信应用完成。HTTP 仍保持只读。源码中的可信应用授权方法不是供浏览器传入 approved 标志的接口。
 
 恢复决定包含原操作、task/attempt、证据种类和摘要、原因、人工确认与决定时间、恢复 operationId。原意图和未知结果保留；已处置的不确定原操作返回 OPERATION_RESOLVED 及 recoveryOperationId，不能把它当作重新发送的许可。T4A 已保存的原成功结果仍按原约定重放。

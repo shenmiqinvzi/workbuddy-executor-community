@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import os from "node:os";
-import { ensureWorkspace, listModels, workerRegistration } from "./workspace-manager.js";
+import { assertDispatchConfiguration, ensureWorkspace, listModels } from "./workspace-manager.js";
 import { readDesktopSession } from "./desktop-runtime.js";
 import { readWorkspaceWorkers } from "./workspace-workers.js";
 import path from "node:path";
@@ -131,16 +131,12 @@ export class TaskCoordinator {
   }
   private async sendAdmitted(input: SendTaskInput, operation?: OperationRecord) {
     this.requireDesktop();
-    // Routing into a named native session needs the persistent service that owns it.
-    // A registration naming that session but pointing at another task database is a
+    // Routing into a named native session needs the persistent service that owns it,
+    // and that service must read the same WorkBuddy history this process reads. A
+    // registration pointing at another task database or another profile directory is a
     // fixable configuration mistake: report it here, before any native boundary, and
     // never fall through to a queued task that can never be prepared.
-    if (this.config.backend === "desktop-queue" && input.sessionId) {
-      const file = this.config.serviceConfigFile ?? path.join(path.dirname(this.config.dbFile), "persistent-service.json");
-      const registration = readServiceRegistration(file);
-      const preparedHere = (registration?.sessionId === input.sessionId) || readWorkspaceWorkers(this.config).some(worker => worker.sessionId === input.sessionId);
-      if (preparedHere) workerRegistration(this.config);
-    }
+    if (this.config.backend === "desktop-queue" && input.sessionId) assertDispatchConfiguration(this.config, input.sessionId);
     if (input.contract !== undefined) return this.sendWithContract(input, operation);
     const checkedScope = input.scope === undefined ? null : validateTaskScope(input.scope);
     if (checkedScope && !checkedScope.ok) throw new AdmissionError("INVALID_CONTRACT", `${checkedScope.rejection.code}: ${checkedScope.rejection.field}`);
@@ -259,20 +255,12 @@ export class TaskCoordinator {
   }
 
   private async dispatch(task: StoredTask, prompt: string, input: { timeoutSeconds?: number; sessionId?: string; model?: string; sessionMode?: "existing" | "new"; acceptanceCommands?: string[]; modelObservation?: ModelObservation; scopeGuard?: WorkspaceDispatchGuard }) {
-    // A rework dispatches without preparing a workspace, so the desktop service
-    // registration is the only place a configuration mismatch can still surface.
-    // Checking it before beginAttempt keeps a fixable mistake in front of every
-    // native boundary: inside the try below the same error would be folded into a
+    // A rework dispatches without preparing a workspace, so this is the last place a
+    // configuration mistake can still be refused before an attempt exists. The check
+    // pairs the registration, this process's WorkBuddy directory and the session's
+    // native registration; inside the try below the same failure would be folded into a
     // blocked attempt whose reservation already reached the native adapter.
-    // The pairing only constrains sessions this data directory actually prepared
-    // (or that the registration itself names): a registration belonging to another
-    // data directory says nothing about an untracked manual session.
-    if (this.config.backend === "desktop-queue" && task.sessionId) {
-      const file = this.config.serviceConfigFile ?? path.join(path.dirname(this.config.dbFile), "persistent-service.json");
-      const registration = readServiceRegistration(file);
-      const preparedHere = (registration?.sessionId === task.sessionId) || readWorkspaceWorkers(this.config).some(worker => worker.sessionId === task.sessionId);
-      if (preparedHere) workerRegistration(this.config);
-    }
+    if (this.config.backend === "desktop-queue" && task.sessionId) assertDispatchConfiguration(this.config, task.sessionId);
     const scopeGuard = input.scopeGuard ?? this.store.workspaceProtection.guard(task.taskId);
     this.store.workspaceProtection.assertGuard(scopeGuard);
     prompt = `${prompt}\n${this.store.workspaceProtection.instructions(task.taskId)}`;
