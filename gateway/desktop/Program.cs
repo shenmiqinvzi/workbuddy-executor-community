@@ -153,7 +153,9 @@ internal sealed class WorkbenchWindow : Form
             origin = new Uri("http://127.0.0.1:" + port);
             progress.Enter("webview");
             commands = new DesktopCommandChannel(ownHost);
-            _ = Task.Run(() => ReadHostEventsAsync(ownHost));
+            // One reader owns the host's stdout: the command channel hands every non-result frame to
+            // this handler. A second concurrent reader silently swallowed command results.
+            commands.Frame = HandleHostFrame;
             ownHost.EnableRaisingEvents = true;
             ownHost.Exited += (_, _) => { try { if (!closing && host.Owns(ownHost) && IsHandleCreated) BeginInvoke(() => { progress.Fail("host_exited", "the local recording service ended before the page was ready"); ShowFailure("本地记录连接已结束。任务执行仍由原执行器管理，可以重新连接查看。"); }); } catch (InvalidOperationException) { } };
             if (web.CoreWebView2 is null)
@@ -374,25 +376,14 @@ internal sealed class WorkbenchWindow : Form
     /// never approves, retries, extends a deadline or writes task state from a notification, and
     /// closing the window does not remove any task evidence.
     /// </summary>
-    private async Task ReadHostEventsAsync(Process source)
+    private void HandleHostFrame(JsonElement frame)
     {
         try
         {
-            while (!lifetime.IsCancellationRequested && await source.StandardOutput.ReadLineAsync(lifetime.Token) is { } line)
-            {
-                if (line.Length is 0 or > 70000) continue;
-                try
-                {
-                    using var frame = JsonDocument.Parse(line);
-                    if (!frame.RootElement.TryGetProperty("event", out var kind) || kind.GetString() != "desktop_notification") continue;
-                    if (!frame.RootElement.TryGetProperty("notification", out var notification) || notification.ValueKind != JsonValueKind.Object) continue;
-                    ShowNotification(notification);
-                }
-                catch (JsonException) { /* A malformed frame is dropped; it cannot break the window. */ }
-            }
+            if (!frame.TryGetProperty("event", out var kind) || kind.GetString() != "desktop_notification") return;
+            if (!frame.TryGetProperty("notification", out var notification) || notification.ValueKind != JsonValueKind.Object) return;
+            ShowNotification(notification);
         }
-        catch (OperationCanceledException) { }
-        catch (ObjectDisposedException) { }
         catch (InvalidOperationException) { }
     }
 

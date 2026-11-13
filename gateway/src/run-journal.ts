@@ -31,7 +31,7 @@ export interface RunSnapshot {
     hostId: string; requestId: string; sessionId: string;
     admissionRejected?: boolean;
     terminal?: { seq: number; type: "completed" | "failed" | "cancelled"; rawType: string; at: string; turnId?: string };
-    effectiveModel?: { providerId: string; modelId: string; reasoningEffort: string | null; seq: number };
+    effectiveModel?: { providerId: string; modelId: string; reasoningEffort: string | null; seq: number; requestId?: string };
   };
   deadline?: string;
   claimDeadline?: string;
@@ -77,6 +77,7 @@ export interface RunEvent {
 }
 
 const ATTEMPT_ID = /^run-[a-f0-9-]{36}$/;
+const PENDING_CURSOR = /^pending-/;
 const TERMINAL = new Set<RunStatus>(["needs_review", "blocked", "failed", "cancelled"]);
 
 /** A worker report ends its lease, not necessarily the native model/tool turn. */
@@ -261,6 +262,11 @@ export class DurableRuns {
   }
   messages(cursor: string, limit = 100): LocalMessage[] {
     const [attemptId = "", sequence = "0"] = cursor.split(":");
+    // A task that has not been dispatched yet carries the reservation cursor
+    // `pending-<taskId>`. There is no attempt and therefore no message to read:
+    // answering "unrecoverable/blocked" here would write a blocked report over a
+    // dispatch that is still being prepared (FC13-D).
+    if (PENDING_CURSOR.test(cursor)) return [];
     if (!ATTEMPT_ID.test(attemptId)) {
       return [{ message_id: `${cursor}:unrecoverable`, role: "assistant", content: ["TASK_STATUS: blocked\nThis legacy in-memory run cannot be recovered after restart. Inspect the old WorkBuddy conversation before starting a new task."], metadata: { type: "result", status: "blocked", source: "legacy-unrecoverable" } }];
     }

@@ -39,6 +39,9 @@ interface PairOptions {
   manifestExtra?: { path: string; bytes: number; sha256: string };
   manifestMissing?: string;
   versions?: { gateway: string; desktop: string };
+  omitVersion?: "gateway" | "desktop" | "both";
+  omitSidecar?: "gateway" | "desktop" | "both";
+  sidecarText?: string;
   unexpectedGatewayOnly?: string;
   wrongSidecar?: boolean;
 }
@@ -62,7 +65,8 @@ async function pair(options: PairOptions = {}) {
 
   const gatewayFiles = [...shared.filter(relative => !(options.omitDesktop ?? []).includes(relative)), ...(options.omitDesktop ?? [])]
     .map(relative => ({ path: relative, bytes: Buffer.byteLength(`// ${relative}\n`), sha256: sha256(`// ${relative}\n`) }));
-  const gatewayManifest = { project: "codex-workbuddy-gateway", version: options.versions?.gateway ?? "0.7.1", files: gatewayFiles };
+  const gatewayManifest: { project: string; version?: string; files: { path: string; bytes: number; sha256: string }[] } = { project: "codex-workbuddy-gateway", version: options.versions?.gateway ?? "0.7.1", files: gatewayFiles };
+  if (options.omitVersion === "gateway" || options.omitVersion === "both") delete gatewayManifest.version;
   if (options.manifestMissing) gatewayManifest.files = gatewayManifest.files.filter(entry => entry.path !== options.manifestMissing);
   if (options.manifestExtra) gatewayManifest.files = [...gatewayManifest.files, options.manifestExtra];
   write(gatewayRoot, "RELEASE_MANIFEST.json", JSON.stringify(gatewayManifest));
@@ -74,15 +78,17 @@ async function pair(options: PairOptions = {}) {
   ];
   if (options.manifestDigest) desktopFiles[0] = { ...desktopFiles[0], sha256: options.manifestDigest };
   if (!options.skipDesktopManifest) {
-    write(path.join(directory, "desktop-source"), "RELEASE_MANIFEST.json", JSON.stringify({ project: "codex-workbuddy-gateway", version: options.versions?.desktop ?? "0.7.1", files: desktopFiles }));
+    const desktopManifest: { project: string; version?: string; files: typeof desktopFiles } = { project: "codex-workbuddy-gateway", version: options.versions?.desktop ?? "0.7.1", files: desktopFiles };
+    if (options.omitVersion === "desktop" || options.omitVersion === "both") delete desktopManifest.version;
+    write(path.join(directory, "desktop-source"), "RELEASE_MANIFEST.json", JSON.stringify(desktopManifest));
   }
 
   const gatewayArchive = path.join(directory, "codex-workbuddy-gateway-v0.7.1.zip");
   const desktopArchive = path.join(directory, "workbuddy-desktop-v0.7.1-t7d.zip");
   await zipDirectory(gatewayRoot, gatewayArchive, "codex-workbuddy-gateway-v0.7.1");
   await zipDirectory(path.join(directory, "desktop-source"), desktopArchive, "workbuddy-desktop-v0.7.1-t7d");
-  sidecar(desktopArchive);
-  sidecar(gatewayArchive, options.wrongSidecar ? "0".repeat(64) : undefined);
+  if (options.omitSidecar !== "desktop" && options.omitSidecar !== "both") sidecar(desktopArchive, options.sidecarText);
+  if (options.omitSidecar !== "gateway" && options.omitSidecar !== "both") sidecar(gatewayArchive, options.wrongSidecar ? "0".repeat(64) : options.sidecarText);
   return { directory, gatewayArchive, desktopArchive };
 }
 
@@ -178,6 +184,48 @@ test("a published checksum that does not match its archive fails the pair", asyn
   assert.equal(report.ok, false);
   assert.equal(report.gateway.checksum.present, true);
   assert.equal(report.gateway.checksum.matches, false);
+});
+
+test("an archive shipped without a .sha256 sidecar cannot pass", async () => {
+  for (const side of ["gateway", "desktop"] as const) {
+    const p = await pair({ omitSidecar: side });
+    const report = verifyPairing(p.gatewayArchive, p.desktopArchive);
+    assert.equal(report.ok, false, `${side} archive without a sidecar passed`);
+    assert.equal(report[side].checksum.present, false);
+    assert.equal(report[side].checksum.matches, null);
+    assert.ok(report.problems.some(problem => /ships without a \.sha256 sidecar/.test(problem)), report.problems.join("\n"));
+  }
+});
+
+test("a sidecar that is not a SHA-256 digest is a failure, not an unknown", async () => {
+  const p = await pair({ sidecarText: "not-a-digest" });
+  const report = verifyPairing(p.gatewayArchive, p.desktopArchive);
+  assert.equal(report.ok, false);
+  assert.equal(report.gateway.checksum.present, true);
+  assert.equal(report.gateway.checksum.formatValid, false);
+  assert.equal(report.gateway.checksum.matches, false);
+  assert.ok(report.problems.some(problem => /is not a SHA-256 digest/.test(problem)), report.problems.join("\n"));
+});
+
+test("a manifest without a version cannot pass as a pair", async () => {
+  for (const side of ["gateway", "desktop"] as const) {
+    const p = await pair({ omitVersion: side });
+    const report = verifyPairing(p.gatewayArchive, p.desktopArchive);
+    assert.equal(report.ok, false, `${side} manifest without a version passed`);
+    assert.equal(report.manifestAgreement.versions[side], null);
+    assert.ok(
+      report.problems.some(problem => /RELEASE_MANIFEST\.json version null is not a MAJOR\.MINOR\.PATCH version/.test(problem)),
+      report.problems.join("\n"),
+    );
+  }
+});
+
+test("a version that is not MAJOR.MINOR.PATCH is rejected instead of being compared as text", async () => {
+  const p = await pair({ versions: { gateway: "master", desktop: "0.7.1" } });
+  const report = verifyPairing(p.gatewayArchive, p.desktopArchive);
+  assert.equal(report.ok, false);
+  assert.equal(versionCore("master"), null);
+  assert.ok(report.problems.some(problem => /version "master" is not a MAJOR\.MINOR\.PATCH version/.test(problem)), report.problems.join("\n"));
 });
 
 test("relative names drop the version wrapper but never a real directory", async () => {

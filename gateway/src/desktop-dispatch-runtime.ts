@@ -44,6 +44,8 @@ function policy(config: Config): ModelPolicy {
     return value;
   } finally { db.close(); }
 }
+/** Same bound the catalog admission check applies; keeping the source inside it keeps the page usable. */
+const SESSION_CATALOG_LIMIT = 200;
 type WorkbuddyCatalogReader = (config: Config) => Promise<{ models?: Array<{ id: string; credits?: unknown }> }>;
 export type CatalogReaders = { workbuddy: WorkbuddyCatalogReader; dsh: (registry?: string, host?: string) => Pick<DshClient, "resolveHostId" | "models" | "sessions"> };
 const catalogReaders: CatalogReaders = { workbuddy: listModels, dsh: (registry, host) => new DshClient(registry, host) };
@@ -60,13 +62,18 @@ export async function desktopModelCatalog(config: Config, env: NodeJS.ProcessEnv
   const source: DesktopCatalogSource = {models:[],sessions:[],policy:policy(config),requiredFreeModel:pinned.model||null,requireZeroRate:pinned.requireZeroRate,dispatchEnabled:env.WORKBUDDY_DESKTOP_DISPATCH_ENABLED==="1",errors:[],diagnostics:[]};
   const diagnostic=(origin:"workbuddy"|"dsh",code:string,message:string)=>{source.diagnostics!.push({source:origin,code,message});source.errors.push(message);};
   if (source.dispatchEnabled) try { assertDesktopDispatchDatabase(config); } catch { source.dispatchEnabled=false;source.errors.push("现有网关需先完成部署核验；当前仅可准备任务。"); }
-  const observations = await Promise.allSettled([
-    (async()=>{
+  // Sequential on purpose: the WorkBuddy read probes the native CDP port with a four
+  // second budget, and a concurrent DSH history read (hundreds of sessions) starves it
+  // into a timeout that would report the whole native source as unavailable.
+  const settle = async (read: () => Promise<void>): Promise<PromiseSettledResult<void>> => {
+    try { await read(); return { status: "fulfilled", value: undefined }; } catch (reason) { return { status: "rejected", reason }; }
+  };
+  const readWorkbuddy = async () => {
       const result = await readers.workbuddy(config) as unknown as {models?:Array<{id:string;credits?:unknown}>};
       if (!Array.isArray(result?.models)) throw new Error("invalid catalog");
       for(const model of result.models) if(model&&typeof model.id==="string") source.models.push({execution:{executorId:"workbuddy",connectionId:"local-workbuddy",providerId:"workbuddy-native",modelId:model.id,reasoningEffort:null},credits:typeof model.credits==="string"?model.credits:null,pricingVerified:typeof model.credits==="string"});
-    })(),
-    (async()=>{
+    };
+  const readDsh = async () => {
       if(env.WORKBUDDY_DSH_ENABLED!=="1"){diagnostic("dsh","source_disabled","DSH 来源未启用；如需使用，请检查现有连接配置。");return;}
       const client=readers.dsh(env.WORKBUDDY_DSH_REGISTRY_DIR,env.WORKBUDDY_DSH_HOST_ID);
       let hostId:string;
@@ -82,11 +89,20 @@ export async function desktopModelCatalog(config: Config, env: NodeJS.ProcessEnv
       try {catalog=await client.models(hostId);if(!Array.isArray(catalog?.models)||catalog.models.some(model=>!model||typeof model.providerId!=="string"||typeof model.modelId!=="string"||!Array.isArray(model.reasoningEfforts)||model.reasoningEfforts.some(effort=>typeof effort!=="string")))throw new Error("invalid catalog");} catch {diagnostic("dsh","catalog_unavailable","无法读取 DSH 模型目录；请检查连接后刷新。");return;}
       for(const model of catalog.models) for(const effort of model.reasoningEfforts.length?model.reasoningEfforts:[null]) source.models.push({execution:{executorId:"dsh",connectionId:hostId,providerId:model.providerId,modelId:model.modelId,reasoningEffort:effort},credits:catalog.pricingVerified?model.credits:null,pricingVerified:catalog.pricingVerified&&typeof model.credits==="string"});
       try {const {sessions}=await client.sessions(hostId);
-        source.sessions=sessions.filter(s=>typeof s.workspace==="string").map(s=>({hostId,sessionId:s.sessionId,workspace:s.workspace!,attached:s.attached===true,busy:s.busy!==false,
+        // The catalog bound exists so one source cannot flood the page. A long native history would
+        // exceed it and disable the whole catalog, so beyond the bound the sessions that can still
+        // receive a dispatch are offered first and the rest are cut with a stated count. Inside the
+        // bound the native order is preserved exactly as reported.
+        const known=sessions.filter(s=>typeof s.workspace==="string");
+        const attached=known.filter(s=>s.attached!==false);
+        const detached=known.filter(s=>s.attached===false);
+        const offered=known.length<=SESSION_CATALOG_LIMIT?known:attached.length>=SESSION_CATALOG_LIMIT?attached.slice(0,SESSION_CATALOG_LIMIT):[...attached,...detached.slice(0,SESSION_CATALOG_LIMIT-attached.length)];
+        if(offered.length<known.length)source.errors.push(`目录列出 ${offered.length} 个 DSH 会话（共 ${known.length} 个）；未列出的会话无法接收派工。`);
+        source.sessions=offered.map(s=>({hostId,sessionId:s.sessionId,workspace:s.workspace!,attached:s.attached===true,busy:s.busy!==false,
           availability:s.attached===false?"disconnected":s.busy===true?"busy":s.attached===true&&s.busy===false?"idle":"unknown"}));
       } catch {diagnostic("dsh","sessions_unavailable","无法读取 DSH 会话；请检查当前宿主连接后刷新。");}
-    })(),
-  ]);
+    };
+  const observations = [await settle(readWorkbuddy), await settle(readDsh)];
   observations.forEach((result,index)=>{if(result.status==="rejected")diagnostic(index===0?"workbuddy":"dsh",index===0?"catalog_unavailable":"source_unavailable",index===0?"无法读取 WorkBuddy 模型目录，请检查原应用连接后刷新。":"DSH 来源不可用；请检查已有连接后刷新。");});
   return normalizedDesktopCatalog(source);
 }

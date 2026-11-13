@@ -346,7 +346,7 @@ function renderDetail() {
     if (!filterRecords(state.records, state.filters).some(r => r.taskId === record.taskId))
         el.append(h('p', { class: 'notice' }, '此任务不在当前筛选结果中，详情保留供对照。'));
     const view = record.view, info = stateInfo(record), number = view.attempt.number ?? '—', limit = view.attempt.limit ?? '—';
-    el.append(h('div', { class: 'detail-context' }, icon('folder'), workspaceName(record), ' / ', h('span', { class: 'executor-badge', 'data-executor': executorKey(record) }, executorName(record)), ` / 第 ${number} 轮`), h('div', { class: 'detail-heading' }, h('h2', { id: 'detail-title', tabindex: '-1' }, taskName(record))), h('div', { class: 'detail-status' }, status(record)), h('p', { class: 'detail-description' }, info.description));
+    el.append(h('div', { class: 'detail-context' }, icon('folder'), workspaceName(record), ' / ', h('span', { class: 'executor-badge', 'data-executor': executorKey(record) }, executorName(record)), record.presentation.model ? [' / ', h('span', { class: 'model-badge' }, record.presentation.model)] : null, ` / 第 ${number} 轮`), h('div', { class: 'detail-heading' }, h('h2', { id: 'detail-title', tabindex: '-1' }, taskName(record))), h('div', { class: 'detail-status' }, status(record)), h('p', { class: 'detail-description' }, info.description));
     if (record.presentation.blockingReason) el.append(h('p', { class: 'notice' }, '已存提示：', record.presentation.blockingReason));
     el.append(h('div', { class: 'proofs', 'aria-label': '交付凭证，三个事实分别记录' }, proofs(record).map((proof, i) => h('div', { class: 'proof' }, h('div', { class: 'proof-label' }, icon(['file', 'circle', 'check'][i]), proof.label), h('div', { class: 'proof-value' + (proof.confirmed ? ' confirmed' : '') }, proof.value), h('div', { class: 'proof-detail' }, proof.detail)))));
     if (state.source.kind === 'live') {
@@ -671,6 +671,15 @@ document.addEventListener('keydown', e => {
     selectTask(nextId, false);
     requestAnimationFrame(() => { const row = document.querySelector(`.task-row[data-task-id="${CSS.escape(nextId)}"]`); row?.focus({ preventScroll: false }); row?.scrollIntoView({ block: 'nearest' }); });
 });
+// WebView2 hands the initial focus to the first tabbable node, and Chromium
+// then treats that programmatic focus as keyboard-visible: a focused skip
+// link paints its banner across the page top before anyone touched a key.
+// Only a real Tab marks the session as keyboard-navigated, which is the one
+// case where the banner should appear.
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'Tab')
+        document.documentElement.classList.add('keyboard-nav');
+}, true);
 if (!linkedTask && new URL(location.href).searchParams.get('demo') === '1')
     switchSource('demo');
 else

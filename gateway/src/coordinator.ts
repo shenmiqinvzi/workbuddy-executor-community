@@ -225,7 +225,16 @@ export class TaskCoordinator {
       // The operator needs a bounded cause, not just "failed": without it the
       // only evidence is an unknown outcome and no one can tell what to fix.
       const cause = failureCause(error);
-      if (!task.attemptId) this.store.update(task.taskId, { state: "blocked", blockingReason: `Contract preparation failed${cause ? ` (${cause})` : ""}; inspect the original task before any recovery.` });
+      const reason = `Contract preparation failed${cause ? ` (${cause})` : ""}; this workflow never reached a native attempt.`;
+      // The row keeps its blocked state for the operator and stays replayable. A
+      // preparation that failed *before* crossing the native boundary must not hold
+      // the shared slot forever, so its closure evidence is recorded here (state
+      // untouched). An unresolved preparation may already own a native session, and
+      // closing it would hide that — it stays open until an operator resolves it.
+      this.store.update(task.taskId, { state: "blocked", blockingReason: reason });
+      if (!task.attemptId && !this.store.operations.unresolvedForTask(task.taskId)) {
+        try { this.store.operations.closePreparationFailure(task.taskId, reason); } catch { /* the reason above already records the failure */ }
+      }
       throw error;
     }
   }
@@ -292,7 +301,7 @@ export class TaskCoordinator {
       // F-CAP-3: closure is attempted on every sync, not only for tasks that
       // already look terminal — a blocked attempt that was cancelled and whose
       // native stop is proven only becomes terminal here.
-      return this.closeTerminalTask(evidenced);
+      return this.closeTerminalTask(this.convergeRecordedOutcome(evidenced));
     }
     this.store.addMessages(taskId, messages);
     // Mirror per-attempt journal events into the persistent task event stream.
@@ -382,11 +391,58 @@ export class TaskCoordinator {
         patch.inputRequested = false;
         if (Array.isArray(meta.artifacts)) patch.artifacts = meta.artifacts.filter((value): value is string => typeof value === "string");
       }
-      const stepped = task.attemptId ? this.store.updateAttempt(taskId, task.attemptId, patch).task : this.store.update(taskId, patch);
-      void stepped;
+      const resultLike = meta.type === "result" || message.role === "assistant";
+      if (!task.attemptId) {
+        this.store.update(taskId, patch);
+      } else {
+        const stepped = this.store.updateAttempt(taskId, task.attemptId, patch);
+        if (!stepped.applied && resultLike) {
+          // A result is a durable fact about this attempt. When a later status
+          // frame advanced lastEventSeq before this message was read, the
+          // cursor guard drops the *whole* patch — business state included —
+          // and no later sync ever revisits it, leaving the task "working"
+          // forever (FC11-D3). Re-apply the business facts on their own; the
+          // cursor keeps its monotonic protection against out-of-order reads.
+          const business: TaskUpdate = { ...patch };
+          delete business.lastEventSeq;
+          delete business.lastMessageId;
+          this.store.updateAttempt(taskId, task.attemptId, business);
+        }
+      }
     }
     const updated = this.requireTask(taskId);
-    return this.recordRunEvidence(updated);
+    return this.recordRunEvidence(this.convergeRecordedOutcome(updated));
+  }
+
+  /**
+   * A recorded result plus a confirmed native stop are durable facts about the
+   * attempt. When the consumption cursor already moved past both — a later
+   * status frame advanced it first — no future sync reads them again, and the
+   * task would stay "working" forever while its artifacts sit on disk
+   * (FC11-D3). Converge the business state from what is already on record.
+   * Nothing weaker than a recorded result qualifies, and a terminal task is
+   * never reopened.
+   */
+  private convergeRecordedOutcome(task: StoredTask): StoredTask {
+    if (!task.attemptId) return task;
+    if (task.state !== "queued" && task.state !== "working") return task;
+    if ((task.lastEventSeq ?? 0) === 0) return task;
+    const mine = this.store.attemptOutcomeEvents(task.taskId, task.attemptId);
+    const result = mine.find((event) => event.type === "result");
+    if (!result) return task;
+    const stop = mine.find((event) => event.type === "native_stop_confirmed");
+    if (!stop) return task;
+    // A later cancellation, failure or closure outranks a recorded result: the
+    // attempt ended for a reason the operator already accepted, so converging it
+    // back to needs_review would overwrite a settled fact.
+    if (mine.some((event) => event.eventId > result.eventId && (event.type === "cancelled" || event.type === "failed" || event.type === "task_closed"))) return task;
+    const status = typeof result.payload.status === "string" ? result.payload.status : null;
+    const state: TaskState = status === "blocked" || status === "failed" || status === "cancelled" ? status : "needs_review";
+    const patch: TaskUpdate = { state, blockingReason: null, inputRequested: false };
+    if (typeof result.payload.blockedReason === "string") patch.blockingReason = status === "blocked" ? result.payload.blockedReason : null;
+    if (typeof result.payload.text === "string" && result.payload.text.trim()) patch.report = parseReport(result.payload.text);
+    const converged = this.store.updateAttempt(task.taskId, task.attemptId, patch);
+    return converged.applied ? converged.task : task;
   }
   observeRecovery(taskId: string) {
     if (this.config.backend !== "desktop-queue") throw new AdmissionError("EXECUTOR_CAPABILITY_MISSING", "Recovery observation requires the original desktop queue source.");

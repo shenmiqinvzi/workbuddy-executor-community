@@ -102,7 +102,7 @@ export interface ReadinessProbes {
   tool?: () => Promise<{ responsive: boolean; detail?: string }>;
   native?: () => Promise<{ bridgeReady: boolean; detail?: string }>;
   /** Identity the probe actually observed (pid/dataRoot/codeHash of the answering process). */
-  identity?: () => Promise<{ pid?: number; dataRoot?: string; codeHash?: string } | undefined>;
+  identity?: () => Promise<{ pid?: number; dataRoot?: string; dbFile?: string; codeHash?: string } | undefined>;
 }
 
 export interface ReadinessOptions extends DiscoveryOptions {
@@ -337,25 +337,55 @@ export async function observeReadiness(options: ReadinessOptions = {}): Promise<
   }
   // The answer's identity is the answering process, never this one: a probe that
   // passed another data directory proves nothing about this installation.
-  let observedIdentity: { pid?: number; dataRoot?: string; codeHash?: string } | undefined;
+  let observedIdentity: { pid?: number; dataRoot?: string; dbFile?: string; codeHash?: string } | undefined;
   if (options.probes?.identity) {
     try { observedIdentity = await options.probes.identity(); } catch { observedIdentity = undefined; }
   }
   const foreignProbeRoot = Boolean(observedIdentity?.dataRoot && observer.dataRoot)
     && path.resolve(observedIdentity!.dataRoot!) !== path.resolve(observer.dataRoot!);
+  // The database, not only the directory that holds it: two installs can share
+  // `data/` and still own different task databases, and a ready answer has to
+  // name the one this observer would dispatch into.
+  const probeDatabase = observedIdentity?.dbFile ? path.resolve(observedIdentity.dbFile) : null;
+  const localDatabase = config?.dbFile ? path.resolve(config.dbFile) : null;
+  const foreignProbeDatabase = Boolean(probeDatabase && localDatabase && probeDatabase !== localDatabase);
+  const identityRequested = Boolean(options.probes?.identity);
+  const probeDatabaseUnbound = identityRequested && !probeDatabase;
   const probeFacts = {
     ...toolFacts,
     observedByPid: observedIdentity?.pid ?? observer.pid,
     observedDataRoot: observedIdentity?.dataRoot ?? null,
+    observedDbFile: probeDatabase,
     observedCodeHash: observedIdentity?.codeHash ?? null,
     probeDataRootMatchesObserver: observedIdentity?.dataRoot ? !foreignProbeRoot : null,
+    probeDbFileMatchesObserver: probeDatabase && localDatabase ? !foreignProbeDatabase : null,
   };
   const toolLayer = !buildPresent
     ? layer("toolResponsive", "absent", observedAt, probeFacts, ["dist/server.js", "dist/health-entry.js"], "this install root has no build to respond with")
-    : foreignProbeRoot
-      ? layer("toolResponsive", "blocked", observedAt, probeFacts, ["tool_probe_data_root"], "the tool process answered from another data directory; it cannot prove this installation is ready")
+    : foreignProbeRoot || foreignProbeDatabase
+      ? layer(
+        "toolResponsive",
+        "blocked",
+        observedAt,
+        probeFacts,
+        [foreignProbeDatabase ? "tool_probe_db_file" : "tool_probe_data_root"],
+        foreignProbeDatabase
+          ? `the tool process answered for database ${probeDatabase}, not ${localDatabase}; its answer cannot prove this installation is ready`
+          : "the tool process answered from another data directory; it cannot prove this installation is ready",
+      )
       : toolProbe
-        ? layer("toolResponsive", toolProbe.responsive ? "ready" : "blocked", observedAt, { ...probeFacts, toolProbe: toolProbe.responsive }, [], toolProbe.detail)
+        ? toolProbe.responsive
+          ? probeDatabaseUnbound
+            ? layer(
+              "toolResponsive",
+              "unverified",
+              observedAt,
+              { ...probeFacts, toolProbe: true },
+              ["tool_probe_db_file"],
+              "the tool probe answered without naming the database it answered for; the answer cannot be tied to this installation",
+            )
+            : layer("toolResponsive", "ready", observedAt, { ...probeFacts, toolProbe: true }, [], toolProbe.detail)
+          : layer("toolResponsive", "blocked", observedAt, { ...probeFacts, toolProbe: false }, [], toolProbe.detail)
         : heartbeatFresh
           ? layer("toolResponsive", "unverified", observedAt, probeFacts, ["tool_probe"], "a supervisor is writing heartbeats, but nothing proved the tool process itself answers")
           : layer("toolResponsive", "unknown", observedAt, probeFacts, [summaryRead.found ? "fresh_runtime_summary" : "runtime_summary"], summaryRead.reason);

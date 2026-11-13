@@ -491,7 +491,17 @@ export function recommendTask(parameters: unknown, catalog: unknown, now: number
     missing: missing.map(item => item.code),
     history: { status: history.status, sampleSize: history.sampleSize, window: history.window, counts: history.coverage },
   };
-  const digest = digestOf(base);
+  // The digest proves the terms a person confirms, not the explanatory envelope.
+  // It used to cover every candidate with its resource freshness and the usage
+  // history, so two reads of identical terms hashed differently whenever a quota
+  // clock ticked, and the confirmation reported drift for an agreement nobody
+  // changed. Timestamps, candidate order and history still travel in the payload.
+  const digest = digestOf({
+    schemaVersion: RECOMMENDATION_SCHEMA, explanationVersion: RECOMMENDATION_EXPLANATION_VERSION,
+    catalogId, fresh, policyVersion, decision, recommendedSelection: recommended?.selection ?? null,
+    offeredSelections: offered.map(item => item.selection), excludedSelections: excluded.map(item => item.selection),
+    intent: request.intent, constraints,
+  });
 
   let drift: RecommendationDrift | null = null;
   if (request.previous) {

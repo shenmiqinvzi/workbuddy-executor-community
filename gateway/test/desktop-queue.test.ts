@@ -15,7 +15,7 @@ import { readWorkerResult } from "../src/worker-result.js";
 
 function fixture(t: { after: (fn: () => void) => void }) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-queue-unit-"));
-  const config: Config = { ...loadConfig(), backend: "desktop-queue", dbFile: path.join(dir, "tasks.sqlite"), workbuddyConfigDir: dir, runsDir: path.join(dir, "runs") };
+  const config: Config = { ...loadConfig(), backend: "desktop-queue", dbFile: path.join(dir, "tasks.sqlite"), workbuddyConfigDir: dir, runsDir: path.join(dir, "runs"), serviceConfigFile: path.join(dir, "persistent-service.json") };
   const native = new DatabaseSync(path.join(dir, "workbuddy.db"));
   native.exec("CREATE TABLE sessions(id TEXT PRIMARY KEY, cwd TEXT, is_playground INTEGER, deleted_at INTEGER)");
   native.prepare("INSERT INTO sessions VALUES (?, ?, 1, NULL)").run("unit-session", dir);
@@ -314,6 +314,41 @@ test("a cancellation before native dispatch closes the workflow and frees shared
 
 
 
+test("a preparation that never began an attempt blocks the slot until its closure is recorded", async (t) => {
+  const f = fixture(t);
+  f.store.createOrGet({ taskId: "prep-failed", submissionHash: "synthetic-preparation", messageId: "pending-prep-failed", objective: "Fixture task", workspace: f.dir, constraints: [], acceptanceCommands: [], state: "queued", sessionId: "unit-session" });
+  f.store.operations.claim("prep-failed", "workbuddy", "compat:send:prep-failed:synthetic-preparation");
+  const prepared = f.store.get("prep-failed")!;
+  assert.equal(prepared.attemptId, undefined, "preparation failed before beginAttempt wrote an attempt id");
+  assert.equal(f.store.operations.isClosed(prepared), false);
+  // An unrecorded preparation is uncertain work, never an idle slot.
+  assert.throws(() => f.store.operations.claim("next-task", "workbuddy", "compat:send:next-task:synthetic-preparation"), { code: "CAPACITY_OCCUPIED" });
+  // Recording the closure frees the slot without inventing a stop proof or
+  // rewriting the business state the operator is looking at.
+  f.store.operations.closePreparationFailure("prep-failed", "Contract preparation failed; this workflow never reached a native attempt.");
+  assert.equal(f.store.get("prep-failed")!.state, "queued");
+  assert.equal(f.store.operations.isClosed(f.store.get("prep-failed")!), true);
+  f.store.operations.claim("next-task", "workbuddy", "compat:send:next-task:synthetic-preparation");
+  assert.equal(f.store.operations.occupant()?.taskId, "next-task");
+});
+
+test("recorded preparation closure carries no attempt identity and clears the capacity row", async (t) => {
+  const f = fixture(t);
+  f.store.createOrGet({ taskId: "prep-closed", submissionHash: "synthetic-preparation", messageId: "pending-prep-closed", objective: "Fixture task", workspace: f.dir, constraints: [], acceptanceCommands: [], state: "queued", sessionId: "unit-session" });
+  f.store.operations.claim("prep-closed", "workbuddy", "compat:send:prep-closed:synthetic-preparation");
+  f.store.operations.closePreparationFailure("prep-closed", "Contract preparation failed; this workflow never reached a native attempt.");
+  const db = new DatabaseSync(f.config.dbFile, { readOnly: true });
+  assert.equal((db.prepare("SELECT count(*) AS n FROM workflow_capacity").get() as { n: number }).n, 0);
+  const events = db.prepare("SELECT source_ref, attempt_id, payload_json FROM task_events WHERE type='task_closed'").all() as Array<{ source_ref: string; attempt_id: string | null; payload_json: string }>;
+  assert.equal(events.length, 1);
+  assert.equal(events[0]!.source_ref, "preparation_failed:prep-closed");
+  assert.equal(events[0]!.attempt_id, null, "a failed preparation closes without an attempt identity");
+  assert.equal((JSON.parse(events[0]!.payload_json) as { closedAs: string }).closedAs, "preparation_failed");
+  db.close();
+  f.store.operations.claim("next-2", "workbuddy", "compat:send:next-2:synthetic-preparation");
+  assert.equal(f.store.operations.occupant()?.taskId, "next-2");
+});
+
 function journalFailure(target: string, operation: "stat" | "readdir" | "readfile", code: string): JournalFiles {
   const failed = (file: string) => path.resolve(file) === path.resolve(target);
   const error = () => Object.assign(new Error(`synthetic ${code}`), { code });
@@ -448,4 +483,92 @@ test("a supervisor that never started a process cannot block a native stop", () 
   assert.equal(ownedCommandStopReason({ endedAt: "2026-11-02T08:00:00.000Z", processStarted: true, cleanupConfirmed: false }), "cleanup_unconfirmed", "a started command with unproven cleanup still blocks");
   assert.equal(ownedCommandStopReason({ endedAt: "2026-11-02T08:00:00.000Z", processStarted: true, cleanupConfirmed: true }), null);
   assert.equal(ownedCommandStopReason({ endedAt: "2026-11-02T08:00:00.000Z", cleanupConfirmed: false }), "cleanup_unconfirmed", "legacy records without a start marker keep the strict behaviour");
+});
+test("a result whose cursor was passed by a later frame still converges the business state", async (t) => {
+  // FC11-D3: a real desktop task received result(needs_review) and a native stop,
+  // but a later status frame had already advanced lastEventSeq past the result, so
+  // updateAttempt dropped the whole patch — state included — and the task stayed
+  // "working" forever while its artifacts sat on disk. The recorded facts must
+  // converge the business state on a later sync even with nothing left to read.
+  const f = fixture(t);
+  await f.send();
+  const claim = await f.queue.claim("unit-session", 0);
+  if (claim.status !== "task") throw new Error("Expected claim");
+  const attemptId = claim.attemptId;
+  const now = new Date().toISOString();
+  f.store.appendTaskEvent({ taskId: "unit-task", attemptId, type: "result", occurredAt: now, observedAt: now, actor: "workbuddy", payload: { status: "needs_review", eventSeq: 3, text: "TASK_STATUS: needs_review\nTEST_RESULT: converged report" }, sourceRef: `${attemptId}:result` });
+  f.store.appendTaskEvent({ taskId: "unit-task", attemptId, type: "native_stop_confirmed", occurredAt: now, observedAt: now, actor: "workbuddy", payload: { stopReason: "end_turn" }, sourceRef: `${attemptId}:native_stop_confirmed` });
+  // Simulate the cursor that a later status frame pushed ahead of the result.
+  f.store.updateAttempt("unit-task", attemptId, { lastEventSeq: 7 });
+  assert.equal(f.store.get("unit-task")!.state, "queued");
+  const converged = await f.coordinator.sync("unit-task");
+  assert.equal(converged.state, "needs_review", "a recorded result plus a native stop converge the state");
+  assert.equal(converged.blockingReason ?? null, null);
+  assert.match(converged.report?.rawText ?? "", /converged report/);
+  // A second sync is idempotent and never reopens or duplicates.
+  assert.equal((await f.coordinator.sync("unit-task")).state, "needs_review");
+});
+
+test("a result without a confirmed native stop does not converge on its own", async (t) => {
+  // The stop proof is what makes the report terminal; without it the task must
+  // keep waiting rather than pretend the run finished.
+  const f = fixture(t);
+  await f.send();
+  const claim = await f.queue.claim("unit-session", 0);
+  if (claim.status !== "task") throw new Error("Expected claim");
+  const attemptId = claim.attemptId;
+  const now = new Date().toISOString();
+  f.store.appendTaskEvent({ taskId: "unit-task", attemptId, type: "result", occurredAt: now, observedAt: now, actor: "workbuddy", payload: { status: "needs_review", eventSeq: 3 }, sourceRef: `${attemptId}:result` });
+  f.store.updateAttempt("unit-task", attemptId, { lastEventSeq: 7 });
+  assert.equal((await f.coordinator.sync("unit-task")).state, "queued", "a pending run keeps waiting while no stop proof exists");
+});
+
+test("a result behind more than one page of history still converges the business state", async (t) => {
+  // FC11-D3 second form: the old reader asked for the first page of task events
+  // (limit 200) and filtered by attempt afterwards, so a long-lived task could
+  // never see the result of its own attempt. The reader now asks the store for
+  // this attempt's outcome events directly.
+  const f = fixture(t);
+  await f.send();
+  const claim = await f.queue.claim("unit-session", 0);
+  if (claim.status !== "task") throw new Error("Expected claim");
+  const attemptId = claim.attemptId;
+  const now = new Date().toISOString();
+  for (let index = 0; index < 240; index += 1) {
+    f.store.appendTaskEvent({ taskId: "unit-task", attemptId, type: "status", occurredAt: now, observedAt: now, actor: "workbuddy", payload: { index, text: `progress ${index}` }, sourceRef: `${attemptId}:status:${index}` });
+  }
+  f.store.appendTaskEvent({ taskId: "unit-task", attemptId, type: "result", occurredAt: now, observedAt: now, actor: "workbuddy", payload: { status: "needs_review", eventSeq: 3, text: "TASK_STATUS: needs_review\nTEST_RESULT: late report" }, sourceRef: `${attemptId}:result` });
+  f.store.appendTaskEvent({ taskId: "unit-task", attemptId, type: "native_stop_confirmed", occurredAt: now, observedAt: now, actor: "workbuddy", payload: { stopReason: "end_turn" }, sourceRef: `${attemptId}:native_stop_confirmed` });
+  f.store.updateAttempt("unit-task", attemptId, { lastEventSeq: 7 });
+  const converged = await f.coordinator.sync("unit-task");
+  assert.equal(converged.state, "needs_review", "the attempt's own result is found regardless of how much history precedes it");
+  assert.match(converged.report?.rawText ?? "", /late report/);
+});
+
+test("an outcome recorded for another attempt never converges this one", async (t) => {
+  const f = fixture(t);
+  await f.send();
+  const claim = await f.queue.claim("unit-session", 0);
+  if (claim.status !== "task") throw new Error("Expected claim");
+  const attemptId = claim.attemptId;
+  const other = "run-00000000-0000-4000-8000-000000000000";
+  const now = new Date().toISOString();
+  f.store.appendTaskEvent({ taskId: "unit-task", attemptId: other, type: "result", occurredAt: now, observedAt: now, actor: "workbuddy", payload: { status: "needs_review", eventSeq: 3, text: "TASK_STATUS: needs_review\nTEST_RESULT: foreign report" }, sourceRef: `${other}:result` });
+  f.store.appendTaskEvent({ taskId: "unit-task", attemptId: other, type: "native_stop_confirmed", occurredAt: now, observedAt: now, actor: "workbuddy", payload: { stopReason: "end_turn" }, sourceRef: `${other}:native_stop_confirmed` });
+  f.store.updateAttempt("unit-task", attemptId, { lastEventSeq: 7 });
+  assert.equal((await f.coordinator.sync("unit-task")).state, "queued", "another attempt's report cannot authenticate this one");
+});
+
+test("a closure recorded after the result keeps the task out of needs_review", async (t) => {
+  const f = fixture(t);
+  await f.send();
+  const claim = await f.queue.claim("unit-session", 0);
+  if (claim.status !== "task") throw new Error("Expected claim");
+  const attemptId = claim.attemptId;
+  const now = new Date().toISOString();
+  f.store.appendTaskEvent({ taskId: "unit-task", attemptId, type: "result", occurredAt: now, observedAt: now, actor: "workbuddy", payload: { status: "needs_review", eventSeq: 3, text: "TASK_STATUS: needs_review\nTEST_RESULT: superseded report" }, sourceRef: `${attemptId}:result` });
+  f.store.appendTaskEvent({ taskId: "unit-task", attemptId, type: "native_stop_confirmed", occurredAt: now, observedAt: now, actor: "workbuddy", payload: { stopReason: "end_turn" }, sourceRef: `${attemptId}:native_stop_confirmed` });
+  f.store.appendTaskEvent({ taskId: "unit-task", attemptId, type: "task_closed", occurredAt: now, observedAt: now, actor: "operator", payload: { closedAs: "cancelled" }, sourceRef: `${attemptId}:task_closed` });
+  f.store.updateAttempt("unit-task", attemptId, { lastEventSeq: 7 });
+  assert.equal((await f.coordinator.sync("unit-task")).state, "queued", "a later closure supersedes the recorded result");
 });

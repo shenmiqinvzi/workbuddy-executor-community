@@ -12,6 +12,12 @@ internal sealed class DesktopCommandChannel : IDisposable
     private readonly CancellationTokenSource lifetime = new();
     private readonly SemaphoreSlim write = new(1, 1);
     private readonly ConcurrentDictionary<string, TaskCompletionSource<JsonElement>> pending = new();
+    /// <summary>
+    /// Frames that are not command results are handed to this callback. This channel is the single
+    /// reader of the host's stdout: a second reader would consume the reply lines and every request
+    /// would wait for its full timeout even though the host had already answered.
+    /// </summary>
+    public Action<JsonElement>? Frame { get; set; }
     public static ProcessStartInfo StartInfo(string node, string directory) => new(node) { WorkingDirectory = directory, UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true, RedirectStandardInput = true, StandardInputEncoding = new UTF8Encoding(false), StandardOutputEncoding = new UTF8Encoding(false), StandardErrorEncoding = new UTF8Encoding(false) };
     public DesktopCommandChannel(Process host) { this.host = host; _ = ReadAsync(); }
     public async Task<JsonElement> CallAsync(string method, JsonElement parameters)
@@ -54,7 +60,8 @@ internal sealed class DesktopCommandChannel : IDisposable
                     }
                     using var parsed = document;
                     var root = document.RootElement;
-                    if (root.GetProperty("event").GetString() != "desktop_command_result" || root.GetProperty("id").GetString() is not { } id || !pending.TryGetValue(id, out var reply)) continue;
+                    if (root.TryGetProperty("event", out var kind) && kind.GetString() != "desktop_command_result") { Frame?.Invoke(root.Clone()); continue; }
+                    if (root.GetProperty("id").GetString() is not { } id || !pending.TryGetValue(id, out var reply)) continue;
                     if (root.GetProperty("ok").GetBoolean()) reply.TrySetResult(root.GetProperty("value").Clone());
                     else { var error = root.GetProperty("error"); reply.TrySetException(new DesktopCommandError(error.GetProperty("code").GetString() ?? "DESKTOP_COMMAND_FAILED", error.GetProperty("message").GetString() ?? "本次操作未完成。")); }
                 }

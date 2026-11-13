@@ -45,3 +45,71 @@ test("a tool process that cannot start is reported as unavailable, never as read
   assert.match(String(answer.detail), /the tool process did not answer/);
   assert.equal(answer.native, undefined);
 });
+
+/**
+ * FC01: an answer the probe cannot read must never be upgraded to "ready".
+ * Each case is a real stdio round trip against a fixture entry that answers the
+ * health call with something a healthy tool would not send.
+ */
+function fakeGatewayRoot(t: test.TestContext, toolResult: unknown): string {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "readiness-fake-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, "dist"), { recursive: true });
+  fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ type: "module" }));
+  const result = JSON.stringify(toolResult);
+  fs.writeFileSync(path.join(root, "dist", "health-entry.js"), `
+import readline from 'node:readline';
+readline.createInterface({ input: process.stdin }).on('line', line => {
+  const message = JSON.parse(line);
+  if (message.id === undefined) return;
+  const result = message.method === 'initialize'
+    ? { protocolVersion: message.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'fixture', version: '1' } }
+    : message.method === 'tools/call' ? ${result} : {};
+  process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }) + '\\n');
+});
+`);
+  return root;
+}
+
+const healthyBody = (dbFile: string) => ({
+  ok: true,
+  online: true,
+  ready: true,
+  backend: "desktop-queue",
+  observer: { pid: 1234, dataRoot: path.dirname(dbFile), dbFile, codeHash: "abc" },
+});
+
+test("an unreadable health answer is not responsive", { timeout: 120_000 }, async t => {
+  const cases: { name: string; result: unknown; pattern: RegExp }[] = [
+    { name: "text that is not JSON", result: { content: [{ type: "text", text: "not JSON" }] }, pattern: /was not JSON/ },
+    { name: "no text content", result: { content: [{ type: "image", data: "AA==", mimeType: "image/png" }] }, pattern: /no text content/ },
+    { name: "a JSON array", result: { content: [{ type: "text", text: "[1,2,3]" }] }, pattern: /not a JSON object/ },
+    { name: "an error result", result: { isError: true, content: [{ type: "text", text: JSON.stringify(healthyBody("C:/x/tasks.sqlite")) }] }, pattern: /error result/ },
+  ];
+  for (const item of cases) {
+    const root = fakeGatewayRoot(t, item.result);
+    const answer = await probeToolStdio({ gatewayRoot: root, timeoutMs: 20_000 });
+    assert.equal(answer.responsive, false, `${item.name} was reported as responsive`);
+    assert.match(String(answer.detail), item.pattern, `${item.name}: ${answer.detail}`);
+    assert.equal(answer.native?.bridgeReady, false, `${item.name} claimed a bridge`);
+    assert.equal(answer.identity, undefined, `${item.name} invented an identity`);
+  }
+});
+
+test("a health answer that does not name its database is not responsive", { timeout: 60_000 }, async t => {
+  const unbound = {
+    content: [{ type: "text", text: JSON.stringify({ ok: true, online: true, ready: true, backend: "desktop-queue", observer: { pid: 99 } }) }],
+  };
+  const answer = await probeToolStdio({ gatewayRoot: fakeGatewayRoot(t, unbound), timeoutMs: 20_000 });
+  assert.equal(answer.responsive, false);
+  assert.match(String(answer.detail), /did not name the database/);
+});
+
+test("a readable answer that names its database is responsive and carries its identity", { timeout: 60_000 }, async t => {
+  const dbFile = path.join(os.tmpdir(), "readiness-identity", "tasks.sqlite");
+  const answer = await probeToolStdio({ gatewayRoot: fakeGatewayRoot(t, { content: [{ type: "text", text: JSON.stringify(healthyBody(dbFile)) }] }), timeoutMs: 20_000 });
+  assert.equal(answer.responsive, true, String(answer.detail));
+  assert.equal(answer.identity?.pid, 1234);
+  assert.equal(path.resolve(String(answer.identity?.dbFile)), path.resolve(dbFile));
+  assert.equal(answer.native?.bridgeReady, true);
+});

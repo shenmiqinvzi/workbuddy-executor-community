@@ -228,12 +228,22 @@ export class DesktopDispatchSession {
     if (source.models.length > 1000 || source.sessions.length > 200) fail("CATALOG_TOO_LARGE", "模型或会话目录过大，请检查来源配置。");
     const observedAt = new Date(this.now()).toISOString();
     const models: DesktopModel[] = source.models.map(model => ({ ...structuredClone(model), credits: model.pricingVerified ? model.credits : null, key: hash(model.execution), blockedReason: blocked(model, source) }));
-    const catalog: DesktopCatalog = { ...structuredClone(source), catalogId: crypto.randomUUID(), observedAt, expiresAt: new Date(this.now() + 300_000).toISOString(), models,
+    const projects = this.dependencies.projects?.candidates() ?? [];
+    const projectIssues = this.dependencies.projects?.issues?.() ?? [];
+    // The identity follows the content, not the read: a random id per read made the
+    // confirmation report `catalog_changed` every single time, so a reviewed
+    // agreement could never be confirmed. It covers the terms a person agrees to —
+    // which models may be used, at which observed rate, under which policy, for which
+    // projects. Session availability, source diagnostics and error prose move on their
+    // own and are re-checked by preview/commit, so they stay out of the identity;
+    // when they were included, a busy DSH session voided an agreement just read.
+    const catalogId = `cat-${hash({ models: models.map(model => ({ execution: model.execution, credits: model.credits, pricingVerified: model.pricingVerified, blockedReason: model.blockedReason })), policy: source.policy, requiredFreeModel: source.requiredFreeModel ?? null, requireZeroRate: source.requireZeroRate ?? null, dispatchEnabled: source.dispatchEnabled, projects: projects.map(project => ({ projectId: project.projectId, realPath: project.realPath })), projectIssues }).slice(0, 40)}`;
+    const catalog: DesktopCatalog = { ...structuredClone(source), catalogId, observedAt, expiresAt: new Date(this.now() + 300_000).toISOString(), models,
       sources: sourceViews(source, models),
-      projects: this.dependencies.projects?.candidates() ?? [],
-      projectIssues: this.dependencies.projects?.issues?.() ?? [] };
-    if (this.catalogs.size >= 4) this.catalogs.delete(this.catalogs.keys().next().value!);
-    this.catalogs.set(catalog.catalogId, catalog);
+      projects,
+      projectIssues };
+    if (!this.catalogs.has(catalogId) && this.catalogs.size >= 4) this.catalogs.delete(this.catalogs.keys().next().value!);
+    this.catalogs.set(catalogId, catalog);
     return structuredClone(catalog);
   }
   /**

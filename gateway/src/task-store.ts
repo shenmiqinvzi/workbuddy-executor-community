@@ -419,6 +419,18 @@ export class TaskStore {
     return row !== undefined;
   }
 
+  /**
+   * The two outcome facts for one attempt, in stream order: its recorded result
+   * and its confirmed native stop. Selected by task and attempt on the server,
+   * so a task with a long event history never hides the current attempt's
+   * outcome behind the first page of the stream (F2).
+   */
+  attemptOutcomeEvents(taskId: string, attemptId: string): StoredTaskEvent[] {
+    const rows = this.db.prepare(`SELECT * FROM task_events WHERE task_id = ? AND attempt_id = ? AND type IN ('result','native_stop_confirmed','cancelled','failed','task_closed') ORDER BY event_id ASC LIMIT 200`)
+      .all(taskId, attemptId) as Array<Record<string, unknown>>;
+    return rows.map(eventRowToEvent);
+  }
+
   createOrGet(task: Omit<StoredTask, "createdAt" | "updatedAt"> & { createdAt?: string }): { task: StoredTask; created: boolean } {
     return this.transaction(() => {
       const existing = this.get(task.taskId);

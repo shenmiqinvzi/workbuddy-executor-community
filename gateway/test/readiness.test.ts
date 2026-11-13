@@ -474,3 +474,52 @@ test("a probe answer without a bridge status never claims the bridge is ready", 
   assert.equal(native.bridgeReady, false);
   assert.match(String(native.detail), /no bridge status/);
 });
+
+// ---- FC01: a ready answer must name the database it answers for ----
+
+test("a tool answer for another database is blocked even inside the same data directory", async t => {
+  const fx = fixture(t);
+  const other = path.join(path.dirname(fx.dbFile), "other.sqlite");
+  const report = await fx.report({
+    probes: {
+      tool: async () => ({ responsive: true, detail: "answered" }),
+      native: async () => ({ bridgeReady: true }),
+      identity: async () => ({ pid: 42, dataRoot: path.dirname(fx.dbFile), dbFile: other }),
+    },
+  });
+  const tool = fx.layer(report, "toolResponsive");
+  assert.equal(tool.state, "blocked");
+  assert.deepEqual(tool.missing, ["tool_probe_db_file"]);
+  assert.match(String(tool.reason), /answered for database .*other\.sqlite, not .*tasks\.sqlite/);
+  assert.equal(tool.facts.probeDbFileMatchesObserver, false);
+  assert.equal(tool.facts.probeDataRootMatchesObserver, true, "the directory alone would have passed");
+});
+
+test("a tool answer that names no database is unverified, never ready", async t => {
+  const fx = fixture(t);
+  const report = await fx.report({
+    probes: {
+      tool: async () => ({ responsive: true, detail: "answered" }),
+      native: async () => ({ bridgeReady: true }),
+      identity: async () => undefined,
+    },
+  });
+  const tool = fx.layer(report, "toolResponsive");
+  assert.equal(tool.state, "unverified");
+  assert.deepEqual(tool.missing, ["tool_probe_db_file"]);
+});
+
+test("an identity naming this database keeps the layer ready", async t => {
+  const fx = fixture(t);
+  const report = await fx.report({
+    probes: {
+      tool: async () => ({ responsive: true, detail: "answered" }),
+      native: async () => ({ bridgeReady: true }),
+      identity: async () => ({ pid: 42, dataRoot: path.dirname(fx.dbFile), dbFile: fx.dbFile }),
+    },
+  });
+  const tool = fx.layer(report, "toolResponsive");
+  assert.equal(tool.state, "ready");
+  assert.deepEqual(tool.missing, []);
+  assert.equal(tool.facts.probeDbFileMatchesObserver, true);
+});

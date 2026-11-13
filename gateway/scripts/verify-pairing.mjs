@@ -84,12 +84,20 @@ export function readArchive(file) {
   return { archive: file, bytes: bytes.length, sha256: digest(bytes), entries, duplicates };
 }
 
+/**
+ * A published checksum is only evidence when it exists, names a SHA-256 digest
+ * and agrees with the archive. A missing sidecar makes the verdict `unknown`,
+ * which the caller must treat as a failure: "we did not publish a checksum"
+ * is not the same as "the checksum matched".
+ */
 function sidecar(archive) {
   const file = `${archive}.sha256`;
-  if (!fs.existsSync(file)) return { file, present: false, matches: null, recorded: null };
-  const recorded = fs.readFileSync(file, "utf8").trim().split(/\s+/)[0];
+  if (!fs.existsSync(file)) return { file, present: false, formatValid: null, matches: null, recorded: null, actual: null };
+  const text = fs.readFileSync(file, "utf8").trim();
+  const recorded = text.split(/\s+/)[0] ?? null;
   const actual = digest(fs.readFileSync(archive));
-  return { file, present: true, recorded, matches: recorded === actual, actual };
+  const formatValid = /^[a-f0-9]{64}$/i.test(recorded ?? "");
+  return { file, present: true, formatValid, recorded, actual, matches: formatValid && recorded.toLowerCase() === actual };
 }
 
 /**
@@ -184,9 +192,9 @@ export const IDENTITY_FILES = new Set(["RELEASE_MANIFEST.json"]);
 
 /** `0.7.1-t7d-desktop-preview` and `0.7.1` are the same release; `0.7.2` is not. */
 export function versionCore(version) {
-  if (!version) return null;
-  const match = /^\d+\.\d+\.\d+/.exec(String(version));
-  return match ? match[0] : String(version);
+  if (typeof version !== "string") return null;
+  const match = /^(\d+\.\d+\.\d+)(?:[-+]|$)/.exec(version);
+  return match ? match[1] : null;
 }
 
 export function verifyPairing(gatewayArchive, desktopArchive) {
@@ -239,6 +247,12 @@ export function verifyPairing(gatewayArchive, desktopArchive) {
   if (manifestAgreement.disagreements.length) problems.push(...manifestAgreement.disagreements.map(item => `${item.path}: the two manifests disagree (${item.gateway} vs ${item.desktop})`));
   const gatewayVersion = versionCore(manifestAgreement.versions.gateway);
   const desktopVersion = versionCore(manifestAgreement.versions.desktop);
+  if (gatewayIntegrity.manifest && !gatewayVersion) {
+    problems.push(`${path.basename(gatewayArchive)}: RELEASE_MANIFEST.json version ${JSON.stringify(manifestAgreement.versions.gateway ?? null)} is not a MAJOR.MINOR.PATCH version`);
+  }
+  if (desktopIntegrity.manifest && !desktopVersion) {
+    problems.push(`${path.basename(desktopArchive)}: RELEASE_MANIFEST.json version ${JSON.stringify(manifestAgreement.versions.desktop ?? null)} is not a MAJOR.MINOR.PATCH version`);
+  }
   // The desktop preview carries its own label after the numeric version
   // (`0.7.1-t7d-desktop-preview`); the numeric core is what must agree.
   if (gatewayVersion && desktopVersion && gatewayVersion !== desktopVersion) {
@@ -250,8 +264,11 @@ export function verifyPairing(gatewayArchive, desktopArchive) {
 
   const gatewaySum = sidecar(gatewayArchive);
   const desktopSum = sidecar(desktopArchive);
-  if (gatewaySum.matches === false) problems.push(`${path.basename(gatewayArchive)} does not match its .sha256 sidecar`);
-  if (desktopSum.matches === false) problems.push(`${path.basename(desktopArchive)} does not match its .sha256 sidecar`);
+  for (const [label, sum] of [[path.basename(gatewayArchive), gatewaySum], [path.basename(desktopArchive), desktopSum]]) {
+    if (!sum.present) problems.push(`${label} ships without a .sha256 sidecar`);
+    else if (!sum.formatValid) problems.push(`${label}: .sha256 sidecar ${JSON.stringify(sum.recorded)} is not a SHA-256 digest`);
+    else if (!sum.matches) problems.push(`${label} does not match its .sha256 sidecar`);
+  }
 
   return {
     gateway: { archive: gateway.archive, bytes: gateway.bytes, sha256: gateway.sha256, entries: gateway.entries.size, checksum: gatewaySum, manifest: gatewayIntegrity.described },

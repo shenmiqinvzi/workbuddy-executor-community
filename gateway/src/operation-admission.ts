@@ -126,8 +126,17 @@ export class OperationAdmission {
       return record;
     } catch { throw new AdmissionError("CONTRACT_INTEGRITY", "The operation record is invalid; execution remains blocked."); }
   }
-  listUnfinished(): OperationRecord[] {
-    return this.db.prepare("SELECT operation_id FROM task_operations WHERE state IN ('reserved','effect_started','outcome_unknown') ORDER BY rowid").all().map(row => this.get(String(row.operation_id))!).filter(op => !this.store.recoveries.forOperation(op.operationId) && !this.store.recoveries.closure(op.taskId));
+  /** True when a task's operation may already own native work.
+   *
+   * A preparation that crossed the native boundary can leave a session behind even
+   * though it never produced an attempt row. Recording closure for such a task would
+   * silently hide that possibility, so this stays true until an operator resolves the
+   * original operation.
+   */
+  unresolvedForTask(taskId: string): boolean {
+    return Boolean(this.db.prepare("SELECT 1 FROM task_operations WHERE task_id=? AND state IN ('reserved','effect_started','outcome_unknown')").get(taskId));
+  }
+  listUnfinished(): OperationRecord[] {    return this.db.prepare("SELECT operation_id FROM task_operations WHERE state IN ('reserved','effect_started','outcome_unknown') ORDER BY rowid").all().map(row => this.get(String(row.operation_id))!).filter(op => !this.store.recoveries.forOperation(op.operationId) && !this.store.recoveries.closure(op.taskId));
   }
   forTask(taskId: string): OperationRecord[] { return this.db.prepare("SELECT operation_id FROM task_operations WHERE task_id=? ORDER BY rowid").all(taskId).map(row => this.get(String(row.operation_id))!); }
   preparationReturned(operationId: string): void {
@@ -204,7 +213,12 @@ export class OperationAdmission {
   isClosed(task: StoredTask): boolean {
     const recovery = this.store.recoveries.closure(task.taskId);
     if (recovery && task.state === "cancelled" && recovery.attemptId === (task.attemptId ?? null)) return !!this.db.prepare("SELECT 1 FROM task_events WHERE task_id=? AND attempt_id IS ? AND type='task_closed' AND source_ref=?").get(task.taskId, recovery.attemptId, `recovery:${recovery.operationId}`);
-    if (!task.attemptId || !["accepted", "cancelled", "failed"].includes(task.state)) return false;
+    // A send whose native preparation failed never began an attempt, so there is
+    // no attempt identity to carry a stop proof. Only an explicitly recorded
+    // closure counts here; an untouched preparation row stays open for replay and
+    // is kept out of the shared-slot decision by claim() instead.
+    if (!task.attemptId) return !!this.db.prepare("SELECT 1 FROM task_events WHERE task_id=? AND attempt_id IS NULL AND type='task_closed' AND source_ref=?").get(task.taskId, `preparation_failed:${task.taskId}`);
+    if (!["accepted", "cancelled", "failed"].includes(task.state)) return false;
     // A workflow the gateway refused before its native boundary never ran
     // natively, so its closure is the recorded refusal, not a stop proof
     // (F-CAP-1). Only the never-dispatched closure event authorises this path.
@@ -224,7 +238,9 @@ export class OperationAdmission {
       if (!previous || !this.isClosed(previous)) throw new AdmissionError("CAPACITY_OCCUPIED", `An original workflow remains open or uncertain (task ${owner.taskId}); continue or cancel that task before sending another.`);
       this.db.prepare("DELETE FROM workflow_capacity WHERE slot=1").run();
     } else if (owner && owner.executor !== executor) throw new AdmissionError("EXECUTOR_UNAVAILABLE", "The workflow cannot change its original executor.");
-    // Check ALL historical rows, including preparations with no attempt. Migration invents no stop facts.
+    // Check ALL historical rows, including preparations with no attempt: an
+    // unknown legacy row is refused, never silently treated as idle. A row only
+    // passes once its own closure evidence was recorded (R1).
     for (const row of this.db.prepare("SELECT task_id FROM tasks WHERE task_id<>?").all(taskId)) {
       if (!this.isClosed(this.store.get(String(row.task_id))!)) throw new AdmissionError("CAPACITY_OCCUPIED", "A historical workflow has no verified closure.");
     }
@@ -276,6 +292,27 @@ export class OperationAdmission {
       const now = new Date().toISOString();
       this.store.update(taskId, { state: "cancelled", blockingReason: null, cancelNote: reason });
       this.store.appendTaskEvent({ taskId, attemptId, type: "task_closed", occurredAt: now, observedAt: now, actor, payload: { closedAs: "cancelled", closure: "never_dispatched", reason }, sourceRef: `never_dispatched:${attemptId}` });
+      const owner = this.occupant();
+      if (owner?.taskId === taskId) this.db.prepare("DELETE FROM workflow_capacity WHERE slot=1").run();
+    });
+  }
+  /**
+   * Close a workflow whose native preparation failed before any attempt existed.
+   * `beginAttempt` is what writes an attempt id, so a row without one provably
+   * never crossed a native boundary: nothing ran, nothing needs recovery, and
+   * the shared slot must be released instead of blocking every later send.
+   */
+  closePreparationFailure(taskId: string, reason: string, actor = "codex"): void {
+    this.store.atomic(() => {
+      const task = this.store.get(taskId);
+      if (!task || task.attemptId) return;
+      if (this.db.prepare("SELECT 1 FROM task_events WHERE task_id=? AND type='task_closed'").get(taskId)) return;
+      const now = new Date().toISOString();
+      // The business state stays exactly as the operator saw it (blocked): this
+      // records closure evidence only, so the row is still inspectable and still
+      // replayable, while admission stops reading it as an open workflow.
+      this.store.update(taskId, { blockingReason: reason });
+      this.store.appendTaskEvent({ taskId, attemptId: null, type: "task_closed", occurredAt: now, observedAt: now, actor, payload: { closedAs: "preparation_failed", closure: "preparation_failed", reason }, sourceRef: `preparation_failed:${taskId}` });
       const owner = this.occupant();
       if (owner?.taskId === taskId) this.db.prepare("DELETE FROM workflow_capacity WHERE slot=1").run();
     });

@@ -135,17 +135,26 @@ small,.small {
 .num {
   font-variant-numeric:tabular-nums
 }
+/* Keep the skip target reachable for keyboards without covering the page:
+   WebView2 parks the initial focus on the first tabbable node, and a
+   :focus-only rule left this banner sitting on top of the content. The link
+   only slides in for a real keyboard focus. */
 .skip-link {
   position:fixed;
   z-index:9;
   left:16px;
-  top:-80px;
+  top:8px;
   padding:12px;
   background:var(--text);
-  color:#fff
+  color:#fff;
+  transform:translateY(-200%);
+  transition:transform .12s ease
 }
-.skip-link:focus {
-  top:8px
+/* Keyboard-only reveal: the shell marks <html> with .keyboard-nav on the first
+   real Tab, so a programmatic initial focus cannot paint this banner over the
+   page (WebView2 does exactly that). */
+html.keyboard-nav .skip-link:focus {
+  transform:none
 }
 .shell {
   min-height:100dvh;
@@ -1522,4 +1531,7 @@ small,.small {
 .executor-badge { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; border: 1px solid color-mix(in srgb, currentColor 35%, transparent); font-size: 12px; line-height: 18px; color: var(--muted); white-space: nowrap; }
 .executor-badge[data-executor="dsh"] { color: #2f5d8a; border-color: color-mix(in srgb, #2f5d8a 35%, transparent); background: color-mix(in srgb, #2f5d8a 8%, transparent); }
 .executor-badge[data-executor="workbuddy"] { color: #1b6c80; border-color: color-mix(in srgb, #1b6c80 35%, transparent); background: color-mix(in srgb, #1b6c80 8%, transparent); }
+/* The contract's selected model is what the operator confirmed before dispatch;
+   it belongs next to the executor, not hidden behind a click. */
+.model-badge { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; color: var(--muted); white-space: nowrap; }
 @media(max-width:760px) { .executor-filter .chip { min-height: 44px; } }

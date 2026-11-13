@@ -29,7 +29,18 @@ export function stateInfo(record) {
     }
     return { key, label, tone, description };
 }
-export function taskName(record) { return record.presentation?.title || '未命名任务'; }
+/** The contract title is the task's own name. A task admitted without a
+ * contract has none, and calling it "未命名任务" hides which row it is: fall
+ * back to the first objective line the operator wrote, then to the task id. */
+export function taskName(record) {
+    const title = record.presentation?.title?.trim();
+    if (title)
+        return title;
+    const objective = (record.presentation?.objective ?? '').split(/\r?\n/).map(line => line.trim()).find(Boolean);
+    if (objective)
+        return objective.length > 40 ? `${objective.slice(0, 40)}…` : objective;
+    return record.taskId || '未命名任务';
+}
 export function workspaceName(record) { return record.view?.workspace?.displayName || record.view?.workspace?.storedPath?.split(/[\\/]/).filter(Boolean).at(-1) || '工作区未提供'; }
 export const EXECUTORS = ['workbuddy', 'dsh'];
 export const EXECUTOR_LABELS = { workbuddy: 'WorkBuddy', dsh: 'DSH', unknown: '来源未提供' };

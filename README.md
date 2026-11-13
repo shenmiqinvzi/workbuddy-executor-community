@@ -31,7 +31,7 @@
 - 自动模式只有 `per_task_confirmed` 一层生效；`preauthorized_policy` 仍是提案，启用需用户明确调整规则（见 ADR-01）。
 - 费用未知一律保持 `unknown`，不补 0、不把估算当硬上限；每个新任务仍需用户实际选择执行器/来源/模型/档位。
 - 停止只认原生停止证据；报告收到、超时、页面空闲都不等于已停止。
-- 证据按维度记录：`installed`（隔离安装/升级/回退演练）、`live`（真实派工，含 `live-accept-014`/`015` 两次 `accepted` 闭环）与 `ci`（`626de4a` 上 `Forward gate` `43142995043` 与 `Release pairing` `43142995052` 同时 success）已取得；`window` 只到真实窗口与分阶段文案（面板未渲染），`second_machine`、`release` 仍缺。验收矩阵按实际维度记 `blocked`/`unknown`/`partial`。
+- 证据按维度记录，结论只跟随证据：`installed`（本轮 install-wb41m / wb41n / wb41o 多轮安装，以及 drill root 内的升级/回退/卸载演练）、`live`（本轮真实派工：DSH `fc05-dsh-calc-001`、`fc11b-dsh-calc-001`，WorkBuddy `fc05-wb-calc-004`、`fc11c-wb-calc-001`，面板路径 `desktop-65ba65c2…`，均已 `accepted` 并有 `task_closed`）、`window`（install-wb41o 下真实窗口渲染、本机确认窗口完成派工并走到 `accepted`）。`ci` 维度只保留历史记录（`626de4a` 上的 `Forward gate` `43142995043` 与 `Release pairing` `43142995052`），那是当时的 commit，不代表当前工作树；本轮以本机全量 `1614 tests / 1602 pass / 0 fail / 12 skipped` 与 `tsc --noEmit` 代替，不声称 GitHub 流水线已跑。`second_machine` 与 `release` 仍缺。验收矩阵按实际维度记 `blocked`/`unknown`/`partial`。
 - 配对包未做代码签名，Windows 会提示未签名；签名与第三方声明见 [WB41](docs/forward/WB41_LICENSES_AND_SIGNING.md)。
 
 常见错误与具体操作：

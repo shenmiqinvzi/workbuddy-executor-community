@@ -277,3 +277,15 @@ test("the evaluator reads no filesystem, network or clock beyond its arguments",
   assert.equal(result.authorization.state, "none");
   assert.equal(JSON.stringify(result).includes('"authorized":true'), false);
 });
+
+test("a later read of the same catalog keeps the digest so confirmation sees no drift", () => {
+  const first = run({ intent: bigIntent });
+  const later = run({ intent: bigIntent }, catalog({ observedAt: AT(0), expiresAt: AT(300_000) }));
+  assert.equal(first.digest, later.digest, "the read timestamp is not part of the agreed terms");
+  const previous = { digest: first.digest, catalogId: first.catalog.catalogId, policyVersion: first.policy.version, selection: first.recommended?.selection ?? null };
+  const unchanged = run({ intent: bigIntent, previous }, catalog({ observedAt: AT(0), expiresAt: AT(300_000) }));
+  assert.equal(unchanged.drift?.blockedForDispatch, false);
+  assert.deepEqual(unchanged.drift?.codes, []);
+  const changed = run({ intent: bigIntent, previous }, catalog({ observedAt: AT(0), expiresAt: AT(300_000), models: [free, paid, mystery] }));
+  assert.equal(changed.drift?.blockedForDispatch, true, "real term changes are still refused before dispatch");
+});

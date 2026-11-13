@@ -231,9 +231,15 @@ export class DshTaskCoordinator {
         const patch: TaskUpdate = {};
         if (event.type === "started") { patch.state = "working"; snapshot.status = "working"; if (event.turnId) current = { ...current, turnId: event.turnId }; }
         if (event.type === "waiting_input") { patch.state = "blocked"; patch.inputRequested = true; patch.blockingReason = "DSH requires user input in its native UI."; snapshot.waitingInput = true; }
-        if (config && typeof config.provider === "string" && typeof config.model === "string" && (config.reasoningEffort == null || typeof config.reasoningEffort === "string")) snapshot.dsh = { ...snapshot.dsh!, effectiveModel: { providerId: config.provider, modelId: config.model, reasoningEffort: config.reasoningEffort ?? null, seq: event.seq } };
+        if (config && typeof config.provider === "string" && typeof config.model === "string" && (config.reasoningEffort == null || typeof config.reasoningEffort === "string")) snapshot.dsh = { ...snapshot.dsh!, effectiveModel: { providerId: config.provider, modelId: config.model, reasoningEffort: config.reasoningEffort ?? null, seq: event.seq, requestId: event.requestId } };
         const effective = snapshot.dsh?.effectiveModel;
-        const modelMatches = same(effective, selection(binding.execution));
+        // The Harness emits `request/header` for the request that opened the
+        // model, not for every continuation turn, so a stopped attempt may carry
+        // no model evidence at all. Absence is not proof of the selection: a
+        // report is authenticated only when this request produced its own
+        // header, and that header names the immutable selection.
+        const effectiveBelongsToRequest = Boolean(effective && effective.requestId === binding.requestId);
+        const modelMatches = effectiveBelongsToRequest && same(effective!, selection(binding.execution));
         if (effective && !modelMatches) {
           patch.state = "blocked"; patch.blockingReason = "The native request model differs from its immutable selection."; snapshot.error = "model_binding_drift"; snapshot.status = "blocked";
           if (!observeOnly && !current.cancelRequested) { current = { ...current, cancelRequested: true }; cancelOriginal = true; }
@@ -250,7 +256,7 @@ export class DshTaskCoordinator {
             snapshot.text = event.text; snapshot.artifacts = []; snapshot.reportDigest = reportDigest({ status: "completed", text: event.text!, artifacts: [] });
             snapshot.reportAuthentication = { formatVersion: 2, taskId, attemptId: binding.attemptId, sessionId: binding.sessionId, runtimeSource: "dsh", reportedStatus: "completed", reportDigest: snapshot.reportDigest, authenticatedAt: new Date().toISOString(), dshProvenance: { hostId: binding.hostId, requestId: binding.requestId, eventSeq: event.seq } };
             patch.report = parseReport(event.text!); patch.artifacts = []; patch.blockingReason = null;
-          } else patch.blockingReason = current.cancelRequested ? "Cancellation confirmed by the original native event." : "DSH stopped without a verified successful report and matching request model.";
+          } else patch.blockingReason = current.cancelRequested ? "Cancellation confirmed by the original native event." : effective ? "The native request model differs from its immutable selection." : "DSH stopped without request-level model evidence for this request; the turn cannot be authenticated as the immutable selection.";
         }
         if (Object.keys(patch).length) this.store.updateAttempt(taskId, binding.attemptId, patch);
         this.store.appendTaskEvent({ taskId, attemptId: binding.attemptId, type: config ? "native_request_observed" : `dsh_${event.type}`, occurredAt: event.timestamp ?? new Date().toISOString(), observedAt: new Date().toISOString(), actor: "dsh", payload: { nativeEventSeq: event.seq, requestId: binding.requestId, rawType: event.rawType ?? null, ...(event.text ? { text: event.text } : {}), ...(config ? { effectiveModel: snapshot.dsh?.effectiveModel ?? null } : {}) }, sourceRef: `${binding.attemptId}:dsh:${event.seq}` });
@@ -293,11 +299,35 @@ export class DshTaskCoordinator {
   }
   private requestCancellation(taskId:string,reason?:string) {
     const task=this.task(taskId),binding=this.binding(taskId);
-    if (!binding.runOpen || task.state === "accepted") return {task,binding,send:false};
+    if (task.state === "accepted" || task.state === "cancelled") return {task,binding,send:false};
+    if (!binding.runOpen) {
+      // The original native request already reached its terminal event, so
+      // there is nothing left to cancel: close the workflow instead. Refusing
+      // here used to leave a blocked original at state "blocked" with no
+      // task_closed event, which keeps the one shared capacity slot for good
+      // (F-CAP-2). The stop proof still has to exist; only then is the close
+      // recorded and the slot released.
+      const closed = this.closeStoppedOriginal(taskId, reason);
+      return {task:closed,binding,send:false};
+    }
     this.store.dshBindings.update({ ...binding, cancelRequested: true });
     this.store.update(taskId, { cancelNote: reason ?? "Cancellation requested", state: "cancelled" });
     if (task.attemptId) { const journal = new RunJournal(this.runsDir, task.attemptId); journal.cancel("operator"); this.fold(taskId, journal); }
     return {task,binding,send:true};
+  }
+  /** Close an original workflow whose native request already stopped unverified. */
+  private closeStoppedOriginal(taskId:string,reason?:string) {
+    const task=this.task(taskId),attemptId=task.attemptId;
+    if (!attemptId) return task;
+    const snapshot = new RunJournal(this.runsDir, attemptId).snapshot();
+    if (!hasNativeStopEvidence(snapshot)) return task;
+    this.store.update(taskId, { cancelNote: reason ?? "Cancellation requested", state: "cancelled" });
+    const journal = new RunJournal(this.runsDir, attemptId); journal.cancel("operator"); this.fold(taskId, journal);
+    const events = this.store.listTaskEvents(taskId, { limit: 500 }).events;
+    if (!events.some(event => event.type === "task_closed" && event.attemptId === attemptId)) {
+      this.store.appendTaskEvent({ taskId, attemptId, type: "task_closed", occurredAt: snapshot?.nativeStoppedAt ?? new Date().toISOString(), observedAt: new Date().toISOString(), actor: "operator", payload: { closedAs: "cancelled", closure: "stopped_without_report", reason: reason ?? null }, sourceRef: `${attemptId}:task_closed` });
+    }
+    return this.task(taskId);
   }
   cancelCurrent(input:{taskId:string;expectedRevision:string;expectedAttemptId:string;reason?:string}) {
     if(!input.expectedRevision||!input.expectedAttemptId||(input.reason!==undefined&&(typeof input.reason!=="string"||input.reason.length>500)))return fail("INVALID_OPERATION","A current revision, attempt and bounded reason are required.");

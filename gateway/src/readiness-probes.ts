@@ -25,6 +25,8 @@ import type { ReadinessProbes } from "./readiness.js";
 export interface ProbeAnswerIdentity {
   pid?: number;
   dataRoot?: string;
+  /** Absolute path of the task database the answering process was configured with. */
+  dbFile?: string;
   codeHash?: string;
 }
 
@@ -92,14 +94,35 @@ export function probeEnvironment(options: Pick<ProbeOptions, "config" | "env">):
   return env;
 }
 
-function healthPayload(result: unknown): { ok: boolean; online?: boolean; ready?: boolean; backend?: string; observer?: { pid?: number; dataRoot?: string; codeHash?: string } } | undefined {
-  const content = (result as { content?: Array<{ type?: string; text?: string }> })?.content;
+interface HealthBody {
+  ok: boolean;
+  online?: boolean;
+  ready?: boolean;
+  backend?: string;
+  observer?: ProbeAnswerIdentity;
+}
+
+/**
+ * Read one `workbuddy_health` answer.
+ *
+ * Only a tool result that reports no error, carries text, and carries *JSON
+ * text shaped as an object* is an answer. Everything else — an `isError`
+ * result, an empty body, a truncated or non-JSON body, a bare array — is
+ * unreadable, and an unreadable answer proves nothing about this installation.
+ * Treating "no payload" as responsive was the defect: the layer said ready
+ * while the probe had understood nothing.
+ */
+function healthAnswer(result: unknown): { body?: HealthBody; problem?: string } {
+  if ((result as { isError?: boolean } | undefined)?.isError === true) return { problem: "the tool call reported an error result" };
+  const content = (result as { content?: Array<{ type?: string; text?: string }> } | undefined)?.content;
   const text = content?.find(item => item?.type === "text")?.text;
-  if (!text) return undefined;
-  try {
-    const parsed = JSON.parse(text) as { ok?: boolean; online?: boolean; ready?: boolean; backend?: string; observer?: { pid?: number; dataRoot?: string; codeHash?: string } };
-    return { ok: parsed.ok === true, online: parsed.online, ready: parsed.ready, backend: parsed.backend, observer: parsed.observer };
-  } catch { return undefined; }
+  if (typeof text !== "string" || !text.trim()) return { problem: "the answer carried no text content" };
+  let parsed: unknown;
+  try { parsed = JSON.parse(text); } catch { return { problem: "the answer was not JSON" }; }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return { problem: "the answer was not a JSON object" };
+  const value = parsed as Record<string, unknown>;
+  const observer = value.observer && typeof value.observer === "object" ? value.observer as ProbeAnswerIdentity : undefined;
+  return { body: { ok: value.ok === true, online: value.online === true ? true : value.online === false ? false : undefined, ready: value.ready === true ? true : value.ready === false ? false : undefined, backend: typeof value.backend === "string" ? value.backend : undefined, observer } };
 }
 
 /** One MCP round trip against the read-only health entry in `gatewayRoot`. Never retried, never cached here. */
@@ -114,18 +137,38 @@ export async function probeToolStdio(options: ProbeOptions = {}): Promise<ToolPr
   try {
     await client.connect(transport);
     const result = await client.callTool({ name: "workbuddy_health", arguments: {} }, undefined, { timeout: timeoutMs });
-    const payload = healthPayload(result);
+    const answer = healthAnswer(result);
     answered = true;
-    const identity = payload?.observer ? { pid: payload.observer.pid, dataRoot: payload.observer.dataRoot, codeHash: payload.observer.codeHash } : undefined;
+    const body = answer.body;
+    const identity = body?.observer
+      ? { pid: body.observer.pid, dataRoot: body.observer.dataRoot, dbFile: body.observer.dbFile, codeHash: body.observer.codeHash }
+      : undefined;
+    if (!body) {
+      return {
+        responsive: false,
+        detail: `workbuddy_health answered, but ${answer.problem}; an answer that cannot be read cannot prove this installation is ready`,
+        native: { bridgeReady: false, detail: `the answer was unreadable (${answer.problem}), so it carries no bridge status` },
+        identity: undefined,
+      };
+    }
     const who = identity?.pid ? `pid ${identity.pid}` : "an unidentified process";
-    const where = identity?.dataRoot ? `dataRoot ${identity.dataRoot}` : "no reported dataRoot";
-    const detail = payload
-      ? `workbuddy_health answered from ${who} (backend ${payload.backend ?? "unknown"}, ${where}, online ${payload.online === true}, ready ${payload.ready === true})`
-      : "workbuddy_health answered without a readable JSON body";
+    const where = identity?.dbFile ? `dbFile ${identity.dbFile}` : identity?.dataRoot ? `dataRoot ${identity.dataRoot}` : "no reported dataRoot or dbFile";
+    const detail = `workbuddy_health answered from ${who} (backend ${body.backend ?? "unknown"}, ${where}, online ${body.online === true}, ready ${body.ready === true})`;
+    // A read-only entry that does not name its database cannot be distinguished
+    // from a healthy instance somewhere else; "responsive" alone would upgrade
+    // this installation on another installation's answer.
+    if (!identity?.dataRoot || !identity?.dbFile) {
+      return {
+        responsive: false,
+        detail: `${detail}: the answer did not name the database it answered for, so it cannot be tied to this installation`,
+        native: { bridgeReady: body.online === true, detail: `bridge online=${body.online === true}, but the answering process named no database` },
+        identity,
+      };
+    }
     return {
-      responsive: payload ? payload.ok : true,
-      detail: payload && !payload.ok ? `${detail}: the tool reported ok=false` : detail,
-      native: { bridgeReady: payload?.online === true, detail: payload ? `bridge online=${payload.online === true} as reported by ${who}` : "the tool answer carried no bridge status" },
+      responsive: body.ok,
+      detail: body.ok ? detail : `${detail}: the tool reported ok=false`,
+      native: { bridgeReady: body.online === true, detail: `bridge online=${body.online === true} as reported by ${who}` },
       identity,
     };
   } catch (error) {

@@ -212,13 +212,50 @@ test("same-session rework preserves selection and the immutable attempt budget",
   await assert.rejects(f.coordinator.continue({ taskId: first.taskId, feedback: "third attempt" }), { code: "ATTEMPT_LIMIT" });
 });
 
-test("model drift and missing request evidence cannot authenticate a successful report", async t => {
-  for (const variant of ["drift", "missing"]) {
-    const f = fixture(t); await f.send();
-    if (variant === "drift") f.finish("different-model"); else { f.event("started"); f.event("completed", { text: "A plausible success report" }); }
-    assert.equal((await f.coordinator.sync("dsh-task")).state, "blocked"); assert.equal(f.coordinator.executionStatus("dsh-task").remoteStopped, true);
-    await assert.rejects(f.coordinator.accept("dsh-task", "review", ["evidence"]), { code: "REVIEW_REQUIRED" });
-  }
+test("only this request's own header authenticates a report; an unobserved turn stops without one", async t => {
+  // Continuation turns of this Harness report no `request/header` at all. The
+  // selection readback happens before the prompt is sent, so it describes the
+  // dispatch, not the turn that actually ran: without a header for this request
+  // the stopped turn stays blocked and never claims an authenticated report.
+  const unobserved = fixture(t); await unobserved.send();
+  unobserved.event("started"); unobserved.event("completed", { text: "A plausible success report" });
+  assert.equal((await unobserved.coordinator.sync("dsh-task")).state, "blocked");
+  assert.equal(unobserved.coordinator.executionStatus("dsh-task").reportDigestPresent, false);
+  assert.match(String(unobserved.store.get("dsh-task").blockingReason), /without request-level model evidence/);
+  await assert.rejects(unobserved.coordinator.accept("dsh-task", "review", ["evidence"]), { code: "REVIEW_REQUIRED" });
+
+  // An observed header that names the immutable selection still authenticates.
+  const bound = fixture(t); await bound.send(); bound.finish();
+  assert.equal((await bound.coordinator.sync("dsh-task")).state, "needs_review");
+  assert.equal(bound.coordinator.executionStatus("dsh-task").reportDigestPresent, true);
+
+  // An observed, differing header is drift, not a missing header: the original
+  // request is cancelled and nothing is claimed.
+  const drifted = fixture(t); await drifted.send(); drifted.finish("different-model");
+  assert.equal((await drifted.coordinator.sync("dsh-task")).state, "blocked");
+  assert.equal(drifted.coordinator.executionStatus("dsh-task").remoteStopped, true);
+  assert.equal(drifted.coordinator.executionStatus("dsh-task").reportDigestPresent, false);
+  await assert.rejects(drifted.coordinator.accept("dsh-task", "review", ["evidence"]), { code: "REVIEW_REQUIRED" });
+});
+
+test("a stopped original without an authenticated report closes on cancel and frees the shared slot", async t => {
+  const f = fixture(t); await f.send();
+  f.event("started"); f.event("completed", { text: "A plausible success report" });
+  assert.equal((await f.coordinator.sync("dsh-task")).state, "blocked");
+  assert.equal(f.store.dshBindings.forTask("dsh-task")!.runOpen, false);
+  await assert.rejects(f.send("other-task"), { code: "CAPACITY_OCCUPIED" });
+  // Cancellation of an already stopped original used to be a silent no-op that
+  // left the task blocked without a task_closed event, so every later original
+  // workflow stayed refused forever.
+  const closed = await f.coordinator.cancel("dsh-task", "Operator verified the attempt stopped without an authenticated report");
+  assert.equal(closed.task!.state, "cancelled");
+  assert.equal(closed.task!.cancelNote, "Operator verified the attempt stopped without an authenticated report");
+  assert.equal(f.store.listTaskEvents("dsh-task").events.filter(e => e.type === "task_closed").length, 1);
+  assert.equal(f.store.operations.isClosed(f.store.get("dsh-task")!), true);
+  const next = await f.send("other-task");
+  assert.equal(next.ok, true);
+  assert.equal(f.store.operations.occupant()!.taskId, "other-task");
+  assert.equal(f.counts().prompts, 2);
 });
 
 test("foreign or unordered native events do not advance a cursor or change facts", async t => {

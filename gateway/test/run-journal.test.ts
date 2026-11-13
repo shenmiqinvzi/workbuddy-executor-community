@@ -94,6 +94,17 @@ test("reports unrecoverable legacy runs as blocked and refuses missing journals"
   assert.throws(() => new RunJournal(server.root, "../../private"), /Invalid run journal identity/);
 });
 
+test("a reservation cursor reports no messages instead of a blocked legacy run", (t) => {
+  // FC13-D: the panel reserves the task with `pending-<taskId>` and only then
+  // dispatches. Reading that cursor before the attempt exists must be silent —
+  // answering "legacy-unrecoverable, blocked" wrote a blocked report over a
+  // dispatch that was still being prepared.
+  const { config } = fixture(t);
+  const server = new DurableRuns(config);
+  assert.deepEqual(server.messages("pending-fc13-panel-task"), []);
+  assert.deepEqual(server.messages("pending-a:b"), [], "a reservation cursor with a sequence still has no content");
+});
+
 test("creates private run files and persists cancellation for the detached worker", (t) => {
   const { config, journal } = fixture(t);
   journal.save(snapshot(journal));
